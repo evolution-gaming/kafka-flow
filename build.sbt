@@ -16,7 +16,7 @@ bintrayOrganization := Some("evolutiongaming")
 
 scalaVersion := crossScalaVersions.value.head
 
-crossScalaVersions := Seq("2.12.10")//, "2.13.0")
+crossScalaVersions := Seq(/*"2.13.0", */"2.12.10")
 
 resolvers += Resolver.bintrayRepo("evolutiongaming", "maven")
 
@@ -25,6 +25,7 @@ libraryDependencies ++= Seq(
   Cats.effect,
   `cats-helper`,
   smetrics,
+  skafka,
   scalatest % Test)
 
 licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT")))
