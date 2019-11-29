@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
-import org.scalatest.FunSuite
+import org.scalatest.funsuite.AnyFunSuite
 
-class UnitTest extends FunSuite {
+class UnitTest extends AnyFunSuite {
   test("not a test") {}
 }
