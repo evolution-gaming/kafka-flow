@@ -2,8 +2,8 @@ import sbt._
 
 object Dependencies {
 
-  val scalatest     = "org.scalatest"       %% "scalatest"   % "3.2.0"
-  val `cats-helper` = "com.evolutiongaming" %% "cats-helper" % "2.0.7"
+  val scalatest     = "org.scalatest"       %% "scalatest"   % "3.2.1"
+  val `cats-helper` = "com.evolutiongaming" %% "cats-helper" % "2.0.4"
   val smetrics      = "com.evolutiongaming" %% "smetrics"    % "0.1.2"
   val skafka        = "com.evolutiongaming" %% "skafka"      % "10.0.0"
 
