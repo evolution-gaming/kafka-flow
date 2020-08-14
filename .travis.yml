@@ -10,8 +10,6 @@ scala:
 jdk:
   - openjdk11
 
-node_js: "12.18.3"
-
 stages:
   - name: test
   - name: release
@@ -25,7 +23,9 @@ jobs:
       after_success: sbt ++$TRAVIS_SCALA_VERSION coverageReport coveralls
     # release runs only if the previous stages passed
     - stage: release
-      install: "npm install"
+    - install:
+        - nvm install 12.18.3
+        - nvm use 12.18.3
       script: sbt docs/docusaurusPublishGhpages
 
 notifications:
