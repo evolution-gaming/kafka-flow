@@ -12,7 +12,10 @@ crossScalaVersions := Seq(/*"2.13.0", */"2.12.10")
 licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT")))
 releaseCrossBuild := true
 
-resolvers += Resolver.bintrayRepo("evolutiongaming", "maven")
+resolvers ++= Seq(
+  Resolver.bintrayRepo("evolutiongaming", "maven"),
+  Resolver.sonatypeRepo("public")
+)
 
 libraryDependencies ++= Seq(
   Cats.core,
