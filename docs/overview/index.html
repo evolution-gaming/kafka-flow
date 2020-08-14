@@ -1,0 +1,198 @@
+<!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta http-equiv="X-UA-Compatible" content="IE=edge"/><title>Overview · Kafka Flow</title><meta name="viewport" content="width=device-width"/><meta name="generator" content="Docusaurus"/><meta name="description" content="# KafkaFlow library"/><meta name="docsearch:language" content="en"/><meta property="og:title" content="Overview · Kafka Flow"/><meta property="og:type" content="website"/><meta property="og:url" content="https://evolution-gaming.github.io/kafka-flow/"/><meta property="og:description" content="# KafkaFlow library"/><meta property="og:image" content="https://evolution-gaming.github.io/kafka-flow/img/undraw_online.svg"/><meta name="twitter:card" content="summary"/><meta name="twitter:image" content="https://evolution-gaming.github.io/kafka-flow/img/undraw_tweetstorm.svg"/><link rel="shortcut icon" href="/kafka-flow/img/favicon.ico"/><link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/default.min.css"/><script type="text/javascript" src="https://buttons.github.io/buttons.js"></script><script src="/kafka-flow/js/scrollSpy.js"></script><link rel="stylesheet" href="/kafka-flow/css/main.css"/><script src="/kafka-flow/js/codetabs.js"></script></head><body class="sideNavVisible separateOnPageNav"><div class="fixedHeaderContainer"><div class="headerWrapper wrapper"><header><a href="/kafka-flow/"><img class="logo" src="/kafka-flow/img/favicon.ico" alt="Kafka Flow"/><h2 class="headerTitleWithLogo">Kafka Flow</h2></a><div class="navigationWrapper navigationSlider"><nav class="slidingNav"><ul class="nav-site nav-site-internal"><li class="siteNavGroupActive siteNavItemActive"><a href="/kafka-flow/docs/overview" target="_self">Overview</a></li><li class=""><a href="/kafka-flow/help" target="_self">Help</a></li></ul></nav></div></header></div></div><div class="navPusher"><div class="docMainWrapper wrapper"><div class="docsNavContainer" id="docsNav"><nav class="toc"><div class="toggleNav"><section class="navWrapper wrapper"><div class="navBreadcrumb wrapper"><div class="navToggle" id="navToggler"><div class="hamburger-menu"><div class="line1"></div><div class="line2"></div><div class="line3"></div></div></div><h2><i>›</i><span>Kafka-Flow</span></h2><div class="tocToggler" id="tocToggler"><i class="icon-toc"></i></div></div><div class="navGroups"><div class="navGroup"><h3 class="navGroupCategoryTitle">Kafka-Flow</h3><ul class=""><li class="navListItem navListItemActive"><a class="navItem" href="/kafka-flow/docs/overview">Overview</a></li></ul></div></div></section></div><script>
+            var coll = document.getElementsByClassName('collapsible');
+            var checkActiveCategory = true;
+            for (var i = 0; i < coll.length; i++) {
+              var links = coll[i].nextElementSibling.getElementsByTagName('*');
+              if (checkActiveCategory){
+                for (var j = 0; j < links.length; j++) {
+                  if (links[j].classList.contains('navListItemActive')){
+                    coll[i].nextElementSibling.classList.toggle('hide');
+                    coll[i].childNodes[1].classList.toggle('rotate');
+                    checkActiveCategory = false;
+                    break;
+                  }
+                }
+              }
+
+              coll[i].addEventListener('click', function() {
+                var arrow = this.childNodes[1];
+                arrow.classList.toggle('rotate');
+                var content = this.nextElementSibling;
+                content.classList.toggle('hide');
+              });
+            }
+
+            document.addEventListener('DOMContentLoaded', function() {
+              createToggler('#navToggler', '#docsNav', 'docsSliderActive');
+              createToggler('#tocToggler', 'body', 'tocActive');
+
+              var headings = document.querySelector('.toc-headings');
+              headings && headings.addEventListener('click', function(event) {
+                var el = event.target;
+                while(el !== headings){
+                  if (el.tagName === 'A') {
+                    document.body.classList.remove('tocActive');
+                    break;
+                  } else{
+                    el = el.parentNode;
+                  }
+                }
+              }, false);
+
+              function createToggler(togglerSelector, targetSelector, className) {
+                var toggler = document.querySelector(togglerSelector);
+                var target = document.querySelector(targetSelector);
+
+                if (!toggler) {
+                  return;
+                }
+
+                toggler.onclick = function(event) {
+                  event.preventDefault();
+
+                  target.classList.toggle(className);
+                };
+              }
+            });
+        </script></nav></div><div class="container mainContainer docsContainer"><div class="wrapper"><div class="post"><header class="postHeader"><h1 id="__docusaurus" class="postHeaderTitle">Overview</h1></header><article><div><span><h1><a class="anchor" aria-hidden="true" id="kafkaflow-library"></a><a href="#kafkaflow-library" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>KafkaFlow library</h1>
+<p>The library consists of the following main building blocks nested into each other:</p>
+<ul>
+<li><code>ConsumerFlow</code> - handles everything coming to a specific consumer,</li>
+<li><code>TopicFlow</code> - processes the messages coming to the specific topic,</li>
+<li><code>PartitionFlow</code> - processes messages coming to the specific partition,</li>
+<li><code>KeyFlow</code> - process the message coming for specific key in the partition.</li>
+</ul>
+<p>It is possible and allowed to implement these traits manually, but,
+for most of the uses cases the convenient builders are provided.
+The top level builder is called <code>KafkaFlow</code>, others are <code>ConsumerFlowOf</code>,
+<code>TopicFlowOf</code>, <code>PartitionFlowOf</code> and <code>KeyFlowOf</code>.</p>
+<p>For sake of simplicity, all the examples assume the following is in the scope.
+Saying that, the library is written and prepared for, so called, Tagless Final
+stype of programming. One does not have to use <code>IO</code> directly. Actually, the
+main &quot;dog food&quot; application is written in Tagless Final style.</p>
+<pre><code class="hljs css language-scala mdoc:silent"><span class="hljs-keyword">import</span> cats.effect.<span class="hljs-type">IO</span>
+<span class="hljs-keyword">import</span> cats.effect.<span class="hljs-type">Resource</span>
+<span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">BracketThrowable</span>
+<span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">Log</span>
+<span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">LogOf</span>
+<span class="hljs-keyword">import</span> com.evolutiongaming.smetrics.<span class="hljs-type">MeasureDuration</span>
+<span class="hljs-keyword">import</span> scala.concurrent.<span class="hljs-type">ExecutionContext</span>
+
+<span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> contextShift = <span class="hljs-type">IO</span>.contextShift(<span class="hljs-type">ExecutionContext</span>.global)
+<span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> timer = <span class="hljs-type">IO</span>.timer(<span class="hljs-type">ExecutionContext</span>.global)
+<span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> bracketThrowable = <span class="hljs-type">BracketThrowable</span>[<span class="hljs-type">IO</span>]
+<span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> measureDuration = <span class="hljs-type">MeasureDuration</span>.empty[<span class="hljs-type">IO</span>]
+<span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> logOf = <span class="hljs-type">LogOf</span>.empty[<span class="hljs-type">IO</span>]
+<span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> log = <span class="hljs-type">Log</span>.empty[<span class="hljs-type">IO</span>]
+</code></pre>
+<h2><a class="anchor" aria-hidden="true" id="kafkaflow"></a><a href="#kafkaflow" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>KafkaFlow</h2>
+<p>To run the Kafka consumption it is enough to call one of the methods on <code>KafkaFlow</code>
+object, i.e. <code>resource</code>, <code>stream</code> or <code>retryOnError</code>.</p>
+<p>The most generic one is <code>stream</code>, which uses provided retry strategy and returns
+the procesed records as <code>Stream</code> from <code>sstream</code> library. It is useful for writing
+the application wide unit tests, as one does not need to accumulate the processed
+records in <code>StateT</code> or <code>Ref</code> to check if these were handled succesfully.</p>
+<p>As one does not need to have such an output and, often, does not want to handle
+<code>Stream</code> from <code>sstream</code> directly, a simpler <code>resource</code> method is provided, which
+returns a <code>Unit</code> instead of stream. <code>retryOnError</code> provides the same functionality,
+but with default retry strategy.</p>
+<p>The typical call of <code>KafkaFlow</code> could look like following:</p>
+<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">ConsumerOf</span>
+<span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">KafkaFlow</span>
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">consumerOf</span></span>: <span class="hljs-type">ConsumerOf</span>[<span class="hljs-type">IO</span>] = ???
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">kafkaFlow</span> </span>= <span class="hljs-type">KafkaFlow</span>.retryOnError(
+  consumer = consumerOf(<span class="hljs-string">"consumer-group-id"</span>),
+  consumerFlowOf = ???
+)
+</code></pre>
+<p>The consumer parameter is a thin wrapper over <code>Consumer</code> coming from <code>skafka</code>
+meant to faciliate the simpler unit tests will less methods to stub. The recommended
+way, currently, is to create such a <code>Consumer</code> is to use <code>consumerOf</code> method from
+<code>KafkaModule</code> helper, which will configure <code>Consumer</code> properly and also proivde
+a <code>KafkaHealthCheck</code> which could be used for application-wide health check.</p>
+<p>If one decides to construct <code>Consumer</code> directly, he or she should be aware that
+<code>autoCommit</code> property must be set to <code>false</code> (most library logic depends on it)
+and <code>autoOffsetReset</code> should be set to an expected value (it is, currently,
+hardcoded to <code>AutoOffsetReset.Earliest</code> in <code>KafkaModule</code>).</p>
+<p>The <code>consumerFlowOf</code> parameter is discussed below.</p>
+<h2><a class="anchor" aria-hidden="true" id="consumerflowof"></a><a href="#consumerflowof" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>ConsumerFlowOf</h2>
+<p><code>ConsumerFlow</code> represents a stateful process which handles everything that happens
+to a single <code>Consumer</code> instance. The only method of the trait is <code>stream</code>, which
+returns the list of the handled records, which could be useful for unit testing.</p>
+<p><code>ConsumerFlowOf</code> provides a default implementation for the specific topic, which
+does required polls and correctly handles partiton assginment and revokation. As
+most of the libray code relies on this behavior, it is recommended to never
+reimplement it, though this is possible (to quickly fix a bug on production?).</p>
+<p>The passed topic should contain a journal in the format of
+<a href="https://github.com/evolution-gaming/kafka-journal">Kafka Journal</a> library.</p>
+<p><code>ConsumerFlowOf</code> provides two implementations. One which uses passed
+collector registry for the metrics and another, which uses precreated
+<code>ConsumerFlowMetrics</code>. The difference is that the later allows having
+several instances of <code>ConsumerFlowOf</code> for different purposes, while
+collector registry variant will fail if initialized twice.</p>
+<p>The typical call of <code>ConsumerFlowOf</code> could look like following:</p>
+<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">ConsumerFlowOf</span>
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">consumerFlowOf</span> </span>= <span class="hljs-type">ConsumerFlowOf</span>.fromRegistry(
+  topic = <span class="hljs-string">"journal.MyApplicationJournal"</span>,
+  topicFlowOf = ???,
+  collectorRegistry = ???
+)
+</code></pre>
+<p>The <code>topicFlowOf</code> parameter is discussed below.</p>
+<h2><a class="anchor" aria-hidden="true" id="topicflowof"></a><a href="#topicflowof" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>TopicFlowOf</h2>
+<p><code>TopicFlow</code> is a stateful handler of the events happening while consuming the
+specific topic, namely partitions being added or removed to consumer or the
+actual record being read while poll is performed.</p>
+<p>The reason of the existence of the trait is to allow to have several topic
+handlers per <code>ConsumerFlow</code>. Note that such scenario is not yet well tested.</p>
+<p><code>TopicFlowOf</code> provides a default implementation which maintains the list of
+partitions and their state in special <code>PartitionFlow</code> objects. It also
+does actual commits if <code>PartitionFlow</code> says such is required.</p>
+<p>The typical call of <code>TopicFlowOf</code> is very simple and there is no additional
+configuration involved:</p>
+<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">TopicFlowOf</span>
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">topicFlowOf</span></span>: <span class="hljs-type">TopicFlowOf</span>[<span class="hljs-type">IO</span>] = <span class="hljs-type">TopicFlowOf</span>(
+  partitionFlowOf = ???
+)
+</code></pre>
+<p>The <code>partitionFlowOf</code> parameter is discussed below.</p>
+<h2><a class="anchor" aria-hidden="true" id="partitionflowof"></a><a href="#partitionflowof" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>PartitionFlowOf</h2>
+<p><code>PartitionFlow</code> is meant to handle the actual records coming to specific
+positions. It is only called if there are such messages (i.e. no calls
+with empty record lists), but could be initialized eagerly.</p>
+<p>After each call <code>PartitionFlow</code> may decide to commit an offset in the
+appropriate partition.</p>
+<p><code>PartitionFlowOf</code> provides two implementations. One which uses passed
+collector registry for the metrics and another, which uses precreated
+<code>PartitionFlowMetrics</code>. The difference is that the later allows having
+several instances of <code>PartitionFlowOf</code> for different purposes, while
+collector registry variant will fail if initialized twice.</p>
+<p>Both variants require <code>applicationId</code> and <code>groupId</code> parameteres passed.
+These parameters are used to enable several applications / consumers
+storing their state into a single database (usually Cassandra).</p>
+<p>The typical call of <code>PartitionFlowOf</code> could look like following:</p>
+<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">PartitionFlowOf</span>
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">partitionFlowOf</span></span>: <span class="hljs-type">Resource</span>[<span class="hljs-type">IO</span>, <span class="hljs-type">PartitionFlowOf</span>[<span class="hljs-type">IO</span>]] =
+  <span class="hljs-type">PartitionFlowOf</span>.fromRegistry(
+    applicationId = <span class="hljs-string">"interesting-journal-reader-writer"</span>,
+    groupId = <span class="hljs-string">"consumer-group-id"</span>,
+    keyStateOf = ???,
+    collectorRegistry = ???
+  )
+</code></pre>
+<p>The default implementation maintains the list of <code>KeyState</code> objects,
+which contains a tuple of <code>KeyFlow</code> and <code>TimerContext</code> objects,
+which are discussed further.</p>
+<p>Besides that, it also responsible for the following functions:</p>
+<ul>
+<li>Sending consumer records to underlying <code>KeyFlow</code> in a thread safe way,</li>
+<li>Trigerring timer events in underlying <code>KeyFlow</code> in a thread safe way,</li>
+<li>Filling timestamps in underlying <code>TimerContext</code> object,</li>
+<li>Reacting to the actions performed by <code>KeyFlow</code> on an appropriate <code>KeyContext</code> object.</li>
+</ul>
+</span></div></article></div><div class="docs-prevnext"></div></div></div><nav class="onPageNav"><ul class="toc-headings"><li><a href="#kafkaflow">KafkaFlow</a></li><li><a href="#consumerflowof">ConsumerFlowOf</a></li><li><a href="#topicflowof">TopicFlowOf</a></li><li><a href="#partitionflowof">PartitionFlowOf</a></li></ul></nav></div><footer class="nav-footer" id="footer"><section class="sitemap"><a href="/kafka-flow/" class="nav-home"><img src="/kafka-flow/img/favicon.ico" alt="Kafka Flow" width="66" height="58"/></a><div><h5>Docs</h5><a href="/kafka-flow/docs/doc1.html">Getting Started (or other categories)</a><a href="/kafka-flow/docs/doc2.html">Guides (or other categories)</a><a href="/kafka-flow/docs/doc3.html">API Reference (or other categories)</a></div><div><h5>Community</h5><a href="/kafka-flow/users">User Showcase</a><a href="https://stackoverflow.com/questions/tagged/" target="_blank" rel="noreferrer noopener">Stack Overflow</a><a href="https://discordapp.com/">Project Chat</a><a href="https://twitter.com/" target="_blank" rel="noreferrer noopener">Twitter</a></div><div><h5>More</h5><a href="/kafka-flow/blog">Blog</a><a href="https://github.com/">GitHub</a><a class="github-button" data-icon="octicon-star" data-count-href="/facebook/docusaurus/stargazers" data-show-count="true" data-count-aria-label="# stargazers on GitHub" aria-label="Star this project on GitHub">Star</a></div></section><a href="https://opensource.facebook.com/" target="_blank" rel="noreferrer noopener" class="fbOpenSource"><img src="/kafka-flow/img/oss_logo.png" alt="Facebook Open Source" width="170" height="45"/></a><section class="copyright">Copyright © 2020 Your Name or Your Company Name</section></footer></div></body></html>
