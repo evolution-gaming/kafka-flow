@@ -10,9 +10,20 @@ scala:
 jdk:
   - openjdk11
 
-script: sbt ++$TRAVIS_SCALA_VERSION clean coverage test
+stages:
+  - name: test
+  - name: release
+    if: (branch = master AND type = push) OR (tag IS present)
 
-after_success: sbt ++$TRAVIS_SCALA_VERSION coverageReport coveralls
+jobs:
+  include:
+    # stage="test" if no stage is specified
+    - env: TEST="test"
+      script: sbt ++$TRAVIS_SCALA_VERSION clean coverage test
+      after_success: sbt ++$TRAVIS_SCALA_VERSION coverageReport coveralls
+    # release runs only if the previous stages passed
+    - stage: release
+      script: sbt docs/docusaurusPublishGhpages
 
 notifications:
   slack:
