@@ -4,6 +4,25 @@ title: Overview
 sidebar_label: Overview
 ---
 
+There is a very nice Akka Persistence implementation called [Kafka Journal](https://github.com/evolution-gaming/kafka-journal).
+
+It allows one to use Kafka as a main storage for the Akka Persistence journals.
+In theory it provides ability to react on produced events with a minimal latency
+and with an amazing scalability without the need to use the classic stream
+processing solutions such as Apache Spark.
+
+The problem is that reading whatever Kafka Journal produced might require some
+knowledge of implementation details. Besides that, it might be hard to organize
+the reliable processing of the incoming events.
+
+While the first problem could be solved by looking into Kafka Journal sources,
+the second is more complicated and might ask for more heavyweight solutions such
+as Apache Flink.
+
+This library solves them both with a very elegant use of Kafka consumer groups
+and optionally pluggable persistence (may be required if infinite journals are
+being processed).
+
 # KafkaFlow library
 
 The library consists of the following main building blocks nested into each other:
