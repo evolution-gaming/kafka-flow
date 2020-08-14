@@ -1,11 +1,16 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.data.{NonEmptyList => Nel}
+import cats.data.NonEmptyList
 import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.consumer.ConsumerRecord
+import com.evolutiongaming.kafka.journal.ConsRecord
 
 
-trait PartitionFlow[F[_], K, V] {
+trait PartitionFlow[F[_]] {
 
-  def apply(consumerRecords: Nel[ConsumerRecord[K, V]]): F[Option[Offset]]
+  /** Returns `Some(offsets)` if it is fine to do commit for `offset` in Kafka.
+    *
+    * Returns `None` if no new commits are required.
+    */
+  def apply(consumerRecords: NonEmptyList[ConsRecord]): F[Option[Offset]]
+
 }

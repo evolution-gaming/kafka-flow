@@ -20,6 +20,9 @@ resolvers ++= Seq(
 libraryDependencies ++= Seq(
   Cats.core,
   Cats.effect,
+  KafkaJournal.cassandra,
+  KafkaJournal.journal,
+  KafkaJournal.persistence,
   `cats-helper`,
   smetrics,
   skafka,
@@ -31,3 +34,4 @@ lazy val root = (project in file("."))
 lazy val docs = (project in file("kafka-flow-docs"))
   .dependsOn(root)
   .enablePlugins(MdocPlugin, DocusaurusPlugin)
+  .settings(scalacOptions -= "-Xfatal-warnings")

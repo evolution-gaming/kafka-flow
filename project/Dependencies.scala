@@ -12,4 +12,12 @@ object Dependencies {
     val core   = "org.typelevel" %% "cats-core"   % version
     val effect = "org.typelevel" %% "cats-effect" % "2.1.4"
   }
+
+  object KafkaJournal {
+    private val version = "0.0.146"
+    val journal     = "com.evolutiongaming" %% "kafka-journal"                    % version
+    val cassandra   = "com.evolutiongaming" %% "kafka-journal-eventual-cassandra" % version
+    val persistence = "com.evolutiongaming" %% "kafka-journal-persistence"        % version
+  }
+
 }
