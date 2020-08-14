@@ -10,6 +10,8 @@ scala:
 jdk:
   - openjdk11
 
+node_js: "12.18.3"
+
 stages:
   - name: test
   - name: release
