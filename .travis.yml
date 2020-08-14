@@ -25,6 +25,7 @@ jobs:
       after_success: sbt ++$TRAVIS_SCALA_VERSION coverageReport coveralls
     # release runs only if the previous stages passed
     - stage: release
+      install: "npm install"
       script: sbt docs/docusaurusPublishGhpages
 
 notifications:
