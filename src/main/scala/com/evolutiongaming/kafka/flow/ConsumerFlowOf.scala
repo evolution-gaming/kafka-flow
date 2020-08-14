@@ -7,6 +7,7 @@ import com.evolutiongaming.skafka.Topic
 import com.evolutiongaming.smetrics.CollectorRegistry
 import com.evolutiongaming.smetrics.MeasureDuration
 
+/** Factory which creates `ConsumerFlow` instances */
 trait ConsumerFlowOf[F[_]] {
 
   def apply(consumer: Consumer[F]): ConsumerFlow[F]
