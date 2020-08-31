@@ -42,7 +42,6 @@ stype of programming. One does not have to use `IO` directly. Actually, the
 main "dog food" application is written in Tagless Final style.
 ```scala mdoc:silent
 import cats.effect.IO
-import cats.effect.Resource
 import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
@@ -148,7 +147,7 @@ def topicFlowOf: TopicFlowOf[IO] = TopicFlowOf(
 ```
 
 It is also possible to use predefined metrics from `kafka-flow-metrics` module
-by using the following syntax one of two implementations. One which uses passed
+by using one of the following methods. One which uses passed
 collector registry for the metrics and another, which uses precreated
 `Metrics[F, TopicFlowOf]`. The difference is that the later allows having
 several instances of `TopicFlowOf` for different purposes, while
@@ -171,26 +170,20 @@ with empty record lists), but could be initialized eagerly.
 After each call `PartitionFlow` may decide to commit an offset in the
 appropriate partition.
 
-`PartitionFlowOf` provides two implementations. One which uses passed
-collector registry for the metrics and another, which uses precreated
-`PartitionFlowMetrics`. The difference is that the later allows having
-several instances of `PartitionFlowOf` for different purposes, while
-collector registry variant will fail if initialized twice.
-
-Both variants require `applicationId` and `groupId` parameteres passed.
-These parameters are used to enable several applications / consumers
-storing their state into a single database (usually Cassandra).
+The default implementation require `applicationId` and `groupId`
+parameteres passed. These parameters are used to enable several
+applications / consumers storing their state into a single
+database (usually Cassandra).
 
 The typical call of `PartitionFlowOf` could look like following:
 ```scala mdoc
 import com.evolutiongaming.kafka.flow.PartitionFlowOf
 
-def partitionFlowOf: Resource[IO, PartitionFlowOf[IO]] =
-  PartitionFlowOf.fromRegistry(
+def partitionFlowOf: PartitionFlowOf[IO] =
+  PartitionFlowOf(
     applicationId = "interesting-journal-reader-writer",
     groupId = "consumer-group-id",
-    keyStateOf = ???,
-    collectorRegistry = ???
+    keyStateOf = ???
   )
 ```
 
@@ -203,3 +196,16 @@ Besides that, it also responsible for the following functions:
 - Trigerring timer events in underlying `KeyFlow` in a thread safe way,
 - Filling timestamps in underlying `TimerContext` object,
 - Reacting to the actions performed by `KeyFlow` on an appropriate `KeyContext` object.
+
+It is also possible to use predefined metrics from `kafka-flow-metrics` module
+by using one of the following methods. One which uses passed
+collector registry for the metrics and another, which uses precreated
+`Metrics[F, PartitionFlowOf]`. The difference is that the later allows having
+several instances of `PartitionFlowOf` for different purposes, while
+collector registry variant will fail if initialized twice:
+```scala mdoc
+import com.evolutiongaming.kafka.flow.PartitionFlowMetrics._
+import com.evolutiongaming.kafka.flow.metrics.syntax._
+
+def paritionFlowOfWithMetrics = partitionFlowOf.withCollectorRegistry(???)
+```
