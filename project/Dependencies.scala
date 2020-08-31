@@ -2,7 +2,7 @@ import sbt._
 
 object Dependencies {
 
-  val munit         = "org.scalameta" %% "munit" % "0.7.11"
+  val munit         = "org.scalameta" %% "munit" % "0.7.12"
 
   val `cats-helper` = "com.evolutiongaming" %% "cats-helper" % "2.1.0"
   val skafka        = "com.evolutiongaming" %% "skafka"      % "11.0.0"
