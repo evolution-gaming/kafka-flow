@@ -37,7 +37,6 @@ lazy val core = (project in file("core"))
       `cats-helper`,
       munit,
       skafka,
-      smetrics,
       sstream
     )
   )
