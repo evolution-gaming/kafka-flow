@@ -112,20 +112,13 @@ reimplement it, though this is possible (to quickly fix a bug on production?).
 The passed topic should contain a journal in the format of
 [Kafka Journal](https://github.com/evolution-gaming/kafka-journal) library.
 
-`ConsumerFlowOf` provides two implementations. One which uses passed
-collector registry for the metrics and another, which uses precreated
-`ConsumerFlowMetrics`. The difference is that the later allows having
-several instances of `ConsumerFlowOf` for different purposes, while
-collector registry variant will fail if initialized twice.
-
 The typical call of `ConsumerFlowOf` could look like following:
 ```scala mdoc
 import com.evolutiongaming.kafka.flow.ConsumerFlowOf
 
-def consumerFlowOf = ConsumerFlowOf.fromRegistry(
+def consumerFlowOf = ConsumerFlowOf(
   topic = "journal.MyApplicationJournal",
-  topicFlowOf = ???,
-  collectorRegistry = ???
+  topicFlowOf = ???
 )
 ```
 
@@ -152,6 +145,19 @@ import com.evolutiongaming.kafka.flow.TopicFlowOf
 def topicFlowOf: TopicFlowOf[IO] = TopicFlowOf(
   partitionFlowOf = ???
 )
+```
+
+It is also possible to use predefined metrics from `kafka-flow-metrics` module
+by using the following syntax one of two implementations. One which uses passed
+collector registry for the metrics and another, which uses precreated
+`Metrics[F, TopicFlowOf]`. The difference is that the later allows having
+several instances of `TopicFlowOf` for different purposes, while
+collector registry variant will fail if initialized twice:
+```scala mdoc
+import com.evolutiongaming.kafka.flow.TopicFlowMetrics._
+import com.evolutiongaming.kafka.flow.metrics.syntax._
+
+def topicFlowOfWithMetrics = topicFlowOf.withCollectorRegistry(???)
 ```
 
 The `partitionFlowOf` parameter is discussed below.

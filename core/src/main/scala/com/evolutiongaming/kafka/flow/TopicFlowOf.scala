@@ -8,7 +8,7 @@ import com.evolutiongaming.skafka.Topic
 
 trait TopicFlowOf[F[_]] {
 
-  def apply(topic: Topic): Resource[F, TopicFlow[F]]
+  def apply(consumer: Consumer[F], topic: Topic): Resource[F, TopicFlow[F]]
 
 }
 object TopicFlowOf {

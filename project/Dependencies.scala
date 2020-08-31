@@ -2,10 +2,12 @@ import sbt._
 
 object Dependencies {
 
-  val scalatest     = "org.scalatest"       %% "scalatest"   % "3.2.1"
-  val `cats-helper` = "com.evolutiongaming" %% "cats-helper" % "2.0.4"
+  val munit         = "org.scalameta" %% "munit" % "0.7.11"
+
+  val `cats-helper` = "com.evolutiongaming" %% "cats-helper" % "2.1.0"
+  val skafka        = "com.evolutiongaming" %% "skafka"      % "11.0.0"
   val smetrics      = "com.evolutiongaming" %% "smetrics"    % "0.1.2"
-  val skafka        = "com.evolutiongaming" %% "skafka"      % "10.0.0"
+  val sstream       = "com.evolutiongaming" %% "sstream"     % "0.2.1"
 
   object Cats {
     private val version = "2.0.0"
