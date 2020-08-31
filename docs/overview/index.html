@@ -85,7 +85,6 @@ Saying that, the library is written and prepared for, so called, Tagless Final
 stype of programming. One does not have to use <code>IO</code> directly. Actually, the
 main &quot;dog food&quot; application is written in Tagless Final style.</p>
 <pre><code class="hljs css language-scala mdoc:silent"><span class="hljs-keyword">import</span> cats.effect.<span class="hljs-type">IO</span>
-<span class="hljs-keyword">import</span> cats.effect.<span class="hljs-type">Resource</span>
 <span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">BracketThrowable</span>
 <span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">Log</span>
 <span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">LogOf</span>
@@ -168,7 +167,7 @@ configuration involved:</p>
 )
 </code></pre>
 <p>It is also possible to use predefined metrics from <code>kafka-flow-metrics</code> module
-by using the following syntax one of two implementations. One which uses passed
+by using one of the following methods. One which uses passed
 collector registry for the metrics and another, which uses precreated
 <code>Metrics[F, TopicFlowOf]</code>. The difference is that the later allows having
 several instances of <code>TopicFlowOf</code> for different purposes, while
@@ -185,23 +184,18 @@ positions. It is only called if there are such messages (i.e. no calls
 with empty record lists), but could be initialized eagerly.</p>
 <p>After each call <code>PartitionFlow</code> may decide to commit an offset in the
 appropriate partition.</p>
-<p><code>PartitionFlowOf</code> provides two implementations. One which uses passed
-collector registry for the metrics and another, which uses precreated
-<code>PartitionFlowMetrics</code>. The difference is that the later allows having
-several instances of <code>PartitionFlowOf</code> for different purposes, while
-collector registry variant will fail if initialized twice.</p>
-<p>Both variants require <code>applicationId</code> and <code>groupId</code> parameteres passed.
-These parameters are used to enable several applications / consumers
-storing their state into a single database (usually Cassandra).</p>
+<p>The default implementation require <code>applicationId</code> and <code>groupId</code>
+parameteres passed. These parameters are used to enable several
+applications / consumers storing their state into a single
+database (usually Cassandra).</p>
 <p>The typical call of <code>PartitionFlowOf</code> could look like following:</p>
 <pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">PartitionFlowOf</span>
 
-<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">partitionFlowOf</span></span>: <span class="hljs-type">Resource</span>[<span class="hljs-type">IO</span>, <span class="hljs-type">PartitionFlowOf</span>[<span class="hljs-type">IO</span>]] =
-  <span class="hljs-type">PartitionFlowOf</span>.fromRegistry(
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">partitionFlowOf</span></span>: <span class="hljs-type">PartitionFlowOf</span>[<span class="hljs-type">IO</span>] =
+  <span class="hljs-type">PartitionFlowOf</span>(
     applicationId = <span class="hljs-string">"interesting-journal-reader-writer"</span>,
     groupId = <span class="hljs-string">"consumer-group-id"</span>,
-    keyStateOf = ???,
-    collectorRegistry = ???
+    keyStateOf = ???
   )
 </code></pre>
 <p>The default implementation maintains the list of <code>KeyState</code> objects,
@@ -214,4 +208,15 @@ which are discussed further.</p>
 <li>Filling timestamps in underlying <code>TimerContext</code> object,</li>
 <li>Reacting to the actions performed by <code>KeyFlow</code> on an appropriate <code>KeyContext</code> object.</li>
 </ul>
+<p>It is also possible to use predefined metrics from <code>kafka-flow-metrics</code> module
+by using one of the following methods. One which uses passed
+collector registry for the metrics and another, which uses precreated
+<code>Metrics[F, PartitionFlowOf]</code>. The difference is that the later allows having
+several instances of <code>PartitionFlowOf</code> for different purposes, while
+collector registry variant will fail if initialized twice:</p>
+<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">PartitionFlowMetrics</span>._
+<span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.metrics.syntax._
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">paritionFlowOfWithMetrics</span> </span>= partitionFlowOf.withCollectorRegistry(???)
+</code></pre>
 </span></div></article></div><div class="docs-prevnext"><a class="docs-next button" href="/kafka-flow/docs/styleguide"><span>Style Guide</span><span class="arrow-next"> →</span></a></div></div></div><nav class="onPageNav"><ul class="toc-headings"><li><a href="#kafkaflow">KafkaFlow</a></li><li><a href="#consumerflowof">ConsumerFlowOf</a></li><li><a href="#topicflowof">TopicFlowOf</a></li><li><a href="#partitionflowof">PartitionFlowOf</a></li></ul></nav></div><footer class="nav-footer" id="footer"><section class="sitemap"><a href="/kafka-flow/" class="nav-home"><img src="/kafka-flow/img/favicon.ico" alt="Kafka Flow" width="66" height="58"/></a><div><h5>Docs</h5><a href="/kafka-flow/docs/overview.html">Overview</a></div><div><h5>Community</h5><a href="https://twitter.com/evoneering" target="_blank" rel="noreferrer noopener">Twitter</a></div><div><h5>More</h5><a href="https://github.com/">GitHub</a><a class="github-button" href="https://github.com/evolution-gaming/kafka-flow" data-icon="octicon-star" data-count-href="/facebook/docusaurus/stargazers" data-show-count="true" data-count-aria-label="# stargazers on GitHub" aria-label="Star this project on GitHub">Star</a></div></section><section class="copyright">Copyright © 2020 Evolution Gaming</section></footer></div></body></html>
