@@ -11,12 +11,11 @@ lazy val commonSettings = Seq(
   crossScalaVersions := Seq(/*"2.13.0", */"2.12.12"),
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   releaseCrossBuild := true,
-  testFrameworks += new TestFramework("munit.Framework")
-)
-
-resolvers ++= Seq(
-  Resolver.bintrayRepo("evolutiongaming", "maven"),
-  Resolver.sonatypeRepo("public")
+  testFrameworks += new TestFramework("munit.Framework"),
+  resolvers ++= Seq(
+    Resolver.bintrayRepo("evolutiongaming", "maven"),
+    Resolver.sonatypeRepo("public")
+  )
 )
 
 lazy val root = (project in file("."))
