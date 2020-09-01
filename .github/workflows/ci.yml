@@ -14,19 +14,19 @@ jobs:
           - 2.12.10
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
 
-    - uses: actions/cache@v1
+    - uses: actions/cache@v2
       with:
         path: ~/.cache/coursier/v1
         key: ${{ runner.os }}-coursier-${{ hashFiles('**/build.sbt') }}
 
-    - uses: actions/cache@v1
+    - uses: actions/cache@v2
       with:
         path: ~/.sbt
         key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.properties') }}
 
-    - uses: olafurpg/setup-scala@v5
+    - uses: olafurpg/setup-scala@v7
       with:
         java-version: openjdk@1.11
 
@@ -39,11 +39,44 @@ jobs:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
       run: sbt ++${{ matrix.scala }} coverageReport coverageAggregate coveralls
 
-    - name: Publish documentation
+    - name: Publish documentation / Run mdoc
       if: success() && matrix.scala == '2.13.3'
-      run: sbt docs/docusaurusPublishGhpages
-      env:
-        GITHUB_DEPLOY_KEY: ${{ secrets.GITHUB_DEPLOY_KEY }}
+      run: sbt docs/mdoc
+
+    - name: Publish documentation / Setup Node
+      if: success() && matrix.scala == '2.13.3'
+      uses: actions/setup-node@v2.1.0
+      with:
+        node-version: '12.x'
+
+    - name: Publish documentation / Get yarn cache
+      if: success() && matrix.scala == '2.13.3'
+      id: yarn-cache
+      run: echo "::set-output name=dir::$(yarn cache dir)"
+
+    - name: Publish documentation / Cache dependencies
+      if: success() && matrix.scala == '2.13.3'
+      uses: actions/cache@v2
+        with:
+          path: ${{ steps.yarn-cache.outputs.dir }}
+          key: ${{ runner.os }}-website-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-website-
+
+    - name: Publish documentation / Install dependencies
+      if: success() && matrix.scala == '2.13.3'
+      run: yarn install --frozen-lockfile
+
+    - name: Publish documentation / Build site
+      if: success() && matrix.scala == '2.13.3'
+      run: yarn build
+
+    - name: Publish documentation / Deploy
+      if: success() && matrix.scala == '2.13.3'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./website/build
 
     - name: Slack Notification
       uses: homoluctus/slatify@master
