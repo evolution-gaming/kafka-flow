@@ -24,7 +24,7 @@ const siteConfig = {
   title: 'Kafka Flow', // Title for your website.
   tagline: 'Reliable processing of Kafka Journal events',
   url: 'https://evolution-gaming.github.io', // Your website URL
-  baseUrl: '/', // Base URL for your project */
+  baseUrl: '/kafka-flow/', // Base URL for your project */
   // For github.io type URLs, you would set the url and baseUrl like:
   //   url: 'https://facebook.github.io',
   //   baseUrl: '/test-site/',
