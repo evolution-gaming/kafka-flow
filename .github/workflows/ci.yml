@@ -65,7 +65,13 @@ jobs:
 
     - name: Publish documentation / Install dependencies
       if: success() && matrix.scala == '2.13.3'
-      run: docs/docusaurusCreateSite
+      working-directory: ./website
+      run: yarn install --frozen-lockfile
+
+    - name: Publish documentation / Build site
+      if: success() && matrix.scala == '2.13.3'
+      working-directory: ./website
+      run: yarn build
 
     - name: Publish documentation / Deploy
       if: success() && matrix.scala == '2.13.3'
