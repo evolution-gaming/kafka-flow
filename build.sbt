@@ -34,7 +34,9 @@ lazy val core = (project in file("core"))
       KafkaJournal.journal,
       KafkaJournal.persistence,
       MeowMtl.effects,
-      `cats-helper`,
+      Monocle.`macro` % Test,
+      Monocle.core % Test,
+      catsHelper,
       munit,
       skafka,
       sstream

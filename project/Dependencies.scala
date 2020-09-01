@@ -2,9 +2,9 @@ import sbt._
 
 object Dependencies {
 
-  val munit         = "org.scalameta" %% "munit" % "0.7.11"
+  val munit         = "org.scalameta" %% "munit" % "0.7.12"
 
-  val `cats-helper` = "com.evolutiongaming" %% "cats-helper" % "2.1.0"
+  val catsHelper    = "com.evolutiongaming" %% "cats-helper" % "2.1.0"
   val skafka        = "com.evolutiongaming" %% "skafka"      % "11.0.0"
   val smetrics      = "com.evolutiongaming" %% "smetrics"    % "0.1.2"
   val sstream       = "com.evolutiongaming" %% "sstream"     % "0.2.1"
@@ -26,6 +26,12 @@ object Dependencies {
     private val version = "0.4.1"
     val core    = "com.olegpy" %% "meow-mtl-core"    % version
     val effects = "com.olegpy" %% "meow-mtl-effects" % version
+  }
+
+  object Monocle {
+    private val version = "2.0.5"
+    val core    = "com.github.julien-truffaut" %% "monocle-core"  % version
+    val `macro` = "com.github.julien-truffaut" %% "monocle-macro" % version
   }
 
 }
