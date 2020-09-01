@@ -65,7 +65,7 @@ jobs:
 
     - name: Publish documentation / Install dependencies
       if: success() && matrix.scala == '2.13.3'
-      run: sbt docs/docusaurusCreateSite
+      run: docs/docusaurusCreateSite
 
     - name: Publish documentation / Deploy
       if: success() && matrix.scala == '2.13.3'
