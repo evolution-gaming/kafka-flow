@@ -110,8 +110,8 @@ records in <code>StateT</code> or <code>Ref</code> to check if these were handle
 returns a <code>Unit</code> instead of stream. <code>retryOnError</code> provides the same functionality,
 but with default retry strategy.</p>
 <p>The typical call of <code>KafkaFlow</code> could look like following:</p>
-<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">ConsumerOf</span>
-<span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">KafkaFlow</span>
+<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">KafkaFlow</span>
+<span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.consumer.<span class="hljs-type">ConsumerOf</span>
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">consumerOf</span></span>: <span class="hljs-type">ConsumerOf</span>[<span class="hljs-type">IO</span>] = ???
 
