@@ -39,6 +39,10 @@ jobs:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
       run: sbt ++${{ matrix.scala }} coverageReport coverageAggregate coveralls
 
+    - name: Publish documentation
+      if: success() && ${{ matrix.scala }} == '2.13.3'
+      run: sbt docs/docusaurusPublishGhpages
+
     - name: Slack Notification
       uses: homoluctus/slatify@master
       if: failure() && github.ref == 'refs/heads/master'
