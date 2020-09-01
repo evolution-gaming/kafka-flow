@@ -4,7 +4,7 @@ import cats.Monad
 import cats.effect.Clock
 import cats.implicits._
 import com.evolutiongaming.catshelper.ClockHelper._
-import com.evolutiongaming.kafka.flow.kafka.KafkaKey
+import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.kafka.journal.eventual.cassandra.SegmentNr
 import com.evolutiongaming.kafka.journal.eventual.cassandra.Segments

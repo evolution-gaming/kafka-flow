@@ -6,7 +6,7 @@ import cats.implicits._
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.MonadThrowable
-import com.evolutiongaming.kafka.flow.kafka.KafkaKey
+import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.kafka.journal.util.Fail
 import com.evolutiongaming.smetrics.MeasureDuration

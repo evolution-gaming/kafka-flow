@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.timer
 
 import cats.implicits._
 import com.evolutiongaming.catshelper.MonadThrowable
-import com.evolutiongaming.kafka.flow.kafka.KafkaKey
+import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.scassandra.DecodeRow

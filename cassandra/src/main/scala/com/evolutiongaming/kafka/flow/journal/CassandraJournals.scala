@@ -6,7 +6,7 @@ import com.datastax.driver.core.Row
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
-import com.evolutiongaming.kafka.flow.kafka.KafkaKey
+import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.journal.FromAttempt
 import com.evolutiongaming.kafka.journal.conversions.HeaderToTuple
 import com.evolutiongaming.kafka.journal.conversions.TupleToHeader

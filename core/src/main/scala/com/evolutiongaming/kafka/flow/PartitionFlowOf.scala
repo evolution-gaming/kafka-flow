@@ -19,10 +19,18 @@ trait PartitionFlowOf[F[_]] {
 object PartitionFlowOf {
 
   /** Creates `PartitionFlowOf` for specific application */
-  def apply[F[_]: Concurrent: Timer: Parallel: MeasureDuration: LogOf, K, S](
+  def apply[F[_]: Concurrent: Timer: Parallel: MeasureDuration: LogOf, S](
     applicationId: String,
     groupId: String,
-    keyStateOf: KeyStateOf[F, K, ConsRecord]
-  ): PartitionFlowOf[F] = ???
+    keyStateOf: KeyStateOf[F, KafkaKey, ConsRecord]
+  ): PartitionFlowOf[F] = { (topicPartition, assignedAt) =>
+    PartitionFlow.resource(
+      topicPartition = topicPartition,
+      assignedAt = assignedAt,
+      keyStateOf = keyStateOf.imap(_.key) { key =>
+        KafkaKey(applicationId, groupId, topicPartition, key)
+      }
+    )
+  }
 
 }

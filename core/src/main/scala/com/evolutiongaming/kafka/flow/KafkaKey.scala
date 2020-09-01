@@ -1,4 +1,4 @@
-package com.evolutiongaming.kafka.flow.kafka
+package com.evolutiongaming.kafka.flow
 
 import com.evolutiongaming.skafka.TopicPartition
 
