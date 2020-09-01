@@ -39,6 +39,10 @@ jobs:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
       run: sbt ++${{ matrix.scala }} coverageReport coverageAggregate coveralls
 
+    - name: Publish documentation / Run mdoc
+      if: success() && matrix.scala == '2.13.3'
+      run: sbt docs/mdoc
+
     - name: Publish documentation / Setup Node
       if: success() && matrix.scala == '2.13.3'
       uses: actions/setup-node@v2.1.0
