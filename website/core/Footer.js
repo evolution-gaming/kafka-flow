@@ -31,9 +31,9 @@ class Footer extends React.Component {
           </a>
           <div>
             <h5>Docs</h5>
-            <a href={this.docUrl('overview.html')}>
-              Overview
-            </a>
+            <a href={this.docUrl('overview.html')}>Overview</a>
+            <a href={this.docUrl('setup.html')}>Setup</a>
+            <a href="https://github.com/evolution-gaming/kafka-flow">Sources</a>
           </div>
           <div>
             <h5>Community</h5>

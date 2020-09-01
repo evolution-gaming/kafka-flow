@@ -65,6 +65,8 @@ class HomeSplash extends React.Component {
           <ProjectTitle tagline={siteConfig.tagline} title={siteConfig.title} />
           <PromoSection>
             <Button href={docUrl('overview.html')}>Overview</Button>
+            <Button href={docUrl('setup.html')}>Setup</Button>
+            <Button href="https://github.com/evolution-gaming/kafka-flow">Sources</Button>
           </PromoSection>
         </div>
       </SplashContainer>

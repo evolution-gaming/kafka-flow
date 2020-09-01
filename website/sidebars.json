@@ -1,5 +1,5 @@
 {
   "docs": {
-    "Kafka-Flow": ["overview", "styleguide"]
+    "Kafka-Flow": ["overview", "setup", "styleguide"]
   }
 }
