@@ -14,6 +14,7 @@ import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.retry.Strategy
 import com.evolutiongaming.sstream.Stream
 import scala.concurrent.duration._
+import consumer.Consumer
 
 object KafkaFlow {
 

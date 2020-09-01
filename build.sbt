@@ -33,6 +33,7 @@ lazy val core = (project in file("core"))
       KafkaJournal.cassandra,
       KafkaJournal.journal,
       KafkaJournal.persistence,
+      MeowMtl.effects,
       `cats-helper`,
       munit,
       skafka,

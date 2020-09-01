@@ -1,9 +1,14 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.Resource
-import com.evolutiongaming.skafka.{Offset, TopicPartition}
+import persistence.Persistence
+import timer.TimerContext
 
-trait KeyFlowOf[F[_], K, V] {
+trait KeyFlowOf[F[_], S, A] {
 
-  def apply(topicPartition: TopicPartition, offset: Offset, key: Option[K]): Resource[F, KeyFlow[F, K, V]]
+  def apply(
+    context: KeyContext[F],
+    persistence: Persistence[F, S, A],
+    timers: TimerContext[F]
+  ): F[KeyFlow[F, A]]
+
 }

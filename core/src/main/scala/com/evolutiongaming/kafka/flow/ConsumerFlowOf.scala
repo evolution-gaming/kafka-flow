@@ -12,6 +12,7 @@ import com.evolutiongaming.skafka.consumer.RebalanceListener
 import com.evolutiongaming.sstream.Stream
 import scala.collection.immutable.SortedSet
 import scala.concurrent.duration._
+import consumer.Consumer
 
 /** Factory which creates `ConsumerFlow` instances */
 trait ConsumerFlowOf[F[_]] {

@@ -25,6 +25,7 @@ project/plugins/project/
 .bloop
 .history
 .metals
+settings.json
 metals.sbt
 
 # Docusaurus

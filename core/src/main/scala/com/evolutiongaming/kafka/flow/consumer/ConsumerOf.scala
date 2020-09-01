@@ -1,4 +1,4 @@
-package com.evolutiongaming.kafka.flow
+package com.evolutiongaming.kafka.flow.consumer
 
 import cats.effect.Resource
 

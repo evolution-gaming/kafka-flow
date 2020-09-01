@@ -73,8 +73,8 @@ but with default retry strategy.
 
 The typical call of `KafkaFlow` could look like following:
 ```scala mdoc
-import com.evolutiongaming.kafka.flow.ConsumerOf
 import com.evolutiongaming.kafka.flow.KafkaFlow
+import com.evolutiongaming.kafka.flow.consumer.ConsumerOf
 
 def consumerOf: ConsumerOf[IO] = ???
 

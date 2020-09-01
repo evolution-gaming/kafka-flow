@@ -22,12 +22,12 @@ object PartitionFlowMetrics {
       help = "Time required to apply a batch coming to partition flow",
       quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
       labels = LabelNames("topic", "partition")
-    ) map { foldSummary => partitionFlow =>
+    ) map { flowSummary => partitionFlow =>
       new PartitionFlow[F] {
         def apply(consumerRecords: NonEmptyList[ConsRecord]) = {
           val topicPartition = consumerRecords.head.topicPartition
           partitionFlow(consumerRecords) measureDuration { duration =>
-            foldSummary
+            flowSummary
             .labels(topicPartition.topic, topicPartition.partition.show)
             .observe(duration.toNanos.nanosToSeconds)
           }

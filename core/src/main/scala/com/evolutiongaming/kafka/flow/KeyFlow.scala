@@ -1,15 +1,19 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.data.{NonEmptyList => Nel}
-import com.evolutiongaming.skafka.consumer.ConsumerRecord
+import cats.data.NonEmptyList
+import timer.TimerFlow
 
-trait KeyFlow[F[_], K, V] {
-  import KeyFlow.Done
-
-  def apply(records: Nel[ConsumerRecord[K, V]]): F[Done]
-}
+trait KeyFlow[F[_], E] extends RecordFlow[F, E] with TimerFlow[F]
 
 object KeyFlow {
 
-  type Done = Boolean
+  /** Create buffered flow from RecordFlow and TimerFlow */
+  def apply[F[_], E](
+    recordFlow: RecordFlow[F, E],
+    timerFlow: TimerFlow[F]
+  ): KeyFlow[F, E] = new KeyFlow[F, E] {
+    def apply(records: NonEmptyList[E]) = recordFlow(records)
+    def onTimer = timerFlow.onTimer
+  }
+
 }

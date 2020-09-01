@@ -22,4 +22,10 @@ object Dependencies {
     val persistence = "com.evolutiongaming" %% "kafka-journal-persistence"        % version
   }
 
+  object MeowMtl {
+    private val version = "0.4.1"
+    val core    = "com.olegpy" %% "meow-mtl-core"    % version
+    val effects = "com.olegpy" %% "meow-mtl-effects" % version
+  }
+
 }
