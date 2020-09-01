@@ -1,0 +1,69 @@
+<!DOCTYPE html><html lang="en"><head><meta charSet="utf-8"/><meta http-equiv="X-UA-Compatible" content="IE=edge"/><title>Setup · Kafka Flow</title><meta name="viewport" content="width=device-width"/><meta name="generator" content="Docusaurus"/><meta name="description" content="To use Kafka Flow in your project, add the following lines to our `build.sbt`"/><meta name="docsearch:language" content="en"/><meta property="og:title" content="Setup · Kafka Flow"/><meta property="og:type" content="website"/><meta property="og:url" content="https://evolution-gaming.github.io/kafka-flow/"/><meta property="og:description" content="To use Kafka Flow in your project, add the following lines to our `build.sbt`"/><meta property="og:image" content="https://evolution-gaming.github.io/kafka-flow/img/undraw_online.svg"/><meta name="twitter:card" content="summary"/><meta name="twitter:image" content="https://evolution-gaming.github.io/kafka-flow/img/undraw_tweetstorm.svg"/><link rel="shortcut icon" href="/kafka-flow/img/favicon.ico"/><link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/default.min.css"/><script type="text/javascript" src="https://buttons.github.io/buttons.js"></script><script src="/kafka-flow/js/scrollSpy.js"></script><link rel="stylesheet" href="/kafka-flow/css/main.css"/><script src="/kafka-flow/js/codetabs.js"></script></head><body class="sideNavVisible separateOnPageNav"><div class="fixedHeaderContainer"><div class="headerWrapper wrapper"><header><a href="/kafka-flow/"><img class="logo" src="/kafka-flow/img/favicon.ico" alt="Kafka Flow"/><h2 class="headerTitleWithLogo">Kafka Flow</h2></a><div class="navigationWrapper navigationSlider"><nav class="slidingNav"><ul class="nav-site nav-site-internal"><li class="siteNavGroupActive"><a href="/kafka-flow/docs/overview" target="_self">Overview</a></li><li class="siteNavGroupActive siteNavItemActive"><a href="/kafka-flow/docs/setup" target="_self">Setup</a></li><li class=""><a href="/kafka-flow/help" target="_self">Help</a></li></ul></nav></div></header></div></div><div class="navPusher"><div class="docMainWrapper wrapper"><div class="docsNavContainer" id="docsNav"><nav class="toc"><div class="toggleNav"><section class="navWrapper wrapper"><div class="navBreadcrumb wrapper"><div class="navToggle" id="navToggler"><div class="hamburger-menu"><div class="line1"></div><div class="line2"></div><div class="line3"></div></div></div><h2><i>›</i><span>Kafka-Flow</span></h2><div class="tocToggler" id="tocToggler"><i class="icon-toc"></i></div></div><div class="navGroups"><div class="navGroup"><h3 class="navGroupCategoryTitle">Kafka-Flow</h3><ul class=""><li class="navListItem"><a class="navItem" href="/kafka-flow/docs/overview">Overview</a></li><li class="navListItem navListItemActive"><a class="navItem" href="/kafka-flow/docs/setup">Setup</a></li><li class="navListItem"><a class="navItem" href="/kafka-flow/docs/styleguide">Style Guide</a></li></ul></div></div></section></div><script>
+            var coll = document.getElementsByClassName('collapsible');
+            var checkActiveCategory = true;
+            for (var i = 0; i < coll.length; i++) {
+              var links = coll[i].nextElementSibling.getElementsByTagName('*');
+              if (checkActiveCategory){
+                for (var j = 0; j < links.length; j++) {
+                  if (links[j].classList.contains('navListItemActive')){
+                    coll[i].nextElementSibling.classList.toggle('hide');
+                    coll[i].childNodes[1].classList.toggle('rotate');
+                    checkActiveCategory = false;
+                    break;
+                  }
+                }
+              }
+
+              coll[i].addEventListener('click', function() {
+                var arrow = this.childNodes[1];
+                arrow.classList.toggle('rotate');
+                var content = this.nextElementSibling;
+                content.classList.toggle('hide');
+              });
+            }
+
+            document.addEventListener('DOMContentLoaded', function() {
+              createToggler('#navToggler', '#docsNav', 'docsSliderActive');
+              createToggler('#tocToggler', 'body', 'tocActive');
+
+              var headings = document.querySelector('.toc-headings');
+              headings && headings.addEventListener('click', function(event) {
+                var el = event.target;
+                while(el !== headings){
+                  if (el.tagName === 'A') {
+                    document.body.classList.remove('tocActive');
+                    break;
+                  } else{
+                    el = el.parentNode;
+                  }
+                }
+              }, false);
+
+              function createToggler(togglerSelector, targetSelector, className) {
+                var toggler = document.querySelector(togglerSelector);
+                var target = document.querySelector(targetSelector);
+
+                if (!toggler) {
+                  return;
+                }
+
+                toggler.onclick = function(event) {
+                  event.preventDefault();
+
+                  target.classList.toggle(className);
+                };
+              }
+            });
+        </script></nav></div><div class="container mainContainer docsContainer"><div class="wrapper"><div class="post"><header class="postHeader"><h1 id="__docusaurus" class="postHeaderTitle">Setup</h1></header><article><div><span><p>To use Kafka Flow in your project, add the following lines to our <code>build.sbt</code>
+file.</p>
+<pre><code class="hljs css language-scala">resolvers += <span class="hljs-type">Resolver</span>.bintrayRepo(<span class="hljs-string">"evolutiongaming"</span>, <span class="hljs-string">"maven"</span>)
+
+libraryDependencies ++= <span class="hljs-type">Seq</span>(
+  <span class="hljs-string">"com.evolutiongaming"</span> %% <span class="hljs-string">"kafka-flow"</span> % <span class="hljs-string">"0.0.1"</span>,
+  <span class="hljs-comment">// if you want to use Cassandra for storing persistent state</span>
+  <span class="hljs-string">"com.evolutiongaming"</span> %% <span class="hljs-string">"kafka-flow-cassandra"</span> % <span class="hljs-string">"0.0.1"</span>,
+  <span class="hljs-comment">// if you want to use predefined metrics</span>
+  <span class="hljs-string">"com.evolutiongaming"</span> %% <span class="hljs-string">"kafka-flow-metrics"</span> % <span class="hljs-string">"0.0.1"</span>
+)
+</code></pre>
+</span></div></article></div><div class="docs-prevnext"><a class="docs-prev button" href="/kafka-flow/docs/overview"><span class="arrow-prev">← </span><span>Overview</span></a><a class="docs-next button" href="/kafka-flow/docs/styleguide"><span>Style Guide</span><span class="arrow-next"> →</span></a></div></div></div><nav class="onPageNav"></nav></div><footer class="nav-footer" id="footer"><section class="sitemap"><a href="/kafka-flow/" class="nav-home"><img src="/kafka-flow/img/favicon.ico" alt="Kafka Flow" width="66" height="58"/></a><div><h5>Docs</h5><a href="/kafka-flow/docs/overview.html">Overview</a><a href="/kafka-flow/docs/setup.html">Setup</a><a href="https://github.com/evolution-gaming/kafka-flow">Sources</a></div><div><h5>Community</h5><a href="https://twitter.com/evoneering" target="_blank" rel="noreferrer noopener">Twitter</a></div><div><h5>More</h5><a href="https://github.com/evolution-gaming/kafka-flow">GitHub</a><a class="github-button" href="https://github.com/evolution-gaming/kafka-flow" data-icon="octicon-star" data-count-href="/facebook/docusaurus/stargazers" data-show-count="true" data-count-aria-label="# stargazers on GitHub" aria-label="Star this project on GitHub">Star</a></div></section><section class="copyright">Copyright © 2020 Evolution Gaming</section></footer></div></body></html>
