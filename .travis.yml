@@ -20,7 +20,7 @@ jobs:
     # stage="test" if no stage is specified
     - env: TEST="test"
       script: sbt ++$TRAVIS_SCALA_VERSION clean coverage test
-      after_success: sbt ++$TRAVIS_SCALA_VERSION coverageReport coveralls
+      after_success: sbt ++$TRAVIS_SCALA_VERSION coverageReport coverageAggregate coveralls
     # release runs only if the previous stages passed
     - stage: release
       install:
