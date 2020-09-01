@@ -40,8 +40,10 @@ jobs:
       run: sbt ++${{ matrix.scala }} coverageReport coverageAggregate coveralls
 
     - name: Publish documentation
-      if: success() && ${{ matrix.scala }} == '2.13.3'
+      if: success() && matrix.scala == '2.13.3'
       run: sbt docs/docusaurusPublishGhpages
+      env:
+        GITHUB_DEPLOY_KEY: ${{ secrets.GITHUB_DEPLOY_KEY }}
 
     - name: Slack Notification
       uses: homoluctus/slatify@master
