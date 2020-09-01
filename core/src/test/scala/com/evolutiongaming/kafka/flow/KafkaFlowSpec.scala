@@ -12,7 +12,11 @@ import com.evolutiongaming.catshelper.TimerHelper._
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.retry.{OnError, Retry, Strategy}
-import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.Offset
+import com.evolutiongaming.skafka.OffsetAndMetadata
+import com.evolutiongaming.skafka.Partition
+import com.evolutiongaming.skafka.Topic
+import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, RebalanceListener, WithSize}
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
