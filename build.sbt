@@ -19,7 +19,7 @@ lazy val commonSettings = Seq(
 )
 
 lazy val root = (project in file("."))
-  .aggregate(core, metrics)
+  .aggregate(core, cassandra, metrics)
   .settings(commonSettings)
   .settings(publish / skip := true)
 
@@ -30,7 +30,6 @@ lazy val core = (project in file("core"))
     libraryDependencies ++= Seq(
       Cats.core,
       Cats.effect,
-      KafkaJournal.cassandra,
       KafkaJournal.journal,
       KafkaJournal.persistence,
       MeowMtl.effects,
@@ -48,16 +47,19 @@ lazy val metrics = (project in file("metrics"))
   .settings(commonSettings)
   .settings(
     name := "kafka-flow-metrics",
-    libraryDependencies ++= Seq(
-      Cats.core,
-      Cats.effect,
-      smetrics,
-      sstream
-    )
+    libraryDependencies += smetrics
+  )
+
+lazy val cassandra = (project in file("cassandra"))
+  .dependsOn(core)
+  .settings(commonSettings)
+  .settings(
+    name := "kafka-flow-cassandra",
+    libraryDependencies += KafkaJournal.cassandra
   )
 
 lazy val docs = (project in file("kafka-flow-docs"))
-  .dependsOn(core, metrics)
+  .dependsOn(core, cassandra, metrics)
   .settings(commonSettings)
   .enablePlugins(MdocPlugin, DocusaurusPlugin)
   .settings(scalacOptions -= "-Xfatal-warnings")
