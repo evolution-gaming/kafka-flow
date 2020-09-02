@@ -23,6 +23,11 @@ This library solves them both with a very elegant use of Kafka consumer groups
 and optionally pluggable persistence (may be required if infinite journals are
 being processed).
 
+The current version of the library is tighlty coupled with Kafka Journal and
+requires it as dependency. There is a plan to separate the integration with
+Kafka Journal to a distinct module to allow reusing reliable Kafka message
+processing without having Kafka Journal dependency.
+
 # KafkaFlow library
 
 The library consists of the following main building blocks nested into each other:
@@ -86,7 +91,7 @@ def kafkaFlow = KafkaFlow.retryOnError(
 
 The consumer parameter is a thin wrapper over `Consumer` coming from `skafka`
 meant to faciliate the simpler unit tests will less methods to stub. The recommended
-way, currently, is to create such a `Consumer` is to use `consumerOf` method from
+way, currently, to create such a `Consumer` is to use `consumerOf` method from
 `KafkaModule` helper, which will configure `Consumer` properly and also proivde
 a `KafkaHealthCheck` which could be used for application-wide health check.
 
@@ -104,7 +109,7 @@ to a single `Consumer` instance. The only method of the trait is `stream`, which
 returns the list of the handled records, which could be useful for unit testing.
 
 `ConsumerFlowOf` provides a default implementation for the specific topic, which
-does required polls and correctly handles partiton assginment and revokation. As
+does required polls and correctly handles partiton assginment and revocation. As
 most of the libray code relies on this behavior, it is recommended to never
 reimplement it, though this is possible (to quickly fix a bug on production?).
 
@@ -146,10 +151,15 @@ def topicFlowOf: TopicFlowOf[IO] = TopicFlowOf(
 )
 ```
 
-It is also possible to use predefined metrics from `kafka-flow-metrics` module
-by using one of the following methods. One which uses passed
-collector registry for the metrics and another, which uses precreated
-`Metrics[F, TopicFlowOf]`. The difference is that the later allows having
+The `partitionFlowOf` parameter is discussed further in this document.
+
+### Metrics
+
+It is possible to use predefined metrics from `kafka-flow-metrics` module
+by using one of two standard methods, `withCollectorRegistry` or `withMetrics`.
+
+The first one uses passed collector registry for the metrics, while second uses
+precreated `Metrics[F, TopicFlowOf]`. The difference is that the later allows having
 several instances of `TopicFlowOf` for different purposes, while
 collector registry variant will fail if initialized twice:
 ```scala mdoc
@@ -159,7 +169,12 @@ import com.evolutiongaming.kafka.flow.metrics.syntax._
 def topicFlowOfWithMetrics = topicFlowOf.withCollectorRegistry(???)
 ```
 
-The `partitionFlowOf` parameter is discussed below.
+The only metric, currently, exposed is callled `topic_flow_add_duration_seconds`
+summary. It measures the time which is required to add a partition to a flow.
+It is important for the projects where it could be a long operation (i.e.
+causes recovery of all previously persisted state objects). Another way to use
+it is to expose `topic_flow_add_duration_seconds_count` rate to find out
+how often partition are being reassigned.
 
 ## PartitionFlowOf
 
@@ -197,10 +212,13 @@ Besides that, it also responsible for the following functions:
 - Filling timestamps in underlying `TimerContext` object,
 - Reacting to the actions performed by `KeyFlow` on an appropriate `KeyContext` object.
 
-It is also possible to use predefined metrics from `kafka-flow-metrics` module
-by using one of the following methods. One which uses passed
-collector registry for the metrics and another, which uses precreated
-`Metrics[F, PartitionFlowOf]`. The difference is that the later allows having
+### Metrics
+
+It is possible to use predefined metrics from `kafka-flow-metrics` module
+by using one of two standard methods, `withCollectorRegistry` or `withMetrics`.
+
+The first one uses passed collector registry for the metrics, while second uses
+precreated `Metrics[F, PartitionFlowOf]`. The difference is that the later allows having
 several instances of `PartitionFlowOf` for different purposes, while
 collector registry variant will fail if initialized twice:
 ```scala mdoc
@@ -209,3 +227,17 @@ import com.evolutiongaming.kafka.flow.metrics.syntax._
 
 def paritionFlowOfWithMetrics = partitionFlowOf.withCollectorRegistry(???)
 ```
+
+The only metric, currently, exposed is callled `partition_flow_apply_duration_seconds`
+summary. It measures the time which is required to process records coming
+to `PartitionFlow` in a single Kafka poll request.
+
+It is one of the most important metrics, because it directly reflects the performance
+of the stream processing routine. It is fine if it takes longer from time to time,
+i.e. if the records come in bursts into application, but if it is slow all the time,
+and CPU usage is high, then some optimization or increasing number of consumer nodes
+might be required.
+
+One might also be interested in `partition_flow_apply_duration_seconds_count` rate to see
+how often the actual calls are happening, because these call do not happen for the empty
+polls and this rate actually reflects the actual load on the consumer.
