@@ -107,7 +107,8 @@ object PersistenceSpec {
       def delete(persist: Boolean) = State.modify { context =>
         context.copy(deleteCalled = persist)
       }
-      def flush = ().pure[F]
+      def flushKeys = ().pure[F]
+      def flushState = ().pure[F]
     }
 
     val timestamp: Timestamp = Timestamp(
