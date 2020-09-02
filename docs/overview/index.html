@@ -68,6 +68,10 @@ as Apache Flink.</p>
 <p>This library solves them both with a very elegant use of Kafka consumer groups
 and optionally pluggable persistence (may be required if infinite journals are
 being processed).</p>
+<p>The current version of the library is tighlty coupled with Kafka Journal and
+requires it as dependency. There is a plan to separate the integration with
+Kafka Journal to a distinct module to allow reusing reliable Kafka message
+processing without having Kafka Journal dependency.</p>
 <h1><a class="anchor" aria-hidden="true" id="kafkaflow-library"></a><a href="#kafkaflow-library" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>KafkaFlow library</h1>
 <p>The library consists of the following main building blocks nested into each other:</p>
 <ul>
@@ -122,7 +126,7 @@ but with default retry strategy.</p>
 </code></pre>
 <p>The consumer parameter is a thin wrapper over <code>Consumer</code> coming from <code>skafka</code>
 meant to faciliate the simpler unit tests will less methods to stub. The recommended
-way, currently, is to create such a <code>Consumer</code> is to use <code>consumerOf</code> method from
+way, currently, to create such a <code>Consumer</code> is to use <code>consumerOf</code> method from
 <code>KafkaModule</code> helper, which will configure <code>Consumer</code> properly and also proivde
 a <code>KafkaHealthCheck</code> which could be used for application-wide health check.</p>
 <p>If one decides to construct <code>Consumer</code> directly, he or she should be aware that
@@ -135,7 +139,7 @@ hardcoded to <code>AutoOffsetReset.Earliest</code> in <code>KafkaModule</code>).
 to a single <code>Consumer</code> instance. The only method of the trait is <code>stream</code>, which
 returns the list of the handled records, which could be useful for unit testing.</p>
 <p><code>ConsumerFlowOf</code> provides a default implementation for the specific topic, which
-does required polls and correctly handles partiton assginment and revokation. As
+does required polls and correctly handles partiton assginment and revocation. As
 most of the libray code relies on this behavior, it is recommended to never
 reimplement it, though this is possible (to quickly fix a bug on production?).</p>
 <p>The passed topic should contain a journal in the format of
@@ -166,10 +170,12 @@ configuration involved:</p>
   partitionFlowOf = ???
 )
 </code></pre>
-<p>It is also possible to use predefined metrics from <code>kafka-flow-metrics</code> module
-by using one of the following methods. One which uses passed
-collector registry for the metrics and another, which uses precreated
-<code>Metrics[F, TopicFlowOf]</code>. The difference is that the later allows having
+<p>The <code>partitionFlowOf</code> parameter is discussed further in this document.</p>
+<h3><a class="anchor" aria-hidden="true" id="metrics"></a><a href="#metrics" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Metrics</h3>
+<p>It is possible to use predefined metrics from <code>kafka-flow-metrics</code> module
+by using one of two standard methods, <code>withCollectorRegistry</code> or <code>withMetrics</code>.</p>
+<p>The first one uses passed collector registry for the metrics, while second uses
+precreated <code>Metrics[F, TopicFlowOf]</code>. The difference is that the later allows having
 several instances of <code>TopicFlowOf</code> for different purposes, while
 collector registry variant will fail if initialized twice:</p>
 <pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">TopicFlowMetrics</span>._
@@ -177,7 +183,12 @@ collector registry variant will fail if initialized twice:</p>
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">topicFlowOfWithMetrics</span> </span>= topicFlowOf.withCollectorRegistry(???)
 </code></pre>
-<p>The <code>partitionFlowOf</code> parameter is discussed below.</p>
+<p>The only metric, currently, exposed is callled <code>topic_flow_add_duration_seconds</code>
+summary. It measures the time which is required to add a partition to a flow.
+It is important for the projects where it could be a long operation (i.e.
+causes recovery of all previously persisted state objects). Another way to use
+it is to expose <code>topic_flow_add_duration_seconds_count</code> rate to find out
+how often partition are being reassigned.</p>
 <h2><a class="anchor" aria-hidden="true" id="partitionflowof"></a><a href="#partitionflowof" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>PartitionFlowOf</h2>
 <p><code>PartitionFlow</code> is meant to handle the actual records coming to specific
 positions. It is only called if there are such messages (i.e. no calls
@@ -208,10 +219,11 @@ which are discussed further.</p>
 <li>Filling timestamps in underlying <code>TimerContext</code> object,</li>
 <li>Reacting to the actions performed by <code>KeyFlow</code> on an appropriate <code>KeyContext</code> object.</li>
 </ul>
-<p>It is also possible to use predefined metrics from <code>kafka-flow-metrics</code> module
-by using one of the following methods. One which uses passed
-collector registry for the metrics and another, which uses precreated
-<code>Metrics[F, PartitionFlowOf]</code>. The difference is that the later allows having
+<h3><a class="anchor" aria-hidden="true" id="metrics-1"></a><a href="#metrics-1" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Metrics</h3>
+<p>It is possible to use predefined metrics from <code>kafka-flow-metrics</code> module
+by using one of two standard methods, <code>withCollectorRegistry</code> or <code>withMetrics</code>.</p>
+<p>The first one uses passed collector registry for the metrics, while second uses
+precreated <code>Metrics[F, PartitionFlowOf]</code>. The difference is that the later allows having
 several instances of <code>PartitionFlowOf</code> for different purposes, while
 collector registry variant will fail if initialized twice:</p>
 <pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">PartitionFlowMetrics</span>._
@@ -219,4 +231,15 @@ collector registry variant will fail if initialized twice:</p>
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">paritionFlowOfWithMetrics</span> </span>= partitionFlowOf.withCollectorRegistry(???)
 </code></pre>
-</span></div></article></div><div class="docs-prevnext"><a class="docs-next button" href="/kafka-flow/docs/setup"><span>Setup</span><span class="arrow-next"> →</span></a></div></div></div><nav class="onPageNav"><ul class="toc-headings"><li><a href="#kafkaflow">KafkaFlow</a></li><li><a href="#consumerflowof">ConsumerFlowOf</a></li><li><a href="#topicflowof">TopicFlowOf</a></li><li><a href="#partitionflowof">PartitionFlowOf</a></li></ul></nav></div><footer class="nav-footer" id="footer"><section class="sitemap"><a href="/kafka-flow/" class="nav-home"><img src="/kafka-flow/img/favicon.ico" alt="Kafka Flow" width="66" height="58"/></a><div><h5>Docs</h5><a href="/kafka-flow/docs/overview.html">Overview</a><a href="/kafka-flow/docs/setup.html">Setup</a><a href="https://github.com/evolution-gaming/kafka-flow">Sources</a></div><div><h5>Community</h5><a href="https://twitter.com/evoneering" target="_blank" rel="noreferrer noopener">Twitter</a></div><div><h5>More</h5><a href="https://github.com/evolution-gaming/kafka-flow">GitHub</a><a class="github-button" href="https://github.com/evolution-gaming/kafka-flow" data-icon="octicon-star" data-count-href="/facebook/docusaurus/stargazers" data-show-count="true" data-count-aria-label="# stargazers on GitHub" aria-label="Star this project on GitHub">Star</a></div></section><section class="copyright">Copyright © 2020 Evolution Gaming</section></footer></div></body></html>
+<p>The only metric, currently, exposed is callled <code>partition_flow_apply_duration_seconds</code>
+summary. It measures the time which is required to process records coming
+to <code>PartitionFlow</code> in a single Kafka poll request.</p>
+<p>It is one of the most important metrics, because it directly reflects the performance
+of the stream processing routine. It is fine if it takes longer from time to time,
+i.e. if the records come in bursts into application, but if it is slow all the time,
+and CPU usage is high, then some optimization or increasing number of consumer nodes
+might be required.</p>
+<p>One might also be interested in <code>partition_flow_apply_duration_seconds_count</code> rate to see
+how often the actual calls are happening, because these call do not happen for the empty
+polls and this rate actually reflects the actual load on the consumer.</p>
+</span></div></article></div><div class="docs-prevnext"><a class="docs-next button" href="/kafka-flow/docs/setup"><span>Setup</span><span class="arrow-next"> →</span></a></div></div></div><nav class="onPageNav"><ul class="toc-headings"><li><a href="#kafkaflow">KafkaFlow</a></li><li><a href="#consumerflowof">ConsumerFlowOf</a></li><li><a href="#topicflowof">TopicFlowOf</a><ul class="toc-headings"><li><a href="#metrics">Metrics</a></li></ul></li><li><a href="#partitionflowof">PartitionFlowOf</a><ul class="toc-headings"><li><a href="#metrics-1">Metrics</a></li></ul></li></ul></nav></div><footer class="nav-footer" id="footer"><section class="sitemap"><a href="/kafka-flow/" class="nav-home"><img src="/kafka-flow/img/favicon.ico" alt="Kafka Flow" width="66" height="58"/></a><div><h5>Docs</h5><a href="/kafka-flow/docs/overview.html">Overview</a><a href="/kafka-flow/docs/setup.html">Setup</a><a href="https://github.com/evolution-gaming/kafka-flow">Sources</a></div><div><h5>Community</h5><a href="https://twitter.com/evoneering" target="_blank" rel="noreferrer noopener">Twitter</a></div><div><h5>More</h5><a href="https://github.com/evolution-gaming/kafka-flow">GitHub</a><a class="github-button" href="https://github.com/evolution-gaming/kafka-flow" data-icon="octicon-star" data-count-href="/facebook/docusaurus/stargazers" data-show-count="true" data-count-aria-label="# stargazers on GitHub" aria-label="Star this project on GitHub">Star</a></div></section><section class="copyright">Copyright © 2020 Evolution Gaming</section></footer></div></body></html>
