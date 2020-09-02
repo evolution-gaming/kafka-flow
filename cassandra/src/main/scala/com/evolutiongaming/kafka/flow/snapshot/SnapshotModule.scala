@@ -26,11 +26,18 @@ object SnapshotModule {
   def of[F[_]: Sync: Clock: MeasureDuration: Log](
     session: CassandraSession[F],
     sync: CassandraSync[F]
+  ): Resource[F, SnapshotModule[F]] =
+    of(session, sync, CassandraSnapshotsOf(session))
+
+  def of[F[_]: Sync: Clock: MeasureDuration: Log](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    factory: CassandraSnapshotsOf[F]
   ): Resource[F, SnapshotModule[F]] = {
     val schema = SnapshotSchema(session, sync)
     Resource.liftF(schema.create) as new SnapshotModule[F] {
       def snapshotsOf[S](implicit fromBytes: FromBytes[F, S], toBytes: ToBytes[F, S]) = {
-        val database = new CassandraSnapshots(session)
+        val database = factory[S]
         key => Snapshots.of(key, database)
       }
     }

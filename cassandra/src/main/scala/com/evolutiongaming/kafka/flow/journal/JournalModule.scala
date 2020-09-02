@@ -21,13 +21,17 @@ object JournalModule {
   def of[F[_]: Sync: Clock: MeasureDuration: Log](
     session: CassandraSession[F],
     sync: CassandraSync[F]
+  ): Resource[F, JournalModule[F]] =
+    of(session, sync, new CassandraJournals(session))
+
+  def of[F[_]: Sync: Clock: MeasureDuration: Log](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    database: CassandraJournals[F]
   ): Resource[F, JournalModule[F]] = {
     val schema = JournalSchema(session, sync)
-    Resource.liftF(schema.create) as {
-      val database = new CassandraJournals(session)
-      new JournalModule[F] {
-        def journalsOf = { key => Journals.of(key, database) }
-      }
+    Resource.liftF(schema.create) as new JournalModule[F] {
+      def journalsOf = { key => Journals.of(key, database) }
     }
   }
 

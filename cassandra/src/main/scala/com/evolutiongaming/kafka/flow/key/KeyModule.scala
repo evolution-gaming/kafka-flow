@@ -21,13 +21,17 @@ object KeyModule {
   def of[F[_]: MonadThrowable: Fail: Clock: MeasureDuration: Log](
     session: CassandraSession[F],
     sync: CassandraSync[F]
+  ): Resource[F, KeyModule[F]] =
+    of(session, sync, new CassandraKeys(session))
+
+  def of[F[_]: MonadThrowable: Fail: Clock: MeasureDuration: Log](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    database: CassandraKeys[F]
   ): Resource[F, KeyModule[F]] = {
     val schema = KeySchema(session, sync)
-    Resource.liftF(schema.create) as {
-      val database = new CassandraKeys(session)
-      new KeyModule[F] {
-        def keysOf = KeysOf(database)
-      }
+    Resource.liftF(schema.create) as new KeyModule[F] {
+      def keysOf = KeysOf(database)
     }
   }
 
