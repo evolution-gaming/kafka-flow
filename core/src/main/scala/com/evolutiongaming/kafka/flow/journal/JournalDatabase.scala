@@ -5,25 +5,30 @@ import cats.effect.Sync
 import cats.effect.concurrent.Ref
 import cats.implicits._
 import cats.mtl.MonadState
+import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
 import scala.collection.immutable.SortedMap
 
-private[journal] trait JournalDatabase[F[_], K, E] {
+trait JournalDatabase[F[_], K, R] {
 
   /** Adds or replaces the event in a database */
-  def persist(key: K, event: E): F[Unit]
+  def persist(key: K, event: R): F[Unit]
 
   /** Restores journal for the key, if any */
-  def get(key: K): Stream[F, E]
+  def get(key: K): Stream[F, R]
 
   /** Deletes journal for they key, if any */
   def delete(key: K): F[Unit]
 
+  def journalsOf(implicit F: Sync[F], log: Log[F]): JournalsOf[F, K, R] = { key =>
+    Journals.of(key, this)
+  }
+
 }
-private[journal] object JournalDatabase {
+object JournalDatabase {
 
   /** Creates in-memory database implementation.
     *

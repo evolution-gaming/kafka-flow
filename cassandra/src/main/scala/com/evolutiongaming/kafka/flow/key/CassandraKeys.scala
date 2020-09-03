@@ -3,6 +3,7 @@ package com.evolutiongaming.kafka.flow.key
 import cats.Monad
 import cats.effect.Clock
 import cats.implicits._
+import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
@@ -18,7 +19,7 @@ import com.evolutiongaming.sstream.Stream
 import java.time.LocalDate
 import java.time.ZoneOffset
 
-private[key] class CassandraKeys[F[_]: Monad: Fail: Clock: MeasureDuration](
+class CassandraKeys[F[_]: Monad: Fail: Clock: MeasureDuration](
   session: CassandraSession[F]
 ) extends KeyDatabase[F, KafkaKey] {
 
@@ -171,5 +172,15 @@ private[key] class CassandraKeys[F[_]: Monad: Fail: Clock: MeasureDuration](
     }
 
   }
+
+}
+object CassandraKeys {
+
+  /** Creates schema in Cassandra if not there yet */
+  def withSchema[F[_]: Monad: Clock: Fail: MeasureDuration](
+    session: CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[CassandraKeys[F]] =
+    KeySchema(session, sync).create as new CassandraKeys(session)
 
 }

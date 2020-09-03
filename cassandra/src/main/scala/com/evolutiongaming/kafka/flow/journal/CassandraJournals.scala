@@ -3,10 +3,11 @@ package com.evolutiongaming.kafka.flow.journal
 import cats.effect.Clock
 import cats.implicits._
 import com.datastax.driver.core.Row
+import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.MonadThrowable
-import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
 import com.evolutiongaming.kafka.flow.KafkaKey
+import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
 import com.evolutiongaming.kafka.journal.FromAttempt
 import com.evolutiongaming.kafka.journal.conversions.HeaderToTuple
 import com.evolutiongaming.kafka.journal.conversions.TupleToHeader
@@ -149,5 +150,15 @@ private[journal] class CassandraJournals[F[_]: MonadThrowable: Clock: MeasureDur
         .encode("key", key.key)
       _ <- session.execute(boundStatement).first.void
     } yield ()
+
+}
+object CassandraJournals {
+
+  /** Creates schema in Cassandra if not there yet */
+  def withSchema[F[_]: MonadThrowable: Clock: Fail: MeasureDuration](
+    session: CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[CassandraJournals[F]] =
+    JournalSchema(session, sync).create as new CassandraJournals(session)
 
 }

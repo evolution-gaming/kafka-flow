@@ -6,6 +6,7 @@ import cats.effect.Sync
 import cats.effect.concurrent.Ref
 import cats.implicits._
 import cats.mtl.MonadState
+import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
 
@@ -57,6 +58,20 @@ private[timer] object TimerDatabase {
     def persist(key: K, timer: T) = ().pure[F]
     def get(key: K) = Stream.empty
     def delete(key: K) = ().pure[F]
+  }
+
+  implicit class TimerDatabaseKafkaTimerOps[F[_], K](
+    val self: TimerDatabase[F, K, KafkaTimer]
+  ) extends AnyVal {
+    def timersOf(
+      implicit F: Sync[F], log: Log[F]
+    ): TimersOf[F, K] = { (key, createdAt) =>
+      Timestamps.of(createdAt) flatMap { implicit timestamps =>
+        Timers.of(key, self) map { timers =>
+          TimerContext(timers, timestamps)
+        }
+      }
+    }
   }
 
 }

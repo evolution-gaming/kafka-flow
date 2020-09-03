@@ -5,11 +5,12 @@ import cats.effect.Sync
 import cats.effect.concurrent.Ref
 import cats.implicits._
 import cats.mtl.MonadState
+import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
 
-private[key] trait KeyDatabase[F[_], K] {
+trait KeyDatabase[F[_], K] {
 
   /** Adds the key to the database if it exists */
   def persist(key: K): F[Unit]
@@ -18,8 +19,11 @@ private[key] trait KeyDatabase[F[_], K] {
   def delete(key: K): F[Unit]
 
   def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, K]
+
+  def keysOf(implicit F: Monad[F], log: Log[F]): KeysOf[F, K] = KeysOf(this)
+
 }
-private[key] object KeyDatabase {
+object KeyDatabase {
 
   /** Creates in-memory database implementation */
   def memory[F[_]: Sync, K]: F[KeyDatabase[F, K]] =
