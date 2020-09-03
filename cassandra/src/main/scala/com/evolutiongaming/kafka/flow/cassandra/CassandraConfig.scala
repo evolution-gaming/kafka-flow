@@ -27,7 +27,7 @@ object CassandraConfig {
 
 
   final case class Keyspace(
-    name: String = "journal-to-sql",
+    name: String = "kafka_flow",
     autoCreate: Boolean = true)
 
   object Keyspace {

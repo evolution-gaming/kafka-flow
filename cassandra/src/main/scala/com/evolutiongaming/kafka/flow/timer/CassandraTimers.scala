@@ -1,6 +1,7 @@
 package com.evolutiongaming.kafka.flow.timer
 
 import cats.implicits._
+import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
@@ -109,6 +110,13 @@ class CassandraTimers[F[_]: MonadThrowable: MeasureDuration](
 
 }
 object CassandraTimers {
+
+  /** Creates schema in Cassandra if not there yet */
+  def withSchema[F[_]: MonadThrowable: MeasureDuration](
+    session: CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[TimerDatabase[F, KafkaKey, KafkaTimer]] =
+    TimerSchema(session, sync).create as new CassandraTimers(session)
 
   def apply[F[_]: MonadThrowable: MeasureDuration](
     session: CassandraSession[F]

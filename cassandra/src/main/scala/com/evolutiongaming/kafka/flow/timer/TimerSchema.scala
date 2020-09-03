@@ -16,7 +16,7 @@ private[timer] object TimerSchema {
     session: CassandraSession[F],
     synchronize: CassandraSync[F]
   ): TimerSchema[F] = new TimerSchema[F] {
-    def create = synchronize("JournalSchema") {
+    def create = synchronize("TimerSchema") {
       session.execute(
         """CREATE TABLE IF NOT EXISTS timers(
           |application_id TEXT,

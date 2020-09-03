@@ -52,10 +52,17 @@ lazy val metrics = (project in file("metrics"))
 
 lazy val cassandra = (project in file("cassandra"))
   .dependsOn(core)
+  .configs(IntegrationTest)
   .settings(commonSettings)
   .settings(
     name := "kafka-flow-cassandra",
-    libraryDependencies += KafkaJournal.cassandra
+    libraryDependencies ++= Seq(
+      KafkaJournal.cassandra,
+      cassandraLauncher % IntegrationTest,
+      weaver % IntegrationTest,
+    ),
+    Defaults.itSettings,
+    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.TestFramework")
   )
 
 lazy val docs = (project in file("kafka-flow-docs"))

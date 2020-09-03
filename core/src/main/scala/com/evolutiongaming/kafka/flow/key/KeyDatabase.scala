@@ -18,6 +18,8 @@ trait KeyDatabase[F[_], K] {
   /** Deletes snapshot for they key, if any */
   def delete(key: K): F[Unit]
 
+  def all(applicationId: String, groupId: String): Stream[F, K]
+
   def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, K]
 
   def keysOf(implicit F: Monad[F], log: Log[F]): KeysOf[F, K] = KeysOf(this)
@@ -40,6 +42,11 @@ object KeyDatabase {
 
       def delete(key: K) =
         storage modify (_ - key)
+
+      def all(applicationId: String, groupId: String) =
+        Stream.lift(storage.get) flatMap { keys =>
+          Stream.from(keys.toList)
+        }
 
       def all(applicationId: String, groupId: String, topicPartition: TopicPartition) =
         Stream.lift(storage.get) flatMap { keys =>
