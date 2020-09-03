@@ -2,12 +2,14 @@ import sbt._
 
 object Dependencies {
 
-  val munit         = "org.scalameta" %% "munit" % "0.7.12"
+  val munit  = "org.scalameta"       %% "munit"            % "0.7.12"
+  val weaver = "com.disneystreaming" %% "weaver-framework" % "0.4.3"
 
-  val catsHelper    = "com.evolutiongaming" %% "cats-helper" % "2.1.1"
-  val skafka        = "com.evolutiongaming" %% "skafka"      % "11.0.0"
-  val smetrics      = "com.evolutiongaming" %% "smetrics"    % "0.1.2"
-  val sstream       = "com.evolutiongaming" %% "sstream"     % "0.2.1"
+  val cassandraLauncher = "com.evolutiongaming" %% "cassandra-launcher" % "0.0.4"
+  val catsHelper        = "com.evolutiongaming" %% "cats-helper"        % "2.1.1"
+  val skafka            = "com.evolutiongaming" %% "skafka"             % "11.0.0"
+  val smetrics          = "com.evolutiongaming" %% "smetrics"           % "0.1.2"
+  val sstream           = "com.evolutiongaming" %% "sstream"            % "0.2.1"
 
   object Cats {
     private val version = "2.1.1"
