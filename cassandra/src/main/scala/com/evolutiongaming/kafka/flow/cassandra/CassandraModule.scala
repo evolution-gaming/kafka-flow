@@ -1,21 +1,16 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
-import cats.Applicative
 import cats.effect.Concurrent
 import cats.effect.Resource
 import cats.effect.Timer
 import cats.implicits._
 import com.evolutiongaming.cassandra.sync.AutoCreate
 import com.evolutiongaming.cassandra.sync.CassandraSync
-import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.LogResource
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraHealthCheck
 import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession => SafeSession}
-import com.evolutiongaming.scassandra.CassandraCluster
 import com.evolutiongaming.scassandra.CassandraClusterOf
-import com.evolutiongaming.scassandra.CreateKeyspaceIfNotExists
-import com.evolutiongaming.scassandra.ReplicationStrategyConfig
 import com.evolutiongaming.scassandra.util.FromGFuture
 
 trait CassandraModule[F[_]] {
