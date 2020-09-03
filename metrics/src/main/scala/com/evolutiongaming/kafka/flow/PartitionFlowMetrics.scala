@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Monad
 import cats.data.NonEmptyList
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.journal.ConsRecord

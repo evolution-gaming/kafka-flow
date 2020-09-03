@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.persistence
 
 import cats.data.State
-import cats.implicits._
+import cats.syntax.all._
 import cats.mtl._
 import cats.mtl.implicits._
 import com.evolutiongaming.kafka.flow.MonadStateHelper._

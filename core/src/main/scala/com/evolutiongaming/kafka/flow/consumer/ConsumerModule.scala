@@ -4,7 +4,7 @@ import cats.effect.ConcurrentEffect
 import cats.effect.ContextShift
 import cats.effect.Resource
 import cats.effect.Timer
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.FromTry
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf

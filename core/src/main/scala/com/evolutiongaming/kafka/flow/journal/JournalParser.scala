@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.journal
 
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.catshelper.ToTry
 import com.evolutiongaming.kafka.journal.Action

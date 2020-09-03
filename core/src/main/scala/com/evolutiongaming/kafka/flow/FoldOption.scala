@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow
 import cats.Applicative
 import cats.Functor
 import cats.Monad
-import cats.implicits._
+import cats.syntax.all._
 
 /** Convinience methods for using `Fold` with optional state */
 final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {

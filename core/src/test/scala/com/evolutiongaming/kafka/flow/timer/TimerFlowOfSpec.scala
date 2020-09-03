@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.timer
 import Timers.TimerState
 import Timestamps.TimestampState
 import cats.data.StateT
-import cats.implicits._
+import cats.syntax.all._
 import cats.mtl.MonadState
 import cats.mtl.implicits._
 import com.evolutiongaming.catshelper.Log

@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.consumer
 
 import cats.data.NonEmptyMap
 import cats.data.NonEmptySet
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka.OffsetAndMetadata
 import com.evolutiongaming.skafka.Topic

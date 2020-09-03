@@ -4,7 +4,7 @@ import cats.effect.Concurrent
 import cats.effect.Resource
 import cats.effect.Timer
 import cats.effect.implicits._
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.journal.ConsRecords

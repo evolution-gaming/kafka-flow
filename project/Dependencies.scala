@@ -4,7 +4,7 @@ object Dependencies {
 
   val munit         = "org.scalameta" %% "munit" % "0.7.12"
 
-  val catsHelper    = "com.evolutiongaming" %% "cats-helper" % "2.1.1"
+  val catsHelper    = "com.evolutiongaming" %% "cats-helper" % "2.2.0"
   val skafka        = "com.evolutiongaming" %% "skafka"      % "11.0.0"
   val smetrics      = "com.evolutiongaming" %% "smetrics"    % "0.1.2"
   val sstream       = "com.evolutiongaming" %% "sstream"     % "0.2.1"

@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.timer
 
 import cats.Applicative
-import cats.implicits._
+import cats.syntax.all._
 
 /** Processes the timer trigger event.
   *

@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow
 import cats.Parallel
 import cats.data.NonEmptySet
 import cats.effect.{Concurrent, Resource}
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.DataHelper._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.journal.ConsRecords

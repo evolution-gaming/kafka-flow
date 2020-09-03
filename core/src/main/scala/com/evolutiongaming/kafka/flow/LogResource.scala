@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.FlatMap
 import cats.effect.Resource
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.{Log, LogOf}
 
 object LogResource {
