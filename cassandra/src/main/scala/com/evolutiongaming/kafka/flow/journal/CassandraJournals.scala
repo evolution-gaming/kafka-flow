@@ -20,7 +20,6 @@ import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TimestampAndType
 import com.evolutiongaming.skafka.TimestampType
-import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.skafka.consumer.WithSize
 import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.Stream
