@@ -10,7 +10,7 @@ import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.Stream
 
-private[timer] class CassandraTimers[F[_]: MonadThrowable: MeasureDuration](
+class CassandraTimers[F[_]: MonadThrowable: MeasureDuration](
   session: CassandraSession[F]
 ) extends TimerDatabase[F, KafkaKey, KafkaTimer] {
 
@@ -106,5 +106,13 @@ private[timer] class CassandraTimers[F[_]: MonadThrowable: MeasureDuration](
         .encode("key", key.key)
       _ <- session.execute(boundStatement).first.void
     } yield ()
+
+}
+object CassandraTimers {
+
+  def apply[F[_]: MonadThrowable: MeasureDuration](
+    session: CassandraSession[F]
+  ): TimerDatabase[F, KafkaKey, KafkaTimer] =
+    new CassandraTimers[F](session)
 
 }

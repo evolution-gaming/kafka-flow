@@ -8,6 +8,7 @@ import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
+import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.FromAttempt
 import com.evolutiongaming.kafka.journal.conversions.HeaderToTuple
 import com.evolutiongaming.kafka.journal.conversions.TupleToHeader
@@ -26,16 +27,16 @@ import com.evolutiongaming.sstream.Stream
 import java.time.Instant
 import scodec.bits.ByteVector
 
-private[journal] class CassandraJournals[F[_]: MonadThrowable: Clock: MeasureDuration](
+class CassandraJournals[F[_]: MonadThrowable: Clock: MeasureDuration](
   session: CassandraSession[F]
-) extends JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]] {
+) extends JournalDatabase[F, KafkaKey, ConsRecord] {
 
   private implicit val fromAttempt: FromAttempt[F] = {
     implicit val evidence = Fail.lift[F]
     FromAttempt.lift[F]
   }
 
-  def persist(key: KafkaKey, event: ConsumerRecord[String, ByteVector]): F[Unit] =
+  def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
     for {
       preparedStatement <- session.prepare(
         """ UPDATE
@@ -74,17 +75,17 @@ private[journal] class CassandraJournals[F[_]: MonadThrowable: Clock: MeasureDur
       _ <- session.execute(boundStatement).first.void
     } yield ()
 
-  def get(key: KafkaKey): Stream[F, ConsumerRecord[String, ByteVector]] = {
+  def get(key: KafkaKey): Stream[F, ConsRecord] = {
 
     // we cannot use DecodeRow here because TupleToHeader is effectful
-    def decode(row: Row): F[ConsumerRecord[String, ByteVector]] = {
+    def decode(row: Row): F[ConsRecord] = {
       val headers = row.decode[Map[String, String]]("headers")
       val value = row.decode[Option[ByteVector]]("value")
       for {
         headers <- headers.toList traverse { case (key, value) =>
           TupleToHeader[F].apply(key, value)
         }
-      } yield ConsumerRecord[String, ByteVector](
+      } yield ConsRecord(
         topicPartition = key.topicPartition,
         key = Some(WithSize(key.key)),
         offset = row.decode[Offset]("offset"),
@@ -155,10 +156,10 @@ private[journal] class CassandraJournals[F[_]: MonadThrowable: Clock: MeasureDur
 object CassandraJournals {
 
   /** Creates schema in Cassandra if not there yet */
-  def withSchema[F[_]: MonadThrowable: Clock: Fail: MeasureDuration](
+  def withSchema[F[_]: MonadThrowable: Clock: MeasureDuration](
     session: CassandraSession[F],
     sync: CassandraSync[F]
-  ): F[CassandraJournals[F]] =
+  ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =
     JournalSchema(session, sync).create as new CassandraJournals(session)
 
 }

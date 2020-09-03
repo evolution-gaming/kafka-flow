@@ -180,7 +180,7 @@ object CassandraKeys {
   def withSchema[F[_]: Monad: Clock: Fail: MeasureDuration](
     session: CassandraSession[F],
     sync: CassandraSync[F]
-  ): F[CassandraKeys[F]] =
+  ): F[KeyDatabase[F, KafkaKey]] =
     KeySchema(session, sync).create as new CassandraKeys(session)
 
 }

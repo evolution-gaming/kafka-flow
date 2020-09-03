@@ -6,12 +6,12 @@ import com.evolutiongaming.skafka.{Offset => KafkaOffset}
 import java.time.Instant
 import scala.concurrent.duration._
 
-private[timer] sealed trait KafkaTimer {
+sealed trait KafkaTimer {
   def valueType: String
   def toLong: Long
   def toWindow: TimerWindow
 }
-private[timer] object KafkaTimer {
+object KafkaTimer {
 
   sealed trait InstantTimer extends KafkaTimer {
     def value: Instant

@@ -17,8 +17,9 @@ import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.smetrics.MeasureDuration
 import scodec.bits.ByteVector
+import com.evolutiongaming.cassandra.sync.CassandraSync
 
-private[snapshot] class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
+class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
   session: CassandraSession[F]
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]) extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
@@ -123,5 +124,15 @@ private[snapshot] class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureD
     } yield ()
 
   }
+
+}
+object CassandraSnapshots {
+
+  /** Creates schema in Cassandra if not there yet */
+  def withSchema[F[_]: MonadThrowable: Clock: MeasureDuration, T](
+    session: CassandraSession[F],
+    sync: CassandraSync[F]
+  )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
+    SnapshotSchema(session, sync).create as new CassandraSnapshots(session)
 
 }
