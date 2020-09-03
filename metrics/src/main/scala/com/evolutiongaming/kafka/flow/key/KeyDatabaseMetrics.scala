@@ -13,7 +13,7 @@ import com.evolutiongaming.skafka.TopicPartition
 
 object KeyDatabaseMetrics {
 
-  implicit def keyDatabaseMetricsOf[F[_]: Monad: MeasureDuration, S]: MetricsOf[F, KeyDatabase[F, KafkaKey]] = { registry =>
+  implicit def keyDatabaseMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, KeyDatabase[F, KafkaKey]] = { registry =>
     for {
       persistSummary <- registry.summary(
         name = "key_database_persist_duration_seconds",
