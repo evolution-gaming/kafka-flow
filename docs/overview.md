@@ -41,6 +41,16 @@ for most of the uses cases the convenient builders are provided.
 The top level builder is called `KafkaFlow`, others are `ConsumerFlowOf`,
 `TopicFlowOf`, `PartitionFlowOf` and `KeyFlowOf`.
 
+For some of these factories and produced classes it is possible to use predefined
+metrics from `kafka-flow-metrics` module by using one of two standard methods,
+`withCollectorRegistry` or `withMetrics`.
+
+The first one uses passed collector registry for the metrics, while second uses
+precreated instance such as `Metrics[F, TopicFlowOf]`. The difference is that the
+later allows having several instances of `TopicFlowOf` for different purposes, while
+collector registry variant will fail if initialized twice. The specific metrics
+available for each of the classes are further discussed in the respective sections.
+
 For sake of simplicity, all the examples assume the following is in the scope.
 Saying that, the library is written and prepared for, so called, Tagless Final
 stype of programming. One does not have to use `IO` directly. Actually, the
@@ -155,26 +165,20 @@ The `partitionFlowOf` parameter is discussed further in this document.
 
 ### Metrics
 
-It is possible to use predefined metrics from `kafka-flow-metrics` module
-by using one of two standard methods, `withCollectorRegistry` or `withMetrics`.
-
-The first one uses passed collector registry for the metrics, while second uses
-precreated `Metrics[F, TopicFlowOf]`. The difference is that the later allows having
-several instances of `TopicFlowOf` for different purposes, while
-collector registry variant will fail if initialized twice:
-```scala mdoc
-import com.evolutiongaming.kafka.flow.TopicFlowMetrics._
-import com.evolutiongaming.kafka.flow.metrics.syntax._
-
-def topicFlowOfWithMetrics = topicFlowOf.withCollectorRegistry(???)
-```
-
 The only metric, currently, exposed is callled `topic_flow_add_duration_seconds`
 summary. It measures the time which is required to add a partition to a flow.
 It is important for the projects where it could be a long operation (i.e.
 causes recovery of all previously persisted state objects). Another way to use
 it is to expose `topic_flow_add_duration_seconds_count` rate to find out
 how often partition are being reassigned.
+
+The following is a typical example of how these metrics could be initialized.
+```scala mdoc
+import com.evolutiongaming.kafka.flow.TopicFlowMetrics._
+import com.evolutiongaming.kafka.flow.metrics.syntax._
+
+def topicFlowOfWithMetrics = topicFlowOf.withCollectorRegistry(???)
+```
 
 ## PartitionFlowOf
 
@@ -183,7 +187,7 @@ positions. It is only called if there are such messages (i.e. no calls
 with empty record lists), but could be initialized eagerly.
 
 After each call `PartitionFlow` may decide to commit an offset in the
-appropriate partition.
+appropriate partition. The decision is reflected in a returned offset.
 
 The default implementation require `applicationId` and `groupId`
 parameteres passed. These parameters are used to enable several
@@ -207,26 +211,16 @@ which contains a tuple of `KeyFlow` and `TimerContext` objects,
 which are discussed further.
 
 Besides that, it also responsible for the following functions:
-- Sending consumer records to underlying `KeyFlow` in a thread safe way,
-- Trigerring timer events in underlying `KeyFlow` in a thread safe way,
+- Sending consumer records to underlying `KeyFlow` instaces in a thread safe way,
+- Trigerring timer events in underlying `KeyFlow` instances in a thread safe way,
 - Filling timestamps in underlying `TimerContext` object,
-- Reacting to the actions performed by `KeyFlow` on an appropriate `KeyContext` object.
+- Reacting to the actions performed by `KeyFlow` on an appropriate `KeyContext` object,
+  i.e. removing `KeyFlow` if processing of the key is finished, or holding the
+  commits in the specific partition until moving forward is allowed.
+
+The `keyStateOf` parameter is discussed further in this document.
 
 ### Metrics
-
-It is possible to use predefined metrics from `kafka-flow-metrics` module
-by using one of two standard methods, `withCollectorRegistry` or `withMetrics`.
-
-The first one uses passed collector registry for the metrics, while second uses
-precreated `Metrics[F, PartitionFlowOf]`. The difference is that the later allows having
-several instances of `PartitionFlowOf` for different purposes, while
-collector registry variant will fail if initialized twice:
-```scala mdoc
-import com.evolutiongaming.kafka.flow.PartitionFlowMetrics._
-import com.evolutiongaming.kafka.flow.metrics.syntax._
-
-def paritionFlowOfWithMetrics = partitionFlowOf.withCollectorRegistry(???)
-```
 
 The only metric, currently, exposed is callled `partition_flow_apply_duration_seconds`
 summary. It measures the time which is required to process records coming
@@ -241,3 +235,11 @@ might be required.
 One might also be interested in `partition_flow_apply_duration_seconds_count` rate to see
 how often the actual calls are happening, because these call do not happen for the empty
 polls and this rate actually reflects the actual load on the consumer.
+
+The following is a typical example of how these metrics could be initialized.
+```scala mdoc
+import com.evolutiongaming.kafka.flow.PartitionFlowMetrics._
+import com.evolutiongaming.kafka.flow.metrics.syntax._
+
+def paritionFlowOfWithMetrics = partitionFlowOf.withCollectorRegistry(???)
+```
