@@ -84,6 +84,14 @@ processing without having Kafka Journal dependency.</p>
 for most of the uses cases the convenient builders are provided.
 The top level builder is called <code>KafkaFlow</code>, others are <code>ConsumerFlowOf</code>,
 <code>TopicFlowOf</code>, <code>PartitionFlowOf</code> and <code>KeyFlowOf</code>.</p>
+<p>For some of these factories and produced classes it is possible to use predefined
+metrics from <code>kafka-flow-metrics</code> module by using one of two standard methods,
+<code>withCollectorRegistry</code> or <code>withMetrics</code>.</p>
+<p>The first one uses passed collector registry for the metrics, while second uses
+precreated instance such as <code>Metrics[F, TopicFlowOf]</code>. The difference is that the
+later allows having several instances of <code>TopicFlowOf</code> for different purposes, while
+collector registry variant will fail if initialized twice. The specific metrics
+available for each of the classes are further discussed in the respective sections.</p>
 <p>For sake of simplicity, all the examples assume the following is in the scope.
 Saying that, the library is written and prepared for, so called, Tagless Final
 stype of programming. One does not have to use <code>IO</code> directly. Actually, the
@@ -172,29 +180,24 @@ configuration involved:</p>
 </code></pre>
 <p>The <code>partitionFlowOf</code> parameter is discussed further in this document.</p>
 <h3><a class="anchor" aria-hidden="true" id="metrics"></a><a href="#metrics" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Metrics</h3>
-<p>It is possible to use predefined metrics from <code>kafka-flow-metrics</code> module
-by using one of two standard methods, <code>withCollectorRegistry</code> or <code>withMetrics</code>.</p>
-<p>The first one uses passed collector registry for the metrics, while second uses
-precreated <code>Metrics[F, TopicFlowOf]</code>. The difference is that the later allows having
-several instances of <code>TopicFlowOf</code> for different purposes, while
-collector registry variant will fail if initialized twice:</p>
-<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">TopicFlowMetrics</span>._
-<span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.metrics.syntax._
-
-<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">topicFlowOfWithMetrics</span> </span>= topicFlowOf.withCollectorRegistry(???)
-</code></pre>
 <p>The only metric, currently, exposed is callled <code>topic_flow_add_duration_seconds</code>
 summary. It measures the time which is required to add a partition to a flow.
 It is important for the projects where it could be a long operation (i.e.
 causes recovery of all previously persisted state objects). Another way to use
 it is to expose <code>topic_flow_add_duration_seconds_count</code> rate to find out
 how often partition are being reassigned.</p>
+<p>The following is a typical example of how these metrics could be initialized.</p>
+<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">TopicFlowMetrics</span>._
+<span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.metrics.syntax._
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">topicFlowOfWithMetrics</span> </span>= topicFlowOf.withCollectorRegistry(???)
+</code></pre>
 <h2><a class="anchor" aria-hidden="true" id="partitionflowof"></a><a href="#partitionflowof" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>PartitionFlowOf</h2>
 <p><code>PartitionFlow</code> is meant to handle the actual records coming to specific
 positions. It is only called if there are such messages (i.e. no calls
 with empty record lists), but could be initialized eagerly.</p>
 <p>After each call <code>PartitionFlow</code> may decide to commit an offset in the
-appropriate partition.</p>
+appropriate partition. The decision is reflected in a returned offset.</p>
 <p>The default implementation require <code>applicationId</code> and <code>groupId</code>
 parameteres passed. These parameters are used to enable several
 applications / consumers storing their state into a single
@@ -214,23 +217,15 @@ which contains a tuple of <code>KeyFlow</code> and <code>TimerContext</code> obj
 which are discussed further.</p>
 <p>Besides that, it also responsible for the following functions:</p>
 <ul>
-<li>Sending consumer records to underlying <code>KeyFlow</code> in a thread safe way,</li>
-<li>Trigerring timer events in underlying <code>KeyFlow</code> in a thread safe way,</li>
+<li>Sending consumer records to underlying <code>KeyFlow</code> instaces in a thread safe way,</li>
+<li>Trigerring timer events in underlying <code>KeyFlow</code> instances in a thread safe way,</li>
 <li>Filling timestamps in underlying <code>TimerContext</code> object,</li>
-<li>Reacting to the actions performed by <code>KeyFlow</code> on an appropriate <code>KeyContext</code> object.</li>
+<li>Reacting to the actions performed by <code>KeyFlow</code> on an appropriate <code>KeyContext</code> object,
+i.e. removing <code>KeyFlow</code> if processing of the key is finished, or holding the
+commits in the specific partition until moving forward is allowed.</li>
 </ul>
+<p>The <code>keyStateOf</code> parameter is discussed further in this document.</p>
 <h3><a class="anchor" aria-hidden="true" id="metrics-1"></a><a href="#metrics-1" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Metrics</h3>
-<p>It is possible to use predefined metrics from <code>kafka-flow-metrics</code> module
-by using one of two standard methods, <code>withCollectorRegistry</code> or <code>withMetrics</code>.</p>
-<p>The first one uses passed collector registry for the metrics, while second uses
-precreated <code>Metrics[F, PartitionFlowOf]</code>. The difference is that the later allows having
-several instances of <code>PartitionFlowOf</code> for different purposes, while
-collector registry variant will fail if initialized twice:</p>
-<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">PartitionFlowMetrics</span>._
-<span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.metrics.syntax._
-
-<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">paritionFlowOfWithMetrics</span> </span>= partitionFlowOf.withCollectorRegistry(???)
-</code></pre>
 <p>The only metric, currently, exposed is callled <code>partition_flow_apply_duration_seconds</code>
 summary. It measures the time which is required to process records coming
 to <code>PartitionFlow</code> in a single Kafka poll request.</p>
@@ -242,4 +237,49 @@ might be required.</p>
 <p>One might also be interested in <code>partition_flow_apply_duration_seconds_count</code> rate to see
 how often the actual calls are happening, because these call do not happen for the empty
 polls and this rate actually reflects the actual load on the consumer.</p>
-</span></div></article></div><div class="docs-prevnext"><a class="docs-next button" href="/kafka-flow/docs/setup"><span>Setup</span><span class="arrow-next"> →</span></a></div></div></div><nav class="onPageNav"><ul class="toc-headings"><li><a href="#kafkaflow">KafkaFlow</a></li><li><a href="#consumerflowof">ConsumerFlowOf</a></li><li><a href="#topicflowof">TopicFlowOf</a><ul class="toc-headings"><li><a href="#metrics">Metrics</a></li></ul></li><li><a href="#partitionflowof">PartitionFlowOf</a><ul class="toc-headings"><li><a href="#metrics-1">Metrics</a></li></ul></li></ul></nav></div><footer class="nav-footer" id="footer"><section class="sitemap"><a href="/kafka-flow/" class="nav-home"><img src="/kafka-flow/img/favicon.ico" alt="Kafka Flow" width="66" height="58"/></a><div><h5>Docs</h5><a href="/kafka-flow/docs/overview.html">Overview</a><a href="/kafka-flow/docs/setup.html">Setup</a><a href="https://github.com/evolution-gaming/kafka-flow">Sources</a></div><div><h5>Community</h5><a href="https://twitter.com/evoneering" target="_blank" rel="noreferrer noopener">Twitter</a></div><div><h5>More</h5><a href="https://github.com/evolution-gaming/kafka-flow">GitHub</a><a class="github-button" href="https://github.com/evolution-gaming/kafka-flow" data-icon="octicon-star" data-count-href="/facebook/docusaurus/stargazers" data-show-count="true" data-count-aria-label="# stargazers on GitHub" aria-label="Star this project on GitHub">Star</a></div></section><section class="copyright">Copyright © 2020 Evolution Gaming</section></footer></div></body></html>
+<p>The following is a typical example of how these metrics could be initialized.</p>
+<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">PartitionFlowMetrics</span>._
+<span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.metrics.syntax._
+
+<span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">paritionFlowOfWithMetrics</span> </span>= partitionFlowOf.withCollectorRegistry(???)
+</code></pre>
+<h2><a class="anchor" aria-hidden="true" id="keystateof"></a><a href="#keystateof" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>KeyStateOf</h2>
+<p><code>KeyState</code> contains all the state information for specific key. This includes
+the actual aggregation state and the state of the timers.</p>
+<p>The idea is that a typical end-of-the-world application using Kafka Flow would only react
+to the incoming messages in a topic, or to the previously registered timers
+firing. The timers are required in case some business logic is to be called
+even if the new events are not coming for the specific key. I.e. user session
+to be expired etc.</p>
+<p>There are several methods of creating <code>KeyState</code> in <code>KeyStateOf</code>, and, while it
+is recommended to use them, because they contain the correct logic of creating
+and handling the state, it is possible to implement the trait manually if
+custom recovery logic is required.</p>
+<p>It is recommended to implement <code>KeyStateOf</code> instead of <code>KeyState</code>, because
+it allows to reuse the default <code>PartitionFlow</code>. One needs to implement <code>apply</code>
+method which creates a state, and <code>all</code> method which allows to recover all the
+keys for a newly assigned partition.</p>
+<p>The most common of already provided implementations is called <code>KeyStateOf.lazyRecovery</code>.
+It constructs a <code>KeyState</code> using provided timer factory, persistence, and business logic
+and does nothing to a specific key until the record comes in, i.e. nothing happens
+when partition is assigned to a consumer. Even if the key state was previously persisted,
+the key state will only be loaded when record with such a key processing starts.</p>
+<p>Such implementation is best suited for long living keys with no expiration logic
+involved. For example if the system has the users which could be inactive for a
+long time, but need to have their state recovered when they start doing something,
+it is an ideal solution because they can stay in the inactive mode in the storage
+without affecting the performance anyhow.</p>
+<p>If it is required to recover all the keys from a state storage when partition is
+assigned, then one of the <code>KeyStateOf.eagerRecovery</code> methods might be a better choice.
+The signature is very similar to one provided by <code>KeyStateOf.lazyRecovery</code>, but,
+in addition, requires <code>applicationId</code> and <code>groupId</code> identifiers also described in
+<code>PartitionFlowOf</code> section.</p>
+<p>These are need to allow <code>KeyStateOf</code> to get list of application related keys
+from a key storage implementation, which is to be passed as <code>KeysOf</code> trait.</p>
+<p>The business logic in all of the factory methods described above is specified by
+implementation of <code>FoldOption</code> trait. Besides that, implementation of <code>KeyFlowOf</code>
+is required, which describes when the state is to be persisted and timers are fired.
+Some implementations are requiring <code>TimerFlowOf</code> instead of <code>KeyFlowOf</code>, which
+is easier to use, but is also less flexible.</p>
+<p>All of these traits are discussed further in this document.</p>
+</span></div></article></div><div class="docs-prevnext"><a class="docs-next button" href="/kafka-flow/docs/setup"><span>Setup</span><span class="arrow-next"> →</span></a></div></div></div><nav class="onPageNav"><ul class="toc-headings"><li><a href="#kafkaflow">KafkaFlow</a></li><li><a href="#consumerflowof">ConsumerFlowOf</a></li><li><a href="#topicflowof">TopicFlowOf</a><ul class="toc-headings"><li><a href="#metrics">Metrics</a></li></ul></li><li><a href="#partitionflowof">PartitionFlowOf</a><ul class="toc-headings"><li><a href="#metrics-1">Metrics</a></li></ul></li><li><a href="#keystateof">KeyStateOf</a></li></ul></nav></div><footer class="nav-footer" id="footer"><section class="sitemap"><a href="/kafka-flow/" class="nav-home"><img src="/kafka-flow/img/favicon.ico" alt="Kafka Flow" width="66" height="58"/></a><div><h5>Docs</h5><a href="/kafka-flow/docs/overview.html">Overview</a><a href="/kafka-flow/docs/setup.html">Setup</a><a href="https://github.com/evolution-gaming/kafka-flow">Sources</a></div><div><h5>Community</h5><a href="https://twitter.com/evoneering" target="_blank" rel="noreferrer noopener">Twitter</a></div><div><h5>More</h5><a href="https://github.com/evolution-gaming/kafka-flow">GitHub</a><a class="github-button" href="https://github.com/evolution-gaming/kafka-flow" data-icon="octicon-star" data-count-href="/facebook/docusaurus/stargazers" data-show-count="true" data-count-aria-label="# stargazers on GitHub" aria-label="Star this project on GitHub">Star</a></div></section><section class="copyright">Copyright © 2020 Evolution Gaming</section></footer></div></body></html>
