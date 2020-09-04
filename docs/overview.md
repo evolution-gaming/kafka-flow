@@ -243,3 +243,53 @@ import com.evolutiongaming.kafka.flow.metrics.syntax._
 
 def paritionFlowOfWithMetrics = partitionFlowOf.withCollectorRegistry(???)
 ```
+
+## KeyStateOf
+
+`KeyState` contains all the state information for specific key. This includes
+the actual aggregation state and the state of the timers.
+
+The idea is that a typical end-of-the-world application using Kafka Flow would only react
+to the incoming messages in a topic, or to the previously registered timers
+firing. The timers are required in case some business logic is to be called
+even if the new events are not coming for the specific key. I.e. user session
+to be expired etc.
+
+There are several methods of creating `KeyState` in `KeyStateOf`, and, while it
+is recommended to use them, because they contain the correct logic of creating
+and handling the state, it is possible to implement the trait manually if
+custom recovery logic is required.
+
+It is recommended to implement `KeyStateOf` instead of `KeyState`, because
+it allows to reuse the default `PartitionFlow`. One needs to implement `apply`
+method which creates a state, and `all` method which allows to recover all the
+keys for a newly assigned partition.
+
+The most common of already provided implementations is called `KeyStateOf.lazyRecovery`.
+It constructs a `KeyState` using provided timer factory, persistence, and business logic
+and does nothing to a specific key until the record comes in, i.e. nothing happens
+when partition is assigned to a consumer. Even if the key state was previously persisted,
+the key state will only be loaded when record with such a key processing starts.
+
+Such implementation is best suited for long living keys with no expiration logic
+involved. For example if the system has the users which could be inactive for a
+long time, but need to have their state recovered when they start doing something,
+it is an ideal solution because they can stay in the inactive mode in the storage
+without affecting the performance anyhow.
+
+If it is required to recover all the keys from a state storage when partition is
+assigned, then one of the `KeyStateOf.eagerRecovery` methods might be a better choice.
+The signature is very similar to one provided by `KeyStateOf.lazyRecovery`, but,
+in addition, requires `applicationId` and `groupId` identifiers also described in
+`PartitionFlowOf` section.
+
+These are need to allow `KeyStateOf` to get list of application related keys
+from a key storage implementation, which is to be passed as `KeysOf` trait.
+
+The business logic in all of the factory methods described above is specified by
+implementation of `FoldOption` trait. Besides that, implementation of `KeyFlowOf`
+is required, which describes when the state is to be persisted and timers are fired.
+Some implementations are requiring `TimerFlowOf` instead of `KeyFlowOf`, which
+is easier to use, but is also less flexible.
+
+All of these traits are discussed further in this document.
