@@ -37,6 +37,7 @@ lazy val core = (project in file("core"))
       Monocle.core % Test,
       catsHelper,
       munit,
+      scache,
       skafka,
       sstream
     )
