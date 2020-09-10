@@ -23,12 +23,16 @@ object PartitionFlowMetrics {
       labels = LabelNames("topic", "partition")
     ) map { flowSummary => partitionFlow =>
       new PartitionFlow[F] {
-        def apply(consumerRecords: List[ConsRecord]) = {
-          val topicPartition = consumerRecords.head.topicPartition
-          partitionFlow(consumerRecords) measureDuration { duration =>
-            flowSummary
-            .labels(topicPartition.topic, topicPartition.partition.show)
-            .observe(duration.toNanos.nanosToSeconds)
+        def apply(records: List[ConsRecord]) = {
+          val processRecords = partitionFlow(records)
+          // we do not record the time of apply without records
+          records.headOption.fold(processRecords) { head =>
+            val topicPartition = head.topicPartition
+            processRecords measureDuration { duration =>
+              flowSummary
+              .labels(topicPartition.topic, topicPartition.partition.show)
+              .observe(duration.toNanos.nanosToSeconds)
+            }
           }
         }
       }
