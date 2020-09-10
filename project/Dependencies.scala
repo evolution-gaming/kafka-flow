@@ -12,9 +12,9 @@ object Dependencies {
   val sstream           = "com.evolutiongaming" %% "sstream"            % "0.2.1"
 
   object Cats {
-    private val version = "2.1.1"
+    private val version = "2.2.0"
     val core   = "org.typelevel" %% "cats-core"   % version
-    val effect = "org.typelevel" %% "cats-effect" % "2.1.4"
+    val effect = "org.typelevel" %% "cats-effect" % "2.2.0"
   }
 
   object KafkaJournal {

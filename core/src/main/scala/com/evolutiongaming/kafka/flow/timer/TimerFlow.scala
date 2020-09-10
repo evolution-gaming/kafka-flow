@@ -9,7 +9,7 @@ import cats.implicits._
   * data for the specific key.
   *
   * I.e., if one needs to react to the events incoming from Kafka, one just
-  * builds an appropriate `KeyFlow`. But, if the event must be triggered even
+  * builds an appropriate `RecordFlow`. But, if the event must be triggered even
   * if there is no specific key encountered in Kafka (i.e. for session expiration)
   * then `TimerFlow` could be used instead.
   */
