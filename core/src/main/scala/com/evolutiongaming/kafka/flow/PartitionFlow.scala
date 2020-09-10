@@ -79,7 +79,7 @@ object PartitionFlow {
       Log[F].info("partition recovery finished")
     }
 
-    init *> Ref.of(none[Offset]) map { commitedOffsetRef => records =>
+    init *> Ref.of(assignedAt) map { commitedOffsetRef => records =>
 
       val maximumOffset = records.last.offset
 
@@ -122,10 +122,6 @@ object PartitionFlow {
 
       for {
         commitedOffset <- commitedOffsetRef.get
-        commitedOffset <- commitedOffset map (_.pure[F]) getOrElse {
-          val commitedOffset = records.head.offset
-          commitedOffsetRef.set(commitedOffset.some).as(commitedOffset)
-        }
         _ <- processRecords
         _ <- triggerTimers
 
@@ -143,7 +139,7 @@ object PartitionFlow {
         commitedOffset <- if (moveForward) {
           for {
             allowedOffset <- minimumOffset map (_.pure[F]) getOrElse OffsetToCommit[F](maximumOffset)
-            _ <- commitedOffsetRef.set(allowedOffset.some)
+            _ <- commitedOffsetRef.set(allowedOffset)
             _ <- Log[F].info(s"offset: $allowedOffset (+${allowedOffset.value - commitedOffset.value})")
           } yield {
             allowedOffset.some
