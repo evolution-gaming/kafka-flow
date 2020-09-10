@@ -34,7 +34,7 @@ object PartitionFlow {
     def timers = state.timers
   }
 
-  def resource[F[_] : Concurrent : Parallel : Clock : LogOf : MeasureDuration, S](
+  def resource[F[_]: Concurrent: Parallel: Clock: LogOf: MeasureDuration, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F, String, ConsRecord],
@@ -48,10 +48,20 @@ object PartitionFlow {
       }
     } yield flow
 
-  def of[F[_] : Concurrent : Parallel : Clock : Log : MeasureDuration, S](
+  def of[F[_]: Concurrent: Parallel: Clock: Log: MeasureDuration, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F, String, ConsRecord],
+    cache: Cache[F, String, PartitionKey[F]]
+  ): F[PartitionFlow[F]] =
+    Ref.of(assignedAt) flatMap { committedOffset =>
+      of(topicPartition, keyStateOf, committedOffset, cache)
+    }
+
+  def of[F[_]: Concurrent: Parallel: Clock: Log: MeasureDuration, S](
+    topicPartition: TopicPartition,
+    keyStateOf: KeyStateOf[F, String, ConsRecord],
+    committedOffset: Ref[F, Offset],
     cache: Cache[F, String, PartitionKey[F]]
   ): F[PartitionFlow[F]] = {
 
@@ -68,18 +78,17 @@ object PartitionFlow {
         }
       }
 
-    val init = {
-      val recover = keyStateOf.all(topicPartition) map { key =>
-        Clock[F].instant flatMap { clock =>
-          stateOf(Timestamp(clock, None, assignedAt), key).void
-        }
+    val init = for {
+      clock <- Clock[F].instant
+      committedOffset <- committedOffset.get
+      _ <- Log[F].info("partition recovery started")
+      _ <- keyStateOf.all(topicPartition) foreach { key =>
+        stateOf(Timestamp(clock, None, committedOffset), key).void
       }
-      Log[F].info("partition recovery started") *>
-      recover.foreach(identity) *>
-      Log[F].info("partition recovery finished")
-    }
+      _ <- Log[F].info("partition recovery finished")
+    } yield ()
 
-    init *> Ref.of(assignedAt) map { commitedOffset => records =>
+    init as { records =>
 
       val maximumOffset = records.last.offset
 
@@ -135,9 +144,9 @@ object PartitionFlow {
         // we move forward if minimum offset became larger or it is empty,
         // i.e. if we dealt with all the states, and there is nothing holding
         // us from moving forward
-        moveForward <- commitedOffset modifyMaybe { commitedOffset =>
-          if (allowedOffset > commitedOffset) {
-            (allowedOffset, allowedOffset.value - commitedOffset.value).some
+        moveForward <- committedOffset modifyMaybe { committedOffset =>
+          if (allowedOffset > committedOffset) {
+            (allowedOffset, allowedOffset.value - committedOffset.value).some
           } else {
             None
           }
