@@ -75,10 +75,9 @@ object KafkaFlow {
   def resource[F[_]: Concurrent: Retry](
     consumer: Resource[F, Consumer[F]],
     consumerFlowOf: ConsumerFlowOf[F],
-  ): Resource[F, Unit] = Resource {
-    stream(consumer, consumerFlowOf).drain.start map { fiber =>
-      ((), fiber.cancel)
-    }
+  ): Resource[F, Unit] = {
+    val acquire = stream(consumer, consumerFlowOf).drain.start
+    Resource.make(acquire)(_.cancel).void
   }
 
 }
