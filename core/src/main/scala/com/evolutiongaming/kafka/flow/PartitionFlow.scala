@@ -92,23 +92,24 @@ object PartitionFlow {
 
       val maximumOffset = records.last.offset
 
-      def keys = records groupBy (_.key map (_.value)) collect {
-        // we deliberately ignore records without a key to simplify the code
-        // we might return the support in future if such will be required
-        case (Some(key), records) => (key, records)
-      }
-
-      def processRecords = keys.toList parTraverse_ { case (key, records) =>
-        Clock[F].instant flatMap { clock =>
-          val batchAt = Timestamp(
-            clock = clock,
-            watermark = records.head.timestampAndType map (_.timestamp),
-            offset = records.head.offset
-          )
-          stateOf(batchAt, key) flatMap { state =>
-            state.timers.set(batchAt) *>
-            state.flow(records) *>
-            state.timers.onProcessed
+      def processRecords = {
+        val keys = records groupBy (_.key map (_.value)) collect {
+          // we deliberately ignore records without a key to simplify the code
+          // we might return the support in future if such will be required
+          case (Some(key), records) => (key, records)
+        }
+        keys.toList parTraverse_ { case (key, records) =>
+          Clock[F].instant flatMap { clock =>
+            val batchAt = Timestamp(
+              clock = clock,
+              watermark = records.head.timestampAndType map (_.timestamp),
+              offset = records.head.offset
+            )
+            stateOf(batchAt, key) flatMap { state =>
+              state.timers.set(batchAt) *>
+              state.flow(records) *>
+              state.timers.onProcessed
+            }
           }
         }
       }
@@ -129,10 +130,7 @@ object PartitionFlow {
         }
       } yield ()
 
-      for {
-        _ <- processRecords
-        _ <- triggerTimers
-
+      def offsetToCommit = for {
         // find minimum offset if any
         states <- cache.values
         stateOffsets <- states.values.toList.traverse { state =>
@@ -155,6 +153,12 @@ object PartitionFlow {
           Log[F].info(s"offset: $allowedOffset (+$moveForward)") as allowedOffset
         }
 
+      } yield offsetToCommit
+
+      for {
+        _ <- processRecords
+        _ <- triggerTimers
+        offsetToCommit <- offsetToCommit
       } yield offsetToCommit
 
     }
