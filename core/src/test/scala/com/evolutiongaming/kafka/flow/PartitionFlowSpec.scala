@@ -1,6 +1,5 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.data.NonEmptyList
 import cats.effect.Clock
 import cats.effect.ContextShift
 import cats.effect.IO
