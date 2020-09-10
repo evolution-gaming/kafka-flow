@@ -53,15 +53,18 @@ object PartitionFlow {
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F, String, ConsRecord],
     cache: Cache[F, String, PartitionKey[F]]
-  ): F[PartitionFlow[F]] =
-    Ref.of(assignedAt) flatMap { committedOffset =>
-      of(topicPartition, keyStateOf, committedOffset, cache)
-    }
+  ): F[PartitionFlow[F]] = for {
+    clock <- Clock[F].instant
+    committedOffset <- Ref.of(assignedAt)
+    timestamp <- Ref.of(Timestamp(clock, None, assignedAt))
+    flow <- of(topicPartition, keyStateOf, committedOffset, timestamp, cache)
+  } yield flow
 
   def of[F[_]: Concurrent: Parallel: Clock: Log: MeasureDuration, S](
     topicPartition: TopicPartition,
     keyStateOf: KeyStateOf[F, String, ConsRecord],
     committedOffset: Ref[F, Offset],
+    timestamp: Ref[F, Timestamp],
     cache: Cache[F, String, PartitionKey[F]]
   ): F[PartitionFlow[F]] = {
 
@@ -90,41 +93,39 @@ object PartitionFlow {
 
     init as { records =>
 
-      val maximumOffset = records.last.offset
-
-      def processRecords = {
-        val keys = records groupBy (_.key map (_.value)) collect {
+      def processRecords = for {
+        clock <- Clock[F].instant
+        keys = records groupBy (_.key map (_.value)) collect {
           // we deliberately ignore records without a key to simplify the code
           // we might return the support in future if such will be required
           case (Some(key), records) => (key, records)
         }
-        keys.toList parTraverse_ { case (key, records) =>
-          for {
-            clock <- Clock[F].instant
-            batchAt = Timestamp(
-              clock = clock,
-              watermark = records.head.timestampAndType map (_.timestamp),
-              offset = records.head.offset
-            )
-            state <- stateOf(batchAt, key)
-            _ <- state.timers.set(batchAt)
-            _ <- state.flow(records)
-            _ <- state.timers.onProcessed
-          } yield ()
+        _ <- keys.toList parTraverse_ { case (key, records) =>
+          val batchAt = Timestamp(
+            clock = clock,
+            watermark = records.head.timestampAndType map (_.timestamp),
+            offset = records.head.offset
+          )
+          stateOf(batchAt, key) flatMap { state =>
+            state.timers.set(batchAt) *>
+            state.flow(records) *>
+            state.timers.onProcessed
+          }
         }
-      }
+        _ <- timestamp.set(Timestamp(
+          clock = clock,
+          watermark = records.last.timestampAndType map (_.timestamp),
+          offset = records.last.offset
+        ))
+      } yield ()
 
       def triggerTimers = for {
         clock <- Clock[F].instant
+        timestamp <- timestamp updateAndGet (_.copy(clock = clock))
         states <- cache.values
-        batchAt = Timestamp(
-          clock = clock,
-          watermark = records.last.timestampAndType map (_.timestamp),
-          offset = maximumOffset
-        )
         _ <- states.values.toList.parTraverse_ { state =>
           state flatMap { state =>
-            state.timers.set(batchAt) *>
+            state.timers.set(timestamp) *>
             state.timers.trigger(state.flow)
           }
         }
@@ -137,6 +138,11 @@ object PartitionFlow {
           state flatMap (_.context.holding)
         }
         minimumOffset = stateOffsets.flatten.minimumOption
+
+        // maximum offset to commit is the offset of last record
+        timestamp <- timestamp.get
+        maximumOffset = timestamp.offset
+
         allowedOffset <- minimumOffset map (_.pure[F]) getOrElse OffsetToCommit[F](maximumOffset)
 
         // we move forward if minimum offset became larger or it is empty,
