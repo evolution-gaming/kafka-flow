@@ -79,7 +79,7 @@ object PartitionFlow {
       Log[F].info("partition recovery finished")
     }
 
-    init *> Ref.of(assignedAt) map { commitedOffsetRef => records =>
+    init *> Ref.of(assignedAt) map { commitedOffset => records =>
 
       val maximumOffset = records.last.offset
 
@@ -121,7 +121,6 @@ object PartitionFlow {
       } yield ()
 
       for {
-        commitedOffset <- commitedOffsetRef.get
         _ <- processRecords
         _ <- triggerTimers
 
@@ -131,24 +130,23 @@ object PartitionFlow {
           state flatMap (_.context.holding)
         }
         minimumOffset = stateOffsets.flatten.minimumOption
+        allowedOffset <- minimumOffset map (_.pure[F]) getOrElse OffsetToCommit[F](maximumOffset)
 
         // we move forward if minimum offset became larger or it is empty,
         // i.e. if we dealt with all the states, and there is nothing holding
         // us from moving forward
-        moveForward = minimumOffset map (_ > commitedOffset) getOrElse true
-        commitedOffset <- if (moveForward) {
-          for {
-            allowedOffset <- minimumOffset map (_.pure[F]) getOrElse OffsetToCommit[F](maximumOffset)
-            _ <- commitedOffsetRef.set(allowedOffset)
-            _ <- Log[F].info(s"offset: $allowedOffset (+${allowedOffset.value - commitedOffset.value})")
-          } yield {
-            allowedOffset.some
+        moveForward <- commitedOffset modifyMaybe { commitedOffset =>
+          if (allowedOffset > commitedOffset) {
+            (allowedOffset, allowedOffset.value - commitedOffset.value).some
+          } else {
+            None
           }
-        } else {
-          none[Offset].pure[F]
+        }
+        offsetToCommit <- moveForward traverse { moveForward =>
+          Log[F].info(s"offset: $allowedOffset (+$moveForward)") as allowedOffset
         }
 
-      } yield commitedOffset
+      } yield offsetToCommit
 
     }
   }

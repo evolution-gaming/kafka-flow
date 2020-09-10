@@ -207,7 +207,7 @@ object PartitionFlowSpec {
       }
       implicit val clock = Clock.create[IO]
       implicit val evidence = MeasureDuration.fromClock(clock)
-      PartitionFlow.resource(TopicPartition.empty, Offset.min, keyStateOf)
+      PartitionFlow.resource(TopicPartition.empty, Offset.unsafe(100), keyStateOf)
     }
 
     def records(key: String, offset: Int, events: List[String]): NonEmptyList[ConsRecord] =
