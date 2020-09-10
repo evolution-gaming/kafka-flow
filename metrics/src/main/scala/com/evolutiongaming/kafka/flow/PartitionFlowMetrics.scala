@@ -24,7 +24,7 @@ object PartitionFlowMetrics {
       labels = LabelNames("topic", "partition")
     ) map { flowSummary => partitionFlow =>
       new PartitionFlow[F] {
-        def apply(consumerRecords: NonEmptyList[ConsRecord]) = {
+        def apply(consumerRecords: List[ConsRecord]) = {
           val topicPartition = consumerRecords.head.topicPartition
           partitionFlow(consumerRecords) measureDuration { duration =>
             flowSummary

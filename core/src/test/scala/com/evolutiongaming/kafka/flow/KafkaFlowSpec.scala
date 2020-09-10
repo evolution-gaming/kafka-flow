@@ -44,6 +44,8 @@ class KafkaFlowSpec extends FunSuite {
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
+        Action.Poll(ConsumerRecords.empty),
+        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer))
@@ -68,12 +70,14 @@ class KafkaFlowSpec extends FunSuite {
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
+        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer,
         Action.RetryOnError(Error, OnError.Decision.retry(1.millis)),
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
+        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer))
@@ -85,7 +89,8 @@ class KafkaFlowSpec extends FunSuite {
     val state = State(commands = List(
       Command.ProduceRecords(ConsumerRecords.empty),
       Command.RemovePartitions(NonEmptySet.of(Partition.unsafe(1))),
-      Command.ProduceRecords(consumerRecords(consumerRecord(partition = 0, offset = 0)))))
+      Command.ProduceRecords(consumerRecords(consumerRecord(partition = 0, offset = 0))))
+    )
 
     val program = ConstFixture.of(state) flatMap { f =>
       f.kafkaFlow.take(1).drain *> f.state.get
@@ -98,6 +103,7 @@ class KafkaFlowSpec extends FunSuite {
         Action.ReleaseTopicFlow,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
         Action.RemovePartitions(NonEmptySet.of(Partition.unsafe(1))),
+        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer))
@@ -171,7 +177,7 @@ object KafkaFlowSpec {
                     partitions map { partition => TopicPartition(action.topic, partition) }
                   )
                 }
-                revoke.sequence_ as ConsRecords.empty
+                revoke.sequence_ *> poll(timeout)
               }
             case Some(Command.Fail(error)) => error.raiseError[F, ConsRecords]
           }

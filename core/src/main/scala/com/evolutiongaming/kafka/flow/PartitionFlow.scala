@@ -19,11 +19,15 @@ import timer.Timestamp
 
 trait PartitionFlow[F[_]] {
 
-  /** Returns `Some(offsets)` if it is fine to do commit for `offset` in Kafka.
+  /** Processes incoming consumer records and triggers the underlying timers.
     *
+    * It is possible for `records` parameter to come empty (for an empty poll).
+    * In this case only the timers will be called.
+    *
+    * Returns `Some(offsets)` if it is fine to do commit for `offset` in Kafka.
     * Returns `None` if no new commits are required.
     */
-  def apply(consumerRecords: NonEmptyList[ConsRecord]): F[Option[Offset]]
+  def apply(records: List[ConsRecord]): F[Option[Offset]]
 
 }
 
@@ -91,82 +95,79 @@ object PartitionFlow {
       _ <- Log[F].info("partition recovery finished")
     } yield ()
 
-    init as { records =>
-
-      def processRecords = for {
-        clock <- Clock[F].instant
-        keys = records groupBy (_.key map (_.value)) collect {
-          // we deliberately ignore records without a key to simplify the code
-          // we might return the support in future if such will be required
-          case (Some(key), records) => (key, records)
-        }
-        _ <- keys.toList parTraverse_ { case (key, records) =>
-          val batchAt = Timestamp(
-            clock = clock,
-            watermark = records.head.timestampAndType map (_.timestamp),
-            offset = records.head.offset
-          )
-          stateOf(batchAt, key) flatMap { state =>
-            state.timers.set(batchAt) *>
-            state.flow(records) *>
-            state.timers.onProcessed
-          }
-        }
-        _ <- timestamp.set(Timestamp(
+    def processRecords(records: NonEmptyList[ConsRecord]) = for {
+      clock <- Clock[F].instant
+      keys = records groupBy (_.key map (_.value)) collect {
+        // we deliberately ignore records without a key to simplify the code
+        // we might return the support in future if such will be required
+        case (Some(key), records) => (key, records)
+      }
+      _ <- keys.toList parTraverse_ { case (key, records) =>
+        val batchAt = Timestamp(
           clock = clock,
-          watermark = records.last.timestampAndType map (_.timestamp),
-          offset = records.last.offset
-        ))
-      } yield ()
-
-      def triggerTimers = for {
-        clock <- Clock[F].instant
-        timestamp <- timestamp updateAndGet (_.copy(clock = clock))
-        states <- cache.values
-        _ <- states.values.toList.parTraverse_ { state =>
-          state flatMap { state =>
-            state.timers.set(timestamp) *>
-            state.timers.trigger(state.flow)
-          }
+          watermark = records.head.timestampAndType map (_.timestamp),
+          offset = records.head.offset
+        )
+        stateOf(batchAt, key) flatMap { state =>
+          state.timers.set(batchAt) *>
+          state.flow(records) *>
+          state.timers.onProcessed
         }
-      } yield ()
+      }
+      lastRecord = records.last
+      _ <- timestamp.set(Timestamp(
+        clock = clock,
+        watermark = lastRecord.timestampAndType map (_.timestamp),
+        offset = lastRecord.offset
+      ))
+    } yield ()
 
-      def offsetToCommit = for {
-        // find minimum offset if any
-        states <- cache.values
-        stateOffsets <- states.values.toList.traverse { state =>
-          state flatMap (_.context.holding)
+    def triggerTimers = for {
+      clock <- Clock[F].instant
+      timestamp <- timestamp updateAndGet (_.copy(clock = clock))
+      states <- cache.values
+      _ <- states.values.toList.parTraverse_ { state =>
+        state flatMap { state =>
+          state.timers.set(timestamp) *>
+          state.timers.trigger(state.flow)
         }
-        minimumOffset = stateOffsets.flatten.minimumOption
+      }
+    } yield ()
 
-        // maximum offset to commit is the offset of last record
-        timestamp <- timestamp.get
-        maximumOffset = timestamp.offset
+    def offsetToCommit = for {
+      // find minimum offset if any
+      states <- cache.values
+      stateOffsets <- states.values.toList.traverse { state =>
+        state flatMap (_.context.holding)
+      }
+      minimumOffset = stateOffsets.flatten.minimumOption
 
-        allowedOffset <- minimumOffset map (_.pure[F]) getOrElse OffsetToCommit[F](maximumOffset)
+      // maximum offset to commit is the offset of last record
+      timestamp <- timestamp.get
+      maximumOffset = timestamp.offset
 
-        // we move forward if minimum offset became larger or it is empty,
-        // i.e. if we dealt with all the states, and there is nothing holding
-        // us from moving forward
-        moveForward <- committedOffset modifyMaybe { committedOffset =>
-          if (allowedOffset > committedOffset) {
-            (allowedOffset, allowedOffset.value - committedOffset.value).some
-          } else {
-            None
-          }
+      allowedOffset <- minimumOffset map (_.pure[F]) getOrElse OffsetToCommit[F](maximumOffset)
+
+      // we move forward if minimum offset became larger or it is empty,
+      // i.e. if we dealt with all the states, and there is nothing holding
+      // us from moving forward
+      moveForward <- committedOffset modifyMaybe { committedOffset =>
+        if (allowedOffset > committedOffset) {
+          (allowedOffset, allowedOffset.value - committedOffset.value).some
+        } else {
+          None
         }
-        offsetToCommit <- moveForward traverse { moveForward =>
-          Log[F].info(s"offset: $allowedOffset (+$moveForward)") as allowedOffset
-        }
+      }
+      offsetToCommit <- moveForward traverse { moveForward =>
+        Log[F].info(s"offset: $allowedOffset (+$moveForward)") as allowedOffset
+      }
 
-      } yield offsetToCommit
+    } yield offsetToCommit
 
-      for {
-        _ <- processRecords
-        _ <- triggerTimers
-        offsetToCommit <- offsetToCommit
-      } yield offsetToCommit
-
+    init as { records =>
+      NonEmptyList.fromList(records).traverse_(processRecords) *>
+      triggerTimers *>
+      offsetToCommit
     }
   }
 

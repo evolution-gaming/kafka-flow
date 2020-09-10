@@ -139,7 +139,7 @@ class PartitionFlowSpec extends FunSuite {
     val f = new ConstFixture(waitForN = 2)
 
     val flow = f.flow use { flow =>
-      val records = NonEmptyList.fromListUnsafe((1 to 100000).toList) flatMap { i =>
+      val records = (1 to 100000).toList flatMap { i =>
         f.records(s"key$i", i * 2, List("event1", "event2"))
       }
       for {
@@ -210,17 +210,15 @@ object PartitionFlowSpec {
       PartitionFlow.resource(TopicPartition.empty, Offset.unsafe(100), keyStateOf)
     }
 
-    def records(key: String, offset: Int, events: List[String]): NonEmptyList[ConsRecord] =
-      NonEmptyList.fromListUnsafe {
-        events.toList.zipWithIndex map { case (event, index) =>
-          ConsRecord(
-            topicPartition = TopicPartition.empty,
-            timestampAndType = None,
-            offset = Offset.unsafe(offset + index.toLong),
-            key = Some(WithSize(key)),
-            value = Some(WithSize(ByteVector.encodeUtf8(event) getOrElse sys.error(s"Cannot encode $event")))
-          )
-        }
+    def records(key: String, offset: Int, events: List[String]): List[ConsRecord] =
+      events.toList.zipWithIndex map { case (event, index) =>
+        ConsRecord(
+          topicPartition = TopicPartition.empty,
+          timestampAndType = None,
+          offset = Offset.unsafe(offset + index.toLong),
+          key = Some(WithSize(key)),
+          value = Some(WithSize(ByteVector.encodeUtf8(event) getOrElse sys.error(s"Cannot encode $event")))
+        )
       }
 
   }

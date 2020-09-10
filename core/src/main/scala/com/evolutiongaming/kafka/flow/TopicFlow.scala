@@ -48,51 +48,39 @@ object TopicFlow {
 
       new TopicFlow[F] {
 
-        def apply(consumerRecords: ConsRecords) = {
-
-          // TODO not pass topicPartition, as topic is constant
-          val offsets = consumerRecords.values.toList.parTraverse { case (topicPartition, consumerRecords) =>
-            val partition = topicPartition.partition
+        def apply(records: ConsRecords) = for {
+          partitons <- cache.values
+          offsets <- partitons.toList parTraverse { case (partition, flow) =>
             for {
-              partitionFlow <- cache.getOrUpdateReleasable(partition) {
-                Releasable.of(partitionFlowOf(topicPartition, consumerRecords.head.offset))
-              }
-              offset <- partitionFlow(consumerRecords)
-            } yield for {
-              offset <- offset
+              flow <- flow
+              topicPartition = TopicPartition(topic, partition)
+              offset <- flow(records.values get topicPartition map (_.toList) getOrElse Nil)
+            } yield offset map { offset =>
+              topicPartition -> OffsetAndMetadata(offset/*TODO metadata*/)
+            }
+          }
+          _ <- commit(offsets.flatten)
+        } yield ()
+
+        def commit(offsets: List[(TopicPartition, OffsetAndMetadata)]) = {
+
+          def partitionOffsets = {
+
+            val partitionOffsets = for {
+              (topicPartition, offsetAndMetadata) <- offsets
             } yield {
-              val offsetAndMetadata = OffsetAndMetadata(offset/*TODO metadata*/)
-              (topicPartition, offsetAndMetadata)
+              PartitionOffset(topicPartition.partition, offsetAndMetadata.offset)
             }
+            partitionOffsets.mkString(", ")
           }
 
-          def commit(offsets: List[(TopicPartition, OffsetAndMetadata)]) = {
-
-            def partitionOffsets = {
-
-              val partitionOffsets = for {
-                (topicPartition, offsetAndMetadata) <- offsets
-              } yield {
-                PartitionOffset(topicPartition.partition, offsetAndMetadata.offset)
-              }
-              partitionOffsets.mkString(", ")
+          offsets.toNem.traverse_ { offsets =>
+            consumer
+            .commit(offsets)
+            .handleErrorWith { error =>
+              log.error(s"consumer.commit failed for $partitionOffsets: $error", error)
             }
-
-            offsets
-              .toNem
-              .traverse { offsets =>
-                consumer
-                  .commit(offsets)
-                  .handleErrorWith { error =>
-                    log.error(s"consumer.commit failed for $partitionOffsets: $error", error)
-                  }
-              }
           }
-
-          for {
-            offsets <- offsets
-            _       <- commit(offsets.flatten) // TODO introduce smart logic for commits
-          } yield {}
         }
 
         def remove(partitions: NonEmptySet[Partition]) =

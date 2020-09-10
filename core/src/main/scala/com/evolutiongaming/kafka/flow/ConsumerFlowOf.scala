@@ -62,8 +62,10 @@ object ConsumerFlowOf {
               onPartitionsRevoked(topicPartitions)
           }
         ))
-        records <- Stream.repeat(consumer.poll(10.millis)) if records.values.nonEmpty
+        records <- Stream.repeat(consumer.poll(10.millis))
         _ <- Stream.lift(topicFlow(records))
+        // we process empty polls to trigger timers, but do not return them
+        if records.values.nonEmpty
       } yield records
     }
   }
