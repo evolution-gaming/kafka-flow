@@ -2,9 +2,6 @@ package com.evolutiongaming.kafka.flow
 
 import cats.effect.Clock
 import cats.effect.Sync
-import cats.effect.concurrent.Ref
-import cats.implicits._
-import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.skafka.Topic
 import consumer.Consumer
