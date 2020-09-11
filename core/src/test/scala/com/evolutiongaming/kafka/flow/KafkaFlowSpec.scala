@@ -3,10 +3,12 @@ package com.evolutiongaming.kafka.flow
 import cats.data.NonEmptyList
 import cats.data.NonEmptyMap
 import cats.data.NonEmptySet
+import cats.effect.Clock
 import cats.effect.SyncIO
 import cats.effect.concurrent.Ref
 import cats.effect.{Resource, Timer}
 import cats.implicits._
+import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.TimerHelper._
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -19,10 +21,10 @@ import com.evolutiongaming.skafka.Topic
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, RebalanceListener, WithSize}
 import com.evolutiongaming.sstream.Stream
+import consumer.Consumer
 import munit.FunSuite
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
-import consumer.Consumer
 
 class KafkaFlowSpec extends FunSuite {
   import KafkaFlowSpec._
@@ -44,8 +46,6 @@ class KafkaFlowSpec extends FunSuite {
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
-        Action.Poll(ConsumerRecords.empty),
-        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer))
@@ -70,14 +70,12 @@ class KafkaFlowSpec extends FunSuite {
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
-        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer,
         Action.RetryOnError(Error, OnError.Decision.retry(1.millis)),
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
-        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer))
@@ -89,8 +87,7 @@ class KafkaFlowSpec extends FunSuite {
     val state = State(commands = List(
       Command.ProduceRecords(ConsumerRecords.empty),
       Command.RemovePartitions(NonEmptySet.of(Partition.unsafe(1))),
-      Command.ProduceRecords(consumerRecords(consumerRecord(partition = 0, offset = 0))))
-    )
+      Command.ProduceRecords(consumerRecords(consumerRecord(partition = 0, offset = 0)))))
 
     val program = ConstFixture.of(state) flatMap { f =>
       f.kafkaFlow.take(1).drain *> f.state.get
@@ -103,7 +100,6 @@ class KafkaFlowSpec extends FunSuite {
         Action.ReleaseTopicFlow,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
         Action.RemovePartitions(NonEmptySet.of(Partition.unsafe(1))),
-        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer))
@@ -197,6 +193,8 @@ object KafkaFlowSpec {
       }
       Resource(result)
     }
+
+    implicit val clock: Clock[F] = Clock.empty
 
     implicit val retry: Retry[F] = {
       val strategy = Strategy.const(1.millis)
