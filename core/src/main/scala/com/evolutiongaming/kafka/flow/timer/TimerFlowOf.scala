@@ -46,12 +46,13 @@ object TimerFlowOf {
         current <- timers.current
         processedAt <- timers.processedAt
         touchedAt = processedAt getOrElse committedAt
-        _ <- if (current.offset.value - touchedAt.offset.value > maxOffsetDifference)
+        _ <- if (current.offset.value - touchedAt.offset.value > maxOffsetDifference) {
           context.log.info(s"flush") *>
           persistence.flush *>
           context.remove
-        else
+        } else {
           register(touchedAt)
+        }
       } yield ()
     }
 

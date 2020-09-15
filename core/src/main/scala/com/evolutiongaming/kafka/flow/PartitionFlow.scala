@@ -115,10 +115,11 @@ object PartitionFlow {
         }
       }
       lastRecord = records.last
+      maximumOffset <- OffsetToCommit[F](lastRecord.offset)
       _ <- timestamp.set(Timestamp(
         clock = clock,
         watermark = lastRecord.timestampAndType map (_.timestamp),
-        offset = lastRecord.offset
+        offset = maximumOffset
       ))
     } yield ()
 
@@ -146,7 +147,7 @@ object PartitionFlow {
       timestamp <- timestamp.get
       maximumOffset = timestamp.offset
 
-      allowedOffset <- minimumOffset map (_.pure[F]) getOrElse OffsetToCommit[F](maximumOffset)
+      allowedOffset = minimumOffset getOrElse maximumOffset
 
       // we move forward if minimum offset became larger or it is empty,
       // i.e. if we dealt with all the states, and there is nothing holding

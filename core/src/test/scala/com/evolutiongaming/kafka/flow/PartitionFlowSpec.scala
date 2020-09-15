@@ -45,6 +45,22 @@ class PartitionFlowSpec extends FunSuite {
     flow.unsafeRunSync()
   }
 
+  test("PartitionFlow does not commit on empty flows") {
+
+    // Given("state expects 100 messages")
+    val f = new ConstFixture(waitForN = 100)
+
+    val flow = f.flow use { flow =>
+      for {
+        // When("only 3 messages come")
+        offset <- flow(Nil)
+        // Then("no commit is required")
+        _ <- IO { assert(clue(offset).isEmpty) }
+      } yield ()
+    }
+    flow.unsafeRunSync()
+  }
+
   test("PartitionFlow allows commit when working with key is finished") {
 
     // Given("state expects 3 messages")
@@ -94,9 +110,9 @@ class PartitionFlowSpec extends FunSuite {
     val f = new ConstFixture(waitForN = 200000)
 
     val flow = f.flow use { flow =>
-      val events = (1 to 100000).toList map { i => s"event$i" }
+      val events = (1 until 100000).toList map { i => s"event$i" }
       for {
-        // When("only 100000 messages come after first one") }
+        // When("only 99999 messages come after first one") }
         _ <- flow(f.records("key1", 100, List("event1")))
         offset <- flow(f.records("key2", 101, events))
         // Then("do not commit kafka")
@@ -116,9 +132,9 @@ class PartitionFlowSpec extends FunSuite {
     val f = new ConstFixture(waitForN = 200000)
 
     val flow = f.flow use { flow =>
-      val events = (1 to 100001).toList map { i => s"event$i" }
+      val events = (1 to 100000).toList map { i => s"event$i" }
       for {
-        // When("exactly 100001 messages come after first one")
+        // When("exactly 100000 messages come after first one")
         _ <- flow(f.records("key1", 100, List("event1")))
         offset <- flow(f.records("key2", 101, events))
         // Then("commit kafka")
