@@ -76,15 +76,12 @@ object ConsumerFlow {
             val partitions = topicPartitions map (_.partition)
             for {
               _ <- Log[F].prefixed(topic).info(s"$partitions assigned")
-              offsets <- consumer.committed(topicPartitions)
-              _ <- Log[F].prefixed(topic).info(s"comitted offsets: $offsets")
-              // in Scala 2.13 one can just do SortedSet.of(...)
-              partitions = SortedSet.empty[(Partition, Offset)] ++ {
-                offsets map { case (topicPartition, offsetAndMetadata) =>
-                  topicPartition.partition -> offsetAndMetadata.offset
-                }
+              partitions <- topicPartitions.toList traverse { topicPartitions =>
+                consumer.position(topicPartitions) map (topicPartitions.partition -> _)
               }
-              _ <- NonEmptySet.fromSet(partitions) traverse_ topicFlow.add
+              _ <- Log[F].prefixed(topic).info(s"committed offsets: $partitions")
+              // in Scala 2.13 one can just do SortedSet.from(...)
+              _ <- NonEmptySet.fromSet(SortedSet.empty[(Partition, Offset)] ++ partitions) traverse_ topicFlow.add
             } yield ()
           }
           def onPartitionsRevoked(topicPartitions: NonEmptySet[TopicPartition]) = {

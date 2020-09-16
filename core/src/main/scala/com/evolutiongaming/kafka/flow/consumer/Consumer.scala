@@ -4,6 +4,7 @@ import cats.data.NonEmptyMap
 import cats.data.NonEmptySet
 import cats.syntax.all._
 import com.evolutiongaming.kafka.journal.ConsRecords
+import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.OffsetAndMetadata
 import com.evolutiongaming.skafka.Topic
 import com.evolutiongaming.skafka.TopicPartition
@@ -24,7 +25,7 @@ trait Consumer[F[_]] {
 
   def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit]
 
-  def committed(partitions: NonEmptySet[TopicPartition]): F[Map[TopicPartition, OffsetAndMetadata]]
+  def position(partition: TopicPartition): F[Offset]
 
 }
 object Consumer {
@@ -44,8 +45,8 @@ object Consumer {
     def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) =
       consumer.commit(offsets)
 
-    def committed(partitions: NonEmptySet[TopicPartition]): F[Map[TopicPartition, OffsetAndMetadata]] =
-      consumer.committed(partitions)
+    def position(partition: TopicPartition) =
+      consumer.position(partition)
 
   }
 

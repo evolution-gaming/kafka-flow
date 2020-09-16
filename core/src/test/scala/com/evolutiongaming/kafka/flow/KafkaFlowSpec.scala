@@ -181,8 +181,8 @@ object KafkaFlowSpec {
         def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) =
           state update (_ + Action.Commit(offsets))
 
-        def committed(partitions: NonEmptySet[TopicPartition]) =
-          Map.empty.pure[F]
+        def position(partition: TopicPartition) =
+          Offset.min.pure[F]
 
       }
 
