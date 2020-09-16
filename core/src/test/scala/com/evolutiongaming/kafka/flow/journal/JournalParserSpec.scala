@@ -1,6 +1,5 @@
 package com.evolutiongaming.kafka.flow.journal
 
-import cats.syntax.all._
 import com.evolutiongaming.kafka.journal.ActionHeader
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.HeaderMetadata
