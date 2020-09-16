@@ -144,7 +144,8 @@ It is possible to configure some of the aspects of how `ConsumerFlow` default
 implementation works by replacing default `config` parameter passed into
 `ConsumerFlowOf`.
 
-```scala mdoc:passthrough:nest
+```scala mdoc:passthrough
+{
 import com.evolutiongaming.kafka.flow.ConsumerFlowConfig
 import scala.concurrent.duration._
 val config = ConsumerFlowConfig()
@@ -154,6 +155,7 @@ Kafka polling timeout, and `triggerTimersInterval`, which defaults to
 ${config.triggerTimersInterval}, configures how often the clock based timers
 are triggered (watermark and offset based timers are not affected by this
 parameter). See scaladoc of `ConsumerFlowConfig` for more details.""")
+}
 ```
 
 ## TopicFlowOf
