@@ -4,7 +4,7 @@ import cats.Functor
 import cats.effect.Resource
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
-import cats.implicits._
+import cats.syntax.all._
 import cats.mtl.MonadState
 import com.olegpy.meow.effects._
 

@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.State
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite

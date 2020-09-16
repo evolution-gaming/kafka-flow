@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.timer
 
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.ApplicativeThrowable
 import com.evolutiongaming.skafka.{Offset => KafkaOffset}
 import java.time.Instant

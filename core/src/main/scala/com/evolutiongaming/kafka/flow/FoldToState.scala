@@ -4,7 +4,7 @@ import cats.Monad
 import cats.data.NonEmptyList
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
-import cats.implicits._
+import cats.syntax.all._
 import cats.mtl.MonadState
 import com.olegpy.meow.effects._
 import persistence.Persistence

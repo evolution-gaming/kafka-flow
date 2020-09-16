@@ -4,7 +4,7 @@ import cats.data.NonEmptySet
 import cats.effect.Clock
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.Log

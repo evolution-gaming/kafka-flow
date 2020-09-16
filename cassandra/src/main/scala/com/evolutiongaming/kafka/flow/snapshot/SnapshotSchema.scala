@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.Monad
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 

@@ -4,7 +4,7 @@ import cats.Applicative
 import cats.Monad
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
-import cats.implicits._
+import cats.syntax.all._
 import cats.mtl.MonadState
 import com.evolutiongaming.catshelper.Log
 import com.olegpy.meow.effects._

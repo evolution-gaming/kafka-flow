@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.Applicative
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.FoldOption
 import com.evolutiongaming.kafka.journal.ConsRecord
 

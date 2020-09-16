@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.key
 
 import cats.Monad
 import cats.effect.Clock
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.kafka.flow.KafkaKey

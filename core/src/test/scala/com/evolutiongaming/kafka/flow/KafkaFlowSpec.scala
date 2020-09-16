@@ -7,7 +7,7 @@ import cats.effect.Clock
 import cats.effect.SyncIO
 import cats.effect.concurrent.Ref
 import cats.effect.{Resource, Timer}
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.TimerHelper._

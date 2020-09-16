@@ -4,7 +4,7 @@ import cats.Applicative
 import cats.FlatMap
 import cats.Monad
 import cats.effect.Resource
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.smetrics.CollectorRegistry
 import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.Stream

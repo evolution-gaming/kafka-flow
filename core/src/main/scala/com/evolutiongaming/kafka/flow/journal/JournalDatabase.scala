@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.journal
 import cats.Monad
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
-import cats.implicits._
+import cats.syntax.all._
 import cats.mtl.MonadState
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.kafka.ToOffset

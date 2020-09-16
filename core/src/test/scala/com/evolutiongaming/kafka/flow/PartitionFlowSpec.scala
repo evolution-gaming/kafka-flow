@@ -4,7 +4,7 @@ import cats.effect.Clock
 import cats.effect.ContextShift
 import cats.effect.IO
 import cats.effect.Resource
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.journal.JournalsOf

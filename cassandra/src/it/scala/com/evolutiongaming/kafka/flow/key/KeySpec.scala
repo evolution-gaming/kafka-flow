@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.key
 
 import cats.effect.IO
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.key.CassandraKeys

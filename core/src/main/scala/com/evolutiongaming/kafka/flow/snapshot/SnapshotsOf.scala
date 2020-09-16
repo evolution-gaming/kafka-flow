@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.effect.Sync
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 
 trait SnapshotsOf[F[_], K, S] {

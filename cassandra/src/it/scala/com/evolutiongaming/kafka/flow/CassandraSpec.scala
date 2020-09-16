@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.effect.Resource
 import cats.effect._
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.CassandraModule

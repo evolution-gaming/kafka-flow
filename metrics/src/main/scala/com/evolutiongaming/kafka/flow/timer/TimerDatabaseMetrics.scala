@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.timer
 
 import cats.Monad
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._

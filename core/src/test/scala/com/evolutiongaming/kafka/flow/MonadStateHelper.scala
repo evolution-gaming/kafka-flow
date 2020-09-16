@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Functor
-import cats.implicits._
+import cats.syntax.all._
 import cats.mtl.DefaultMonadState
 import cats.mtl.MonadState
 import monocle.Lens

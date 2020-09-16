@@ -5,7 +5,7 @@ import cats.data.NonEmptyList
 import cats.effect.Clock
 import cats.effect.concurrent.Ref
 import cats.effect.{Concurrent, Resource}
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf

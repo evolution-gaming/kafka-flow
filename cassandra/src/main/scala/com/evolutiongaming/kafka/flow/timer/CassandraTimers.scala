@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.timer
 
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.flow.KafkaKey

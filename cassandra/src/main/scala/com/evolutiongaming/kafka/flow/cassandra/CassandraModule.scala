@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.cassandra
 import cats.effect.Concurrent
 import cats.effect.Resource
 import cats.effect.Timer
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.AutoCreate
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.LogOf

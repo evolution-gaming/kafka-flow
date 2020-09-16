@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
 import cats.data.State
-import cats.implicits._
+import cats.syntax.all._
 import cats.mtl.MonadState
 import cats.mtl.implicits._
 import com.evolutiongaming.catshelper.Log

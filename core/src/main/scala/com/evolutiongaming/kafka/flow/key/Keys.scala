@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.key
 
 import cats.Applicative
 import cats.Monad
-import cats.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 
 trait Keys[F[_]] extends KeyWriter[F]

@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow
 import cats.Applicative
 import cats.Functor
 import cats.Monad
-import cats.implicits._
+import cats.syntax.all._
 
 /** Reads a state and effectfully produces a new one.
   *

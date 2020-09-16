@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.journal
 
 import cats.effect.Clock
-import cats.implicits._
+import cats.syntax.all._
 import com.datastax.driver.core.Row
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._

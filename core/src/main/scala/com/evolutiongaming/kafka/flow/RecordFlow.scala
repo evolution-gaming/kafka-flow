@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow
 import cats.Applicative
 import cats.data.NonEmptyList
 import cats.effect.Sync
-import cats.implicits._
+import cats.syntax.all._
 import persistence.Persistence
 import timer.ReadTimestamps
 
