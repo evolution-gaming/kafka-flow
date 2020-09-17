@@ -43,14 +43,14 @@ trait SnapshotWriter[F[_], S] {
 object Snapshots {
 
   /** Creates a buffer for a given writer */
-  private[flow] def of[F[_]: Sync: Log, K, S](
+  private[snapshot] def of[F[_]: Sync: Log, K, S](
     key: K, database: SnapshotDatabase[F, K, S]
   ): F[Snapshots[F, S]] =
     Ref.of[F, Option[Snapshot[S]]](None) map { buffer =>
       Snapshots(key, database, buffer.stateInstance)
     }
 
-  private[snapshot] def apply[F[_]: Monad: Log, K, S](
+  private[flow] def apply[F[_]: Monad: Log, K, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
     buffer: MonadState[F, Option[Snapshot[S]]]
