@@ -25,11 +25,11 @@ import scodec.bits.ByteVector
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
 
-final case class KafkaPersistence[F[_], K, S, A](
-                                                  keysOf: KeysOf[F, K],
-                                                  snapshots: SnapshotPersistenceOf[F, K, S, A],
-                                                  onRecoveryFinished: F[Unit]
-                                                )
+final class KafkaPersistence[F[_], K, S, A](
+                                             private[kafkapersistence] val keysOf: KeysOf[F, K],
+                                             private[kafkapersistence] val snapshots: SnapshotPersistenceOf[F, K, S, A],
+                                             private[kafkapersistence] val onRecoveryFinished: F[Unit]
+                                           )
 
 object KafkaPersistence {
 
@@ -103,7 +103,7 @@ object KafkaPersistence {
           .map(bytes => Stream.from[F, List, KafkaKey](bytes.keys.map(KafkaKey(applicationId, groupId, topicPartition, _)).toList))).flatten
     }
 
-    apply(
+    new KafkaPersistence(
       keysOf = keysOf,
       snapshots = PersistenceOf.snapshotsOnly(keysOf, snapshotsOf),
       onRecoveryFinished = monadState.set(BytesByKey.zero)
