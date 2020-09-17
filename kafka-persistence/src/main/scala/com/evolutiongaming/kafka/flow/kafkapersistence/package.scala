@@ -22,7 +22,7 @@ package object kafkapersistence {
                                                                                                           kafkaPersistenceOf: KafkaPersistence.Of[F, KafkaKey, S, ConsRecord],
                                                                                                           timersOf: TimersOf[F, KafkaKey],
                                                                                                           keyFlowOf: KeyFlowOf[F, S, ConsRecord]
-                                                                                                        ) =
+                                                                                                        ): PartitionFlowOf[F] =
       new PartitionFlowOf[F] {
         override def apply(topicPartition: TopicPartition, assignedAt: Offset): Resource[F, PartitionFlow[F]] = {
           for {
