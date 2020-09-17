@@ -15,11 +15,12 @@ lazy val commonSettings = Seq(
   resolvers ++= Seq(
     Resolver.bintrayRepo("evolutiongaming", "maven"),
     Resolver.sonatypeRepo("public")
-  )
+  ),
+  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full)
 )
 
 lazy val root = (project in file("."))
-  .aggregate(core, cassandra, metrics)
+  .aggregate(core, cassandra, `kafka-persistence`, metrics)
   .settings(commonSettings)
   .settings(publish / skip := true)
 
@@ -60,6 +61,21 @@ lazy val cassandra = (project in file("cassandra"))
     libraryDependencies ++= Seq(
       KafkaJournal.cassandra,
       cassandraLauncher % IntegrationTest,
+      weaver % IntegrationTest,
+    ),
+    Defaults.itSettings,
+    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.TestFramework")
+  )
+
+lazy val `kafka-persistence` = (project in file("kafka-persistence"))
+  .dependsOn(core)
+  .configs(IntegrationTest)
+  .settings(commonSettings)
+  .settings(
+    name := "kafka-flow-kafka-persistence",
+    libraryDependencies ++= Seq(
+      Monocle.core,
+      Monocle.`macro`,
       weaver % IntegrationTest,
     ),
     Defaults.itSettings,
