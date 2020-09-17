@@ -11,6 +11,7 @@ import com.evolutiongaming.catshelper.{BracketThrowable, FromTry, Log}
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
+import com.evolutiongaming.kafka.flow.snapshot.Snapshots.Snapshot
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, Snapshots, SnapshotsOf}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
@@ -57,24 +58,27 @@ object KafkaPersistence {
             partition = partition
           )
           stateRef <- Ref.of(stateData)
-        } yield stateRef.runState { implicit state =>
-          KafkaPersistence[F, S, A](stateTopic)
-        }
+        } yield KafkaPersistence[F, S, A](stateTopic, stateRef.stateInstance, Ref.of(none[Snapshot[S]]).map(_.stateInstance))
       }
   }
 
-  def apply[F[_] : Producer : Monad : FromTry : Sync : Log : MonadState[*[_], BytesByKey] : FromBytes[*[_], S] : ToBytes[
-    *[_],
-    S
-  ], S, A](stateTopic: Topic): KafkaPersistence[F, KafkaKey, S, A] = {
+  def apply[F[_] : Producer : Monad : FromTry : Log,
+    S: FromBytes[F, *] : ToBytes[F, *],
+    A](
+        stateTopic: Topic,
+        monadState: MonadState[F, BytesByKey],
+        buffers: F[MonadState[F, Option[Snapshot[S]]]]
+      ): KafkaPersistence[F, KafkaKey, S, A] = {
     val snapshotsOf = new SnapshotsOf[F, KafkaKey, S] {
       override def apply(key: KafkaKey): F[Snapshots[F, S]] =
-        Snapshots.of(
+        for {
+          buffer <- buffers
+        } yield Snapshots(
           key,
           new SnapshotDatabase[F, KafkaKey, S] {
             override def get(key: KafkaKey) =
               for {
-                state <- MonadState.get
+                state <- monadState.get
                 s <- state.get(key.key).traverse(bytes => FromBytes[F, S].apply(bytes.toArray, stateTopic))
               } yield s
 
@@ -87,23 +91,22 @@ object KafkaPersistence {
                 .send(new ProducerRecord(topic = stateTopic, key = key.key.some, value = snapshot))
                 .flatten
                 .void
-          }
+          },
+          buffer
         )
     }
     val keysOf = new KeysOf[F, KafkaKey] {
       override def apply(key: KafkaKey) = Keys.empty
 
       override def all(applicationId: String, groupId: String, topicPartition: TopicPartition) =
-        Stream.fromIterator(
-          MonadState.get
-            .map(bytes => bytes.keys.map(KafkaKey(applicationId, groupId, topicPartition, _)).iterator)
-        )
+        Stream.lift(monadState.get
+          .map(bytes => Stream.from[F, List, KafkaKey](bytes.keys.map(KafkaKey(applicationId, groupId, topicPartition, _)).toList))).flatten
     }
 
     apply(
       keysOf = keysOf,
       snapshots = PersistenceOf.snapshotsOnly(keysOf, snapshotsOf),
-      onRecoveryFinished = MonadState.set(BytesByKey.zero)
+      onRecoveryFinished = monadState.set(BytesByKey.zero)
     )
   }
 
