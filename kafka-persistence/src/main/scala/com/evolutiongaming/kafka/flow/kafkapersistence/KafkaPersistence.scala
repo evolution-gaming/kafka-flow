@@ -19,7 +19,6 @@ import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord}
 import com.evolutiongaming.skafka.{FromBytes, Offset, Partition, ToBytes, Topic, TopicPartition}
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
-import monocle.macros.GenLens
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -116,7 +115,7 @@ object KafkaPersistence {
                                                                                 ): F[BytesByKey] = {
     consumerOf
       .apply[String, ByteVector](
-        GenLens[ConsumerConfig](_.common.clientId).modify(_.map(cid => s"$cid-state-$partition"))(consumerConfig)
+        consumerConfig.copy(common = consumerConfig.common.copy(clientId = consumerConfig.common.clientId.map(cid => s"$cid-state-$partition")))
       )
       .use { consumer =>
         val statePartition = TopicPartition(topic = stateTopic, partition = partition)
