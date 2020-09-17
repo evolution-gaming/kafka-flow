@@ -12,6 +12,7 @@ import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, Snapshots, SnapshotsOf}
+import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf, ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord}
@@ -32,7 +33,6 @@ final case class KafkaPersistence[F[_], K, S, A](
 
 object KafkaPersistence {
 
-  private type Record = ConsumerRecord[String, ByteVector]
   private type BytesByKey = Map[String, ByteVector]
 
   private object BytesByKey {
@@ -121,7 +121,7 @@ object KafkaPersistence {
       .use { consumer =>
         val statePartition = TopicPartition(topic = stateTopic, partition = partition)
 
-        def processRecord(map: BytesByKey, record: Record): BytesByKey = record match {
+        def processRecord(map: BytesByKey, record: ConsRecord): BytesByKey = record match {
           case ConsumerRecord(_, _, _, Some(WithSize(key, _)), Some(WithSize(value, _)), _) =>
             map + (key -> value)
           case ConsumerRecord(_, _, _, Some(WithSize(key, _)), None, _) => map - key
