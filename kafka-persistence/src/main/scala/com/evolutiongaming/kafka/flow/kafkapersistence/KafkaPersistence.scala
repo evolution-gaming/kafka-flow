@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
 
-import cats.data.NonEmptyList
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
 import cats.implicits._
@@ -142,7 +141,7 @@ object KafkaPersistence {
                     case _ =>
                       consumer
                         .poll(10.millis)
-                        .map(_.values.values.flatten.foldLeft(acc)(processRecord).asLeft)
+                        .map(_.values.values.flatMap(_.toIterable).foldLeft(acc)(processRecord).asLeft)
                   }
               }
               .flatTap { map =>
@@ -163,7 +162,5 @@ object KafkaPersistence {
         } yield bytesByKey
       }
   }
-
-  implicit def nelAsIterable[A]: NonEmptyList[A] => IterableOnce[A] = _.toList
 }
 
