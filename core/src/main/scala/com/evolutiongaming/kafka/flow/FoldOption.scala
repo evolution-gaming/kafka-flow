@@ -1,6 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
+import cats.ApplicativeError
 import cats.Functor
 import cats.Monad
 import cats.syntax.all._
@@ -107,6 +108,17 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     FoldOption {
       value filterM { (s, a) =>
         s map (f(_, a)) getOrElse true.pure[F]
+      }
+    }
+
+  /** Allows to gracefully handle the errror happening during flow.
+    *
+    * I.e. one could keep / modify the existing state or replace it with some other value.
+    */
+  def handleError[E](f: (S, E) => S)(implicit F: ApplicativeError[F, E]): FoldOption[F, S, A] =
+    FoldOption {
+      value handleError[E] { (s, e) =>
+        s map (f(_, e))
       }
     }
 

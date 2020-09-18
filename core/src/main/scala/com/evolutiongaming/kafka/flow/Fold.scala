@@ -1,6 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
+import cats.ApplicativeError
 import cats.Functor
 import cats.Monad
 import cats.syntax.all._
@@ -105,6 +106,15 @@ final case class Fold[F[_], S, A](run: (S, A) => F[S]) {
   def filterM(f: (S, A) => F[Boolean])(implicit F: Monad[F]): Fold[F, S, A] =
     Fold { (s, a) =>
       f(s, a).ifM(run(s, a), s.pure[F])
+    }
+
+  /** Allows to gracefully handle the errror happening during flow.
+    *
+    * I.e. one could keep / modify the existing state or replace it with some other value.
+    */
+  def handleError[E](f: (S, E) => S)(implicit F: ApplicativeError[F, E]): Fold[F, S, A] =
+    Fold { (s, a) =>
+      run(s, a) handleError (f(s, _))
     }
 
 }
