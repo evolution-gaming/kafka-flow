@@ -89,10 +89,10 @@ object PartitionFlow {
       clock <- Clock[F].instant
       committedOffset <- committedOffset.get
       _ <- Log[F].info("partition recovery started")
-      _ <- keyStateOf.all(topicPartition) foreach { key =>
-        stateOf(Timestamp(clock, None, committedOffset), key).void
+      count <- keyStateOf.all(topicPartition).foldM(0) { (count, key) =>
+        stateOf(Timestamp(clock, None, committedOffset), key) as (count + 1)
       }
-      _ <- Log[F].info("partition recovery finished")
+      _ <- Log[F].info(s"partition recovery finished, $count keys recovered")
     } yield ()
 
     def processRecords(records: NonEmptyList[ConsRecord]) = for {

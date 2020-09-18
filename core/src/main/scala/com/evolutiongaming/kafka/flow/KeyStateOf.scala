@@ -119,6 +119,28 @@ object KeyStateOf {
   /** Recovers keys as soon as partition is assigned.
     *
     * This version allows one to construct a custom `KeyFlowOf`
+    * for snapshot persistence.
+    */
+  def eagerRecovery[F[_]: Sync, K, S, A](
+    applicationId: String,
+    groupId: String,
+    keysOf: KeysOf[F, K],
+    timersOf: TimersOf[F, K],
+    persistenceOf: SnapshotPersistenceOf[F, K, S, A],
+    keyFlowOf: KeyFlowOf[F, S, A]
+  ): KeyStateOf[F, K, A] = eagerRecovery(
+    applicationId = applicationId,
+    groupId = groupId,
+    keysOf = keysOf,
+    timersOf = timersOf,
+    persistenceOf = persistenceOf,
+    keyFlowOf = keyFlowOf,
+    fold = FoldOption.empty[F, S, A]
+  )
+
+  /** Recovers keys as soon as partition is assigned.
+    *
+    * This version allows one to construct a custom `KeyFlowOf`
     * for generic persistence.
     */
   def eagerRecovery[F[_]: Sync, K, S, A](
@@ -144,27 +166,5 @@ object KeyStateOf {
       keysOf.all(applicationId, groupId, topicPartition)
 
   }
-
-  /** Recovers keys as soon as partition is assigned.
-    *
-    * This version allows one to construct a custom `KeyFlowOf`
-    * for snapshot persistence.
-    */
-  def eagerRecovery[F[_]: Sync, K, S, A](
-    applicationId: String,
-    groupId: String,
-    keysOf: KeysOf[F, K],
-    timersOf: TimersOf[F, K],
-    persistenceOf: SnapshotPersistenceOf[F, K, S, A],
-    keyFlowOf: KeyFlowOf[F, S, A]
-  ): KeyStateOf[F, K, A] = eagerRecovery(
-    applicationId = applicationId,
-    groupId = groupId,
-    keysOf = keysOf,
-    timersOf = timersOf,
-    persistenceOf = persistenceOf,
-    keyFlowOf = keyFlowOf,
-    fold = FoldOption.empty[F, S, A]
-  )
 
 }
