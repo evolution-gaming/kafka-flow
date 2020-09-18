@@ -1,8 +1,6 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
 
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
 import cats.implicits._
 import cats.mtl.MonadState
 import cats.{FlatMap, Monad, data}
@@ -16,9 +14,8 @@ import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf, ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord}
-import com.evolutiongaming.skafka.{FromBytes, Offset, Partition, ToBytes, Topic, TopicPartition}
+import com.evolutiongaming.skafka._
 import com.evolutiongaming.sstream.Stream
-import com.olegpy.meow.effects._
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -39,27 +36,6 @@ object KafkaPersistence {
   }
 
   private case class MissingOffsetError(topicPartition: TopicPartition) extends NoStackTrace
-
-  final case class Of[F[_], K, S, A](create: Partition => F[KafkaPersistence[F, K, S, A]])
-
-  object Of {
-    def apply[F[_] : BracketThrowable : Producer : ToBytes[*[_], S] : FromBytes[*[_], S] : FromTry : Log : Sync, S, A](
-                                                                                                                        consumerOf: ConsumerOf[F],
-                                                                                                                        consumerConfig: ConsumerConfig,
-                                                                                                                        stateTopic: Topic
-                                                                                                                      ): Of[F, KafkaKey, S, A] =
-      this { partition =>
-        for {
-          stateData <- readState(
-            consumerOf = consumerOf,
-            consumerConfig = consumerConfig,
-            stateTopic = stateTopic,
-            partition = partition
-          )
-          stateRef <- Ref.of(stateData)
-        } yield KafkaPersistence[F, S, A](stateTopic, stateRef.stateInstance, Ref.of(none[Snapshot[S]]).map(_.stateInstance))
-      }
-  }
 
   def apply[F[_] : Producer : Monad : FromTry : Log,
     S: FromBytes[F, *] : ToBytes[F, *],
@@ -109,12 +85,12 @@ object KafkaPersistence {
     )
   }
 
-  private def readState[F[_] : BracketThrowable : FromBytes[*[_], String] : Log](
-                                                                                  consumerOf: ConsumerOf[F],
-                                                                                  consumerConfig: ConsumerConfig,
-                                                                                  stateTopic: Topic,
-                                                                                  partition: Partition
-                                                                                ): F[BytesByKey] = {
+  private[kafkapersistence] def readState[F[_] : BracketThrowable : FromBytes[*[_], String] : Log](
+                                                                                                    consumerOf: ConsumerOf[F],
+                                                                                                    consumerConfig: ConsumerConfig,
+                                                                                                    stateTopic: Topic,
+                                                                                                    partition: Partition
+                                                                                                  ): F[BytesByKey] = {
     consumerOf
       .apply[String, ByteVector](
         ConsumerConfig.lens(_.common.clientId).modify(_.map(cid => s"$cid-state-$partition"))(consumerConfig)

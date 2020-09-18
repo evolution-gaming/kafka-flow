@@ -21,7 +21,7 @@ package object kafkapersistence {
     def eagerRecoveryKafkaPersistence[F[_] : Concurrent : Timer : Parallel : MeasureDuration : LogOf, S](
                                                                                                           applicationId: String,
                                                                                                           groupId: String,
-                                                                                                          kafkaPersistenceOf: KafkaPersistence.Of[F, KafkaKey, S, ConsRecord],
+                                                                                                          kafkaPersistenceOf: KafkaPersistenceOf[F, KafkaKey, S, ConsRecord],
                                                                                                           timersOf: TimersOf[F, KafkaKey],
                                                                                                           keyFlowOf: KeyFlowOf[F, S, ConsRecord]
                                                                                                         ): PartitionFlowOf[F] =
