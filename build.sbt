@@ -52,7 +52,7 @@ lazy val metrics = (project in file("metrics"))
     libraryDependencies += smetrics
   )
 
-lazy val `persistence-cassandra` = (project in file("kafka-flow-persistence-cassandra"))
+lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
   .dependsOn(core)
   .configs(IntegrationTest)
   .settings(commonSettings)
@@ -67,7 +67,7 @@ lazy val `persistence-cassandra` = (project in file("kafka-flow-persistence-cass
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.TestFramework")
   )
 
-lazy val `persistence-kafka` = (project in file("kafka-flow-persistence-kafka"))
+lazy val `persistence-kafka` = (project in file("persistence-kafka"))
   .dependsOn(core)
   .configs(IntegrationTest)
   .settings(commonSettings)
