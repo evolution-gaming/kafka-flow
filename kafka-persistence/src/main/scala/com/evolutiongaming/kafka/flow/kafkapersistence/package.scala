@@ -55,7 +55,7 @@ package object kafkapersistence {
     @inline def lens = ConsumerConfigCompanionOps.lens
   }
 
-  object ConsumerConfigCompanionOps {
+  private[kafkapersistence] object ConsumerConfigCompanionOps {
     val lens = GenLens[ConsumerConfig]
   }
 
