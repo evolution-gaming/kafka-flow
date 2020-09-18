@@ -20,7 +20,7 @@ lazy val commonSettings = Seq(
 )
 
 lazy val root = (project in file("."))
-  .aggregate(core, cassandra, `kafka-persistence`, metrics)
+  .aggregate(core, `persistence-cassandra`, `persistence-kafka`, metrics)
   .settings(commonSettings)
   .settings(publish / skip := true)
 
@@ -52,12 +52,12 @@ lazy val metrics = (project in file("metrics"))
     libraryDependencies += smetrics
   )
 
-lazy val cassandra = (project in file("cassandra"))
+lazy val `persistence-cassandra` = (project in file("kafka-flow-persistence-cassandra"))
   .dependsOn(core)
   .configs(IntegrationTest)
   .settings(commonSettings)
   .settings(
-    name := "kafka-flow-cassandra",
+    name := "kafka-flow-persistence-cassandra",
     libraryDependencies ++= Seq(
       KafkaJournal.cassandra,
       cassandraLauncher % IntegrationTest,
@@ -67,12 +67,12 @@ lazy val cassandra = (project in file("cassandra"))
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.TestFramework")
   )
 
-lazy val `kafka-persistence` = (project in file("kafka-persistence"))
+lazy val `persistence-kafka` = (project in file("kafka-flow-persistence-kafka"))
   .dependsOn(core)
   .configs(IntegrationTest)
   .settings(commonSettings)
   .settings(
-    name := "kafka-flow-kafka-persistence",
+    name := "kafka-flow-persistence-kafka",
     libraryDependencies ++= Seq(
       Monocle.core,
       Monocle.`macro`,
@@ -83,7 +83,7 @@ lazy val `kafka-persistence` = (project in file("kafka-persistence"))
   )
 
 lazy val docs = (project in file("kafka-flow-docs"))
-  .dependsOn(core, cassandra, metrics)
+  .dependsOn(core, `persistence-cassandra`, `persistence-kafka`, metrics)
   .settings(commonSettings)
   .enablePlugins(MdocPlugin, DocusaurusPlugin)
   .settings(scalacOptions -= "-Xfatal-warnings")
