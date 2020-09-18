@@ -112,9 +112,9 @@ final case class Fold[F[_], S, A](run: (S, A) => F[S]) {
     *
     * I.e. one could keep / modify the existing state or replace it with some other value.
     */
-  def handleError[E](f: (S, E) => S)(implicit F: ApplicativeError[F, E]): Fold[F, S, A] =
+  def handleErrorWith[E](f: (S, E) => F[S])(implicit F: ApplicativeError[F, E]): Fold[F, S, A] =
     Fold { (s, a) =>
-      run(s, a) handleError (f(s, _))
+      run(s, a) handleErrorWith (f(s, _))
     }
 
 }
