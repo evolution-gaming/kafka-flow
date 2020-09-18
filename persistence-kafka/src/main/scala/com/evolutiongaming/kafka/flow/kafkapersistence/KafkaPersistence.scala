@@ -74,7 +74,9 @@ object KafkaPersistence {
       override def apply(key: KafkaKey) = Keys.empty
 
       override def all(applicationId: String, groupId: String, topicPartition: TopicPartition) =
-        Stream.fromF(monadState.get.map(_.keys.map(KafkaKey(applicationId, groupId, topicPartition, _))))
+        Stream.fromF {
+          monadState.get.map(_.keys.map(KafkaKey(applicationId, groupId, topicPartition, _)))
+        }
     }
 
     new KafkaPersistence(
