@@ -1,13 +1,15 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Parallel
 import cats.effect.{Concurrent, Resource, Timer}
+import cats.syntax.all._
+import cats.{Foldable, Monad, Parallel}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.timer.TimersOf
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.consumer.ConsumerConfig
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.smetrics.MeasureDuration
+import com.evolutiongaming.sstream.{FoldWhile, Stream}
 import monocle.macros.GenLens
 
 package object kafkapersistence {
@@ -59,4 +61,11 @@ package object kafkapersistence {
     val lens = GenLens[ConsumerConfig]
   }
 
+  private[kafkapersistence] implicit class StreamCompanionOps(val self: Stream.type) {
+    def fromF[F[_] : Monad, G[_] : FoldWhile, A](fa: F[G[A]]): Stream[F, A] =
+      Stream.lift(fa.map(Stream.from[F, G, A])).flatten
+  }
+
+  //Gods know why we need this motivation line for the compiler, it hesitates to infer Foldable[Iterable] without it
+  private[kafkapersistence] implicit def iterableFoldable: Foldable[Iterable] = implicitly
 }
