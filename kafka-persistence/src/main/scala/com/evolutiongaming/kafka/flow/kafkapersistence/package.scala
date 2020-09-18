@@ -5,8 +5,10 @@ import cats.effect.{Concurrent, Resource, Timer}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.timer.TimersOf
 import com.evolutiongaming.kafka.journal.ConsRecord
+import com.evolutiongaming.skafka.consumer.ConsumerConfig
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.smetrics.MeasureDuration
+import monocle.macros.GenLens
 
 package object kafkapersistence {
 
@@ -47,6 +49,14 @@ package object kafkapersistence {
           } yield partitionFlow
         }
       }
+  }
+
+  private[kafkapersistence] implicit class ConsumerConfigCompanionOps(val self: ConsumerConfig.type) extends AnyVal {
+    @inline def lens = ConsumerConfigCompanionOps.lens
+  }
+
+  object ConsumerConfigCompanionOps {
+    val lens = GenLens[ConsumerConfig]
   }
 
 }

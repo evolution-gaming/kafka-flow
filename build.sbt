@@ -74,6 +74,8 @@ lazy val `kafka-persistence` = (project in file("kafka-persistence"))
   .settings(
     name := "kafka-flow-kafka-persistence",
     libraryDependencies ++= Seq(
+      Monocle.core,
+      Monocle.`macro`,
       weaver % IntegrationTest,
     ),
     Defaults.itSettings,
