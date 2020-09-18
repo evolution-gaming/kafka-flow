@@ -96,7 +96,7 @@ available for each of the classes are further discussed in the respective sectio
 Saying that, the library is written and prepared for, so called, Tagless Final
 stype of programming. One does not have to use <code>IO</code> directly. Actually, the
 main &quot;dog food&quot; application is written in Tagless Final style.</p>
-<pre><code class="hljs css language-scala mdoc:silent"><span class="hljs-keyword">import</span> cats.effect.<span class="hljs-type">IO</span>
+<pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> cats.effect.<span class="hljs-type">IO</span>
 <span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">BracketThrowable</span>
 <span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">Log</span>
 <span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">LogOf</span>
@@ -122,7 +122,7 @@ records in <code>StateT</code> or <code>Ref</code> to check if these were handle
 returns a <code>Unit</code> instead of stream. <code>retryOnError</code> provides the same functionality,
 but with default retry strategy.</p>
 <p>The typical call of <code>KafkaFlow</code> could look like following:</p>
-<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">KafkaFlow</span>
+<pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">KafkaFlow</span>
 <span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.consumer.<span class="hljs-type">ConsumerOf</span>
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">consumerOf</span></span>: <span class="hljs-type">ConsumerOf</span>[<span class="hljs-type">IO</span>] = ???
@@ -153,7 +153,7 @@ reimplement it, though this is possible (to quickly fix a bug on production?).</
 <p>The passed topic should contain a journal in the format of
 <a href="https://github.com/evolution-gaming/kafka-journal">Kafka Journal</a> library.</p>
 <p>The typical call of <code>ConsumerFlowOf</code> could look like following:</p>
-<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">ConsumerFlowOf</span>
+<pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">ConsumerFlowOf</span>
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">consumerFlowOf</span></span>: <span class="hljs-type">ConsumerFlowOf</span>[<span class="hljs-type">IO</span>] = <span class="hljs-type">ConsumerFlowOf</span>(
   topic = <span class="hljs-string">"journal.MyApplicationJournal"</span>,
@@ -165,16 +165,11 @@ reimplement it, though this is possible (to quickly fix a bug on production?).</
 <p>It is possible to configure some of the aspects of how <code>ConsumerFlow</code> default
 implementation works by replacing default <code>config</code> parameter passed into
 <code>ConsumerFlowOf</code>.</p>
-<pre><code class="hljs css language-scala mdoc:passthrough:nest">import com.evolutiongaming.kafka.flow.ConsumerFlowConfig
-import scala.concurrent.duration._
-val config = ConsumerFlowConfig()
-
-println(s"""`pollTimeout`, which defaults to ${config.pollTimeout}, configures
-Kafka polling timeout, and `triggerTimersInterval`, which defaults to
-${config.triggerTimersInterval}, configures how often the clock based timers
+<p><code>pollTimeout</code>, which defaults to 10 milliseconds, configures
+Kafka polling timeout, and <code>triggerTimersInterval</code>, which defaults to
+1 second, configures how often the clock based timers
 are triggered (watermark and offset based timers are not affected by this
-parameter). See scaladoc of `ConsumerFlowConfig` for more details.""")
-</code></pre>
+parameter). See scaladoc of <code>ConsumerFlowConfig</code> for more details.</p>
 <h2><a class="anchor" aria-hidden="true" id="topicflowof"></a><a href="#topicflowof" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>TopicFlowOf</h2>
 <p><code>TopicFlow</code> is a stateful handler of the events happening while consuming the
 specific topic, namely partitions being added or removed to consumer or the
@@ -186,7 +181,7 @@ partitions and their state in special <code>PartitionFlow</code> objects. It als
 does actual commits if <code>PartitionFlow</code> says such is required.</p>
 <p>The typical call of <code>TopicFlowOf</code> is very simple and there is no additional
 configuration involved:</p>
-<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">TopicFlowOf</span>
+<pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">TopicFlowOf</span>
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">topicFlowOf</span></span>: <span class="hljs-type">TopicFlowOf</span>[<span class="hljs-type">IO</span>] = <span class="hljs-type">TopicFlowOf</span>(
   partitionFlowOf = ???
@@ -201,7 +196,7 @@ causes recovery of all previously persisted state objects). Another way to use
 it is to expose <code>topic_flow_add_duration_seconds_count</code> rate to find out
 how often partition are being reassigned.</p>
 <p>The following is a typical example of how these metrics could be initialized.</p>
-<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">TopicFlowMetrics</span>._
+<pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">TopicFlowMetrics</span>._
 <span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.metrics.syntax._
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">topicFlowOfWithMetrics</span> </span>= topicFlowOf.withCollectorRegistry(???)
@@ -217,7 +212,7 @@ parameteres passed. These parameters are used to enable several
 applications / consumers storing their state into a single
 database (usually Cassandra).</p>
 <p>The typical call of <code>PartitionFlowOf</code> could look like following:</p>
-<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">PartitionFlowOf</span>
+<pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">PartitionFlowOf</span>
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">partitionFlowOf</span></span>: <span class="hljs-type">PartitionFlowOf</span>[<span class="hljs-type">IO</span>] =
   <span class="hljs-type">PartitionFlowOf</span>(
@@ -252,7 +247,7 @@ might be required.</p>
 how often the actual calls are happening, because these call do not happen for the empty
 polls and this rate actually reflects the actual load on the consumer.</p>
 <p>The following is a typical example of how these metrics could be initialized.</p>
-<pre><code class="hljs css language-scala mdoc"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">PartitionFlowMetrics</span>._
+<pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">PartitionFlowMetrics</span>._
 <span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.metrics.syntax._
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">paritionFlowOfWithMetrics</span> </span>= partitionFlowOf.withCollectorRegistry(???)
