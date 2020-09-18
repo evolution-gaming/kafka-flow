@@ -16,21 +16,34 @@ import com.evolutiongaming.smetrics.Quantiles
 object PartitionFlowMetrics {
 
   implicit def partitionFlowMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, PartitionFlow[F]] = { registry =>
-    registry.summary(
-      name = "partition_flow_apply_duration_seconds",
-      help = "Time required to apply a batch coming to partition flow",
-      quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
-      labels = LabelNames("topic", "partition")
-    ) map { flowSummary => partitionFlow =>
+    for {
+      applySummary <- registry.summary(
+        name = "partition_flow_apply_duration_seconds",
+        help = "Time required to apply a batch coming to partition flow",
+        quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
+        labels = LabelNames("topic", "partition")
+      )
+      triggerTimersSummary <- registry.summary(
+        name = "partition_flow_triggerTimers_duration_seconds",
+        help = "Time required to apply an empty batch coming to partition flow",
+        quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
+        labels = LabelNames()
+      )
+    } yield { partitionFlow =>
       new PartitionFlow[F] {
         def apply(records: List[ConsRecord]) = {
           val processRecords = partitionFlow(records)
-          // we do not record the time of apply without records
-          records.headOption.fold(processRecords) { head =>
+          // if there are no records incoming, we are triggering timers
+          records.headOption map { head =>
             val topicPartition = head.topicPartition
             processRecords measureDuration { duration =>
-              flowSummary
+              applySummary
               .labels(topicPartition.topic, topicPartition.partition.show)
+              .observe(duration.toNanos.nanosToSeconds)
+            }
+          } getOrElse {
+            processRecords measureDuration { duration =>
+              triggerTimersSummary
               .observe(duration.toNanos.nanosToSeconds)
             }
           }
