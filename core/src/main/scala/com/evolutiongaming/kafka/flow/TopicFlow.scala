@@ -54,7 +54,9 @@ object TopicFlow {
             for {
               flow <- flow
               topicPartition = TopicPartition(topic, partition)
-              offset <- flow(records.values get topicPartition map (_.toList) getOrElse Nil)
+              partitionRecords = records.values get topicPartition map (_.toList) getOrElse Nil
+              // FIXME: this will break triggering timers (they will not be triggerd), but may improve CPU behavior
+              offset <- if (partitionRecords.nonEmpty) flow(partitionRecords) else None.pure[F]
             } yield offset map { offset =>
               topicPartition -> OffsetAndMetadata(offset/*TODO metadata*/)
             }
