@@ -23,6 +23,7 @@ project/plugins/project/
 
 # Metals
 .bloop
+.vscode
 .history
 .metals
 settings.json
