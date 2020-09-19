@@ -6,15 +6,16 @@ import cats.mtl.MonadState
 import cats.{FlatMap, Monad, data}
 import com.evolutiongaming.catshelper.{BracketThrowable, FromTry, Log}
 import com.evolutiongaming.kafka.flow.KafkaKey
+import com.evolutiongaming.kafka.flow.consumer.Consumer
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.Snapshots.Snapshot
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, Snapshots, SnapshotsOf}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
+import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf, ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord}
-import com.evolutiongaming.skafka._
 import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
 
@@ -86,6 +87,30 @@ object KafkaPersistence {
     )
   }
 
+  private[kafkapersistence] def readPartition[F[_] : Monad : Log](consumer: Consumer[F], snapshotPartition: TopicPartition, targetOffset: Offset): F[BytesByKey] =
+    Log[F].info(s"State topic read started up to offset $targetOffset") *>
+      FlatMap[F]
+        .tailRecM[BytesByKey, BytesByKey](BytesByKey.zero) { acc =>
+          consumer
+            .position(snapshotPartition)
+            .flatMap {
+              case offset if offset >= targetOffset =>
+                acc.asRight[BytesByKey].pure[F]
+              case _ =>
+                consumer
+                  .poll(10.millis)
+                  .map(_.values.values.flatMap(_.toIterable).foldLeft(acc)(processRecord).asLeft)
+            }
+        }
+
+  private[kafkapersistence] def processRecord(map: BytesByKey, record: ConsRecord): BytesByKey = record match {
+    case ConsumerRecord(_, _, _, Some(WithSize(key, _)), Some(WithSize(value, _)), _) =>
+      map + (key -> value)
+    case ConsumerRecord(_, _, _, Some(WithSize(key, _)), None, _) => map - key
+    case _ => map //ignore records with no key for now
+  }
+
+
   private[kafkapersistence] def readState[F[_] : BracketThrowable : FromBytes[*[_], String] : Log](
                                                                                                     consumerOf: ConsumerOf[F],
                                                                                                     consumerConfig: ConsumerConfig,
@@ -99,34 +124,6 @@ object KafkaPersistence {
       .use { consumer =>
         val statePartition = TopicPartition(topic = stateTopic, partition = partition)
 
-        def processRecord(map: BytesByKey, record: ConsRecord): BytesByKey = record match {
-          case ConsumerRecord(_, _, _, Some(WithSize(key, _)), Some(WithSize(value, _)), _) =>
-            map + (key -> value)
-          case ConsumerRecord(_, _, _, Some(WithSize(key, _)), None, _) => map - key
-          case _ => map //ignore records with no key for now
-        }
-
-        def readPartition(targetOffset: Offset): F[BytesByKey] =
-          Log[F].info(s"State topic read started up to offset $targetOffset") *>
-            FlatMap[F]
-              .tailRecM[BytesByKey, BytesByKey](BytesByKey.zero) { acc =>
-                consumer
-                  .position(statePartition)
-                  .flatMap {
-                    case offset if offset >= targetOffset =>
-                      acc.asRight[BytesByKey].pure[F]
-                    case _ =>
-                      consumer
-                        .poll(10.millis)
-                        .map(_.values.values.flatMap(_.toIterable).foldLeft(acc)(processRecord).asLeft)
-                  }
-              }
-              .flatTap { map =>
-                Log[F].info(
-                  s"State topic $stateTopic partition $partition read complete at offset $targetOffset, ${map.size} keys read"
-                )
-              }
-
         val statePartitionSingleton = data.NonEmptySet.of(statePartition)
         for {
           _ <- consumer.assign(statePartitionSingleton)
@@ -135,7 +132,10 @@ object KafkaPersistence {
             endOffsets.get(statePartition),
             MissingOffsetError(statePartition)
           )
-          bytesByKey <- readPartition(targetOffset)
+          bytesByKey <- readPartition(Consumer(consumer), statePartition, targetOffset)
+          _ <- Log[F].info(
+            s"State topic $stateTopic partition $partition read complete at offset $targetOffset, ${bytesByKey.size} keys read"
+          )
         } yield bytesByKey
       }
   }
