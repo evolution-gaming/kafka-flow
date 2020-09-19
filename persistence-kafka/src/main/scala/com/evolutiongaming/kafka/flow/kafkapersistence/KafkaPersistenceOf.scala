@@ -14,20 +14,20 @@ import com.olegpy.meow.effects._
 final case class KafkaPersistenceOf[F[_], K, S, A](create: Partition => F[KafkaPersistence[F, K, S, A]])
 
 object KafkaPersistenceOf {
-  def apply[F[_] : BracketThrowable : Producer : ToBytes[*[_], S] : FromBytes[*[_], S] : FromTry : Log : Sync, S, A](
+  def apply[F[_] : BracketThrowable : Producer : FromTry : Log : Sync, S: ToBytes[F, *] : FromBytes[F, *], A](
                                                                                                                       consumerOf: ConsumerOf[F],
                                                                                                                       consumerConfig: ConsumerConfig,
                                                                                                                       snapshotTopic: Topic
                                                                                                                     ): KafkaPersistenceOf[F, KafkaKey, S, A] =
     this { partition =>
       for {
-        snapshotData <- KafkaPersistence.readSnapahots(
+        stateData <- KafkaPersistence.readSnapahots(
           consumerOf = consumerOf,
           consumerConfig = consumerConfig,
           snapshotTopic = snapshotTopic,
           partition = partition
         )
-        stateRef <- Ref.of(snapshotData)
+        stateRef <- Ref.of(stateData)
       } yield KafkaPersistence[F, S, A](snapshotTopic, stateRef.stateInstance, Ref.of(none[Snapshot[S]]).map(_.stateInstance))
     }
 }
