@@ -21,13 +21,13 @@ object KafkaPersistenceOf {
                                                                                                                     ): KafkaPersistenceOf[F, KafkaKey, S, A] =
     this { partition =>
       for {
-        stateData <- KafkaPersistence.readSnapahots(
+        snapshotData <- KafkaPersistence.readSnapahots(
           consumerOf = consumerOf,
           consumerConfig = consumerConfig,
           snapshotTopic = snapshotTopic,
           partition = partition
         )
-        stateRef <- Ref.of(stateData)
+        stateRef <- Ref.of(snapshotData)
       } yield KafkaPersistence[F, S, A](snapshotTopic, stateRef.stateInstance, Ref.of(none[Snapshot[S]]).map(_.stateInstance))
     }
 }
