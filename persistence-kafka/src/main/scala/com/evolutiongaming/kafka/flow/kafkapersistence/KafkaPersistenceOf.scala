@@ -17,17 +17,17 @@ object KafkaPersistenceOf {
   def apply[F[_] : BracketThrowable : Producer : ToBytes[*[_], S] : FromBytes[*[_], S] : FromTry : Log : Sync, S, A](
                                                                                                                       consumerOf: ConsumerOf[F],
                                                                                                                       consumerConfig: ConsumerConfig,
-                                                                                                                      stateTopic: Topic
+                                                                                                                      snapshotTopic: Topic
                                                                                                                     ): KafkaPersistenceOf[F, KafkaKey, S, A] =
     this { partition =>
       for {
-        stateData <- KafkaPersistence.readState(
+        snapshotData <- KafkaPersistence.readSnapahots(
           consumerOf = consumerOf,
           consumerConfig = consumerConfig,
-          stateTopic = stateTopic,
+          snapshotTopic = snapshotTopic,
           partition = partition
         )
-        stateRef <- Ref.of(stateData)
-      } yield KafkaPersistence[F, S, A](stateTopic, stateRef.stateInstance, Ref.of(none[Snapshot[S]]).map(_.stateInstance))
+        stateRef <- Ref.of(snapshotData)
+      } yield KafkaPersistence[F, S, A](snapshotTopic, stateRef.stateInstance, Ref.of(none[Snapshot[S]]).map(_.stateInstance))
     }
 }
