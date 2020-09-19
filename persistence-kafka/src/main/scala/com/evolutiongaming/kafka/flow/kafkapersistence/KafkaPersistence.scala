@@ -41,7 +41,7 @@ object KafkaPersistence {
   def apply[F[_] : Producer : Monad : FromTry : Log,
     S: FromBytes[F, *] : ToBytes[F, *],
     A](
-        stateTopic: Topic,
+        snapshotTopic: Topic,
         monadState: MonadState[F, BytesByKey],
         buffers: F[MonadState[F, Option[Snapshot[S]]]]
       ): KafkaPersistence[F, KafkaKey, S, A] = {
@@ -55,7 +55,7 @@ object KafkaPersistence {
             override def get(key: KafkaKey) =
               for {
                 state <- monadState.get
-                s <- state.get(key.key).traverse(bytes => FromBytes[F, S].apply(bytes.toArray, stateTopic))
+                s <- state.get(key.key).traverse(bytes => FromBytes[F, S].apply(bytes.toArray, snapshotTopic))
               } yield s
 
             override def persist(key: KafkaKey, snapshot: S) = produce(snapshot.some)
@@ -64,7 +64,7 @@ object KafkaPersistence {
 
             private def produce(snapshot: Option[S]) =
               Producer[F]
-                .send(new ProducerRecord(topic = stateTopic, key = key.key.some, value = snapshot))
+                .send(new ProducerRecord(topic = snapshotTopic, key = key.key.some, value = snapshot))
                 .flatten
                 .void
           },
@@ -88,7 +88,7 @@ object KafkaPersistence {
   }
 
   private[kafkapersistence] def readPartition[F[_] : Monad : Log](consumer: Consumer[F], snapshotPartition: TopicPartition, targetOffset: Offset): F[BytesByKey] =
-    Log[F].info(s"State topic read started up to offset $targetOffset") *>
+    Log[F].info(s"Snapshot topic read started up to offset $targetOffset") *>
       FlatMap[F]
         .tailRecM[BytesByKey, BytesByKey](BytesByKey.zero) { acc =>
           consumer
@@ -111,30 +111,30 @@ object KafkaPersistence {
   }
 
 
-  private[kafkapersistence] def readState[F[_] : BracketThrowable : FromBytes[*[_], String] : Log](
+  private[kafkapersistence] def readSnapahots[F[_] : BracketThrowable : FromBytes[*[_], String] : Log](
                                                                                                     consumerOf: ConsumerOf[F],
                                                                                                     consumerConfig: ConsumerConfig,
-                                                                                                    stateTopic: Topic,
+                                                                                                    snapshotTopic: Topic,
                                                                                                     partition: Partition
                                                                                                   ): F[BytesByKey] = {
     consumerOf
       .apply[String, ByteVector](
-        ConsumerConfig.lens(_.common.clientId).modify(_.map(cid => s"$cid-state-$partition"))(consumerConfig)
+        ConsumerConfig.lens(_.common.clientId).modify(_.map(cid => s"$cid-snapshot-$partition"))(consumerConfig)
       )
       .use { consumer =>
-        val statePartition = TopicPartition(topic = stateTopic, partition = partition)
+        val snapshotsPartition = TopicPartition(topic = snapshotTopic, partition = partition)
 
-        val statePartitionSingleton = data.NonEmptySet.of(statePartition)
+        val snapshotPartitionSingleton = data.NonEmptySet.of(snapshotsPartition)
         for {
-          _ <- consumer.assign(statePartitionSingleton)
-          endOffsets <- consumer.endOffsets(statePartitionSingleton)
+          _ <- consumer.assign(snapshotPartitionSingleton)
+          endOffsets <- consumer.endOffsets(snapshotPartitionSingleton)
           targetOffset <- BracketThrowable[F].fromOption(
-            endOffsets.get(statePartition),
-            MissingOffsetError(statePartition)
+            endOffsets.get(snapshotsPartition),
+            MissingOffsetError(snapshotsPartition)
           )
-          bytesByKey <- readPartition(Consumer(consumer), statePartition, targetOffset)
+          bytesByKey <- readPartition(Consumer(consumer), snapshotsPartition, targetOffset)
           _ <- Log[F].info(
-            s"State topic $stateTopic partition $partition read complete at offset $targetOffset, ${bytesByKey.size} keys read"
+            s"Snapshot topic $snapshotTopic partition $partition read complete at offset $targetOffset, ${bytesByKey.size} keys read"
           )
         } yield bytesByKey
       }
