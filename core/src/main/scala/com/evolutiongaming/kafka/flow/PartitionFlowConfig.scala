@@ -26,5 +26,5 @@ import scala.concurrent.duration._
   */
 case class PartitionFlowConfig(
   triggerTimersInterval: FiniteDuration = 1.second,
-  commitOffsetsInterval: FiniteDuration = 1.second
+  commitOffsetsInterval: FiniteDuration = 1.minute
 )
