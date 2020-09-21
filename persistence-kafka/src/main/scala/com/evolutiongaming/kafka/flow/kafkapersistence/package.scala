@@ -14,6 +14,12 @@ import monocle.macros.GenLens
 
 package object kafkapersistence {
 
+  type Transform[T] = T => T
+
+  object Transform {
+    def id[T]: Transform[T] = x => x
+  }
+
   implicit class PartitionFlowOfCompanionOps(val self: PartitionFlowOf.type) extends AnyVal {
 
     /**
@@ -25,7 +31,9 @@ package object kafkapersistence {
                                                                                                           groupId: String,
                                                                                                           kafkaPersistenceOf: KafkaPersistenceOf[F, KafkaKey, S],
                                                                                                           timersOf: TimersOf[F, KafkaKey],
-                                                                                                          keyFlowOf: KeyFlowOf[F, S, ConsRecord]
+                                                                                                          keyFlowOf: KeyFlowOf[F, S, ConsRecord],
+                                                                                                          keyStateOfTransform: Transform[KeyStateOf[F, KafkaKey, ConsRecord]]
+                                                                                                          = Transform.id[KeyStateOf[F, KafkaKey, ConsRecord]]
                                                                                                         ): PartitionFlowOf[F] =
       new PartitionFlowOf[F] {
         override def apply(topicPartition: TopicPartition, assignedAt: Offset): Resource[F, PartitionFlow[F]] = {
@@ -33,14 +41,16 @@ package object kafkapersistence {
             persistence <- Resource.liftF(kafkaPersistenceOf
               .create(topicPartition.partition))
 
-            keyStateOf = KeyStateOf.eagerRecovery[F, KafkaKey, S, ConsRecord](
-              applicationId = applicationId,
-              groupId = groupId,
-              keysOf = persistence.keysOf,
-              timersOf = timersOf,
-              persistenceOf = persistence.snapshots,
-              keyFlowOf = keyFlowOf
-            )
+            keyStateOf = keyStateOfTransform {
+              KeyStateOf.eagerRecovery[F, KafkaKey, S, ConsRecord](
+                applicationId = applicationId,
+                groupId = groupId,
+                keysOf = persistence.keysOf,
+                timersOf = timersOf,
+                persistenceOf = persistence.snapshots,
+                keyFlowOf = keyFlowOf
+              )
+            }
             partitionFlowOf = self(
               applicationId = applicationId,
               groupId = groupId,
