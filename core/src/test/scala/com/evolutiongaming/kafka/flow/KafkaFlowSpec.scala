@@ -3,12 +3,10 @@ package com.evolutiongaming.kafka.flow
 import cats.data.NonEmptyList
 import cats.data.NonEmptyMap
 import cats.data.NonEmptySet
-import cats.effect.Clock
 import cats.effect.SyncIO
 import cats.effect.concurrent.Ref
 import cats.effect.{Resource, Timer}
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.TimerHelper._
 import com.evolutiongaming.kafka.journal.ConsRecord

@@ -1,7 +1,5 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.Clock
-import cats.effect.Sync
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.Log
