@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.effect.{Concurrent, Resource, Timer}
 import cats.syntax.all._
-import cats.{Foldable, Monad, Parallel}
+import cats.{Eval, Foldable, Monad, Parallel}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.timer.TimersOf
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -23,7 +23,7 @@ package object kafkapersistence {
     def eagerRecoveryKafkaPersistence[F[_] : Concurrent : Timer : Parallel : MeasureDuration : LogOf, S](
                                                                                                           applicationId: String,
                                                                                                           groupId: String,
-                                                                                                          kafkaPersistenceOf: KafkaPersistenceOf[F, KafkaKey, S, ConsRecord],
+                                                                                                          kafkaPersistenceOf: KafkaPersistenceOf[F, KafkaKey, S],
                                                                                                           timersOf: TimersOf[F, KafkaKey],
                                                                                                           keyFlowOf: KeyFlowOf[F, S, ConsRecord]
                                                                                                         ): PartitionFlowOf[F] =
@@ -66,6 +66,10 @@ package object kafkapersistence {
       Stream.lift(fa.map(Stream.from[F, G, A])).flatten
   }
 
-  //Gods know why we need this motivation line for the compiler, it hesitates to infer Foldable[Iterable] without it
-  private[kafkapersistence] implicit def iterableFoldable: Foldable[Iterable] = implicitly
+  private[kafkapersistence] implicit def iterableFoldable: Foldable[Iterable] = new Foldable[Iterable] {
+    override def foldLeft[A, B](fa: Iterable[A], b: B)(f: (B, A) => B): B = fa.foldLeft(b)(f)
+
+    override def foldRight[A, B](fa: Iterable[A], lb: Eval[B])(f: (A, Eval[B]) => Eval[B]): Eval[B] =
+      Foldable.iterateRight(fa, lb)(f)
+  }
 }

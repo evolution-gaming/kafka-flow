@@ -11,15 +11,15 @@ import com.evolutiongaming.skafka.producer.Producer
 import com.evolutiongaming.skafka.{FromBytes, Partition, ToBytes, Topic}
 import com.olegpy.meow.effects._
 
-final case class KafkaPersistenceOf[F[_], K, S, A](create: Partition => F[KafkaPersistence[F, K, S, A]])
+final class KafkaPersistenceOf[F[_], K, S](val create: Partition => F[KafkaPersistence[F, K, S]])
 
 object KafkaPersistenceOf {
-  def apply[F[_] : BracketThrowable : Producer : FromTry : Log : Sync, S: ToBytes[F, *] : FromBytes[F, *], A](
+  def apply[F[_] : BracketThrowable : Producer : FromTry : Log : Sync, S: ToBytes[F, *] : FromBytes[F, *]](
                                                                                                                       consumerOf: ConsumerOf[F],
                                                                                                                       consumerConfig: ConsumerConfig,
                                                                                                                       snapshotTopic: Topic
-                                                                                                                    ): KafkaPersistenceOf[F, KafkaKey, S, A] =
-    this { partition =>
+                                                                                                                    ): KafkaPersistenceOf[F, KafkaKey, S] =
+    new KafkaPersistenceOf(partition =>
       for {
         snapshotData <- KafkaPersistence.readSnapahots(
           consumerOf = consumerOf,
@@ -28,6 +28,6 @@ object KafkaPersistenceOf {
           partition = partition
         )
         stateRef <- Ref.of(snapshotData)
-      } yield KafkaPersistence[F, S, A](snapshotTopic, stateRef.stateInstance, Ref.of(none[Snapshot[S]]).map(_.stateInstance))
-    }
+      } yield KafkaPersistence[F, S](snapshotTopic, stateRef.stateInstance, Ref.of(none[Snapshot[S]]).map(_.stateInstance))
+    )
 }
