@@ -2,6 +2,8 @@ package com.evolutiongaming.kafka.flow
 
 import cats.effect.Clock
 import cats.effect.Sync
+import cats.syntax.all._
+import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.skafka.Topic
 import consumer.Consumer
@@ -19,12 +21,12 @@ object ConsumerFlowOf {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def apply[F[_]: Sync: Clock: Log](
+  def apply[F[_]: BracketThrowable: Log](
     topic: Topic,
     topicFlowOf: TopicFlowOf[F],
     config: ConsumerFlowConfig = ConsumerFlowConfig()
   ): ConsumerFlowOf[F] = { consumer =>
-    ConsumerFlow.of(consumer, topic, topicFlowOf, config)
+    ConsumerFlow(consumer, topic, topicFlowOf, config).pure[F]
   }
 
 }

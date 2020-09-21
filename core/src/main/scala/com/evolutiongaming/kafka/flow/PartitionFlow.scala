@@ -15,6 +15,7 @@ import com.evolutiongaming.scache.Releasable
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.smetrics.MeasureDuration
 import consumer.OffsetToCommit
+import java.time.Instant
 import timer.Timestamp
 
 trait PartitionFlow[F[_]] {
@@ -42,13 +43,14 @@ object PartitionFlow {
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F, String, ConsRecord],
+    config: PartitionFlowConfig
   ): Resource[F, PartitionFlow[F]] =
     for {
       log   <- LogResource[F](getClass, topicPartition.toString)
       cache <- Cache.loading[F, String, PartitionKey[F]]
       flow  <- Resource.liftF {
         implicit val _log = log
-        of(topicPartition, assignedAt, keyStateOf, cache)
+        of(topicPartition, assignedAt, keyStateOf, cache, config)
       }
     } yield flow
 
@@ -56,20 +58,36 @@ object PartitionFlow {
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F, String, ConsRecord],
-    cache: Cache[F, String, PartitionKey[F]]
+    cache: Cache[F, String, PartitionKey[F]],
+    config: PartitionFlowConfig
   ): F[PartitionFlow[F]] = for {
     clock <- Clock[F].instant
     committedOffset <- Ref.of(assignedAt)
     timestamp <- Ref.of(Timestamp(clock, None, assignedAt))
-    flow <- of(topicPartition, keyStateOf, committedOffset, timestamp, cache)
+    triggerTimersAt <- Ref.of(clock)
+    commitOffsetsAt <- Ref.of(clock)
+    flow <- of(
+      topicPartition,
+      keyStateOf,
+      committedOffset,
+      timestamp,
+      triggerTimersAt,
+      commitOffsetsAt,
+      cache,
+      config
+    )
   } yield flow
 
+  // TODO: put most `Ref` variables into one state class?
   def of[F[_]: Concurrent: Parallel: Clock: Log: MeasureDuration, S](
     topicPartition: TopicPartition,
     keyStateOf: KeyStateOf[F, String, ConsRecord],
     committedOffset: Ref[F, Offset],
     timestamp: Ref[F, Timestamp],
-    cache: Cache[F, String, PartitionKey[F]]
+    triggerTimersAt: Ref[F, Instant],
+    commitOffsetsAt: Ref[F, Instant],
+    cache: Cache[F, String, PartitionKey[F]],
+    config: PartitionFlowConfig
   ): F[PartitionFlow[F]] = {
 
     def stateOf(createdAt: Timestamp, key: String) =
@@ -133,6 +151,9 @@ object PartitionFlow {
           state.timers.trigger(state.flow)
         }
       }
+      _ <- triggerTimersAt update { triggerTimersAt =>
+        triggerTimersAt plusMillis config.triggerTimersInterval.toMillis
+      }
     } yield ()
 
     def offsetToCommit = for {
@@ -162,13 +183,25 @@ object PartitionFlow {
       offsetToCommit <- moveForward traverse { moveForward =>
         Log[F].info(s"offset: $allowedOffset (+$moveForward)") as allowedOffset
       }
+      _ <- commitOffsetsAt update { commitOffsetsAt =>
+        commitOffsetsAt plusMillis config.commitOffsetsInterval.toMillis
+      }
 
     } yield offsetToCommit
 
     init as { records =>
-      NonEmptyList.fromList(records).traverse_(processRecords) *>
-      triggerTimers *>
-      offsetToCommit
+      for {
+        _ <- NonEmptyList.fromList(records).traverse_(processRecords)
+
+        clock <- Clock[F].instant
+        triggerTimersAt <- triggerTimersAt.get
+        _ <- if (clock isAfter triggerTimersAt) triggerTimers else ().pure[F]
+
+        clock <- Clock[F].instant
+        commitOffsetsAt <- commitOffsetsAt.get
+        offsetToCommit <- if (clock isAfter commitOffsetsAt) offsetToCommit else None.pure[F]
+
+      } yield offsetToCommit
     }
   }
 

@@ -23,6 +23,7 @@ import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
 import scodec.bits.ByteVector
 
 import PartitionFlowSpec._
@@ -222,7 +223,15 @@ object PartitionFlowSpec {
       }
       implicit val clock = Clock.create[IO]
       implicit val evidence = MeasureDuration.fromClock(clock)
-      PartitionFlow.resource(TopicPartition.empty, Offset.unsafe(100), keyStateOf)
+      PartitionFlow.resource(
+        TopicPartition.empty,
+        Offset.unsafe(100),
+        keyStateOf,
+        PartitionFlowConfig(
+          triggerTimersInterval = 0.seconds,
+          commitOffsetsInterval = 0.seconds
+        )
+      )
     }
 
     def records(key: String, offset: Int, events: List[String]): List[ConsRecord] =

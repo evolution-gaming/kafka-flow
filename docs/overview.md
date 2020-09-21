@@ -150,10 +150,7 @@ import scala.concurrent.duration._
 val config = ConsumerFlowConfig()
 
 println(s"""`pollTimeout`, which defaults to ${config.pollTimeout}, configures
-Kafka polling timeout, and `triggerTimersInterval`, which defaults to
-${config.triggerTimersInterval}, configures how often the clock based timers
-are triggered (watermark and offset based timers are not affected by this
-parameter). See scaladoc of `ConsumerFlowConfig` for more details.""")
+Kafka polling timeout. See scaladoc of `ConsumerFlowConfig` for more details.""")
 ```
 
 ## TopicFlowOf
@@ -237,6 +234,27 @@ Besides that, it also responsible for the following functions:
   commits in the specific partition until moving forward is allowed.
 
 The `keyStateOf` parameter is discussed further in this document.
+
+### Configuration
+
+It is possible to configure some of the aspects of how `PartitionFlow` default
+implementation works by replacing default `config` parameter passed into
+`PartitionFlowOf`.
+
+```scala mdoc:passthrough:nest
+import com.evolutiongaming.kafka.flow.PartitionFlowConfig
+import scala.concurrent.duration._
+val config = PartitionFlowConfig()
+
+println(s"""`triggerTimersInterval`, which defaults to
+${config.triggerTimersInterval}, configures how often the clock based timers
+are triggered, `commitOffsetsInterval`, which defaults to ${config.commitOffsetsInterval}
+configures how often key states are inspected for the possible commits to Kafka.""")
+```
+
+Both operations are quite heavyweight when there are lot of different active
+keys in one partition, so these operations are not performed on every poll.
+See scaladoc of `PartitionFlowConfig` for more details.
 
 ### Metrics
 

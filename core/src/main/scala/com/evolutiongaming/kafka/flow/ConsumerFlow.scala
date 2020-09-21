@@ -38,33 +38,17 @@ object ConsumerFlow {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: Sync: Clock: Log](
+  def apply[F[_]: BracketThrowable: Log](
     consumer: Consumer[F],
     topic: Topic,
     topicFlowOf: TopicFlowOf[F],
-    config: ConsumerFlowConfig
-  ): F[ConsumerFlow[F]] = for {
-    clock <- Clock[F].instant
-    timersTriggeredAt <- Ref.of(clock)
-  } yield ConsumerFlow(consumer, topic, topicFlowOf, timersTriggeredAt, config)
-
-  private[flow] def apply[F[_]: BracketThrowable: Clock: Log](
-    consumer: Consumer[F],
-    topic: Topic,
-    topicFlowOf: TopicFlowOf[F],
-    timersTriggeredAt: Ref[F, Instant],
     config: ConsumerFlowConfig
   ): ConsumerFlow[F] = new ConsumerFlow[F] {
 
-    def poll(topicFlow: TopicFlow[F]): F[ConsRecords] = for {
-      clock <- Clock[F].instant
-      records <- consumer.poll(config.pollTimeout)
-      trigger <- timersTriggeredAt updateMaybe { previouslyTriggeredAt =>
-        val willTriggerAt = previouslyTriggeredAt plusMillis config.triggerTimersInterval.toMillis
-        if (records.values.nonEmpty || clock.isAfter(willTriggerAt)) Some(clock) else None
+    def poll(topicFlow: TopicFlow[F]): F[ConsRecords] =
+      consumer.poll(config.pollTimeout) flatTap { records =>
+        topicFlow(records)
       }
-      _ <- if (trigger) topicFlow(records) else ().pure[F]
-    } yield records
 
     def stream = for {
       topicFlow <- Stream.fromResource(topicFlowOf(consumer, topic))

@@ -22,14 +22,16 @@ object PartitionFlowOf {
   def apply[F[_]: Concurrent: Timer: Parallel: MeasureDuration: LogOf, S](
     applicationId: String,
     groupId: String,
-    keyStateOf: KeyStateOf[F, KafkaKey, ConsRecord]
+    keyStateOf: KeyStateOf[F, KafkaKey, ConsRecord],
+    config: PartitionFlowConfig = PartitionFlowConfig()
   ): PartitionFlowOf[F] = { (topicPartition, assignedAt) =>
     PartitionFlow.resource(
       topicPartition = topicPartition,
       assignedAt = assignedAt,
       keyStateOf = keyStateOf.imap(_.key) { key =>
         KafkaKey(applicationId, groupId, topicPartition, key)
-      }
+      },
+      config
     )
   }
 

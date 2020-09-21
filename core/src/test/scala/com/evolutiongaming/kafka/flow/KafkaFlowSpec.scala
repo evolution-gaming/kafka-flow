@@ -46,6 +46,8 @@ class KafkaFlowSpec extends FunSuite {
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
+        Action.Poll(ConsumerRecords.empty),
+        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer))
@@ -70,12 +72,14 @@ class KafkaFlowSpec extends FunSuite {
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
+        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer,
         Action.RetryOnError(Error, OnError.Decision.retry(1.millis)),
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
+        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer))
@@ -100,6 +104,7 @@ class KafkaFlowSpec extends FunSuite {
         Action.ReleaseTopicFlow,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
         Action.RemovePartitions(NonEmptySet.of(Partition.unsafe(1))),
+        Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
         Action.AcquireConsumer))
@@ -193,8 +198,6 @@ object KafkaFlowSpec {
       }
       Resource(result)
     }
-
-    implicit val clock: Clock[F] = Clock.empty
 
     implicit val retry: Retry[F] = {
       val strategy = Strategy.const(1.millis)
