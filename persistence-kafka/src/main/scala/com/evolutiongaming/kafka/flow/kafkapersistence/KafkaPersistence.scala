@@ -22,9 +22,9 @@ import scodec.bits.ByteVector
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
 
-final class KafkaPersistence[F[_], K, S, A](
+final class KafkaPersistence[F[_], K, S](
                                              private[kafkapersistence] val keysOf: KeysOf[F, K],
-                                             private[kafkapersistence] val snapshots: SnapshotPersistenceOf[F, K, S, A],
+                                             private[kafkapersistence] val snapshots: SnapshotPersistenceOf[F, K, S, ConsRecord],
                                              private[kafkapersistence] val onRecoveryFinished: F[Unit]
                                            )
 
@@ -39,12 +39,11 @@ object KafkaPersistence {
   private case class MissingOffsetError(topicPartition: TopicPartition) extends NoStackTrace
 
   def apply[F[_] : Producer : Monad : FromTry : Log,
-    S: FromBytes[F, *] : ToBytes[F, *],
-    A](
+    S: FromBytes[F, *] : ToBytes[F, *]](
         snapshotTopic: Topic,
         monadState: MonadState[F, BytesByKey],
         buffers: F[MonadState[F, Option[Snapshot[S]]]]
-      ): KafkaPersistence[F, KafkaKey, S, A] = {
+      ): KafkaPersistence[F, KafkaKey, S] = {
     val snapshotsOf = new SnapshotsOf[F, KafkaKey, S] {
       override def apply(key: KafkaKey): F[Snapshots[F, S]] =
         for {
