@@ -16,10 +16,10 @@ final class KafkaPersistenceOf[F[_], K, S](val create: Partition => F[KafkaPersi
 
 object KafkaPersistenceOf {
   def apply[F[_] : BracketThrowable : Producer : FromTry : Log : Sync, S: ToBytes[F, *] : FromBytes[F, *]](
-                                                                                                                      consumerOf: ConsumerOf[F],
-                                                                                                                      consumerConfig: ConsumerConfig,
-                                                                                                                      snapshotTopic: Topic
-                                                                                                                    ): KafkaPersistenceOf[F, KafkaKey, S] =
+                                                                                                            consumerOf: ConsumerOf[F],
+                                                                                                            consumerConfig: ConsumerConfig,
+                                                                                                            snapshotTopic: Topic
+                                                                                                          ): KafkaPersistenceOf[F, KafkaKey, S] =
     new KafkaPersistenceOf(partition =>
       for {
         snapshotData <- KafkaPersistence.readSnapahots(
@@ -29,6 +29,10 @@ object KafkaPersistenceOf {
           partition = partition
         )
         stateRef <- Ref.of(snapshotData)
-      } yield KafkaPersistence[F, S](snapshotTopic, stateRef.stateInstance, Ref.of(none[Snapshot[S]]).map(_.stateInstance))
+      } yield KafkaPersistence[F, S](
+        snapshotTopic = snapshotTopic,
+        monadState = stateRef.stateInstance,
+        buffers = Ref.of(none[Snapshot[S]]).map(_.stateInstance)
+      )
     )
 }
