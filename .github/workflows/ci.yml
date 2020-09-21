@@ -70,7 +70,7 @@ jobs:
       run: yarn build
 
     - name: Publish documentation / Deploy
-      if: success() && matrix.scala == '2.13.3'
+      if: success() && matrix.scala == '2.13.3' && github.ref == 'refs/heads/master'
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
