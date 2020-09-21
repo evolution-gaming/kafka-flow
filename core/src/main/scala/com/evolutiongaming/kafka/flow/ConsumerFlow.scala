@@ -1,12 +1,8 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptySet
-import cats.effect.Clock
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
-import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka.Offset
@@ -16,7 +12,6 @@ import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.RebalanceListener
 import com.evolutiongaming.sstream.Stream
 import consumer.Consumer
-import java.time.Instant
 import scala.collection.immutable.SortedSet
 
 /** Represents evertything stateful happening on one `Consumer` */
