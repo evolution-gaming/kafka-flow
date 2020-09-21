@@ -118,7 +118,7 @@ object KafkaPersistence {
                                                                                                   ): F[BytesByKey] = {
     consumerOf
       .apply[String, ByteVector](
-        ConsumerConfig.lens(_.common.clientId).modify(_.map(cid => s"$cid-snapshot-$partition"))(consumerConfig)
+        ConsumerConfig.clientId.modify(_.map(cid => s"$cid-snapshot-$partition"))(consumerConfig)
       )
       .use { consumer =>
         val snapshotsPartition = TopicPartition(topic = snapshotTopic, partition = partition)

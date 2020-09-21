@@ -6,6 +6,7 @@ import cats.syntax.all._
 import com.evolutiongaming.catshelper.{BracketThrowable, FromTry, Log}
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.snapshot.Snapshots.Snapshot
+import com.evolutiongaming.skafka.consumer.AutoOffsetReset.Earliest
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
 import com.evolutiongaming.skafka.producer.Producer
 import com.evolutiongaming.skafka.{FromBytes, Partition, ToBytes, Topic}
@@ -23,7 +24,7 @@ object KafkaPersistenceOf {
       for {
         snapshotData <- KafkaPersistence.readSnapahots(
           consumerOf = consumerOf,
-          consumerConfig = consumerConfig,
+          consumerConfig = consumerConfig.copy(autoOffsetReset = Earliest),
           snapshotTopic = snapshotTopic,
           partition = partition
         )
