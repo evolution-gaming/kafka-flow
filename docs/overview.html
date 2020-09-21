@@ -237,7 +237,7 @@ implementation works by replacing default <code>config</code> parameter passed i
 <code>PartitionFlowOf</code>.</p>
 <p><code>triggerTimersInterval</code>, which defaults to
 1 second, configures how often the clock based timers
-are triggered, <code>commitOffsetsInterval</code>, which defaults to 1 second
+are triggered, <code>commitOffsetsInterval</code>, which defaults to 1 minute
 configures how often key states are inspected for the possible commits to Kafka.</p>
 <p>Both operations are quite heavyweight when there are lot of different active
 keys in one partition, so these operations are not performed on every poll.
