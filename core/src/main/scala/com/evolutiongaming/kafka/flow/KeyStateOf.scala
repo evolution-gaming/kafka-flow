@@ -26,7 +26,7 @@ trait KeyStateOf[F[_], K, A] { self =>
     *
     * The usual way to call this method is before starting processing consumer
     * records.
-    */
+*/
   def all(topicPartition: TopicPartition): Stream[F, K]
 
   /** Transforms `K` parameter into something else.

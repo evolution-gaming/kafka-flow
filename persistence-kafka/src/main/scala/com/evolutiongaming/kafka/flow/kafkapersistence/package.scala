@@ -54,11 +54,11 @@ package object kafkapersistence {
   }
 
   private[kafkapersistence] implicit class ConsumerConfigCompanionOps(val self: ConsumerConfig.type) extends AnyVal {
-    @inline def lens = ConsumerConfigCompanionOps.lens
+    @inline def clientId = ConsumerConfigCompanionOps.clientId
   }
 
   private[kafkapersistence] object ConsumerConfigCompanionOps {
-    val lens = GenLens[ConsumerConfig]
+    val clientId = GenLens[ConsumerConfig](_.common.clientId)
   }
 
   private[kafkapersistence] implicit class StreamCompanionOps(val self: Stream.type) {
