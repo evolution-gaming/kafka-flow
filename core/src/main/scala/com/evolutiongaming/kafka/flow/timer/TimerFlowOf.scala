@@ -5,7 +5,6 @@ import cats.syntax.all._
 import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.flow.KeyContext
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
-import com.evolutiongaming.skafka.Offset
 import scala.concurrent.duration._
 
 trait TimerFlowOf[F[_]] {
