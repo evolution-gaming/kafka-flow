@@ -214,7 +214,7 @@ object PartitionFlowSpec {
               timers <- TimerContext.memory[IO, String](key, createdAt)
               persistence <- persistenceOf(key, fold, timers)
               recordFlow <- RecordFlow.of(fold, persistence)
-              timerFlowOf = TimerFlowOf.unloadOrphaned[IO]()
+              timerFlowOf = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes)
               timerFlow <- timerFlowOf(context, persistence, timers)
               keyFlow = KeyFlow(recordFlow, timerFlow)
             } yield KeyState(keyFlow, timers)

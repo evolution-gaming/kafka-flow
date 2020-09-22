@@ -19,21 +19,25 @@ trait TimerFlowOf[F[_]] {
 }
 object TimerFlowOf {
 
-  /** Performs persist based on the difference between the state offset and current offset.
+  /** Performs persist based on the difference between the state offset and current offset
+    * and idle time since the state was last touched.
     *
     * Removes the state from memory after it is persisted.
     *
+    * @param fireEvery How often the check should be performed.
     * @param maxOffsetDifference How many events could have happened without updates
     * to the state before persist is initiated.
+    * @param maxIdle How long since the state was recovered, or last record was processed
+    * should pass before persist is initiated.
     */
   def unloadOrphaned[F[_]: MonadThrowable](
-    maxOffsetDifference: Int = 100000
+    fireEvery: FiniteDuration = 10.minutes,
+    maxOffsetDifference: Int = 100000,
+    maxIdle: FiniteDuration = 10.minutes,
   ): TimerFlowOf[F] = { (context, persistence, timers) =>
 
-    def register(touchedAt: Timestamp) = for {
-      triggerAt <- Offset.of[F](touchedAt.offset.value + maxOffsetDifference)
-      _ <- timers.registerOffset(triggerAt)
-    } yield ()
+    def register(touchedAt: Timestamp) =
+      timers.registerProcessing(touchedAt.clock plusMillis fireEvery.toMillis)
 
     for {
       current <- timers.current
@@ -46,7 +50,10 @@ object TimerFlowOf {
         current <- timers.current
         processedAt <- timers.processedAt
         touchedAt = processedAt getOrElse committedAt
-        _ <- if (current.offset.value - touchedAt.offset.value > maxOffsetDifference) {
+        expiredAt = touchedAt.clock plusMillis maxIdle.toMillis
+        expired = current.clock isAfter expiredAt
+        offsetDifference = current.offset.value - touchedAt.offset.value
+        _ <- if (expired || offsetDifference > maxOffsetDifference) {
           context.log.info(s"flush") *>
           persistence.flush *>
           context.remove

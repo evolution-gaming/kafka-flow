@@ -29,7 +29,7 @@ class TimerFlowOfSpec extends FunSuite {
     // Given("flow flushes after 3 messages accumulated")
     val startedAt = f.timestamp.copy(offset = Offset.unsafe(1234))
     val context = Context(timestamps = TimestampState(startedAt))
-    val flowOf = TimerFlowOf.unloadOrphaned[F](3)
+    val flowOf = TimerFlowOf.unloadOrphaned[F](maxOffsetDifference = 3)
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("flow is started")
@@ -48,7 +48,7 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow flushes after 3 messages accumulated")
     val context = Context(timestamps = TimestampState(f.timestamp))
-    val flowOf = TimerFlowOf.unloadOrphaned[F](3)
+    val flowOf = TimerFlowOf.unloadOrphaned[F](maxOffsetDifference = 3)
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("timers trigger called")
@@ -70,7 +70,7 @@ class TimerFlowOfSpec extends FunSuite {
     // Given("flow flushes after 3 messages accumulated")
     val startedAt = f.timestamp.copy(offset = Offset.unsafe(1000))
     val context = Context(timestamps = TimestampState(startedAt))
-    val flowOf = TimerFlowOf.unloadOrphaned[F](3)
+    val flowOf = TimerFlowOf.unloadOrphaned[F](fireEvery = 0.minutes, maxOffsetDifference = 3)
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("timers trigger called")
@@ -99,7 +99,7 @@ class TimerFlowOfSpec extends FunSuite {
     // Given("flow flushes after 3 messages accumulated")
     val startedAt = f.timestamp.copy(offset = Offset.unsafe(1000))
     val context = Context(timestamps = TimestampState(startedAt))
-    val flowOf = TimerFlowOf.unloadOrphaned[F](3)
+    val flowOf = TimerFlowOf.unloadOrphaned[F](fireEvery = 0.minutes, maxOffsetDifference = 3)
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("timers trigger called")
@@ -126,7 +126,7 @@ class TimerFlowOfSpec extends FunSuite {
     // Given("flow flushes after 3 messages accumulated")
     val startedAt = f.timestamp.copy(offset = Offset.unsafe(1000))
     val context = Context(timestamps = TimestampState(startedAt))
-    val flowOf = TimerFlowOf.unloadOrphaned[F](3)
+    val flowOf = TimerFlowOf.unloadOrphaned[F](fireEvery = 0.minutes, maxOffsetDifference = 3)
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("timers trigger called")
