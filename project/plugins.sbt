@@ -11,3 +11,5 @@ addSbtPlugin("com.github.gseitz" % "sbt-release" % "1.0.13")
 addSbtPlugin("com.evolutiongaming" % "sbt-scalac-opts-plugin" % "0.0.5")
 
 addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.2.9" )
+
+addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.0.2")
