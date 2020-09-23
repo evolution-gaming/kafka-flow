@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.key
 
-import cats.Monad
+import cats.{Invariant, Monad}
 import cats.effect.Sync
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
@@ -27,6 +27,15 @@ object KeysOf {
     def apply(key: K) = Keys(key, database)
     def all(applicationId: String, groupId: String, topicPartition: TopicPartition) =
       database.all(applicationId, groupId, topicPartition)
+  }
+
+  implicit def keyInvariant[F[_]]: Invariant[KeysOf[F, *]] = new Invariant[KeysOf[F, *]] {
+    override def imap[A, B](fa: KeysOf[F, A])(f: A => B)(g: B => A): KeysOf[F, B] = new KeysOf[F, B] {
+      override def apply(key: B): Keys[F] = fa(g(key))
+
+      override def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, B] =
+        fa.all(applicationId, groupId, topicPartition).map(f)
+    }
   }
 
 }
