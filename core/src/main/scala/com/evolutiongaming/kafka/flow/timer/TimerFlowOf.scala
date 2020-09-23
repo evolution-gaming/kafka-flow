@@ -53,7 +53,7 @@ object TimerFlowOf {
         expired = current.clock isAfter expiredAt
         offsetDifference = current.offset.value - touchedAt.offset.value
         _ <- if (expired || offsetDifference > maxOffsetDifference) {
-          context.log.info(s"flush") *>
+          context.log.info(s"flush, offset difference: $offsetDifference") *>
           persistence.flush *>
           context.remove
         } else {
