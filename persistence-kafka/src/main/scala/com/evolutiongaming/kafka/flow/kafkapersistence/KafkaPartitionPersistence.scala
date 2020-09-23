@@ -117,7 +117,7 @@ object KafkaPartitionPersistence {
     case _                                                                            => map //ignore records with no key for now
   }
 
-  private[kafkapersistence] def readSnapahots[F[_]: BracketThrowable: FromBytes[
+  private[kafkapersistence] def readSnapshots[F[_]: BracketThrowable: FromBytes[
     *[_],
     String
   ]: Log](

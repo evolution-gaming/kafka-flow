@@ -41,7 +41,7 @@ object KafkaPersistence {
       writeDatabase = writeDatabase,
       ofPartition = partition =>
         for {
-          snapshotData <- KafkaPartitionPersistence.readSnapahots(
+          snapshotData <- KafkaPartitionPersistence.readSnapshots(
             consumerOf = consumerOf,
             consumerConfig = consumerConfig.copy(autoOffsetReset = Earliest),
             snapshotTopic = snapshotTopic,
