@@ -31,7 +31,7 @@ trait PersistenceOf[F[_], K, S, A] {
   *
   * Ignores recovery function because the state is to be restored from snapshot.
   */
-trait SnapshotPersistenceOf[F[_], K, S, A] extends PersistenceOf[F, K, S, A] {
+trait SnapshotPersistenceOf[F[_], K, S, A] extends PersistenceOf[F, K, S, A] {self =>
 
   def apply(
     key: K,
@@ -44,6 +44,9 @@ trait SnapshotPersistenceOf[F[_], K, S, A] extends PersistenceOf[F, K, S, A] {
     timestamps: Timestamps[F],
   ): F[Persistence[F, S, A]] = apply(key, timestamps)
 
+  final def contramap[B](f: B => K ): SnapshotPersistenceOf[F, B,S,A] = new SnapshotPersistenceOf[F, B,S,A] {
+    override def apply(key: B, timestamps: Timestamps[F]): F[Persistence[F, S, A]] = self(f(key), timestamps)
+  }
 }
 object PersistenceOf {
 
