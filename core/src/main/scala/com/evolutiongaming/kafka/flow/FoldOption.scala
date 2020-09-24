@@ -2,9 +2,12 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
 import cats.ApplicativeError
+import cats.Foldable
 import cats.Functor
 import cats.Monad
+import cats.data.NonEmptyList
 import cats.syntax.all._
+import cats.mtl.MonadState
 
 /** Convinience methods for using `Fold` with optional state */
 final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
@@ -121,6 +124,22 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
         s traverse (f(_, e))
       }
     }
+
+  /** Allows to perform an effect after the fold happened. */
+  def tap(f: (S, A) => F[Unit])(implicit F: Monad[F]): FoldOption[F, S, A] =
+    FoldOption {
+      value tap { (s, a) =>
+        s traverse_ (f(_, a))
+      }
+    }
+
+  /** Accepts batch of the events by running this fold on every event in batch. */
+  def batch[G[_]](implicit F: Monad[F], G: Foldable[G]): FoldOption[F, S, G[A]] =
+    FoldOption(value.batch[G])
+
+  /** Store state in `MonadState` instead of passing it forward. */
+  def stateful(storage: MonadState[F, Option[S]])(implicit F: Monad[F]): A => F[Option[S]] =
+    value.stateful(storage)
 
 }
 object FoldOption {

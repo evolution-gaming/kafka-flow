@@ -31,10 +31,11 @@ class FoldToStateSpec extends FunSuite {
     assert(result.removeCalled == 0)
 
     // And("all events and states get into persistence")
-    assert(result.eventsPersisted.reverse == List(
-      "event1", "event2", "event3"
-    ))
-    assert(result.statesPersisted.reverse == List(1, 2, 3))
+    assertEquals(
+      result.eventsPersisted.reverse,
+      List("event1", "event2", "event3")
+    )
+    assertEquals(result.statesPersisted.reverse, List(1, 2, 3))
 
   }
 
@@ -74,10 +75,11 @@ class FoldToStateSpec extends FunSuite {
     assert(result.removeCalled == 0)
 
     // And("all persisted events and states are kept")
-    assert(result.eventsPersisted.reverse == List(
-      "event1", "event2", "event3", "event4", "event5"
-    ))
-    assert(result.statesPersisted.reverse == List(1, 2, 1, 2))
+    assertEquals(
+      result.eventsPersisted.reverse,
+      List("event1", "event2", "event3", "event4", "event5")
+    )
+    assertEquals(result.statesPersisted.reverse, List(1, 2, 1, 2))
 
   }
 

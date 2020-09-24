@@ -2,9 +2,12 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
 import cats.ApplicativeError
+import cats.Foldable
 import cats.Functor
 import cats.Monad
+import cats.data.NonEmptyList
 import cats.syntax.all._
+import cats.mtl.MonadState
 
 /** Reads a state and effectfully produces a new one.
   *
@@ -116,6 +119,27 @@ final case class Fold[F[_], S, A](run: (S, A) => F[S]) {
     Fold { (s, a) =>
       run(s, a) handleErrorWith (f(s, _))
     }
+
+  /** Allows to perform an effect after the fold happened. */
+  def tap(f: (S, A) => F[Unit])(implicit F: Monad[F]): Fold[F, S, A] =
+    Fold { (s, a) =>
+      run(s, a) flatTap (f(_, a))
+    }
+
+  /** Accepts batch of the events by running this fold on every event in batch. */
+  def batch[G[_]](implicit F: Monad[F], G: Foldable[G]): Fold[F, S, G[A]] =
+    Fold { (s, a) =>
+      a.foldLeftM(s)(run)
+    }
+
+  /** Store state in `MonadState` instead of passing it forward. */
+  def stateful(storage: MonadState[F, S])(implicit F: Monad[F]): A => F[S] = { a =>
+    for {
+      s0 <- storage.get
+      s1 <- run(s0, a)
+      _ <- storage.set(s1)
+    } yield s1
+  }
 
 }
 
