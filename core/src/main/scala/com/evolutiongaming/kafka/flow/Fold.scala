@@ -111,7 +111,7 @@ final case class Fold[F[_], S, A](run: (S, A) => F[S]) {
   /** Filters and transforms incoming `B` elements */
   def contraCollect[B](f: PartialFunction[B, A])(implicit F: Applicative[F]): Fold[F, S, B] =
     Fold { (s, b) =>
-      val a = f.unapply(b)
+      val a = f.lift(b)
       a traverse (run(s, _)) map (_ getOrElse s)
     }
 
