@@ -108,6 +108,13 @@ final case class Fold[F[_], S, A](run: (S, A) => F[S]) {
       f(s, a).ifM(run(s, a), s.pure[F])
     }
 
+  /** Filters and transforms incoming `B` elements */
+  def contraCollect[B](f: PartialFunction[B, A])(implicit F: Applicative[F]): Fold[F, S, B] =
+    Fold { (s, b) =>
+      val a = f.unapply(b)
+      a traverse (run(s, _)) map (_ getOrElse s)
+    }
+
   /** Allows to gracefully handle the errror happening during flow.
     *
     * I.e. one could keep / modify the existing state or replace it with some other value.

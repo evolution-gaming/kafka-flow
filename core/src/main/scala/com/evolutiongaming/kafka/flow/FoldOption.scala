@@ -111,6 +111,10 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
       }
     }
 
+  /** Filters and transforms incoming `B` elements. */
+  def contraCollect[B](f: PartialFunction[B, A])(implicit F: Applicative[F]): FoldOption[F, S, B] =
+    FoldOption(value contraCollect f)
+
   /** Allows to gracefully handle the errror happening during flow.
     *
     * I.e. one could keep / modify the existing state or replace it with some other value.
