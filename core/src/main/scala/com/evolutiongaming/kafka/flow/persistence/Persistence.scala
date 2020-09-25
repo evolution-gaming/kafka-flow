@@ -75,6 +75,14 @@ trait ReadState[F[_], S] {
   /** Restores a state */
   def read: F[Option[S]]
 
+  /** Restores a state and logs if it is restored */
+  def read(log: Log[F])(implicit F: Monad[F]): F[Option[S]] =
+    read flatTap { state =>
+      state traverse_ { _ =>
+        log.info(s"recovered state")
+      }
+    }
+
 }
 object Persistence {
 

@@ -121,14 +121,20 @@ object PartitionFlow {
         case (Some(key), records) => (key, records)
       }
       _ <- keys.toList parTraverse_ { case (key, records) =>
-        val batchAt = Timestamp(
+        val startedAt = Timestamp(
           clock = clock,
           watermark = records.head.timestampAndType map (_.timestamp),
           offset = records.head.offset
         )
-        stateOf(batchAt, key) flatMap { state =>
-          state.timers.set(batchAt) *>
+        val finishedAt = Timestamp(
+          clock = clock,
+          watermark = records.last.timestampAndType map (_.timestamp),
+          offset = records.last.offset
+        )
+        stateOf(startedAt, key) flatMap { state =>
+          state.timers.set(startedAt) *>
           state.flow(records) *>
+          state.timers.set(finishedAt) *>
           state.timers.onProcessed
         }
       }

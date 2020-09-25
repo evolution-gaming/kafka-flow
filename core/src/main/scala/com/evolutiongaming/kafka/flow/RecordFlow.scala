@@ -40,9 +40,7 @@ object RecordFlow {
     persistence: Persistence[F, S, A]
   ): F[RecordFlow[F, A]] =
     for {
-      state <- persistence.read
-      logIfRecovered = state as KeyContext[F].log.info(s"recovered state")
-      _ <- logIfRecovered.sequence_
+      state <- persistence.read(KeyContext[F].log)
       _ <- storage.set(state)
       foldToState = FoldToState(storage, fold, persistence)
     } yield records => foldToState(records)
