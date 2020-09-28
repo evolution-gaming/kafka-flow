@@ -46,10 +46,9 @@ class KeyFlowSpec extends FunSuite {
         def flush = SyncIO.unit
         def read = SyncIO.pure(Some((Offset.min, 0)))
       }
-      keyFlow <- RecordFlow.of(f.fold, persistence)
       timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
       timerFlow <- timerFlowOf(context, persistence, timers)
-      flow = KeyFlow(keyFlow, timerFlow)
+      flow <- KeyFlow.of(f.fold, f.tick, persistence, timerFlow)
       // When("3 messages are sent to a flow")
       _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
       _ <- flow(f.records("key", 1, List("event1", "event2", "event3")))
@@ -84,19 +83,16 @@ class KeyFlowSpec extends FunSuite {
       fold = FoldOption.set[SyncIO, State, ConsRecord] {
         Offset.unsafe(1) -> 7
       }
-      keyFlow <- {
+      timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
+      timerFlow <- timerFlowOf(context, persistence, timers)
+      flow <- {
         implicit val context = new KeyContext[SyncIO] {
           def holding = none[Offset].pure[SyncIO]
           def hold(offset: Offset) = SyncIO.unit
           def remove = removeCalled.set(true)
           def log = Log.empty
         }
-        RecordFlow.of(fold, persistence)
-      }
-      timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
-      timerFlow <- timerFlowOf(context, persistence, timers)
-      flow = {
-        KeyFlow(keyFlow, timerFlow)
+        KeyFlow.of(fold, f.tick, persistence, timerFlow)
       }
       // When("a message is sent to a flow")
       _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
@@ -133,18 +129,17 @@ class KeyFlowSpec extends FunSuite {
       }
       // And("fold that completes immediately")
       fold = FoldOption.empty[SyncIO, State, ConsRecord]
-      keyFlow <- {
+      timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
+      timerFlow <- timerFlowOf(context, persistence, timers)
+      flow <- {
         implicit val context = new KeyContext[SyncIO] {
           def holding = none[Offset].pure[SyncIO]
           def hold(offset: Offset) = SyncIO.unit
           def remove = removeCalled.set(true)
           def log = Log.empty
         }
-        RecordFlow.of(fold, persistence)
+        KeyFlow.of(fold, f.tick, persistence, timerFlow)
       }
-      timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
-      timerFlow <- timerFlowOf(context, persistence, timers)
-      flow = KeyFlow(keyFlow, timerFlow)
       // When("a message is sent to a flow")
       _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
       _ <- flow(f.records("key", 1, List("event1")))
@@ -187,10 +182,9 @@ class KeyFlowSpec extends FunSuite {
         def flush = SyncIO.unit
         def read = SyncIO.pure(Some(Offset.unsafe(1) -> 1))
       }
-      keyFlow <- RecordFlow.of(f.fold, persistence)
       timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
       timerFlow <- timerFlowOf(context, persistence, timers)
-      flow = KeyFlow(keyFlow, timerFlow)
+      flow <- KeyFlow.of(f.fold, f.tick, persistence, timerFlow)
       // When("3 messages are sent to a flow")
       _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
       _ <- flow(f.records("key", 2, List("event2", "event3", "event4")))
@@ -215,8 +209,7 @@ class KeyFlowSpec extends FunSuite {
 
     val flow = for {
       _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-      keyFlow <- RecordFlow.transient(f.fold)
-      flow = KeyFlow(keyFlow, TimerFlow.empty[SyncIO])
+      flow <- KeyFlow.transient(f.fold, f.tick, TimerFlow.empty[SyncIO])
       // Given("a message is sent to a flow")
       _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
       _ <- flow(f.records("key", 1, List("event1")))
@@ -256,6 +249,8 @@ object KeyFlowSpec {
           }
         }
       }
+
+    def tick: TickOption[SyncIO, State] = TickOption.unit
 
     def records(key: String, offset: Int, events: List[String]): NonEmptyList[ConsRecord] =
       NonEmptyList.fromListUnsafe {

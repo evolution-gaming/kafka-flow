@@ -26,6 +26,7 @@ trait RecordFlow[F[_], A] {
 object RecordFlow {
 
   /** Create flow which persists snapshots, events and restores state if needed */
+  @deprecated("Use KeyFlow.of with fold parameter instead of RecordFlow.of", "0.1.0")
   def of[F[_]: Sync: KeyContext, S, A](
     fold: FoldOption[F, S, A],
     persistence: Persistence[F, S, A]
@@ -34,6 +35,7 @@ object RecordFlow {
   }
 
   /** Create flow which persists snapshots, events and restores state if needed */
+  @deprecated("Use KeyFlow.of with fold parameter instead of RecordFlow.of", "0.1.0")
   def of[F[_]: Monad: KeyContext, S, A](
     storage: MonadState[F, Option[S]],
     fold: FoldOption[F, S, A],
@@ -47,6 +49,7 @@ object RecordFlow {
 
 
   /** Does not save anything to the database */
+  @deprecated("Use KeyFlow.of with fold parameter instead of RecordFlow.of", "0.1.0")
   def transient[F[_]: Sync: KeyContext: ReadTimestamps, K, S, A](
     fold: FoldOption[F, S, A]
   ): F[RecordFlow[F, A]] =
@@ -56,6 +59,7 @@ object RecordFlow {
       foldToState <- FoldToState.of(None, fold, Persistence.empty[F, S, A])
     } yield records => foldToState(records)
 
+  @deprecated("Use KeyFlow.of with fold parameter instead of RecordFlow.of", "0.1.0")
   def empty[F[_]: Applicative, A]: RecordFlow[F, A] = { _ =>
     ().pure[F]
   }

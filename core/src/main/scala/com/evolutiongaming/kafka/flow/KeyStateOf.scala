@@ -67,6 +67,7 @@ object KeyStateOf {
     persistenceOf: PersistenceOf[F, K, S, A],
     timerFlowOf: TimerFlowOf[F],
     fold: FoldOption[F, S, A],
+    tick: TickOption[F, S]
   ): KeyStateOf[F, K, A] = new KeyStateOf[F, K, A] {
 
     def apply(key: K, createdAt: Timestamp, context: KeyContext[F]) = {
@@ -74,9 +75,8 @@ object KeyStateOf {
       val keyState = for {
         timers <- timersOf(key, createdAt)
         persistence <- persistenceOf(key, fold, timers)
-        recordFlow <- RecordFlow.of(fold, persistence)
         timerFlow <- timerFlowOf(context, persistence, timers)
-        keyFlow = KeyFlow(recordFlow, timerFlow)
+        keyFlow <- KeyFlow.of(fold, tick, persistence, timerFlow)
       } yield KeyState(keyFlow, timers)
       Resource.liftF(keyState)
     }
@@ -100,6 +100,7 @@ object KeyStateOf {
     persistenceOf: PersistenceOf[F, K, S, A],
     timerFlowOf: TimerFlowOf[F],
     fold: FoldOption[F, S, A],
+    tick: TickOption[F, S]
   ): KeyStateOf[F, K, A] = eagerRecovery(
     applicationId = applicationId,
     groupId = groupId,
@@ -109,9 +110,9 @@ object KeyStateOf {
     keyFlowOf = { (context, persistence: Persistence[F, S, A], timers) =>
       implicit val _context = context
       for {
-        recordFlow <- RecordFlow.of(fold, persistence)
         timerFlow <- timerFlowOf(context, persistence, timers)
-      } yield KeyFlow(recordFlow, timerFlow)
+        keyFlow <- KeyFlow.of(fold, tick, persistence, timerFlow)
+      } yield keyFlow
     },
     fold = fold
   )
