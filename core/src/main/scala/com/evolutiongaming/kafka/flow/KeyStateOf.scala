@@ -88,8 +88,30 @@ object KeyStateOf {
 
   /** Recovers keys as soon as partition is assigned.
     *
-    * This version only requires `TimerFlowOf` and uses default `RecordFlow`
-    * which reads the state from the generic persistence folds it using
+    * This version only requires `TimerFlowOf` and uses default `Keyflow`
+    * which reads the state from the generic persistence and folds it using
+    * default `FoldToState`.
+    *
+    * It also uses default implementaion of `Tick` which does nothing and
+    * does not touch the state.
+    */
+  def eagerRecovery[F[_]: Sync, K, S, A](
+    applicationId: String,
+    groupId: String,
+    keysOf: KeysOf[F, K],
+    timersOf: TimersOf[F, K],
+    persistenceOf: PersistenceOf[F, K, S, A],
+    timerFlowOf: TimerFlowOf[F],
+    fold: FoldOption[F, S, A]
+  ): KeyStateOf[F, K, A] = eagerRecovery(
+    applicationId, groupId, keysOf, timersOf, persistenceOf, timerFlowOf,
+    fold, TickOption.unit
+  )
+
+  /** Recovers keys as soon as partition is assigned.
+    *
+    * This version only requires `TimerFlowOf` and uses default `Keyflow`
+    * which reads the state from the generic persistence and folds it using
     * default `FoldToState`.
     */
   def eagerRecovery[F[_]: Sync, K, S, A](
@@ -151,7 +173,7 @@ object KeyStateOf {
     timersOf: TimersOf[F, K],
     persistenceOf: PersistenceOf[F, K, S, A],
     keyFlowOf: KeyFlowOf[F, S, A],
-    fold: FoldOption[F, S, A],
+    fold: FoldOption[F, S, A]
   ): KeyStateOf[F, K, A] = new KeyStateOf[F, K, A] {
 
     def apply(key: K, createdAt: Timestamp, context: KeyContext[F]) = {
