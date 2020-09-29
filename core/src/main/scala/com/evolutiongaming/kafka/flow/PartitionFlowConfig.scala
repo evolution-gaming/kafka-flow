@@ -23,8 +23,12 @@ import scala.concurrent.duration._
   *
   * @param commitOffsetsInterval How often the state is to be evaluated
   * for the pending commits.
+  *
+  * @param parallelRecovery If `true` tries to recover the keys in parallel.
+  * Note that it, currently, requires for all keys to fit in memory.
   */
 case class PartitionFlowConfig(
   triggerTimersInterval: FiniteDuration = 1.second,
-  commitOffsetsInterval: FiniteDuration = 1.minute
+  commitOffsetsInterval: FiniteDuration = 1.minute,
+  parallelRecovery: Boolean = true
 )

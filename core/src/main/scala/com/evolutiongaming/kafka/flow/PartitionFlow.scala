@@ -106,10 +106,21 @@ object PartitionFlow {
     val init = for {
       clock <- Clock[F].instant
       committedOffset <- committedOffset.get
+      timestamp = Timestamp(clock, None, committedOffset)
+      keys = keyStateOf.all(topicPartition)
       _ <- Log[F].info("partition recovery started")
-      count <- keyStateOf.all(topicPartition).foldM(0) { (count, key) =>
-        stateOf(Timestamp(clock, None, committedOffset), key) as (count + 1)
-      }
+      count <-
+        if (config.parallelRecovery) {
+          keys.toList flatMap { keys =>
+            keys.parFoldMapA { key =>
+              stateOf(timestamp, key) as 1
+            }
+          }
+        } else {
+          keys.foldM(0) { (count, key) =>
+            stateOf(timestamp, key) as (count + 1)
+          }
+        }
       _ <- Log[F].info(s"partition recovery finished, $count keys recovered")
     } yield ()
 
