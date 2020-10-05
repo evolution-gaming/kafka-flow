@@ -31,13 +31,16 @@ jobs:
         java-version: openjdk@1.11
 
     - name: Run tests ${{ matrix.scala }}
-      run: sbt --client ++${{ matrix.scala }} clean coverage test docs/mdoc
+      env:
+        SBT_CLIENT: true
+      run: sbt ++${{ matrix.scala }} clean coverage test docs/mdoc
 
     - name: Report test coverage
       if: success()
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-      run: sbt --client ++${{ matrix.scala }} coverageReport coverageAggregate coveralls
+        SBT_CLIENT: true
+      run: sbt ++${{ matrix.scala }} coverageReport coverageAggregate coveralls
 
     - name: Publish documentation / Setup Node
       if: success() && matrix.scala == '2.13.3'
