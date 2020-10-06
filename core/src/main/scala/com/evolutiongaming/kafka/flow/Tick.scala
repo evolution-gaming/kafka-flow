@@ -32,6 +32,6 @@ case class Tick[F[_], S](run: S => F[S]) {
 }
 object Tick {
 
-  def unit[F[_]: Applicative, S] = Tick[F, S](_.pure[F])
+  def unit[F[_]: Applicative, S]: Tick[F, S] = Tick[F, S](_.pure[F])
 
 }
