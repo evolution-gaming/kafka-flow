@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.consumer
 
+import cats.effect.Blocker
 import cats.effect.ConcurrentEffect
 import cats.effect.ContextShift
 import cats.effect.Resource
@@ -10,6 +11,7 @@ import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.catshelper.ToFuture
 import com.evolutiongaming.catshelper.ToTry
+import com.evolutiongaming.kafka.flow.LogResource
 import com.evolutiongaming.kafka.journal.KafkaConfig
 import com.evolutiongaming.kafka.journal.KafkaHealthCheck
 import com.evolutiongaming.kafka.journal.RandomIdOf
@@ -21,9 +23,7 @@ import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerMetrics, Con
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerMetrics, ProducerOf => RawProducerOf}
 import com.evolutiongaming.smetrics.CollectorRegistry
 import com.evolutiongaming.smetrics.MeasureDuration
-import scala.concurrent.ExecutionContextExecutorService
 import scodec.bits.ByteVector
-import com.evolutiongaming.kafka.flow.LogResource
 
 trait KafkaModule[F[_]] {
 
@@ -39,14 +39,14 @@ object KafkaModule {
     applicationId: String,
     config: ConsumerConfig,
     registry: CollectorRegistry[F],
-    executorBlocking: ExecutionContextExecutorService
   ): Resource[F, KafkaModule[F]] =
     for {
-      producerMetrics      <- ProducerMetrics.of(registry)
-      consumerMetrics      <- ConsumerMetrics.of(registry)
-      _producerOf            = RawProducerOf[F](executorBlocking, producerMetrics(applicationId).some)
-      _consumerOf            = RawConsumerOf[F](executorBlocking, consumerMetrics(applicationId).some)
-      _healthCheck          <- {
+      blocker         <- Blocker[F]
+      producerMetrics <- ProducerMetrics.of(registry)
+      consumerMetrics <- ConsumerMetrics.of(registry)
+      _producerOf      = RawProducerOf[F](blocker.blockingContext, producerMetrics(applicationId).some)
+      _consumerOf      = RawConsumerOf[F](blocker.blockingContext, consumerMetrics(applicationId).some)
+      _healthCheck    <- {
         implicit val randomIdOf = RandomIdOf.uuid[F]
         implicit val journalProducerOf = JournalProducerOf[F](_producerOf)
         implicit val journalConsumerOf = JournalConsumerOf[F](_consumerOf)
