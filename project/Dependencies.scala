@@ -2,7 +2,7 @@ import sbt._
 
 object Dependencies {
 
-  val munit  = "org.scalameta"       %% "munit"            % "0.7.13"
+  val munit  = "org.scalameta"       %% "munit"            % "0.7.14"
   val weaver = "com.disneystreaming" %% "weaver-framework" % "0.5.0"
 
   val cassandraLauncher = "com.evolutiongaming" %% "cassandra-launcher" % "0.0.4"
