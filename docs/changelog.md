@@ -4,7 +4,7 @@ title: Changelog
 sidebar_label: Changelog
 ---
 
-# 0.2.0
+# 0.2.x
 
 ## New features
 
@@ -16,5 +16,8 @@ do not require `MeasureDuration` anymore as it was not used anyway.
 
 ## Breaking changes
 
-- `CassandraKeys.withSchema` requires `MonadThrowable` instead of `Fail` to minimize custom DSL.
+- `CassandraKeys.withSchema` requires `MonadThrowable` instead of `Fail` to
+minimize custom DSL.
 - `KafkaModule` renamed to `ConsumerModule` to reflect the purpose.
+- `PartitionFlowOf.eagerRecoveryKafkaPersistence` in `kafka-flow-persistence-kafka`
+module accepts `Tick` and `Fold` instead of `KeyFlowOf`.

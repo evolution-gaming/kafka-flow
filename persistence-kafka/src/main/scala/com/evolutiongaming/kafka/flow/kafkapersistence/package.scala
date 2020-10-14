@@ -4,6 +4,7 @@ import cats.effect.{Concurrent, Resource, Timer}
 import cats.syntax.all._
 import cats.{Eval, Foldable, Monad, Parallel}
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
 import com.evolutiongaming.kafka.flow.timer.TimersOf
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.consumer.ConsumerConfig
@@ -33,12 +34,14 @@ package object kafkapersistence {
       * Creates PartitionFlowOf which on partition assignment reads respective partition of "snapshot" (usually compacted)
       * topic and eagerly recovers all the state from it.
       */
-    def eagerRecoveryKafkaPersistence[F[_]: Concurrent: Timer: Parallel: MeasureDuration: LogOf, S](
+    def eagerRecoveryKafkaPersistence[F[_]: Concurrent: Timer: Parallel: MeasureDuration: LogOf, S, A](
       applicationId: String,
       groupId: String,
       kafkaPersistenceOf: KafkaPersistence[F, KafkaKey, S],
       timersOf: TimersOf[F, KafkaKey],
-      keyFlowOf: KeyFlowOf[F, S, ConsRecord],
+      timerFlowOf: TimerFlowOf[F],
+      fold: FoldOption[F, S, ConsRecord],
+      tick: TickOption[F, S],
       keyStateOfTransform: Transform[KeyStateOf[F, KafkaKey, ConsRecord]] =
         Transform.id[KeyStateOf[F, KafkaKey, ConsRecord]]
     ): PartitionFlowOf[F] =
@@ -60,7 +63,9 @@ package object kafkapersistence {
                 keysOf = persistence.keysOf,
                 timersOf = timersOf,
                 persistenceOf = persistence.snapshots,
-                keyFlowOf = keyFlowOf
+                timerFlowOf = timerFlowOf,
+                fold = fold,
+                tick = tick
               )
             }
             partitionFlowOf = self(
