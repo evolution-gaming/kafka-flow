@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow.persistence
 
 import cats.Monad
-import cats.effect.Resource
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.journal.JournalDatabaseMetrics
 import com.evolutiongaming.kafka.flow.key.KeyDatabaseMetrics

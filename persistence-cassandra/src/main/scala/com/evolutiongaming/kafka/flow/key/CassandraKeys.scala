@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow.key
 
 import cats.Monad
-import cats.MonadError
 import cats.effect.Clock
 import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync

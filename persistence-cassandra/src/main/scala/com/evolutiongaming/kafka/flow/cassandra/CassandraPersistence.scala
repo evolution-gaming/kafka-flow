@@ -12,9 +12,7 @@ import com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.FromBytes
-import com.evolutiongaming.kafka.journal.FromBytes.implicits._
 import com.evolutiongaming.kafka.journal.ToBytes
-import com.evolutiongaming.kafka.journal.ToBytes.implicits._
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 
 trait CassandraPersistence[F[_], S] extends PersistenceModule[F, KafkaKey, KafkaSnapshot[S], ConsRecord]
