@@ -11,8 +11,8 @@ sidebar_label: Changelog
 - `PersistenceModule` trait to pass around persistence for all of keys, journals
 and snapshots together and minimize the boilerplate. `CassandraPersistence` class
 is a first implementation.
-- `CassandraKeys`, `CassandraJournals` and `CassandraSnapshots` do not require
-`MeasureDuration` anymore as it was not used anyway.
+- `PartitionFlow`, `CassandraKeys`, `CassandraJournals` and `CassandraSnapshots`
+do not require `MeasureDuration` anymore as it was not used anyway.
 
 ## Breaking changes
 

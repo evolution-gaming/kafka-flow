@@ -221,7 +221,6 @@ object PartitionFlowSpec {
         def all(topicPartition: TopicPartition) = Stream.empty
       }
       implicit val clock = Clock.create[IO]
-      implicit val evidence = MeasureDuration.fromClock(clock)
       PartitionFlow.resource(
         TopicPartition.empty,
         Offset.unsafe(100),

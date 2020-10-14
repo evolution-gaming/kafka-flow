@@ -39,7 +39,7 @@ object PartitionFlow {
     def timers = state.timers
   }
 
-  def resource[F[_]: Concurrent: Parallel: Clock: LogOf: MeasureDuration, S](
+  def resource[F[_]: Concurrent: Parallel: Clock: LogOf, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F, String, ConsRecord],
@@ -54,7 +54,7 @@ object PartitionFlow {
       }
     } yield flow
 
-  def of[F[_]: Concurrent: Parallel: Clock: Log: MeasureDuration, S](
+  def of[F[_]: Concurrent: Parallel: Clock: Log, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F, String, ConsRecord],
@@ -79,7 +79,7 @@ object PartitionFlow {
   } yield flow
 
   // TODO: put most `Ref` variables into one state class?
-  def of[F[_]: Concurrent: Parallel: Clock: Log: MeasureDuration, S](
+  def of[F[_]: Concurrent: Parallel: Clock: Log, S](
     topicPartition: TopicPartition,
     keyStateOf: KeyStateOf[F, String, ConsRecord],
     committedOffset: Ref[F, Offset],
