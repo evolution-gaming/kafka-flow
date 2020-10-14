@@ -25,7 +25,7 @@ object CassandraPersistence {
   )(implicit
     fromBytes: FromBytes[F, S],
     toBytes: ToBytes[F, S]
-  ): F[CassandraPersistence[F, S]] = for {
+  ): F[PersistenceModule[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
     _keys      <- CassandraKeys.withSchema(session, sync)
     _journals  <- CassandraJournals.withSchema(session, sync)
     _snapshots <- CassandraSnapshots.withSchema[F, S](session, sync)
