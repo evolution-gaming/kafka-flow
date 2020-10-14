@@ -6,7 +6,6 @@ import cats.effect.Resource
 import cats.effect.Timer
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.FromTry
-import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.catshelper.ToFuture
 import com.evolutiongaming.catshelper.ToTry
