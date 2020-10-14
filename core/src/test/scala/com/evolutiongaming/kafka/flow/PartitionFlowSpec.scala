@@ -214,7 +214,7 @@ object PartitionFlowSpec {
               persistence <- persistenceOf(key, fold, timers)
               timerFlowOf = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes)
               timerFlow <- timerFlowOf(context, persistence, timers)
-              keyFlow <- KeyFlow.of(fold, TickOption.unit[IO, State], persistence, timerFlow)
+              keyFlow <- KeyFlow.of(fold, TickOption.id[IO, State], persistence, timerFlow)
             } yield KeyState(keyFlow, timers)
           }
         def all(topicPartition: TopicPartition) = Stream.empty

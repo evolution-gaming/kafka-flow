@@ -40,6 +40,10 @@ object TickOption {
   def of[F[_], S](run: Option[S] => F[Option[S]]): TickOption[F, S] =
     TickOption(Tick(run))
 
-  def unit[F[_]: Applicative, S]: TickOption[F, S] = TickOption(Tick.unit)
+  /** Does nothing to the state */
+  def id[F[_]: Applicative, S]: TickOption[F, S] = TickOption(Tick.id)
+
+  @deprecated("Use `id` instead", "0.2.4")
+  def unit[F[_]: Applicative, S]: TickOption[F, S] = TickOption(Tick.id)
 
 }

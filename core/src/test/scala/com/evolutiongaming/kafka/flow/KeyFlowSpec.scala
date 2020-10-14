@@ -250,7 +250,7 @@ object KeyFlowSpec {
         }
       }
 
-    def tick: TickOption[SyncIO, State] = TickOption.unit
+    def tick: TickOption[SyncIO, State] = TickOption.id
 
     def records(key: String, offset: Int, events: List[String]): NonEmptyList[ConsRecord] =
       NonEmptyList.fromListUnsafe {

@@ -57,11 +57,25 @@ trait KeyStateOf[F[_], K, A] { self =>
 object KeyStateOf {
 
   /** Does not recover keys until record with such key is encountered.
-   *
-   * This version only requires `TimerFlowOf` and uses default `RecordFlow`
-   * which reads the state from the generic persistence folds it using
-   * default `FoldToState`.
-   */
+    *
+    * This version only requires `TimerFlowOf` and uses default `RecordFlow`
+    * which reads the state from the generic persistence folds it using
+    * default `FoldToState`.
+    */
+  def lazyRecovery[F[_]: Sync, K, S, A](
+    timersOf: TimersOf[F, K],
+    persistenceOf: PersistenceOf[F, K, S, A],
+    timerFlowOf: TimerFlowOf[F],
+    fold: FoldOption[F, S, A],
+  ): KeyStateOf[F, K, A] =
+    lazyRecovery(timersOf, persistenceOf, timerFlowOf, fold, TickOption.id)
+
+  /** Does not recover keys until record with such key is encountered.
+    *
+    * This version only requires `TimerFlowOf` and uses default `RecordFlow`
+    * which reads the state from the generic persistence folds it using
+    * default `FoldToState`.
+    */
   def lazyRecovery[F[_]: Sync, K, S, A](
     timersOf: TimersOf[F, K],
     persistenceOf: PersistenceOf[F, K, S, A],
@@ -105,7 +119,7 @@ object KeyStateOf {
     fold: FoldOption[F, S, A]
   ): KeyStateOf[F, K, A] = eagerRecovery(
     applicationId, groupId, keysOf, timersOf, persistenceOf, timerFlowOf,
-    fold, TickOption.unit
+    fold, TickOption.id
   )
 
   /** Recovers keys as soon as partition is assigned.
