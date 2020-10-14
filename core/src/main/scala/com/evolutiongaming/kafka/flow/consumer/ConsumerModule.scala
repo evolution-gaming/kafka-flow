@@ -35,7 +35,7 @@ trait KafkaModule[F[_]] {
 
 object KafkaModule {
 
-  def of[F[_]: ConcurrentEffect: ContextShift: MeasureDuration: FromTry: ToTry: ToFuture: Timer: Log: LogOf](
+  def of[F[_]: ConcurrentEffect: ContextShift: MeasureDuration: FromTry: ToTry: ToFuture: Timer: LogOf](
     applicationId: String,
     config: ConsumerConfig,
     registry: CollectorRegistry[F],
