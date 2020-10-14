@@ -11,6 +11,7 @@ import com.evolutiongaming.skafka.Offset
 import com.olegpy.meow.effects._
 import java.time.Instant
 
+/** Contains the scheduled, optionally persistent, timers for the key. */
 trait Timers[F[_]] extends RegisterTimers[F] with TriggerTimers[F] with TimerWriter[F]
 trait RegisterTimers[F[_]] {
 
