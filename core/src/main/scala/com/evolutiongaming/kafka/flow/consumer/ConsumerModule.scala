@@ -9,6 +9,7 @@ import com.evolutiongaming.catshelper.FromTry
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.catshelper.ToFuture
 import com.evolutiongaming.catshelper.ToTry
+import com.evolutiongaming.kafka.flow.LogResource
 import com.evolutiongaming.kafka.journal.KafkaConfig
 import com.evolutiongaming.kafka.journal.KafkaHealthCheck
 import com.evolutiongaming.kafka.journal.RandomIdOf
@@ -22,24 +23,22 @@ import com.evolutiongaming.smetrics.CollectorRegistry
 import com.evolutiongaming.smetrics.MeasureDuration
 import scala.concurrent.ExecutionContextExecutorService
 import scodec.bits.ByteVector
-import com.evolutiongaming.kafka.flow.LogResource
 
-trait KafkaModule[F[_]] {
+trait ConsumerModule[F[_]] {
 
   def healthCheck: KafkaHealthCheck[F]
 
   def consumerOf: ConsumerOf[F]
 
 }
-
-object KafkaModule {
+object ConsumerModule {
 
   def of[F[_]: ConcurrentEffect: ContextShift: MeasureDuration: FromTry: ToTry: ToFuture: Timer: LogOf](
     applicationId: String,
     config: ConsumerConfig,
     registry: CollectorRegistry[F],
     executorBlocking: ExecutionContextExecutorService
-  ): Resource[F, KafkaModule[F]] =
+  ): Resource[F, ConsumerModule[F]] =
     for {
       producerMetrics      <- ProducerMetrics.of(registry)
       consumerMetrics      <- ConsumerMetrics.of(registry)
@@ -53,9 +52,9 @@ object KafkaModule {
           config = KafkaHealthCheck.Config.default,
           kafkaConfig = KafkaConfig(ProducerConfig(common = config.common), config)
         )
-        LogResource[F](KafkaModule.getClass, "KafkaHealthCheck") *> healthCheck
+        LogResource[F](ConsumerModule.getClass, "KafkaHealthCheck") *> healthCheck
       }
-    } yield new KafkaModule[F] {
+    } yield new ConsumerModule[F] {
 
       def healthCheck = _healthCheck
 
@@ -73,6 +72,26 @@ object KafkaModule {
         }
       }
 
+    }
+
+}
+
+@deprecated("Use ConsumerModule instead", "0.1.4")
+trait KafkaModule[F[_]] extends ConsumerModule[F]
+@deprecated("Use ConsumerModule instead", "0.1.4")
+object KafkaModule {
+
+  def of[F[_]: ConcurrentEffect: ContextShift: MeasureDuration: FromTry: ToTry: ToFuture: Timer: LogOf](
+    applicationId: String,
+    config: ConsumerConfig,
+    registry: CollectorRegistry[F],
+    executorBlocking: ExecutionContextExecutorService
+  ): Resource[F, KafkaModule[F]] =
+    ConsumerModule.of(applicationId, config, registry, executorBlocking) map { module =>
+      new KafkaModule[F] {
+        def healthCheck = module.healthCheck
+        def consumerOf = module.consumerOf
+      }
     }
 
 }
