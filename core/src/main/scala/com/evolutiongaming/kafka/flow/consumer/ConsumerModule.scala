@@ -76,9 +76,9 @@ object ConsumerModule {
 
 }
 
-@deprecated("Use ConsumerModule instead", "0.1.4")
+@deprecated("Use ConsumerModule instead", "0.2.0")
 trait KafkaModule[F[_]] extends ConsumerModule[F]
-@deprecated("Use ConsumerModule instead", "0.1.4")
+@deprecated("Use ConsumerModule instead", "0.2.0")
 object KafkaModule {
 
   def of[F[_]: ConcurrentEffect: ContextShift: MeasureDuration: FromTry: ToTry: ToFuture: Timer: LogOf](

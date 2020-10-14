@@ -21,12 +21,11 @@ import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TimestampAndType
 import com.evolutiongaming.skafka.TimestampType
 import com.evolutiongaming.skafka.consumer.WithSize
-import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.Stream
 import java.time.Instant
 import scodec.bits.ByteVector
 
-class CassandraJournals[F[_]: MonadThrowable: Clock: MeasureDuration](
+class CassandraJournals[F[_]: MonadThrowable: Clock](
   session: CassandraSession[F]
 ) extends JournalDatabase[F, KafkaKey, ConsRecord] {
 
@@ -155,7 +154,7 @@ class CassandraJournals[F[_]: MonadThrowable: Clock: MeasureDuration](
 object CassandraJournals {
 
   /** Creates schema in Cassandra if not there yet */
-  def withSchema[F[_]: MonadThrowable: Clock: MeasureDuration](
+  def withSchema[F[_]: MonadThrowable: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F]
   ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =

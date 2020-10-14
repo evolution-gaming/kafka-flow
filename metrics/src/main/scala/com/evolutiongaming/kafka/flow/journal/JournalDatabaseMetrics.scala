@@ -13,6 +13,9 @@ import com.evolutiongaming.smetrics.Quantiles
 
 object JournalDatabaseMetrics {
 
+  def of[F[_]: Monad: MeasureDuration, R]: MetricsOf[F, JournalDatabase[F, KafkaKey, R]] =
+    journalDatabaseMetricsOf
+
   implicit def journalDatabaseMetricsOf[F[_]: Monad: MeasureDuration, R]: MetricsOf[F, JournalDatabase[F, KafkaKey, R]] = { registry =>
     for {
       persistSummary <- registry.summary(

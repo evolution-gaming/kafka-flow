@@ -1,10 +1,12 @@
 package com.evolutiongaming.kafka.flow.key
 
 import cats.Monad
+import cats.MonadError
 import cats.effect.Clock
 import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
+import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.kafka.journal.eventual.cassandra.SegmentNr
@@ -14,12 +16,11 @@ import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Partition
 import com.evolutiongaming.skafka.TopicPartition
-import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.Stream
 import java.time.LocalDate
 import java.time.ZoneOffset
 
-class CassandraKeys[F[_]: Monad: Fail: Clock: MeasureDuration](
+class CassandraKeys[F[_]: Monad: Fail: Clock](
   session: CassandraSession[F]
 ) extends KeyDatabase[F, KafkaKey] {
 
@@ -177,10 +178,12 @@ class CassandraKeys[F[_]: Monad: Fail: Clock: MeasureDuration](
 object CassandraKeys {
 
   /** Creates schema in Cassandra if not there yet */
-  def withSchema[F[_]: Monad: Clock: Fail: MeasureDuration](
+  def withSchema[F[_]: MonadThrowable: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F]
-  ): F[KeyDatabase[F, KafkaKey]] =
+  ): F[KeyDatabase[F, KafkaKey]] = {
+    implicit val fail = Fail.lift
     KeySchema(session, sync).create as new CassandraKeys(session)
+  }
 
 }

@@ -13,6 +13,9 @@ import com.evolutiongaming.smetrics.Quantiles
 
 object SnapshotDatabaseMetrics {
 
+  def of[F[_]: Monad: MeasureDuration, S]: MetricsOf[F, SnapshotDatabase[F, KafkaKey, S]] =
+    snapshotDatabaseMetricsOf
+
   implicit def snapshotDatabaseMetricsOf[F[_]: Monad: MeasureDuration, S]: MetricsOf[F, SnapshotDatabase[F, KafkaKey, S]] = { registry =>
     for {
       persistSummary <- registry.summary(
