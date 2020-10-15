@@ -33,11 +33,6 @@ trait PartitionFlow[F[_]] {
 
 object PartitionFlow {
 
-  final case class PartitionKey[F[_]](state: KeyState[F, ConsRecord], context: KeyContext[F]) {
-    def flow = state.flow
-    def timers = state.timers
-  }
-
   def resource[F[_]: Concurrent: Parallel: Clock: LogOf, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
@@ -46,7 +41,7 @@ object PartitionFlow {
   ): Resource[F, PartitionFlow[F]] =
     for {
       log   <- LogResource[F](getClass, topicPartition.toString)
-      cache <- Cache.loading[F, String, PartitionKey[F]]
+      cache <- Cache.loading[F, String, KeyState[F, ConsRecord]]
       flow  <- Resource.liftF {
         implicit val _log = log
         of(topicPartition, assignedAt, keyStateOf, cache, config)
@@ -57,7 +52,7 @@ object PartitionFlow {
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F, String, ConsRecord],
-    cache: Cache[F, String, PartitionKey[F]],
+    cache: Cache[F, String, KeyState[F, ConsRecord]],
     config: PartitionFlowConfig
   ): F[PartitionFlow[F]] = for {
     clock <- Clock[F].instant
@@ -85,7 +80,7 @@ object PartitionFlow {
     timestamp: Ref[F, Timestamp],
     triggerTimersAt: Ref[F, Instant],
     commitOffsetsAt: Ref[F, Instant],
-    cache: Cache[F, String, PartitionKey[F]],
+    cache: Cache[F, String, KeyState[F, ConsRecord]],
     config: PartitionFlowConfig
   ): F[PartitionFlow[F]] = {
 
@@ -98,7 +93,7 @@ object PartitionFlow {
               log = Log[F].prefixed(key)
             )
             keyState <- keyStateOf(key, createdAt, context)
-          } yield PartitionKey(keyState, context)
+          } yield keyState
         }
       }
 
@@ -176,7 +171,7 @@ object PartitionFlow {
       // find minimum offset if any
       states <- cache.values
       stateOffsets <- states.values.toList.traverse { state =>
-        state flatMap (_.context.holding)
+        state flatMap (_.holding)
       }
       minimumOffset = stateOffsets.flatten.minimumOption
 

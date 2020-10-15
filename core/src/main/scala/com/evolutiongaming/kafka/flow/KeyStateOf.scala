@@ -91,7 +91,7 @@ object KeyStateOf {
         persistence <- persistenceOf(key, fold, timers)
         timerFlow <- timerFlowOf(context, persistence, timers)
         keyFlow <- KeyFlow.of(fold, tick, persistence, timerFlow)
-      } yield KeyState(keyFlow, timers)
+      } yield KeyState(keyFlow, timers, context.holding)
       Resource.liftF(keyState)
     }
 
@@ -195,7 +195,7 @@ object KeyStateOf {
         timers <- timersOf(key, createdAt)
         persistence <- persistenceOf(key, fold, timers)
         keyFlow <- keyFlowOf(context, persistence, timers)
-      } yield KeyState(keyFlow, timers)
+      } yield KeyState(keyFlow, timers, context.holding)
       Resource.liftF(keyState)
     }
 
