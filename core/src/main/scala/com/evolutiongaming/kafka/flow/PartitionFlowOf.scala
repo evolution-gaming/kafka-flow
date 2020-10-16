@@ -22,12 +22,7 @@ object PartitionFlowOf {
     keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig = PartitionFlowConfig()
   ): PartitionFlowOf[F] = { (topicPartition, assignedAt) =>
-    PartitionFlow.resource(
-      topicPartition = topicPartition,
-      assignedAt = assignedAt,
-      keyStateOf = keyStateOf,
-      config
-    )
+    PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config)
   }
 
 }
