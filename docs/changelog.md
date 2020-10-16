@@ -18,20 +18,19 @@ the key (using `String` and `KafkaKey`) and incoming records (always using
 `KeyStateMetrics` instead, i.e. do the following:
 ```scala mdoc:silent
 import cats.effect.IO
-import com.evolutiongaming.kafka.flow.KeyFlowOf
+import com.evolutiongaming.kafka.flow.KeyStateOf
 import com.evolutiongaming.smetrics.MeasureDuration
 
-type F[T] = IO[T]
 type S = String
 type A = String
 implicit val measureDuration = MeasureDuration.empty[IO]
-def keyStateOf: KeyFlowOf[F, S, A] = ???
+def keyStateOf: KeyStateOf[IO] = ???
 ```
 ```scala mdoc
 import com.evolutiongaming.kafka.flow.KeyStateMetrics._
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 
-def keyStateWithMetrics = keyStateOf.withCollectorRegistry[F](???)
+def keyStateWithMetrics = keyStateOf.withCollectorRegistry[IO](???)
 ```
 - `PartitionFlowOf.eagerRecoveryKafkaPersistence` lost `keyStateOfTransform`
 parameter used to construct metrics as the metric is provided out of the box.

@@ -214,11 +214,7 @@ The typical call of `PartitionFlowOf` could look like following:
 import com.evolutiongaming.kafka.flow.PartitionFlowOf
 
 def partitionFlowOf: PartitionFlowOf[IO] =
-  PartitionFlowOf(
-    applicationId = "interesting-journal-reader-writer",
-    groupId = "consumer-group-id",
-    keyStateOf = ???
-  )
+  PartitionFlowOf(keyStateOf = ???)
 ```
 
 The default implementation maintains the list of `KeyState` objects,
