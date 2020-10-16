@@ -4,9 +4,9 @@ title: Changelog
 sidebar_label: Changelog
 ---
 
-# 0.3.x
+## 0.3.x
 
-## Breaking changes
+### Breaking changes
 
 - `PartitionFlowOf` lost `applicationId` and `groupId` parameters as these are
 already specified in `KeyStateOf` constructor and it was impolite to require them
@@ -16,7 +16,7 @@ the key (using `String` and `KafkaKey`) and incoming records (always using
 `ConsRecord` now).
 - `KeyStateOf.mapResource` and is removed now, use `key_flow_count` gauge from
 `KeyStateMetrics` instead, i.e. do the following:
-```scala mdoc:silent
+```scala mdoc:invisible
 import cats.effect.IO
 import com.evolutiongaming.kafka.flow.KeyStateOf
 import com.evolutiongaming.smetrics.MeasureDuration
@@ -35,9 +35,9 @@ def keyStateWithMetrics = keyStateOf.withCollectorRegistry[IO](???)
 - `PartitionFlowOf.eagerRecoveryKafkaPersistence` lost `keyStateOfTransform`
 parameter used to construct metrics as the metric is provided out of the box.
 
-# 0.2.x
+## 0.2.x
 
-## New features
+### New features
 
 - `PersistenceModule` trait to pass around persistence for all of keys, journals
 and snapshots together and minimize the boilerplate. `CassandraPersistence` class
@@ -45,7 +45,7 @@ is a first implementation.
 - `PartitionFlow`, `CassandraKeys`, `CassandraJournals` and `CassandraSnapshots`
 do not require `MeasureDuration` anymore as it was not used anyway.
 
-## Breaking changes
+### Breaking changes
 
 - `CassandraKeys.withSchema` requires `MonadThrowable` instead of `Fail` to
 minimize custom DSL.
