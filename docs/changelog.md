@@ -9,11 +9,32 @@ sidebar_label: Changelog
 ## Breaking changes
 
 - `PartitionFlowOf` lost `applicationId` and `groupId` parameters as these are
-already specified in `KeyStateOf` constructor and it was impolite to requre them
+already specified in `KeyStateOf` constructor and it was impolite to require them
 twice.
 - For sake of simplification of API `KeyStateOf` is no more polymorphic for
 the key (using `String` and `KafkaKey`) and incoming records (always using
 `ConsRecord` now).
+- `KeyStateOf.mapResource` and is removed now, use `key_flow_count` gauge from
+`KeyStateMetrics` instead, i.e. do the following:
+```scala mdoc:silent
+import cats.effect.IO
+import com.evolutiongaming.kafka.flow.KeyFlowOf
+import com.evolutiongaming.smetrics.MeasureDuration
+
+type F[T] = IO[T]
+type S = String
+type A = String
+implicit val measureDuration = MeasureDuration.empty[IO]
+def keyStateOf: KeyFlowOf[F, S, A] = ???
+```
+```scala mdoc
+import com.evolutiongaming.kafka.flow.KeyStateMetrics._
+import com.evolutiongaming.kafka.flow.metrics.syntax._
+
+def keyStateWithMetrics = keyStateOf.withCollectorRegistry[F](???)
+```
+- `PartitionFlowOf.eagerRecoveryKafkaPersistence` lost `keyStateOfTransform`
+parameter used to construct metrics as the metric is provided out of the box.
 
 # 0.2.x
 

@@ -16,12 +16,6 @@ import scodec.bits.ByteVector
 
 package object kafkapersistence {
 
-  type Transform[T] = T => T
-
-  object Transform {
-    def id[T]: Transform[T] = x => x
-  }
-
   type BytesByKey = Map[String, ByteVector]
 
   object BytesByKey {
@@ -42,8 +36,6 @@ package object kafkapersistence {
       timerFlowOf: TimerFlowOf[F],
       fold: FoldOption[F, S, ConsRecord],
       tick: TickOption[F, S],
-      keyStateOfTransform: Transform[KeyStateOf[F]] =
-        Transform.id[KeyStateOf[F]]
     ): PartitionFlowOf[F] =
       new PartitionFlowOf[F] {
         override def apply(
@@ -52,22 +44,18 @@ package object kafkapersistence {
         ): Resource[F, PartitionFlow[F]] = {
           for {
             persistence <- Resource.liftF(
-              kafkaPersistenceOf
-                .ofPartition(topicPartition.partition)
+              kafkaPersistenceOf.ofPartition(topicPartition.partition)
             )
-
-            keyStateOf = keyStateOfTransform {
-              KeyStateOf.eagerRecovery[F, S](
-                applicationId = applicationId,
-                groupId = groupId,
-                keysOf = persistence.keysOf,
-                timersOf = timersOf,
-                persistenceOf = persistence.snapshots,
-                timerFlowOf = timerFlowOf,
-                fold = fold,
-                tick = tick
-              )
-            }
+            keyStateOf = KeyStateOf.eagerRecovery[F, S](
+              applicationId = applicationId,
+              groupId = groupId,
+              keysOf = persistence.keysOf,
+              timersOf = timersOf,
+              persistenceOf = persistence.snapshots,
+              timerFlowOf = timerFlowOf,
+              fold = fold,
+              tick = tick
+            )
             partitionFlowOf = self(keyStateOf)
             partitionFlow <- partitionFlowOf(topicPartition, assignedAt)
             _ <- Resource.liftF(persistence.onRecoveryFinished)
