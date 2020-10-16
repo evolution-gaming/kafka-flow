@@ -26,7 +26,7 @@ trait KeyStateOf[F[_], K, A] { self =>
     *
     * The usual way to call this method is before starting processing consumer
     * records.
-*/
+    */
   def all(topicPartition: TopicPartition): Stream[F, K]
 
   /** Transforms `K` parameter into something else.
@@ -143,14 +143,8 @@ object KeyStateOf {
     keysOf = keysOf,
     timersOf = timersOf,
     persistenceOf = persistenceOf,
-    keyFlowOf = { (context, persistence: Persistence[F, S, A], timers) =>
-      implicit val _context = context
-      for {
-        timerFlow <- timerFlowOf(context, persistence, timers)
-        keyFlow <- KeyFlow.of(fold, tick, persistence, timerFlow)
-      } yield keyFlow
-    },
-    fold = fold
+    keyFlowOf = KeyFlowOf(timerFlowOf, fold, tick),
+    recover = fold
   )
 
   /** Recovers keys as soon as partition is assigned.
@@ -172,7 +166,7 @@ object KeyStateOf {
     timersOf = timersOf,
     persistenceOf = persistenceOf,
     keyFlowOf = keyFlowOf,
-    fold = FoldOption.empty[F, S, A]
+    recover = FoldOption.empty[F, S, A]
   )
 
   /** Recovers keys as soon as partition is assigned.
@@ -187,13 +181,13 @@ object KeyStateOf {
     timersOf: TimersOf[F, K],
     persistenceOf: PersistenceOf[F, K, S, A],
     keyFlowOf: KeyFlowOf[F, S, A],
-    fold: FoldOption[F, S, A]
+    recover: FoldOption[F, S, A]
   ): KeyStateOf[F, K, A] = new KeyStateOf[F, K, A] {
 
     def apply(key: K, createdAt: Timestamp, context: KeyContext[F]) = {
       val keyState = for {
         timers <- timersOf(key, createdAt)
-        persistence <- persistenceOf(key, fold, timers)
+        persistence <- persistenceOf(key, recover, timers)
         keyFlow <- keyFlowOf(context, persistence, timers)
       } yield KeyState(keyFlow, timers)
       Resource.liftF(keyState)
