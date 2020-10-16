@@ -212,11 +212,7 @@ database (usually Cassandra).</p>
 <pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">PartitionFlowOf</span>
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">partitionFlowOf</span></span>: <span class="hljs-type">PartitionFlowOf</span>[<span class="hljs-type">IO</span>] =
-  <span class="hljs-type">PartitionFlowOf</span>(
-    applicationId = <span class="hljs-string">"interesting-journal-reader-writer"</span>,
-    groupId = <span class="hljs-string">"consumer-group-id"</span>,
-    keyStateOf = ???
-  )
+  <span class="hljs-type">PartitionFlowOf</span>(keyStateOf = ???)
 </code></pre>
 <p>The default implementation maintains the list of <code>KeyState</code> objects,
 which contains a tuple of <code>KeyFlow</code> and <code>TimerContext</code> objects,
