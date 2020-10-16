@@ -3,55 +3,32 @@ package com.evolutiongaming.kafka.flow
 import cats.effect.Resource
 import cats.effect.Sync
 import cats.syntax.all._
+import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 import key.KeysOf
-import persistence.Persistence
 import persistence.PersistenceOf
 import persistence.SnapshotPersistenceOf
 import timer.TimerFlowOf
 import timer.TimersOf
 import timer.Timestamp
 
-trait KeyStateOf[F[_], K, A] { self =>
+trait KeyStateOf[F[_]] { self =>
 
   /** Creates or restores a state for a single key */
   def apply(
-    key: K,
+    topicPartition: TopicPartition,
+    key: String,
     createdAt: Timestamp,
     context: KeyContext[F]
-  ): Resource[F, KeyState[F, A]]
+  ): Resource[F, KeyState[F, ConsRecord]]
 
   /** Restores a state for all keys present in persistence.
     *
     * The usual way to call this method is before starting processing consumer
     * records.
     */
-  def all(topicPartition: TopicPartition): Stream[F, K]
-
-  /** Transforms `K` parameter into something else.
-    *
-    * See also `Invariant#imap`.
-    */
-  def imap[L](f: K => L)(g: L => K): KeyStateOf[F, L, A] = new KeyStateOf[F, L, A] {
-    def apply(key: L, createdAt: Timestamp, context: KeyContext[F]) =
-      self.apply(g(key), createdAt, context)
-    def all(topicPartition: TopicPartition) =
-      self.all(topicPartition) map f
-  }
-
-  /** Transforms returned `KeyState` to something else.
-    *
-    * Could be used to count allocations for example.
-    */
-  def mapResource[B](
-    f: Resource[F, KeyState[F, A]] => Resource[F, KeyState[F, B]]
-  ): KeyStateOf[F, K, B] = new KeyStateOf[F, K, B] {
-    def apply(key: K, createdAt: Timestamp, context: KeyContext[F]) =
-      f(self.apply(key, createdAt, context))
-    def all(topicPartition: TopicPartition) =
-      self.all(topicPartition)
-  }
+  def all(topicPartition: TopicPartition): Stream[F, String]
 
 }
 object KeyStateOf {
@@ -62,13 +39,18 @@ object KeyStateOf {
     * which reads the state from the generic persistence folds it using
     * default `FoldToState`.
     */
-  def lazyRecovery[F[_]: Sync, K, S, A](
-    timersOf: TimersOf[F, K],
-    persistenceOf: PersistenceOf[F, K, S, A],
+  def lazyRecovery[F[_]: Sync, S](
+    applicationId: String,
+    groupId: String,
+    timersOf: TimersOf[F, KafkaKey],
+    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
     timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, A],
-  ): KeyStateOf[F, K, A] =
-    lazyRecovery(timersOf, persistenceOf, timerFlowOf, fold, TickOption.id)
+    fold: FoldOption[F, S, ConsRecord],
+  ): KeyStateOf[F] = lazyRecovery(
+    applicationId, groupId,
+    timersOf, persistenceOf, timerFlowOf,
+    fold, TickOption.id
+  )
 
   /** Does not recover keys until record with such key is encountered.
     *
@@ -76,26 +58,34 @@ object KeyStateOf {
     * which reads the state from the generic persistence folds it using
     * default `FoldToState`.
     */
-  def lazyRecovery[F[_]: Sync, K, S, A](
-    timersOf: TimersOf[F, K],
-    persistenceOf: PersistenceOf[F, K, S, A],
+  def lazyRecovery[F[_]: Sync, S](
+    applicationId: String,
+    groupId: String,
+    timersOf: TimersOf[F, KafkaKey],
+    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
     timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, A],
+    fold: FoldOption[F, S, ConsRecord],
     tick: TickOption[F, S]
-  ): KeyStateOf[F, K, A] = new KeyStateOf[F, K, A] {
+  ): KeyStateOf[F] = new KeyStateOf[F] {
 
-    def apply(key: K, createdAt: Timestamp, context: KeyContext[F]) = {
+    def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[F]) = {
       implicit val _context = context
+      val kafkaKey = KafkaKey(
+        applicationId = applicationId,
+        groupId = groupId,
+        topicPartition = topicPartition,
+        key = key
+      )
       val keyState = for {
-        timers <- timersOf(key, createdAt)
-        persistence <- persistenceOf(key, fold, timers)
+        timers <- timersOf(kafkaKey, createdAt)
+        persistence <- persistenceOf(kafkaKey, fold, timers)
         timerFlow <- timerFlowOf(context, persistence, timers)
         keyFlow <- KeyFlow.of(fold, tick, persistence, timerFlow)
       } yield KeyState(keyFlow, timers)
       Resource.liftF(keyState)
     }
 
-    def all(topicPartition: TopicPartition): Stream[F, K] =
+    def all(topicPartition: TopicPartition): Stream[F, String] =
       Stream.empty
 
   }
@@ -109,16 +99,17 @@ object KeyStateOf {
     * It also uses default implementaion of `Tick` which does nothing and
     * does not touch the state.
     */
-  def eagerRecovery[F[_]: Sync, K, S, A](
+  def eagerRecovery[F[_]: Sync, S](
     applicationId: String,
     groupId: String,
-    keysOf: KeysOf[F, K],
-    timersOf: TimersOf[F, K],
-    persistenceOf: PersistenceOf[F, K, S, A],
+    keysOf: KeysOf[F, KafkaKey],
+    timersOf: TimersOf[F, KafkaKey],
+    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
     timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, A]
-  ): KeyStateOf[F, K, A] = eagerRecovery(
-    applicationId, groupId, keysOf, timersOf, persistenceOf, timerFlowOf,
+    fold: FoldOption[F, S, ConsRecord]
+  ): KeyStateOf[F] = eagerRecovery(
+    applicationId, groupId,
+    keysOf, timersOf, persistenceOf, timerFlowOf,
     fold, TickOption.id
   )
 
@@ -128,16 +119,16 @@ object KeyStateOf {
     * which reads the state from the generic persistence and folds it using
     * default `FoldToState`.
     */
-  def eagerRecovery[F[_]: Sync, K, S, A](
+  def eagerRecovery[F[_]: Sync, S](
     applicationId: String,
     groupId: String,
-    keysOf: KeysOf[F, K],
-    timersOf: TimersOf[F, K],
-    persistenceOf: PersistenceOf[F, K, S, A],
+    keysOf: KeysOf[F, KafkaKey],
+    timersOf: TimersOf[F, KafkaKey],
+    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
     timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, A],
+    fold: FoldOption[F, S, ConsRecord],
     tick: TickOption[F, S]
-  ): KeyStateOf[F, K, A] = eagerRecovery(
+  ): KeyStateOf[F] = eagerRecovery(
     applicationId = applicationId,
     groupId = groupId,
     keysOf = keysOf,
@@ -152,21 +143,21 @@ object KeyStateOf {
     * This version allows one to construct a custom `KeyFlowOf`
     * for snapshot persistence.
     */
-  def eagerRecovery[F[_]: Sync, K, S, A](
+  def eagerRecovery[F[_]: Sync, S](
     applicationId: String,
     groupId: String,
-    keysOf: KeysOf[F, K],
-    timersOf: TimersOf[F, K],
-    persistenceOf: SnapshotPersistenceOf[F, K, S, A],
-    keyFlowOf: KeyFlowOf[F, S, A]
-  ): KeyStateOf[F, K, A] = eagerRecovery(
+    keysOf: KeysOf[F, KafkaKey],
+    timersOf: TimersOf[F, KafkaKey],
+    persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord],
+    keyFlowOf: KeyFlowOf[F, S, ConsRecord]
+  ): KeyStateOf[F] = eagerRecovery(
     applicationId = applicationId,
     groupId = groupId,
     keysOf = keysOf,
     timersOf = timersOf,
     persistenceOf = persistenceOf,
     keyFlowOf = keyFlowOf,
-    recover = FoldOption.empty[F, S, A]
+    recover = FoldOption.empty[F, S, ConsRecord]
   )
 
   /** Recovers keys as soon as partition is assigned.
@@ -174,27 +165,33 @@ object KeyStateOf {
     * This version allows one to construct a custom `KeyFlowOf`
     * for generic persistence.
     */
-  def eagerRecovery[F[_]: Sync, K, S, A](
+  def eagerRecovery[F[_]: Sync, S](
     applicationId: String,
     groupId: String,
-    keysOf: KeysOf[F, K],
-    timersOf: TimersOf[F, K],
-    persistenceOf: PersistenceOf[F, K, S, A],
-    keyFlowOf: KeyFlowOf[F, S, A],
-    recover: FoldOption[F, S, A]
-  ): KeyStateOf[F, K, A] = new KeyStateOf[F, K, A] {
+    keysOf: KeysOf[F, KafkaKey],
+    timersOf: TimersOf[F, KafkaKey],
+    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
+    keyFlowOf: KeyFlowOf[F, S, ConsRecord],
+    recover: FoldOption[F, S, ConsRecord]
+  ): KeyStateOf[F] = new KeyStateOf[F] {
 
-    def apply(key: K, createdAt: Timestamp, context: KeyContext[F]) = {
+    def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[F]) = {
+      val kafkaKey = KafkaKey(
+        applicationId = applicationId,
+        groupId = groupId,
+        topicPartition = topicPartition,
+        key = key
+      )
       val keyState = for {
-        timers <- timersOf(key, createdAt)
-        persistence <- persistenceOf(key, recover, timers)
+        timers <- timersOf(kafkaKey, createdAt)
+        persistence <- persistenceOf(kafkaKey, recover, timers)
         keyFlow <- keyFlowOf(context, persistence, timers)
       } yield KeyState(keyFlow, timers)
       Resource.liftF(keyState)
     }
 
-    def all(topicPartition: TopicPartition): Stream[F, K] =
-      keysOf.all(applicationId, groupId, topicPartition)
+    def all(topicPartition: TopicPartition): Stream[F, String] =
+      keysOf.all(applicationId, groupId, topicPartition) map (_.key)
 
   }
 

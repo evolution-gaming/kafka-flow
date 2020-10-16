@@ -205,8 +205,8 @@ object PartitionFlowSpec {
       }
 
     val flow = {
-      val keyStateOf: KeyStateOf[IO, String, ConsRecord] = new KeyStateOf[IO, String, ConsRecord] {
-        def apply(key: String, createdAt: Timestamp, context: KeyContext[IO]) =
+      val keyStateOf: KeyStateOf[IO] = new KeyStateOf[IO] {
+        def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[IO]) =
           Resource.liftF {
             implicit val _context = context
             for {

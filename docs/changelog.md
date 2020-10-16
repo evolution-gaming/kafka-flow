@@ -4,6 +4,17 @@ title: Changelog
 sidebar_label: Changelog
 ---
 
+# 0.3.x
+
+## Breaking changes
+
+- `PartitionFlowOf` lost `applicationId` and `groupId` parameters as these are
+already specified in `KeyStateOf` constructor and it was impolite to requre them
+twice.
+- For sake of simplification of API `KeyStateOf` is no more polymorphic for
+the key (using `String` and `KafkaKey`) and incoming records (always using
+`ConsRecord` now).
+
 # 0.2.x
 
 ## New features

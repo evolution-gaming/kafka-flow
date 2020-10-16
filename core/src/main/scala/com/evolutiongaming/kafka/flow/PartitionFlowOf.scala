@@ -5,7 +5,6 @@ import cats.effect.Concurrent
 import cats.effect.Resource
 import cats.effect.Timer
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.smetrics.MeasureDuration
@@ -20,17 +19,13 @@ object PartitionFlowOf {
 
   /** Creates `PartitionFlowOf` for specific application */
   def apply[F[_]: Concurrent: Timer: Parallel: MeasureDuration: LogOf, S](
-    applicationId: String,
-    groupId: String,
-    keyStateOf: KeyStateOf[F, KafkaKey, ConsRecord],
+    keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig = PartitionFlowConfig()
   ): PartitionFlowOf[F] = { (topicPartition, assignedAt) =>
     PartitionFlow.resource(
       topicPartition = topicPartition,
       assignedAt = assignedAt,
-      keyStateOf = keyStateOf.imap(_.key) { key =>
-        KafkaKey(applicationId, groupId, topicPartition, key)
-      },
+      keyStateOf = keyStateOf,
       config
     )
   }

@@ -41,7 +41,7 @@ object PartitionFlow {
   def resource[F[_]: Concurrent: Parallel: Clock: LogOf, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
-    keyStateOf: KeyStateOf[F, String, ConsRecord],
+    keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig
   ): Resource[F, PartitionFlow[F]] =
     for {
@@ -56,7 +56,7 @@ object PartitionFlow {
   def of[F[_]: Concurrent: Parallel: Clock: Log, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
-    keyStateOf: KeyStateOf[F, String, ConsRecord],
+    keyStateOf: KeyStateOf[F],
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig
   ): F[PartitionFlow[F]] = for {
@@ -80,7 +80,7 @@ object PartitionFlow {
   // TODO: put most `Ref` variables into one state class?
   def of[F[_]: Concurrent: Parallel: Clock: Log, S](
     topicPartition: TopicPartition,
-    keyStateOf: KeyStateOf[F, String, ConsRecord],
+    keyStateOf: KeyStateOf[F],
     committedOffset: Ref[F, Offset],
     timestamp: Ref[F, Timestamp],
     triggerTimersAt: Ref[F, Instant],
@@ -97,7 +97,7 @@ object PartitionFlow {
               removeFromCache = cache.remove(key).flatten.void,
               log = Log[F].prefixed(key)
             )
-            keyState <- keyStateOf(key, createdAt, context)
+            keyState <- keyStateOf(topicPartition, key, createdAt, context)
           } yield PartitionKey(keyState, context)
         }
       }

@@ -42,8 +42,8 @@ package object kafkapersistence {
       timerFlowOf: TimerFlowOf[F],
       fold: FoldOption[F, S, ConsRecord],
       tick: TickOption[F, S],
-      keyStateOfTransform: Transform[KeyStateOf[F, KafkaKey, ConsRecord]] =
-        Transform.id[KeyStateOf[F, KafkaKey, ConsRecord]]
+      keyStateOfTransform: Transform[KeyStateOf[F]] =
+        Transform.id[KeyStateOf[F]]
     ): PartitionFlowOf[F] =
       new PartitionFlowOf[F] {
         override def apply(
@@ -57,7 +57,7 @@ package object kafkapersistence {
             )
 
             keyStateOf = keyStateOfTransform {
-              KeyStateOf.eagerRecovery[F, KafkaKey, S, ConsRecord](
+              KeyStateOf.eagerRecovery[F, S](
                 applicationId = applicationId,
                 groupId = groupId,
                 keysOf = persistence.keysOf,
@@ -68,11 +68,7 @@ package object kafkapersistence {
                 tick = tick
               )
             }
-            partitionFlowOf = self(
-              applicationId = applicationId,
-              groupId = groupId,
-              keyStateOf = keyStateOf
-            )
+            partitionFlowOf = self(keyStateOf)
             partitionFlow <- partitionFlowOf(topicPartition, assignedAt)
             _ <- Resource.liftF(persistence.onRecoveryFinished)
           } yield partitionFlow
