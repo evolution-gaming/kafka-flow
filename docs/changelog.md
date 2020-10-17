@@ -50,6 +50,6 @@ do not require `MeasureDuration` anymore as it was not used anyway.
 - `CassandraKeys.withSchema` requires `MonadThrowable` instead of `Fail` to
 minimize custom DSL.
 - `KafkaModule` renamed to `ConsumerModule` to reflect the purpose.
-- `Tick.unit` and `TickOption.unit` renamed to `Tick.id` and `TickUnit.id`.
+- `Tick.unit` and `TickOption.unit` renamed to `Tick.id` and `TickOption.id`.
 - `PartitionFlowOf.eagerRecoveryKafkaPersistence` in `kafka-flow-persistence-kafka`
 module accepts `Tick` and `Fold` instead of `KeyFlowOf`.
