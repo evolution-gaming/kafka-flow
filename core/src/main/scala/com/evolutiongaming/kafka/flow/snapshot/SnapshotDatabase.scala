@@ -6,7 +6,10 @@ import cats.effect.concurrent.Ref
 import cats.mtl.MonadState
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.LogOf
 import com.olegpy.meow.effects._
+
+trait SnapshotDatabase[F[_], K, S] extends SnapshotReadDatabase[F, K, S] with SnapshotWriteDatabase[F, K, S]
 
 trait SnapshotReadDatabase[F[_], K, S] {
   /** Restores snapshot for the key, if any */
@@ -20,6 +23,7 @@ trait SnapshotWriteDatabase[F[_], K, S] {self =>
   /** Deletes snapshot for they key, if any */
   def delete(key: K): F[Unit]
 
+  // TODO: clean up this code (coming from `kafka-flow-persistence-kafka`?)
   final def contramap[B](f: B => K): SnapshotWriteDatabase[F, B, S] =
     new SnapshotWriteDatabase[F, B, S] {
       override def persist(key: B, snapshot: S): F[Unit] = self.persist(f(key), snapshot)
@@ -28,8 +32,6 @@ trait SnapshotWriteDatabase[F[_], K, S] {self =>
     }
 
 }
-
-trait SnapshotDatabase[F[_], K, S] extends SnapshotReadDatabase[F, K, S] with SnapshotWriteDatabase[F, K, S]
 
 object SnapshotDatabase {
 
@@ -62,6 +64,7 @@ object SnapshotDatabase {
 
     }
 
+  // TODO: clean up this code (coming from `kafka-flow-persistence-kafka`?)
   def apply[F[_], K, S](read: SnapshotReadDatabase[F, K, S], write: SnapshotWriteDatabase[F, K, S]): SnapshotDatabase[F,K, S] =
     new SnapshotDatabase[F, K, S] {
       override def persist(key: K, snapshot: S): F[Unit] = write.persist(key, snapshot)
@@ -71,16 +74,18 @@ object SnapshotDatabase {
       override def get(key: K): F[Option[S]] = read.get(key)
     }
 
-
   implicit class SnapshotDatabaseKafkaSnapshotOps[F[_], K, S](
-                                                               val self: SnapshotDatabase[F, K, KafkaSnapshot[S]]
-                                                             ) extends AnyVal {
-    def snapshotsOf(implicit
-                    F: Sync[F],
-                    log: Log[F]
-                   ): SnapshotsOf[F, K, KafkaSnapshot[S]] = { key =>
+    val self: SnapshotDatabase[F, K, KafkaSnapshot[S]]
+  ) extends AnyVal {
+
+    @deprecated("use version with `LogOf` to minimze number of required implicits", "0.3.3")
+    def snapshotsOf(implicit F: Sync[F], log: Log[F]): SnapshotsOf[F, K, KafkaSnapshot[S]] = { key =>
       Snapshots.of(key, self)
     }
+
+    def snapshotsOf(implicit F: Sync[F], logOf: LogOf[F]): F[SnapshotsOf[F, K, KafkaSnapshot[S]]] =
+      logOf(SnapshotDatabase.getClass) map { implicit log => key => Snapshots.of(key, self) }
+
   }
 
 }

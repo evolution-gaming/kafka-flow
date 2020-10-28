@@ -1,8 +1,8 @@
 package com.evolutiongaming.kafka.flow.key
 
-import cats.{Invariant, Monad}
 import cats.effect.Sync
 import cats.syntax.all._
+import cats.{Invariant, Monad}
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
@@ -21,6 +21,7 @@ object KeysOf {
       KeysOf(database)
     }
 
+  /** Creates `KeysOf` with a passed logger */
   def apply[F[_]: Monad: Log, K](
     database: KeyDatabase[F, K]
   ): KeysOf[F, K] = new KeysOf[F, K] {

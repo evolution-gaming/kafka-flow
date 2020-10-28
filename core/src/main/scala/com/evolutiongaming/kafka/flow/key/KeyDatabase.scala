@@ -6,6 +6,7 @@ import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import cats.mtl.MonadState
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
@@ -22,7 +23,11 @@ trait KeyDatabase[F[_], K] {
 
   def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, K]
 
-  def keysOf(implicit F: Monad[F], log: Log[F]): KeysOf[F, K] = KeysOf(this)
+  @deprecated("use version with `LogOf` to minimze number of required implicits", "0.3.3")
+  def keysOf(implicit F: Monad[F], logOf: Log[F]): KeysOf[F, K] = KeysOf(this)
+
+  def keysOf(implicit F: Monad[F], logOf: LogOf[F]): F[KeysOf[F, K]] =
+    logOf(KeyDatabase.getClass) map { implicit log => KeysOf(this) }
 
 }
 object KeyDatabase {
