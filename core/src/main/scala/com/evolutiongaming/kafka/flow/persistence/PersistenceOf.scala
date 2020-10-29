@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow.persistence
 
 import cats.Applicative
 import cats.Monad
+import cats.effect.Resource
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.FoldOption
@@ -55,8 +56,9 @@ object PersistenceOf {
     keysOf: KeysOf[F, K],
     journalsOf: JournalsOf[F, K, A],
     snapshotsOf: SnapshotsOf[F, K, S]
-  ): F[PersistenceOf[F, K, S, A]] =
-    LogOf[F].apply(PersistenceOf.getClass) map { implicit log => (key, fold, timestamps) =>
+  ): Resource[F, PersistenceOf[F, K, S, A]] = {
+    val log = LogOf[F].apply(PersistenceOf.getClass)
+    Resource.liftF(log) map { implicit log => (key, fold, timestamps) =>
       implicit val _timestamps = timestamps
       for {
         journals <- journalsOf(key)
@@ -67,6 +69,7 @@ object PersistenceOf {
         buffers = Buffers(keys, journals, snapshots)
       )
     }
+  }
 
   /** Saves both events and snapshots, restores state from snapshots */
   def restoreSnapshots[F[_]: Monad, K, S, A](

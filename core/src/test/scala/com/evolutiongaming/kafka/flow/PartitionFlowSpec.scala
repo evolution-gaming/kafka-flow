@@ -188,7 +188,7 @@ object PartitionFlowSpec {
     val keysOf = KeysOf.memory[IO, String].unsafeRunSync()
     val journalsOf = JournalsOf.memory[IO, String, ConsRecord].unsafeRunSync()
     val snapshotsOf = SnapshotsOf.memory[IO, String, State].unsafeRunSync()
-    val persistenceOf = PersistenceOf.restoreEvents(keysOf, journalsOf, snapshotsOf).unsafeRunSync()
+    val (persistenceOf, _) = PersistenceOf.restoreEvents(keysOf, journalsOf, snapshotsOf).allocated.unsafeRunSync()
 
     val fold: FoldOption[IO, State, ConsRecord] =
       FoldOption.of { (state, record) =>

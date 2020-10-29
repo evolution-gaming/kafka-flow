@@ -7,7 +7,7 @@ import cats.effect.SyncIO
 import cats.effect.concurrent.Ref
 import cats.effect.{Resource, Timer}
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.catshelper.TimerHelper._
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.ConsRecords
@@ -208,7 +208,7 @@ object KafkaFlowSpec {
       Retry(strategy, onError)
     }
 
-    implicit val log: Log[F] = Log.empty
+    implicit val logOf: LogOf[F] = LogOf.empty
 
   }
   object ConstFixture {

@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
-import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.skafka.Topic
 import consumer.Consumer
 
@@ -19,12 +19,14 @@ object ConsumerFlowOf {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def apply[F[_]: BracketThrowable: Log](
+  def apply[F[_]: BracketThrowable: LogOf](
     topic: Topic,
     topicFlowOf: TopicFlowOf[F],
     config: ConsumerFlowConfig = ConsumerFlowConfig()
   ): ConsumerFlowOf[F] = { consumer =>
-    ConsumerFlow(consumer, topic, topicFlowOf, config).pure[F]
+    LogOf[F].apply(ConsumerFlowOf.getClass) map { implicit log =>
+      ConsumerFlow(consumer, topic, topicFlowOf, config)
+    }
   }
 
 }

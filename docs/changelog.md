@@ -35,9 +35,13 @@ def keyStateWithMetrics = keyStateOf.withCollectorRegistry[IO](???)
 - `PartitionFlowOf.eagerRecoveryKafkaPersistence` lost `keyStateOfTransform`
 parameter used to construct metrics as the metric is provided out of the box.
 - The following methods now require `LogOf` instead of `Log` to minimize number
-of passed implicits and also log the original class correctly:
-`KeyDatabase.keysOf`, `SnapshotDatabase.snapshotsOf`, `JournalDatabase.journalsOf`,
-`JournalFold.explicitSeqNr`, `PersistenceOf.restoreEvents`.
+of passed implicits and also log the original class correctly. These methods,
+in most of the cases now return `F[T]` instead of `T` to allow creation of
+appropriate `Log`: `KeyDatabase.keysOf`, `SnapshotDatabase.snapshotsOf`,
+`JournalDatabase.journalsOf`, `JournalFold.explicitSeqNr`,
+`PersistenceOf.restoreEvents`, `ConsumerFlowOf`.
+- The following methods now return `Resource[F, T]` instead of `F[T]` to ease
+the initialization in `Resource` context: `PersistenceOf.restoreEvents`.
 
 ## 0.2.x
 
