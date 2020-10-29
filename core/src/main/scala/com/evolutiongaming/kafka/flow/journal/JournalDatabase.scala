@@ -5,7 +5,6 @@ import cats.effect.Sync
 import cats.effect.concurrent.Ref
 import cats.mtl.MonadState
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.skafka.Offset
@@ -23,11 +22,6 @@ trait JournalDatabase[F[_], K, R] {
 
   /** Deletes journal for they key, if any */
   def delete(key: K): F[Unit]
-
-  @deprecated("use version with `LogOf` to minimze number of required implicits", "0.3.3")
-  def journalsOf(implicit F: Sync[F], log: Log[F]): JournalsOf[F, K, R] = { key =>
-    Journals.of(key, this)
-  }
 
   def journalsOf(implicit F: Sync[F], logOf: LogOf[F]): F[JournalsOf[F, K, R]] =
     logOf(JournalDatabase.getClass) map { implicit log => key =>

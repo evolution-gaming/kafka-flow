@@ -5,7 +5,6 @@ import cats.effect.Sync
 import cats.effect.concurrent.Ref
 import cats.mtl.MonadState
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
 import com.olegpy.meow.effects._
 
@@ -77,11 +76,6 @@ object SnapshotDatabase {
   implicit class SnapshotDatabaseKafkaSnapshotOps[F[_], K, S](
     val self: SnapshotDatabase[F, K, KafkaSnapshot[S]]
   ) extends AnyVal {
-
-    @deprecated("use version with `LogOf` to minimze number of required implicits", "0.3.3")
-    def snapshotsOf(implicit F: Sync[F], log: Log[F]): SnapshotsOf[F, K, KafkaSnapshot[S]] = { key =>
-      Snapshots.of(key, self)
-    }
 
     def snapshotsOf(implicit F: Sync[F], logOf: LogOf[F]): F[SnapshotsOf[F, K, KafkaSnapshot[S]]] =
       logOf(SnapshotDatabase.getClass) map { implicit log => key => Snapshots.of(key, self) }
