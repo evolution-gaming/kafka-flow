@@ -6,15 +6,15 @@ import cats.effect.Timer
 import cats.effect.implicits._
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
-import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.random.Random
 import com.evolutiongaming.retry.OnError
 import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.retry.Strategy
 import com.evolutiongaming.sstream.Stream
-import scala.concurrent.duration._
 import consumer.Consumer
+import scala.concurrent.duration._
 
 object KafkaFlow {
 
@@ -26,23 +26,24 @@ object KafkaFlow {
     * Kafka happened, i.e. that the record will not be processsed for the
     * second time.
     */
-  def retryOnError[F[_]: Concurrent: Timer: Log](
+  def retryOnError[F[_]: Concurrent: Timer: LogOf](
     consumer: Resource[F, Consumer[F]],
     consumerFlowOf: ConsumerFlowOf[F],
   ): Resource[F, Unit] = {
 
-    val retry = Random.State.fromClock[F]() map { random =>
-      Retry(
-        strategy =
-          Strategy
-          .exponential(100.millis)
-          .jitter(random)
-          .limit(1.minute)
-          .resetAfter(5.minutes),
-        onError =
-          OnError.fromLog(Log[F])
-      )
-    }
+    val retry = for {
+      random <- Random.State.fromClock[F]()
+      log <- LogOf[F].apply(KafkaFlow.getClass)
+    } yield Retry(
+      strategy =
+        Strategy
+        .exponential(100.millis)
+        .jitter(random)
+        .limit(1.minute)
+        .resetAfter(5.minutes),
+      onError =
+        OnError.fromLog(log)
+    )
 
     Resource.liftF(retry) flatMap { implicit retry =>
       resource(consumer, consumerFlowOf)
