@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow.journal
 
-import cats.syntax.all._
-import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.FoldOption
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
 import com.evolutiongaming.kafka.journal.ActionHeader
@@ -30,58 +29,85 @@ class JournalFoldSpec extends FunSuite {
 
   test("JournalFold updates KafkaSnapshot when there is no state") {
     val f = new ConstFixture
-    val state0 = None
-    val record = f.record(Offset.unsafe(1), SeqNr.unsafe(100))
 
-    val state1 = record flatMap { record =>
-      f.fold(state0, record)
-    }
+    val state1 = for {
+      fold <- f.fold
+      record <- f.record(Offset.unsafe(1), SeqNr.unsafe(100))
+      state0 = None
+      state1 <- fold(state0, record)
+    } yield state1
 
-    assert(state1 == Success(Some(KafkaSnapshot(offset = Offset.unsafe(1), value = SeqNr.unsafe(100)))))
+    assertEquals(
+      obtained = state1,
+      expected = Success(Some(KafkaSnapshot(offset = Offset.unsafe(1), value = SeqNr.unsafe(100))))
+    )
   }
 
   test("JournalFold updates KafkaSnapshot when there is an existing state") {
     val f = new ConstFixture
-    val state0 = Some(KafkaSnapshot(offset = Offset.unsafe(1), value = SeqNr.unsafe(100)))
-    val record = f.record(Offset.unsafe(2), SeqNr.unsafe(101))
 
-    val state1 = record flatMap { record =>
-      f.fold(state0, record)
-    }
-    assert(state1 == Success(Some(KafkaSnapshot(offset = Offset.unsafe(2), value = SeqNr.unsafe(101)))))
+    val state1 = for {
+      fold <- f.fold
+      record <- f.record(Offset.unsafe(2), SeqNr.unsafe(101))
+      state0 = Some(KafkaSnapshot(offset = Offset.unsafe(1), value = SeqNr.unsafe(100)))
+      state1 <- fold(state0, record)
+    } yield state1
+
+    assertEquals(
+      obtained = state1,
+      expected = Success(Some(KafkaSnapshot(offset = Offset.unsafe(2), value = SeqNr.unsafe(101))))
+    )
   }
 
   test("JournalFold ignores duplicate offset") {
     val f = new ConstFixture
-    val state0 = None
     val record = f.record(Offset.unsafe(1), SeqNr.unsafe(100))
 
-    val state1 = record flatMap { record =>
-      f.fold(state0, record)
-    }
-    assert(state1 == Success(Some(KafkaSnapshot(offset = Offset.unsafe(1), value = SeqNr.unsafe(100)))))
+    val state1 = for {
+      fold <- f.fold
+      record <- record
+      state0 = None
+      state1 <- fold(state0, record)
+    } yield state1
 
-    val state2 = state1 product record flatMap { case (state1, record) =>
-      f.fold(state1, record)
-    }
-    assert(state2 == state1)
+    assertEquals(
+      obtained = state1,
+      expected = Success(Some(KafkaSnapshot(offset = Offset.unsafe(1), value = SeqNr.unsafe(100))))
+    )
+
+    val state2 = for {
+      fold <- f.fold
+      record <- record
+      state1 <- state1
+      state2 <- fold(state1, record)
+    } yield state2
+
+    assertEquals(obtained = state2, expected = state1)
   }
 
   test("JournalFold ignores duplicate sequence number") {
     val f = new ConstFixture
-    val state0 = None
-    val record0 = f.record(Offset.unsafe(1), SeqNr.unsafe(100))
-    val record1 = f.record(Offset.unsafe(2), SeqNr.unsafe(100))
 
-    val state1 = record0 flatMap { record0 =>
-      f.fold(state0, record0)
-    }
-    assert(state1 == Success(Some(KafkaSnapshot(offset = Offset.unsafe(1), value = SeqNr.unsafe(100)))))
+    val state1 = for {
+      fold <- f.fold
+      record0 <- f.record(Offset.unsafe(1), SeqNr.unsafe(100))
+      state0 = None
+      state1 <- fold(state0, record0)
+    } yield state1
 
-    val state2 = state1 product record1 flatMap { case (state1, record1) =>
-      f.fold(state1, record1)
-    }
-    assert(state2 == state1)
+    assertEquals(
+      obtained = state1,
+      expected = Success(Some(KafkaSnapshot(offset = Offset.unsafe(1), value = SeqNr.unsafe(100))))
+    )
+
+    val state2 = for {
+      fold <- f.fold
+      record1 <- f.record(Offset.unsafe(2), SeqNr.unsafe(100))
+      state1 <- state1
+      state2 <- fold(state1, record1)
+    } yield state2
+
+    assertEquals(obtained = state2, expected = state1)
   }
 
 }
@@ -123,6 +149,6 @@ object JournalFoldSpec {
 
   implicit val jsonCodec: JsonCodec[Try] = JsonCodec.default
   implicit val journalParser: JournalParser[Try] = JournalParser.of
-  implicit val log: Log[Try] = Log.empty
+  implicit val logOf: LogOf[Try] = LogOf.empty
 
 }

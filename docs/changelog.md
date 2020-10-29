@@ -34,9 +34,10 @@ def keyStateWithMetrics = keyStateOf.withCollectorRegistry[IO](???)
 ```
 - `PartitionFlowOf.eagerRecoveryKafkaPersistence` lost `keyStateOfTransform`
 parameter used to construct metrics as the metric is provided out of the box.
-- `KeyDatabase.keysOf`, `SnapshotDatabase.snapshotsOf` and
-`JournalDatabase.journalsOf` require `LogOf` instead of `Log` to minimize number
-of passed implicits.
+- The following methods now require `LogOf` instead of `Log` to minimize number
+of passed implicits and also log the original class correctly:
+`KeyDatabase.keysOf`, `SnapshotDatabase.snapshotsOf`, `JournalDatabase.journalsOf`,
+`JournalFold.explicitSeqNr`, `PersistenceOf.restoreEvents`.
 
 ## 0.2.x
 

@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.persistence
 import cats.Applicative
 import cats.Monad
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.FoldOption
 import com.evolutiongaming.kafka.flow.journal.Journals
 import com.evolutiongaming.kafka.flow.journal.JournalsOf
@@ -51,21 +51,22 @@ trait SnapshotPersistenceOf[F[_], K, S, A] extends PersistenceOf[F, K, S, A] {se
 object PersistenceOf {
 
   /** Saves both events and snapshots, restores state from events */
-  def restoreEvents[F[_]: Monad: Log, K, S, A](
+  def restoreEvents[F[_]: Monad: LogOf, K, S, A](
     keysOf: KeysOf[F, K],
     journalsOf: JournalsOf[F, K, A],
     snapshotsOf: SnapshotsOf[F, K, S]
-  ): PersistenceOf[F, K, S, A] = { (key, fold, timestamps) =>
-    implicit val _timestamps = timestamps
-    for {
-      journals <- journalsOf(key)
-      snapshots <- snapshotsOf(key)
-      keys = keysOf(key)
-    } yield Persistence(
-      readState = ReadState(journals, fold),
-      buffers = Buffers(keys, journals, snapshots)
-    )
-  }
+  ): F[PersistenceOf[F, K, S, A]] =
+    LogOf[F].apply(PersistenceOf.getClass) map { implicit log => (key, fold, timestamps) =>
+      implicit val _timestamps = timestamps
+      for {
+        journals <- journalsOf(key)
+        snapshots <- snapshotsOf(key)
+        keys = keysOf(key)
+      } yield Persistence(
+        readState = ReadState(journals, fold),
+        buffers = Buffers(keys, journals, snapshots)
+      )
+    }
 
   /** Saves both events and snapshots, restores state from snapshots */
   def restoreSnapshots[F[_]: Monad, K, S, A](
