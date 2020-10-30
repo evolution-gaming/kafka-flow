@@ -79,7 +79,7 @@ of passed implicits and also log the original class correctly. These methods,
 in most of the cases now return <code>F[T]</code> instead of <code>T</code> to allow creation of
 appropriate <code>Log</code>: <code>KeyDatabase.keysOf</code>, <code>SnapshotDatabase.snapshotsOf</code>,
 <code>JournalDatabase.journalsOf</code>, <code>JournalFold.explicitSeqNr</code>,
-<code>PersistenceOf.restoreEvents</code>, <code>ConsumerFlowOf</code>.</li>
+<code>PersistenceOf.restoreEvents</code>, <code>ConsumerFlowOf</code>, <code>KafkaFlow.retryOnError</code>.</li>
 <li>The following methods now return <code>Resource[F, T]</code> instead of <code>F[T]</code> to ease
 the initialization in <code>Resource</code> context: <code>PersistenceOf.restoreEvents</code>.</li>
 </ul>
