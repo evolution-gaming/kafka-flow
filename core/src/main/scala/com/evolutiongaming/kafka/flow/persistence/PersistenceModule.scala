@@ -1,13 +1,48 @@
 package com.evolutiongaming.kafka.flow.persistence
 
+import cats.effect.Resource
+import cats.effect.Sync
+import cats.syntax.all._
+import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.journal.JournalDatabase
 import com.evolutiongaming.kafka.flow.key.KeyDatabase
+import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabase
+import com.evolutiongaming.kafka.journal.ConsRecord
 
-trait PersistenceModule[F[_], K, S, A] {
+/** Convenience methods to create most common persistence setups */
+trait PersistenceModule[F[_], S] {
 
-  def keys: KeyDatabase[F, K]
-  def journals: JournalDatabase[F, K, A]
-  def snapshots: SnapshotDatabase[F, K, S]
+  def keys: KeyDatabase[F, KafkaKey]
+  def journals: JournalDatabase[F, KafkaKey, ConsRecord]
+  def snapshots: SnapshotDatabase[F, KafkaKey, KafkaSnapshot[S]]
+
+  /** Saves both events and snapshots, restores state from events */
+  def restoreEvents(
+    implicit F: Sync[F], logOf: LogOf[F]
+  ): Resource[F, PersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
+    keysOf <- Resource.liftF(keys.keysOf)
+    journalsOf <- Resource.liftF(journals.journalsOf)
+    snapshotsOf <- Resource.liftF(snapshots.snapshotsOf)
+    persistenceOf <- PersistenceOf.restoreEvents(keysOf, journalsOf, snapshotsOf)
+  } yield persistenceOf
+
+  /** Saves both events and snapshots, restores state from snapshots */
+  def restoreSnapshots(
+    implicit F: Sync[F], logOf: LogOf[F]
+  ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
+    keysOf <- keys.keysOf
+    journalsOf <- journals.journalsOf
+    snapshotsOf <- snapshots.snapshotsOf
+  } yield PersistenceOf.restoreSnapshots(keysOf, journalsOf, snapshotsOf)
+
+  /** Saves snapshots only, restores state from snapshots */
+  def snapshotsOnly(
+    implicit F: Sync[F], logOf: LogOf[F]
+  ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
+    keysOf <- keys.keysOf
+    snapshotsOf <- snapshots.snapshotsOf
+  } yield PersistenceOf.snapshotsOnly(keysOf, snapshotsOf)
 
 }

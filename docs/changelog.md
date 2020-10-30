@@ -42,6 +42,8 @@ appropriate `Log`: `KeyDatabase.keysOf`, `SnapshotDatabase.snapshotsOf`,
 `PersistenceOf.restoreEvents`, `ConsumerFlowOf`, `KafkaFlow.retryOnError`.
 - The following methods now return `Resource[F, T]` instead of `F[T]` to ease
 the initialization in `Resource` context: `PersistenceOf.restoreEvents`.
+- Reworked `PersistenceModule` to make it less polymorphic and more ready to
+use out of the box, i.e. to create `PeristenceOf` instances with one call.
 
 ## 0.2.x
 
