@@ -1,5 +1,7 @@
 package com.evolutiongaming.kafka.flow.consumer
 
+import cats.effect.Blocker
+import cats.effect.Clock
 import cats.effect.ConcurrentEffect
 import cats.effect.ContextShift
 import cats.effect.Resource
@@ -33,17 +35,18 @@ trait ConsumerModule[F[_]] {
 }
 object ConsumerModule {
 
-  def of[F[_]: ConcurrentEffect: ContextShift: MeasureDuration: FromTry: ToTry: ToFuture: Timer: LogOf](
+  def of[F[_]: ConcurrentEffect: ContextShift: FromTry: ToTry: ToFuture: Timer: LogOf](
     applicationId: String,
     config: ConsumerConfig,
     registry: CollectorRegistry[F],
-    executorBlocking: ExecutionContextExecutorService
-  ): Resource[F, ConsumerModule[F]] =
+    blocker: Blocker
+  ): Resource[F, ConsumerModule[F]] = {
+    implicit val measureDuration = MeasureDuration.fromClock[F](Clock[F])
     for {
       producerMetrics      <- ProducerMetrics.of(registry)
       consumerMetrics      <- ConsumerMetrics.of(registry)
-      _producerOf            = RawProducerOf[F](executorBlocking, producerMetrics(applicationId).some)
-      _consumerOf            = RawConsumerOf[F](executorBlocking, consumerMetrics(applicationId).some)
+      _producerOf            = RawProducerOf[F](blocker.blockingContext, producerMetrics(applicationId).some)
+      _consumerOf            = RawConsumerOf[F](blocker.blockingContext, consumerMetrics(applicationId).some)
       _healthCheck          <- {
         implicit val randomIdOf = RandomIdOf.uuid[F]
         implicit val journalProducerOf = JournalProducerOf[F](_producerOf)
@@ -73,25 +76,6 @@ object ConsumerModule {
       }
 
     }
-
-}
-
-@deprecated("Use ConsumerModule instead", "0.2.0")
-trait KafkaModule[F[_]] extends ConsumerModule[F]
-@deprecated("Use ConsumerModule instead", "0.2.0")
-object KafkaModule {
-
-  def of[F[_]: ConcurrentEffect: ContextShift: MeasureDuration: FromTry: ToTry: ToFuture: Timer: LogOf](
-    applicationId: String,
-    config: ConsumerConfig,
-    registry: CollectorRegistry[F],
-    executorBlocking: ExecutionContextExecutorService
-  ): Resource[F, KafkaModule[F]] =
-    ConsumerModule.of(applicationId, config, registry, executorBlocking) map { module =>
-      new KafkaModule[F] {
-        def healthCheck = module.healthCheck
-        def consumerOf = module.consumerOf
-      }
-    }
+  }
 
 }

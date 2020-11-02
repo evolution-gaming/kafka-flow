@@ -1,6 +1,7 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
 import cats.effect.Concurrent
+import cats.effect.ContextShift
 import cats.effect.Resource
 import cats.effect.Timer
 import cats.syntax.all._
@@ -12,6 +13,8 @@ import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraHealthCheck
 import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession => SafeSession}
 import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.evolutiongaming.scassandra.util.FromGFuture
+import java.util.concurrent.Executor
+import scala.concurrent.ExecutionContextExecutor
 
 trait CassandraModule[F[_]] {
   def session: SafeSession[F]
@@ -20,10 +23,17 @@ trait CassandraModule[F[_]] {
 }
 object CassandraModule {
 
-
-  def of[F[_]: Concurrent: Timer: FromGFuture: LogOf](
-    config: CassandraConfig,
-  ): Resource[F, CassandraModule[F]] = {
+  /** Creates connection, synchronization and health check routines
+   *
+   * @param config Connection parameters.
+   * @param executor Executor to run Cassandra requests on. It requires
+   * `ExecutionContextExecutor` rather than `ContextShift` because we need it
+   * to convert `ListenableFuture` to `F[_]`.
+   */
+  def of[F[_]: Concurrent: Timer: LogOf](
+    config: CassandraConfig
+  )(implicit executor: ExecutionContextExecutor): Resource[F, CassandraModule[F]] = {
+    implicit val fromGFuture = FromGFuture.lift[F]
     val clusterOf = CassandraClusterOf.of[F]
     for {
       clusterOf       <- Resource.liftF(clusterOf)

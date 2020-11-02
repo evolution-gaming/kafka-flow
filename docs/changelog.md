@@ -44,6 +44,10 @@ appropriate `Log`: `KeyDatabase.keysOf`, `SnapshotDatabase.snapshotsOf`,
 the initialization in `Resource` context: `PersistenceOf.restoreEvents`.
 - Reworked `PersistenceModule` to make it less polymorphic and more ready to
 use out of the box, i.e. to create `PeristenceOf` instances with one call.
+- `ConsumerModule` now requires `Blocker` instead of `ExecutionContextExecutorService`
+to make it more unified with other components.
+- `CassandraModule` requires `ExecutionContextExecutor` instead of `FromGFuture`
+to minimize number of new concepts for library users.
 
 ## 0.2.x
 
