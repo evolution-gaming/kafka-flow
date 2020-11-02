@@ -12,7 +12,7 @@ import com.evolutiongaming.smetrics.MeasureDuration
 
 object PersistenceModuleMetrics {
 
-  implicit def peristenceModuleMetricsOf[F[_]: Monad: MeasureDuration, S, A]: MetricsOf[F, PersistenceModule[F, S]] =
+  implicit def peristenceModuleMetricsOf[F[_]: Monad: MeasureDuration, S]: MetricsOf[F, PersistenceModule[F, S]] =
     registry => for {
       keyMetrics <- KeyDatabaseMetrics.of[F].apply(registry)
       journalMetrics <- JournalDatabaseMetrics.of[F, ConsRecord].apply(registry)
