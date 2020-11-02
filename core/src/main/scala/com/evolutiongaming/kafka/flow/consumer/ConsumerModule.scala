@@ -23,7 +23,6 @@ import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerMetrics, Con
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerMetrics, ProducerOf => RawProducerOf}
 import com.evolutiongaming.smetrics.CollectorRegistry
 import com.evolutiongaming.smetrics.MeasureDuration
-import scala.concurrent.ExecutionContextExecutorService
 import scodec.bits.ByteVector
 
 trait ConsumerModule[F[_]] {

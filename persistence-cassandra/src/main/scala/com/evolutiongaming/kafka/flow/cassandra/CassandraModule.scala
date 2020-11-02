@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
 import cats.effect.Concurrent
-import cats.effect.ContextShift
 import cats.effect.Resource
 import cats.effect.Timer
 import cats.syntax.all._
@@ -13,7 +12,6 @@ import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraHealthCheck
 import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession => SafeSession}
 import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.evolutiongaming.scassandra.util.FromGFuture
-import java.util.concurrent.Executor
 import scala.concurrent.ExecutionContextExecutor
 
 trait CassandraModule[F[_]] {
