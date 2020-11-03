@@ -38,7 +38,7 @@ object ConsumerFlowOf {
     flowOf: TopicFlowOf[F],
   ): ConsumerFlowOf[F] = ConsumerFlowOf(topics, flowOf, ConsumerFlowConfig())
 
-    /** Constructs a consumer flow for specific topics.
+  /** Constructs a consumer flow for specific topics.
     *
     * Note, that topics specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
