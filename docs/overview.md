@@ -127,7 +127,7 @@ The passed topic should contain a journal in the format of
 [Kafka Journal](https://github.com/evolution-gaming/kafka-journal) library.
 
 The typical call of `ConsumerFlowOf` could look like following:
-```scala mdoc
+```scala mdoc:nest
 import com.evolutiongaming.kafka.flow.ConsumerFlowOf
 
 def consumerFlowOf: ConsumerFlowOf[IO] = ConsumerFlowOf(
@@ -136,7 +136,28 @@ def consumerFlowOf: ConsumerFlowOf[IO] = ConsumerFlowOf(
 )
 ```
 
-The `topicFlowOf` parameter is discussed further in the document.
+The `flowOf` parameter containing instance of `TopicFlowOf` is discussed further
+in the document.
+
+It is also possible to subscribe for several topics using the
+same consumer like following:
+```scala mdoc:nest
+import cats.data.NonEmptySet
+import com.evolutiongaming.kafka.flow.ConsumerFlowOf
+import com.evolutiongaming.kafka.flow.TopicFlowOf
+
+def consumerFlowOf: ConsumerFlowOf[IO] = ConsumerFlowOf(
+  topics = NonEmptySet.of("journal.MyApplicationJournal", "someother.Journal"),
+  flowOf = TopicFlowOf.route {
+    case "journal.MyApplicationJournal" => ???
+    case "someother.Journal" => ???
+    case _ => ???
+  }
+)
+```
+In this case, one may opt to use `TopicFlowOf.route` method to combine
+several `TopicFlowOf` instances into one routing the records to the correct
+instances. It is possible to reuse the `TopicFlowOf`,
 
 ### Configuration
 

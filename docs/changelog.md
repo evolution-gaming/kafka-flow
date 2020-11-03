@@ -6,6 +6,12 @@ sidebar_label: Changelog
 
 ## 0.3.x
 
+### New features
+
+- `ConsumerFlowOf` supports subscribing for several topics per one consumer.
+One could use `TopicFlowOf.route` method to route messages to an appropriate
+`TopicFlow` instance.
+
 ### Breaking changes
 
 - `PartitionFlowOf` lost `applicationId` and `groupId` parameters as these are
@@ -39,7 +45,8 @@ of passed implicits and also log the original class correctly. These methods,
 in most of the cases now return `F[T]` instead of `T` to allow creation of
 appropriate `Log`: `KeyDatabase.keysOf`, `SnapshotDatabase.snapshotsOf`,
 `JournalDatabase.journalsOf`, `JournalFold.explicitSeqNr`,
-`PersistenceOf.restoreEvents`, `ConsumerFlowOf`, `KafkaFlow.retryOnError`.
+`PersistenceOf.restoreEvents`, `ConsumerFlowOf`, `KafkaFlow.retryOnError`,
+`ConsumerFlowOf`.
 - The following methods now return `Resource[F, T]` instead of `F[T]` to ease
 the initialization in `Resource` context: `PersistenceOf.restoreEvents`.
 - Reworked `PersistenceModule` to make it less polymorphic and more ready to
@@ -48,6 +55,9 @@ use out of the box, i.e. to create `PeristenceOf` instances with one call.
 to make it more unified with other components.
 - `CassandraModule` requires `ExecutionContextExecutor` instead of `FromGFuture`
 to minimize number of new concepts for library users.
+- `ConsumerFlowOf` returns `Resource[F, ConsumerFlow[F]]` instead of
+`F[ConsumerFlow[F]]` because it precreates `TopicFlow` instances when
+creating `ConsumerFlow`.
 
 ## 0.2.x
 
