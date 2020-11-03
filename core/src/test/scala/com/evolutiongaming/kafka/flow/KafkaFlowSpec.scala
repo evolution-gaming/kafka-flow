@@ -132,7 +132,7 @@ object KafkaFlowSpec {
       consumer = consumer(state),
       consumerFlowOf = ConsumerFlowOf(
         topic = topic,
-        topicFlowOf = { (_, _) =>
+        flowOf = { (_, _) =>
           val result = state modify { s =>
             val s1 = s + Action.AcquireTopicFlow
             val release = state update (_ + Action.ReleaseTopicFlow)

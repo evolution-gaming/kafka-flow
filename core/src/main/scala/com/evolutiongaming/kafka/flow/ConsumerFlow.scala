@@ -5,6 +5,7 @@ import cats.effect.Resource
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.Partition
@@ -30,12 +31,14 @@ trait ConsumerFlow[F[_]] {
 }
 object ConsumerFlow {
 
+  def log[F[_]: LogOf]: F[Log[F]] = LogOf[F].apply(ConsumerFlow.getClass)
+
   /** Constructs a consumer flow for specific topic.
     *
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: BracketThrowable: Log](
+  def of[F[_]: BracketThrowable: LogOf](
     consumer: Consumer[F],
     topic: Topic,
     flowOf: TopicFlowOf[F],
@@ -49,10 +52,10 @@ object ConsumerFlow {
 
   /** Constructs a consumer flow for specific topics.
     *
-    * Note, that topic specified by an appropriate parameter should contain a
+    * Note, that topics specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: BracketThrowable: Log](
+  def of[F[_]: BracketThrowable: LogOf](
     consumer: Consumer[F],
     topics: NonEmptySet[Topic],
     flowOf: TopicFlowOf[F],
@@ -72,37 +75,39 @@ object ConsumerFlow {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def apply[F[_]: BracketThrowable: Log](
+  def apply[F[_]: BracketThrowable: LogOf](
     consumer: Consumer[F],
     flows: Map[Topic, TopicFlow[F]],
     config: ConsumerFlowConfig
   ): ConsumerFlow[F] = new ConsumerFlow[F] {
 
-    val subscribe = flows.toList traverse_ { case (topic, flow) =>
-      consumer.subscribe(
-        topic = topic,
-        listener = new RebalanceListener[F] {
-          def onPartitionsAssigned(topicPartitions: NonEmptySet[TopicPartition]) = {
-            val partitions = topicPartitions map (_.partition)
-            for {
-              _ <- Log[F].prefixed(topic).info(s"$partitions assigned")
-              partitions <- topicPartitions.toList traverse { topicPartitions =>
-                consumer.position(topicPartitions) map (topicPartitions.partition -> _)
-              }
-              _ <- Log[F].prefixed(topic).info(s"committed offsets: $partitions")
-              // in Scala 2.13 one can just do SortedSet.from(...)
-              _ <- NonEmptySet.fromSet(SortedSet.empty[(Partition, Offset)] ++ partitions) traverse_ flow.add
-            } yield ()
+    val subscribe = log[F] flatMap { log =>
+      flows.toList traverse_ { case (topic, flow) =>
+        consumer.subscribe(
+          topic = topic,
+          listener = new RebalanceListener[F] {
+            def onPartitionsAssigned(topicPartitions: NonEmptySet[TopicPartition]) = {
+              val partitions = topicPartitions map (_.partition)
+              for {
+                _ <- log.prefixed(topic).info(s"$partitions assigned")
+                partitions <- topicPartitions.toList traverse { topicPartitions =>
+                  consumer.position(topicPartitions) map (topicPartitions.partition -> _)
+                }
+                _ <- log.prefixed(topic).info(s"committed offsets: $partitions")
+                // in Scala 2.13 one can just do SortedSet.from(...)
+                _ <- NonEmptySet.fromSet(SortedSet.empty[(Partition, Offset)] ++ partitions) traverse_ flow.add
+              } yield ()
+            }
+            def onPartitionsRevoked(topicPartitions: NonEmptySet[TopicPartition]) = {
+              val partitions = topicPartitions map (_.partition)
+              log.prefixed(topic).info(s"$partitions revoked, removing from topic flow") *>
+              flow.remove(partitions)
+            }
+            def onPartitionsLost(topicPartitions: NonEmptySet[TopicPartition]) =
+              onPartitionsRevoked(topicPartitions)
           }
-          def onPartitionsRevoked(topicPartitions: NonEmptySet[TopicPartition]) = {
-            val partitions = topicPartitions map (_.partition)
-            Log[F].prefixed(topic).info(s"$partitions revoked, removing from topic flow") *>
-            flow.remove(partitions)
-          }
-          def onPartitionsLost(topicPartitions: NonEmptySet[TopicPartition]) =
-            onPartitionsRevoked(topicPartitions)
-        }
-      )
+        )
+      }
     }
 
     def poll =

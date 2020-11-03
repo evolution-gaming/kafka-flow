@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.data.NonEmptySet
 import cats.effect.Resource
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
@@ -16,8 +17,6 @@ trait ConsumerFlowOf[F[_]] {
 }
 object ConsumerFlowOf {
 
-  def log[F[_]: LogOf]: F[Log[F]] = LogOf[F].apply(ConsumerFlowOf.getClass)
-
   /** Constructs a consumer flow for specific topic.
     *
     * Note, that topic specified by an appropriate parameter should contain a
@@ -25,12 +24,33 @@ object ConsumerFlowOf {
     */
   def apply[F[_]: BracketThrowable: LogOf](
     topic: Topic,
-    topicFlowOf: TopicFlowOf[F],
+    flowOf: TopicFlowOf[F],
     config: ConsumerFlowConfig = ConsumerFlowConfig()
   ): ConsumerFlowOf[F] = { consumer =>
-    Resource.liftF(log) flatMap { implicit log =>
-      ConsumerFlow.of(consumer, topic, topicFlowOf, config)
-    }
+    ConsumerFlow.of(consumer, topic, flowOf, config)
+  }
+
+  /** Constructs a consumer flow for specific topics.
+    *
+    * Note, that topics specified by an appropriate parameter should contain a
+    * journal in the format of `Kafka Journal` library.
+    */
+  def apply[F[_]: BracketThrowable: LogOf](
+    topics: NonEmptySet[Topic],
+    flowOf: TopicFlowOf[F],
+  ): ConsumerFlowOf[F] = ConsumerFlowOf(topics, flowOf, ConsumerFlowConfig())
+
+    /** Constructs a consumer flow for specific topics.
+    *
+    * Note, that topics specified by an appropriate parameter should contain a
+    * journal in the format of `Kafka Journal` library.
+    */
+  def apply[F[_]: BracketThrowable: LogOf](
+    topics: NonEmptySet[Topic],
+    flowOf: TopicFlowOf[F],
+    config: ConsumerFlowConfig
+  ): ConsumerFlowOf[F] = { consumer =>
+    ConsumerFlow.of(consumer, topics, flowOf, config)
   }
 
 }
