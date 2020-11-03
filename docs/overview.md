@@ -132,7 +132,7 @@ import com.evolutiongaming.kafka.flow.ConsumerFlowOf
 
 def consumerFlowOf: ConsumerFlowOf[IO] = ConsumerFlowOf(
   topic = "journal.MyApplicationJournal",
-  topicFlowOf = ???
+  flowOf = ???
 )
 ```
 
