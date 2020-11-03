@@ -26,7 +26,7 @@ jobs:
         path: ~/.sbt
         key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.properties') }}
 
-    - uses: olafurpg/setup-scala@v7
+    - uses: olafurpg/setup-scala@v10
       with:
         java-version: openjdk@1.11
 
@@ -41,7 +41,7 @@ jobs:
 
     - name: Publish documentation / Setup Node
       if: success() && matrix.scala == '2.13.3'
-      uses: actions/setup-node@v2.1.0
+      uses: actions/setup-node@v2-beta
       with:
         node-version: '12.x'
 
