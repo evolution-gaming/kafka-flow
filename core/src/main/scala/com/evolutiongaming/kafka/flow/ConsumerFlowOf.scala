@@ -2,9 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptySet
 import cats.effect.Resource
-import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
-import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.skafka.Topic
 import consumer.Consumer
