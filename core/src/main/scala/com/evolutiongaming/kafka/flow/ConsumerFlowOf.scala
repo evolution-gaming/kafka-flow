@@ -1,7 +1,9 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.effect.Resource
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
+import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.skafka.Topic
 import consumer.Consumer
@@ -9,10 +11,12 @@ import consumer.Consumer
 /** Factory which creates `ConsumerFlow` instances */
 trait ConsumerFlowOf[F[_]] {
 
-  def apply(consumer: Consumer[F]): F[ConsumerFlow[F]]
+  def apply(consumer: Consumer[F]): Resource[F, ConsumerFlow[F]]
 
 }
 object ConsumerFlowOf {
+
+  def log[F[_]: LogOf]: F[Log[F]] = LogOf[F].apply(ConsumerFlowOf.getClass)
 
   /** Constructs a consumer flow for specific topic.
     *
@@ -24,8 +28,8 @@ object ConsumerFlowOf {
     topicFlowOf: TopicFlowOf[F],
     config: ConsumerFlowConfig = ConsumerFlowConfig()
   ): ConsumerFlowOf[F] = { consumer =>
-    LogOf[F].apply(ConsumerFlowOf.getClass) map { implicit log =>
-      ConsumerFlow(consumer, topic, topicFlowOf, config)
+    Resource.liftF(log) flatMap { implicit log =>
+      ConsumerFlow.of(consumer, topic, topicFlowOf, config)
     }
   }
 
