@@ -20,4 +20,9 @@ object TopicFlowOf {
     TopicFlow.of(consumer, topic, partitionFlowOf)
   }
 
+  def route[F[_]](f: Topic => TopicFlowOf[F]): TopicFlowOf[F] = { (consumer, topic) =>
+    val flowOf = f(topic)
+    flowOf(consumer, topic)
+  }
+
 }
