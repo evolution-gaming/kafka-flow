@@ -1,13 +1,14 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.effect.Blocker
 import cats.effect.IO
 import cats.effect.Resource
 import cats.syntax.all._
-import com.evolutiongaming.cassandra.StartCassandra
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.cassandra.CassandraConfig
-import com.evolutiongaming.kafka.flow.cassandra.CassandraModule
-import com.evolutiongaming.scassandra.{CassandraConfig => SCassandraConfig}
+import com.evolutiongaming.kafka.StartKafka
+import com.evolutiongaming.kafka.flow.consumer.ConsumerModule
+import com.evolutiongaming.skafka.consumer.ConsumerConfig
+import com.evolutiongaming.smetrics.CollectorRegistry
 import java.util.concurrent.Executor
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -18,10 +19,10 @@ import weaver._
 
 object SharedResources extends GlobalResourcesInit {
 
-  implicit object CassandraModuleTag extends ResourceTag[CassandraModule[IO]] {
-    def description: String = "CassandraModule"
-    def cast(obj: Any): Option[CassandraModule[IO]] =
-      Try(obj.asInstanceOf[CassandraModule[IO]]).toOption
+  implicit object ConsumerModuleTag extends ResourceTag[ConsumerModule[IO]] {
+    def description: String = "ConsumerModule"
+    def cast(obj: Any): Option[ConsumerModule[IO]] =
+      Try(obj.asInstanceOf[ConsumerModule[IO]]).toOption
   }
 
   def sharedResources(store: GlobalResources.Write[IO]): Resource[IO, Unit] = {
@@ -31,8 +32,8 @@ object SharedResources extends GlobalResourcesInit {
     implicit val timer = IO.timer(executor)
     implicit val log = LogOf.empty[IO]
 
-    // we use default config here, because we will launch Cassandra locally
-    val config = CassandraConfig(client = SCassandraConfig())
+    // we use default config here, because we will launch Kafka locally
+    val config = ConsumerConfig()
 
     val start = IO {
       // set logging to WARN level to avoid spamming the logs
@@ -41,14 +42,16 @@ object SharedResources extends GlobalResourcesInit {
       .clearModifiers()
       .withHandler(minimumLevel = Some(Level.Warn))
       .replace()
-      // proceed starting Cassandra
-      StartCassandra()
+      // proceed starting Kafka
+      StartKafka()
     }
+    for {
+      _ <- Resource.make(start) { shutdown => IO(shutdown()) }
+      blocker <- Blocker[IO]
+      consumer <- ConsumerModule.of[IO]("SharedResources", config, CollectorRegistry.empty, blocker)
+      _ <- store.putR(consumer)
+    } yield ()
 
-    Resource.make(start) { shutdown => IO(shutdown()) } *>
-    CassandraModule.of[IO](config) flatMap { cassandra =>
-      store.putR(cassandra)
-    }
   }
 
 }

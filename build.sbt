@@ -25,6 +25,7 @@ lazy val root = (project in file("."))
   .settings(publish / skip := true)
 
 lazy val core = (project in file("core"))
+  .configs(IntegrationTest)
   .settings(commonSettings)
   .settings(
     name := "kafka-flow",
@@ -37,11 +38,16 @@ lazy val core = (project in file("core"))
       Monocle.`macro` % Test,
       Monocle.core % Test,
       catsHelper,
+      kafkaLauncher % IntegrationTest,
       munit,
       scache,
+      scribe % IntegrationTest,
       skafka,
-      sstream
-    )
+      sstream,
+      weaver % IntegrationTest,
+    ),
+    Defaults.itSettings,
+    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.TestFramework")
   )
 
 lazy val metrics = (project in file("metrics"))
@@ -60,7 +66,8 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
     name := "kafka-flow-persistence-cassandra",
     libraryDependencies ++= Seq(
       KafkaJournal.cassandra,
-      cassandraLauncher % IntegrationTest,
+      cassandraLauncher % IntegrationTest exclude ("ch.qos.logback", "logback-classic"),
+      scribe % IntegrationTest,
       weaver % IntegrationTest,
     ),
     Defaults.itSettings,
