@@ -176,15 +176,7 @@ object KafkaFlowSpec {
           } flatMap {
             case None => ConsRecords.empty.pure[F]
             case Some(Command.ProduceRecords(records)) => records.pure[F]
-            case Some(Command.RemovePartitions(partitions)) =>
-              state.get flatMap { state =>
-                val revoke = state.actions collectFirst { case action: Action.Subscribe =>
-                  action.listener.onPartitionsRevoked(
-                    partitions map { partition => TopicPartition(action.topic, partition) }
-                  )
-                }
-                revoke.sequence_ *> poll(timeout)
-              }
+            case Some(Command.RemovePartitions(partitions)) => revoke(partitions) *> poll(timeout)
             case Some(Command.Fail(error)) => error.raiseError[F, ConsRecords]
           }
 
@@ -193,6 +185,16 @@ object KafkaFlowSpec {
 
         def position(partition: TopicPartition) =
           Offset.min.pure[F]
+
+        def revoke(partitions: NonEmptySet[Partition]) =
+          state.get flatMap { state =>
+            val revoke = state.actions collectFirst { case action: Action.Subscribe =>
+              action.listener.onPartitionsRevoked(
+                partitions map { partition => TopicPartition(action.topic, partition) }
+              )
+            }
+            revoke.sequence_
+          }
 
       }
 
