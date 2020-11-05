@@ -16,15 +16,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - uses: actions/cache@v2
-      with:
-        path: ~/.cache/coursier/v1
-        key: ${{ runner.os }}-coursier-${{ hashFiles('**/build.sbt') }}
-
-    - uses: actions/cache@v2
-      with:
-        path: ~/.sbt
-        key: ${{ runner.os }}-sbt-${{ hashFiles('**/build.properties') }}
+    - uses: coursier/cache-action@v5
 
     - uses: olafurpg/setup-scala@v10
       with:
