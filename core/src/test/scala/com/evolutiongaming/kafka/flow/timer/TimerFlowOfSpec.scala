@@ -3,9 +3,10 @@ package com.evolutiongaming.kafka.flow.timer
 import Timers.TimerState
 import Timestamps.TimestampState
 import cats.data.StateT
-import cats.syntax.all._
+import cats.effect.SyncIO
 import cats.mtl.MonadState
 import cats.mtl.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.KeyContext
 import com.evolutiongaming.kafka.flow.MonadStateHelper._
@@ -19,7 +20,6 @@ import scala.util.Success
 import scala.util.Try
 
 import TimerFlowSpec._
-import cats.effect.SyncIO
 
 class TimerFlowOfSpec extends FunSuite {
 
