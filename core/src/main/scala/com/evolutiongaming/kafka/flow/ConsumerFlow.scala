@@ -110,13 +110,6 @@ object ConsumerFlow {
       }
     }
 
-    val unsubscribe = ().pure[F]
-      // log[F] flatMap { log =>
-      //   log.info("unsubscribing") *> consumer.unsubscribe
-      // }
-
-    val subscription = Resource.make(subscribe) { _ => unsubscribe }
-
     def poll =
       consumer.poll(config.pollTimeout) flatTap { consumerRecords =>
         flows.toList traverse { case (topic, flow) =>
@@ -128,7 +121,7 @@ object ConsumerFlow {
       }
 
     def stream = for {
-      _ <- Stream.fromResource(subscription)
+      _ <- Stream.lift(subscribe)
       records <- Stream.repeat(poll)
       // we process empty polls to trigger timers, but do not return them
       if records.values.nonEmpty
