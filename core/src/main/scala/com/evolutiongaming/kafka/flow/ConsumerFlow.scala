@@ -103,8 +103,11 @@ object ConsumerFlow {
               log.prefixed(topic).info(s"$partitions revoked, removing from topic flow") *>
               flow.remove(partitions)
             }
-            def onPartitionsLost(topicPartitions: NonEmptySet[TopicPartition]) =
-              onPartitionsRevoked(topicPartitions)
+            def onPartitionsLost(topicPartitions: NonEmptySet[TopicPartition]) = {
+              val partitions = topicPartitions map (_.partition)
+              log.prefixed(topic).info(s"$partitions lost, removing from topic flow") *>
+              flow.remove(partitions)
+            }
           }
         )
       }
