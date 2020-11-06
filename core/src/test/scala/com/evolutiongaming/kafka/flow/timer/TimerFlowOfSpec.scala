@@ -19,6 +19,7 @@ import scala.util.Success
 import scala.util.Try
 
 import TimerFlowSpec._
+import cats.effect.SyncIO
 
 class TimerFlowOfSpec extends FunSuite {
 
@@ -33,12 +34,12 @@ class TimerFlowOfSpec extends FunSuite {
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("flow is started")
-    val result = flow.runS(context)
+    val result = flow.allocated.runS(context).unsafeRunSync()
 
     // Then("offset is being held")
-    assertEquals(result map (_.holding), Success(Some(Offset.unsafe(1234))))
-    assertEquals(result map (_.flushed), Success(0))
-    assertEquals(result map (_.removed), Success(0))
+    assertEquals(result.holding, Some(Offset.unsafe(1234)))
+    assertEquals(result.flushed, 0)
+    assertEquals(result.removed, 0)
 
   }
 
@@ -52,14 +53,14 @@ class TimerFlowOfSpec extends FunSuite {
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("timers trigger called")
-    val program = flow flatMap { flow =>
+    val program = flow use { flow =>
       timerContext.trigger(flow)
     }
-    val result = program.runS(context)
+    val result = program.runS(context).unsafeRunSync()
 
     // Then("flush does not happen")
-    assertEquals(result map (_.flushed), Success(0))
-    assertEquals(result map (_.removed), Success(0))
+    assertEquals(result.flushed, 0)
+    assertEquals(result.removed, 0)
 
   }
 
@@ -74,21 +75,21 @@ class TimerFlowOfSpec extends FunSuite {
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("timers trigger called")
-    val program = flow flatMap { flow =>
+    val program = flow use { flow =>
       timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1001))) *>
       timerContext.trigger(flow) *>
       timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1002))) *>
       timerContext.trigger(flow) *>
       timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1003))) *>
-      timerContext.trigger(flow)
+      timerContext.trigger(flow) *>
       timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1004))) *>
       timerContext.trigger(flow)
     }
-    val result = program.runS(context)
+    val result = program.runS(context).unsafeRunSync()
 
     // Then("flush happens and remove happens")
-    assertEquals(result map (_.flushed), Success(1))
-    assertEquals(result map (_.removed), Success(1))
+    assertEquals(result.flushed, 1)
+    assertEquals(result.removed, 1)
   }
 
 
@@ -103,7 +104,7 @@ class TimerFlowOfSpec extends FunSuite {
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("timers trigger called")
-    val program = flow flatMap { flow =>
+    val program = flow use { flow =>
       timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1001))) *>
       timerContext.trigger(flow) *>
       timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1002))) *>
@@ -111,11 +112,11 @@ class TimerFlowOfSpec extends FunSuite {
       timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1003))) *>
       timerContext.trigger(flow)
     }
-    val result = program.runS(context)
+    val result = program.runS(context).unsafeRunSync()
 
     // Then("flush happens and remove do not happen")
-    assertEquals(result map (_.flushed), Success(0))
-    assertEquals(result map (_.removed), Success(0))
+    assertEquals(result.flushed, 0)
+    assertEquals(result.removed, 0)
 
   }
 
@@ -130,22 +131,22 @@ class TimerFlowOfSpec extends FunSuite {
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("timers trigger called")
-    val program = flow flatMap { flow =>
+    val program = flow use { flow =>
       timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1001))) *>
       timerContext.trigger(flow) *>
       timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1002))) *>
       timerContext.trigger(flow) *>
       timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1003))) *>
-      timerContext.trigger(flow)
+      timerContext.trigger(flow) *>
       timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1004))) *>
       timerContext.onProcessed *>
       timerContext.trigger(flow)
     }
-    val result = program.runS(context)
+    val result = program.runS(context).unsafeRunSync()
 
     // Then("flush happens and remove do not happen")
-    assertEquals(result map (_.flushed), Success(0))
-    assertEquals(result map (_.removed), Success(0))
+    assertEquals(result.flushed, 0)
+    assertEquals(result.removed, 0)
 
   }
 
@@ -160,12 +161,12 @@ class TimerFlowOfSpec extends FunSuite {
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("flow is started")
-    val result = flow.runS(context)
+    val result = flow.allocated.runS(context).unsafeRunSync()
 
     // Then("offset is being held")
-    assertEquals(result map (_.holding), Success(Some(Offset.unsafe(1234))))
-    assertEquals(result map (_.flushed), Success(0))
-    assertEquals(result map (_.removed), Success(0))
+    assertEquals(result.holding, Some(Offset.unsafe(1234)))
+    assertEquals(result.flushed, 0)
+    assertEquals(result.removed, 0)
 
   }
 
@@ -179,14 +180,14 @@ class TimerFlowOfSpec extends FunSuite {
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("timers trigger called")
-    val program = flow flatMap { flow =>
+    val program = flow use { flow =>
       timerContext.trigger(flow)
     }
-    val result = program.runS(context)
+    val result = program.runS(context).unsafeRunSync()
 
     // Then("flush does not happen")
-    assertEquals(result map (_.flushed), Success(0))
-    assertEquals(result map (_.removed), Success(0))
+    assertEquals(result.flushed, 0)
+    assertEquals(result.removed, 0)
 
   }
 
@@ -202,7 +203,7 @@ class TimerFlowOfSpec extends FunSuite {
     val flow = flowOf(keyContext, flushBuffers, timerContext)
 
     // When("timers trigger called")
-    val program = flow flatMap { flow =>
+    val program = flow use { flow =>
       timerContext.set(f.timestamp.copy(
         offset = Offset.unsafe(101),
         clock = Instant.parse("2020-03-01T00:01:00.000Z")
@@ -219,20 +220,20 @@ class TimerFlowOfSpec extends FunSuite {
       )) *>
       timerContext.trigger(flow)
     }
-    val result = program.runS(context)
+    val result = program.runS(context).unsafeRunSync()
 
     // Then("flush happens 3 times, but remove never happens")
-    assertEquals(result map (_.flushed), Success(3))
-    assertEquals(result map (_.removed), Success(0))
+    assertEquals(result.flushed, 3)
+    assertEquals(result.removed, 0)
     // And("last state still being held")
-    assertEquals(result map (_.holding), Success(Some(Offset.unsafe(103))))
+    assertEquals(result.holding, Some(Offset.unsafe(103)))
 
   }
 
 }
 object TimerFlowSpec {
 
-  type F[T] = StateT[Try, Context, T]
+  type F[T] = StateT[SyncIO, Context, T]
   case class Context(
     holding: Option[Offset] = None,
     timers: TimerState = TimerState(),

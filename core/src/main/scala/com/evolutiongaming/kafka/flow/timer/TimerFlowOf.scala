@@ -1,6 +1,7 @@
 package com.evolutiongaming.kafka.flow.timer
 
 import cats.Monad
+import cats.effect.Resource
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.flow.KeyContext
@@ -13,7 +14,7 @@ trait TimerFlowOf[F[_]] {
     context: KeyContext[F],
     persistence: FlushBuffers[F],
     timers: TimerContext[F]
-  ): F[TimerFlow[F]]
+  ): Resource[F, TimerFlow[F]]
 
 }
 object TimerFlowOf {
@@ -33,12 +34,13 @@ object TimerFlowOf {
     fireEvery: FiniteDuration = 10.minutes,
     maxOffsetDifference: Int = 100000,
     maxIdle: FiniteDuration = 10.minutes,
+    flushOnRevoke: Boolean = false,
   ): TimerFlowOf[F] = { (context, persistence, timers) =>
 
     def register(touchedAt: Timestamp) =
       timers.registerProcessing(touchedAt.clock plusMillis fireEvery.toMillis)
 
-    for {
+    val acquire = for {
       current <- timers.current
       persistedAt <- timers.persistedAt
       committedAt = persistedAt getOrElse current
@@ -62,6 +64,21 @@ object TimerFlowOf {
       } yield ()
     }
 
+    val cancel = for {
+      holding <- context.holding
+      _ <- if (holding.isDefined && flushOnRevoke) {
+        context.log.info(s"flush on revoke, holding offset: $holding")
+        persistence.flush *>
+        context.remove
+      } else {
+        ().pure[F]
+      }
+    } yield ()
+
+    Resource.make(acquire) { _ =>
+      cancel
+    }
+
   }
 
   /** Performs flush periodically.
@@ -76,25 +93,28 @@ object TimerFlowOf {
     def register(current: Timestamp) =
       timers.registerProcessing(current.clock plusMillis fireEvery.toMillis)
 
-    for {
-      current <- timers.current
-      persistedAt <- timers.persistedAt
-      committedAt = persistedAt getOrElse current
-      _ <- context.hold(committedAt.offset)
-      _ <- register(current)
-    } yield new TimerFlow[F] {
-      def onTimer = for {
+    Resource.liftF {
+      for {
         current <- timers.current
         persistedAt <- timers.persistedAt
-        flushedAt = persistedAt getOrElse committedAt
-        triggerFlushAt = flushedAt.clock plusMillis persistEvery.toMillis
-        _ <-
-          if ((current.clock compareTo triggerFlushAt) >= 0)
-            persistence.flush *> context.hold(current.offset)
-          else
-            ().pure[F]
+        committedAt = persistedAt getOrElse current
+        _ <- context.hold(committedAt.offset)
         _ <- register(current)
-      } yield ()
+      } yield new TimerFlow[F] {
+        def onTimer = for {
+          current <- timers.current
+          persistedAt <- timers.persistedAt
+          flushedAt = persistedAt getOrElse committedAt
+          triggerFlushAt = flushedAt.clock plusMillis persistEvery.toMillis
+          _ <-
+            if ((current.clock compareTo triggerFlushAt) >= 0)
+              persistence.flush *> context.hold(current.offset)
+            else
+              ().pure[F]
+          _ <- register(current)
+        } yield ()
+      }
     }
+
   }
 }

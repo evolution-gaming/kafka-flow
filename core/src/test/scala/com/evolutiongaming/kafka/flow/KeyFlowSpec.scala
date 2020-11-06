@@ -1,6 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
+import cats.effect.Resource
 import cats.effect.SyncIO
 import cats.effect.concurrent.Ref
 import cats.syntax.all._
@@ -28,39 +29,41 @@ class KeyFlowSpec extends FunSuite {
     val f = new ConstFixture
     implicit val timers = f.timers
 
-    val flow = for {
-      // Given("writer that counts messages")
-      messagesSent <- Ref.of[SyncIO, Int](0)
-      persistence = new Persistence[SyncIO, State, ConsRecord] {
-        def appendEvent(event: ConsRecord) =
-          for {
-            _ <- messagesSent update (_ + 1)
-            messageNr <- messagesSent.get
-            _ <- SyncIO {
-              // Then(s"correct message N$messageNr is sent to a writer")
-              assertEquals(event.offset.value, messageNr.toLong)
-            }
-          } yield ()
-        def replaceState(state: State) = SyncIO.unit
-        def delete = SyncIO.unit
-        def flush = SyncIO.unit
-        def read = SyncIO.pure(Some((Offset.min, 0)))
-      }
-      timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
-      timerFlow <- timerFlowOf(context, persistence, timers)
-      flow <- KeyFlow.of(f.fold, f.tick, persistence, timerFlow)
-      // When("3 messages are sent to a flow")
-      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-      _ <- flow(f.records("key", 1, List("event1", "event2", "event3")))
-      // And("time comes to flush them")
-      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1000000)))
-      _ <- timers.trigger(flow)
-      messagesSent <- messagesSent.get
-      // And("total of 3 messages is sent to a writer")
-      _ <- SyncIO { assertEquals(messagesSent, 3) }
-    } yield flow
+    // Given("writer that counts messages")
+    val messagesSent = Ref.of[SyncIO, Int](0).unsafeRunSync()
+    val persistence = new Persistence[SyncIO, State, ConsRecord] {
+      def appendEvent(event: ConsRecord) =
+        for {
+          _ <- messagesSent update (_ + 1)
+          messageNr <- messagesSent.get
+          _ <- SyncIO {
+            // Then(s"correct message N$messageNr is sent to a writer")
+            assertEquals(event.offset.value, messageNr.toLong)
+          }
+        } yield ()
+      def replaceState(state: State) = SyncIO.unit
+      def delete = SyncIO.unit
+      def flush = SyncIO.unit
+      def read = SyncIO.pure(Some((Offset.min, 0)))
+    }
+    val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 
-    flow.unsafeRunSync()
+    val program = timerFlowOf(context, persistence, timers) use { timerFlow =>
+      for {
+        flow <- KeyFlow.of(f.fold, f.tick, persistence, timerFlow)
+        // When("3 messages are sent to a flow")
+        _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
+        _ <- flow(f.records("key", 1, List("event1", "event2", "event3")))
+        // And("time comes to flush them")
+        _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1000000)))
+        _ <- timers.trigger(flow)
+        messagesSent <- messagesSent.get
+        // And("total of 3 messages is sent to a writer")
+        _ <- SyncIO { assertEquals(messagesSent, 3) }
+      } yield ()
+    }
+
+    program.unsafeRunSync()
   }
 
   test("KeyFlow does not delete prematurely") {
@@ -68,47 +71,47 @@ class KeyFlowSpec extends FunSuite {
     val f = new ConstFixture
     implicit val timers = f.timers
 
-    val flow = for {
-      // Given("writer that records if delete was called")
-      deleteCalled <- Ref.of[SyncIO, Boolean](false)
-      removeCalled <- Ref.of[SyncIO, Boolean](false)
-      persistence = new Persistence[SyncIO, State, ConsRecord] {
-        def appendEvent(event: ConsRecord) = SyncIO.unit
-        def replaceState(state: State) = SyncIO.unit
-        def delete = deleteCalled.set(true)
-        def flush = SyncIO.unit
-        def read = SyncIO.pure(Some((Offset.min, 0)))
-      }
-      // And("fold that never completes")
-      fold = FoldOption.set[SyncIO, State, ConsRecord] {
-        Offset.unsafe(1) -> 7
-      }
-      timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
-      timerFlow <- timerFlowOf(context, persistence, timers)
-      flow <- {
-        implicit val context = new KeyContext[SyncIO] {
-          def holding = none[Offset].pure[SyncIO]
-          def hold(offset: Offset) = SyncIO.unit
-          def remove = removeCalled.set(true)
-          def log = Log.empty
-        }
-        KeyFlow.of(fold, f.tick, persistence, timerFlow)
-      }
-      // When("a message is sent to a flow")
-      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-      _ <- flow(f.records("key", 1, List("event1")))
-      _ <- timers.trigger(flow)
-      deleteCalled <- deleteCalled.get
-      removeCalled <- removeCalled.get
-      // Then("the flow is not done")
-      _ <- SyncIO {
-        assert(!removeCalled)
-        // And("delete is not called")
-        assert(!deleteCalled)
-      }
-    } yield flow
+    // Given("writer that records if delete was called")
+    val deleteCalled = Ref.of[SyncIO, Boolean](false).unsafeRunSync()
+    val removeCalled = Ref.of[SyncIO, Boolean](false).unsafeRunSync()
+    val persistence = new Persistence[SyncIO, State, ConsRecord] {
+      def appendEvent(event: ConsRecord) = SyncIO.unit
+      def replaceState(state: State) = SyncIO.unit
+      def delete = deleteCalled.set(true)
+      def flush = SyncIO.unit
+      def read = SyncIO.pure(Some((Offset.min, 0)))
+    }
+    // And("fold that never completes")
+    val fold = FoldOption.set[SyncIO, State, ConsRecord] {
+      Offset.unsafe(1) -> 7
+    }
+    val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 
-    flow.unsafeRunSync()
+    val program = timerFlowOf(context, persistence, timers) use { timerFlow =>
+      implicit val context = new KeyContext[SyncIO] {
+        def holding = none[Offset].pure[SyncIO]
+        def hold(offset: Offset) = SyncIO.unit
+        def remove = removeCalled.set(true)
+        def log = Log.empty
+      }
+      for {
+        flow <- KeyFlow.of(fold, f.tick, persistence, timerFlow)
+        // When("a message is sent to a flow")
+        _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
+        _ <- flow(f.records("key", 1, List("event1")))
+        _ <- timers.trigger(flow)
+        deleteCalled <- deleteCalled.get
+        removeCalled <- removeCalled.get
+        // Then("the flow is not done")
+        _ <- SyncIO {
+          assert(!removeCalled)
+          // And("delete is not called")
+          assert(!deleteCalled)
+        }
+      } yield ()
+    }
+
+    program.unsafeRunSync()
   }
 
   test("KeyFlow does delete state when fold returns none") {
@@ -116,90 +119,91 @@ class KeyFlowSpec extends FunSuite {
     val f = new ConstFixture
     implicit val timers = f.timers
 
-    val flow = for {
-      // Given("writer that records if delete was called")
-      deleteCalled <- Ref.of[SyncIO, Boolean](false)
-      removeCalled <- Ref.of[SyncIO, Boolean](false)
-      persistence = new Persistence[SyncIO, State, ConsRecord] {
-        def appendEvent(event: ConsRecord) = SyncIO.unit
-        def replaceState(state: State) = SyncIO.unit
-        def delete = deleteCalled.set(true)
-        def flush = SyncIO.unit
-        def read = SyncIO.pure(Some((Offset.min, 0)))
-      }
-      // And("fold that completes immediately")
-      fold = FoldOption.empty[SyncIO, State, ConsRecord]
-      timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
-      timerFlow <- timerFlowOf(context, persistence, timers)
-      flow <- {
-        implicit val context = new KeyContext[SyncIO] {
-          def holding = none[Offset].pure[SyncIO]
-          def hold(offset: Offset) = SyncIO.unit
-          def remove = removeCalled.set(true)
-          def log = Log.empty
-        }
-        KeyFlow.of(fold, f.tick, persistence, timerFlow)
-      }
-      // When("a message is sent to a flow")
-      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-      _ <- flow(f.records("key", 1, List("event1")))
-      _ <- timers.trigger(flow)
-      deleteCalled <- deleteCalled.get
-      removeCalled <- removeCalled.get
-      // Then("the flow is done")
-      _ <- SyncIO {
-        assert(removeCalled)
-        // And("delete is called")
-        assert(deleteCalled)
-      }
-    } yield flow
+    // Given("writer that records if delete was called")
+    val deleteCalled = Ref.of[SyncIO, Boolean](false).unsafeRunSync()
+    val removeCalled = Ref.of[SyncIO, Boolean](false).unsafeRunSync()
+    val persistence = new Persistence[SyncIO, State, ConsRecord] {
+      def appendEvent(event: ConsRecord) = SyncIO.unit
+      def replaceState(state: State) = SyncIO.unit
+      def delete = deleteCalled.set(true)
+      def flush = SyncIO.unit
+      def read = SyncIO.pure(Some((Offset.min, 0)))
+    }
+    // And("fold that completes immediately")
+    val fold = FoldOption.empty[SyncIO, State, ConsRecord]
+    val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 
-    flow.unsafeRunSync()
+    val program = timerFlowOf(context, persistence, timers) use { timerFlow =>
+      implicit val context = new KeyContext[SyncIO] {
+        def holding = none[Offset].pure[SyncIO]
+        def hold(offset: Offset) = SyncIO.unit
+        def remove = removeCalled.set(true)
+        def log = Log.empty
+      }
+      for {
+        flow <- KeyFlow.of(fold, f.tick, persistence, timerFlow)
+        // When("a message is sent to a flow")
+        _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
+        _ <- flow(f.records("key", 1, List("event1")))
+        _ <- timers.trigger(flow)
+        deleteCalled <- deleteCalled.get
+        removeCalled <- removeCalled.get
+        // Then("the flow is done")
+        _ <- SyncIO {
+          assert(removeCalled)
+          // And("delete is called")
+          assert(deleteCalled)
+        }
+      } yield ()
+    }
+
+    program.unsafeRunSync()
   }
 
   test("KeyFlow restores messages correctly") {
 
     val f = new ConstFixture
     implicit val timers = f.timers
+    // Given("writer that counts messages")
+    // And("reader that restores a single message")
+    val messagesSent = Ref.of[SyncIO, Int](0).unsafeRunSync()
+    val persistence = new Persistence[SyncIO, State, ConsRecord] {
+      def appendEvent(event: ConsRecord) =
+        for {
+          _ <- messagesSent update (_ + 1)
+          messageNr <- messagesSent.get
+          offset = messageNr + 1
+          _ <- SyncIO {
+            // Then(s"correct message N$offset is sent to a writer")
+            assertEquals(event.offset.value, offset.toLong)
+          }
+        } yield ()
+      def replaceState(state: State) = SyncIO.unit
+      def delete = SyncIO.unit
+      def flush = SyncIO.unit
+      def read = SyncIO.pure(Some(Offset.unsafe(1) -> 1))
+    }
+    val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 
-    val flow = for {
-      // Given("writer that counts messages")
-      // And("reader that restores a single message")
-      messagesSent <- Ref.of[SyncIO, Int](0)
-      persistence = new Persistence[SyncIO, State, ConsRecord] {
-        def appendEvent(event: ConsRecord) =
-          for {
-            _ <- messagesSent update (_ + 1)
-            messageNr <- messagesSent.get
-            offset = messageNr + 1
-            _ <- SyncIO {
-              // Then(s"correct message N$offset is sent to a writer")
-              assertEquals(event.offset.value, offset.toLong)
-            }
-          } yield ()
-        def replaceState(state: State) = SyncIO.unit
-        def delete = SyncIO.unit
-        def flush = SyncIO.unit
-        def read = SyncIO.pure(Some(Offset.unsafe(1) -> 1))
-      }
-      timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
-      timerFlow <- timerFlowOf(context, persistence, timers)
-      flow <- KeyFlow.of(f.fold, f.tick, persistence, timerFlow)
-      // When("3 messages are sent to a flow")
-      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-      _ <- flow(f.records("key", 2, List("event2", "event3", "event4")))
-      _ <- timers.trigger(flow)
-      // And("time comes to flush them")
-      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1000000)))
-      _ <- timers.trigger(flow)
-      messagesSent <- messagesSent.get
-      _ <- SyncIO {
-        // And("total of 3 messages is sent to a writer")
-        assertEquals(messagesSent, 3)
-      }
-    } yield flow
+    val program = timerFlowOf(context, persistence, timers) use { timerFlow =>
+      for {
+        flow <- KeyFlow.of(f.fold, f.tick, persistence, timerFlow)
+        // When("3 messages are sent to a flow")
+        _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
+        _ <- flow(f.records("key", 2, List("event2", "event3", "event4")))
+        _ <- timers.trigger(flow)
+        // And("time comes to flush them")
+        _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1000000)))
+        _ <- timers.trigger(flow)
+        messagesSent <- messagesSent.get
+        _ <- SyncIO {
+          // And("total of 3 messages is sent to a writer")
+          assertEquals(messagesSent, 3)
+        }
+      } yield ()
+    }
 
-    flow.unsafeRunSync()
+    program.unsafeRunSync()
   }
 
   test("KeyFlow.transient does not flush") {

@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.effect.Resource
 import cats.effect.Sync
 import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
@@ -12,7 +13,7 @@ trait KeyFlowOf[F[_], S, A] {
     context: KeyContext[F],
     persistence: Persistence[F, S, A],
     timers: TimerContext[F]
-  ): F[KeyFlow[F, A]]
+  ): Resource[F, KeyFlow[F, A]]
 
 }
 object KeyFlowOf {
@@ -30,7 +31,7 @@ object KeyFlowOf {
     tick: TickOption[F, S]
   ): KeyFlowOf[F, S, A] = { (context, persistence, timers) =>
     implicit val _context = context
-    timerFlowOf(context, persistence, timers) flatMap { timerFlow =>
+    timerFlowOf(context, persistence, timers) evalMap { timerFlow =>
       KeyFlow.of(fold, tick, persistence, timerFlow)
     }
   }
