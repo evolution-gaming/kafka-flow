@@ -40,67 +40,68 @@ object TopicFlow {
     consumer: Consumer[F],
     topic: Topic,
     partitionFlowOf: PartitionFlowOf[F]
-  ): Resource[F, TopicFlow[F]] = {
+  ): Resource[F, TopicFlow[F]] =  for {
+    log            <- LogResource[F](getClass, topic)
+    pendingCommits <- Resource.liftF(Ref.of(Map.empty[TopicPartition, OffsetAndMetadata]))
+    cache          <- Cache.loading[F, Partition, PartitionFlow[F]]
+  } yield new TopicFlow[F] {
 
-    for {
-      log            <- LogResource[F](getClass, topic)
-      pendingCommits <- Resource.liftF(Ref.of(Map.empty[TopicPartition, OffsetAndMetadata]))
-      cache          <- Cache.loading[F, Partition, PartitionFlow[F]]
-    } yield {
-
-      new TopicFlow[F] {
-
-        def apply(records: ConsRecords) = for {
-          partitons <- cache.values
-          _ <- partitons.toList parTraverse { case (partition, flow) =>
-            for {
-              flow <- flow
-              topicPartition = TopicPartition(topic, partition)
-              partitionRecords = records.values get topicPartition map (_.toList) getOrElse Nil
-              _ <- flow(partitionRecords)
-            } yield ()
-          }
-          offsets <- pendingCommits getAndSet Map.empty
-          _ <- commit(offsets.toList)
+    def apply(records: ConsRecords) = for {
+      partitons <- cache.values
+      _ <- partitons.toList parTraverse { case (partition, flow) =>
+        for {
+          flow <- flow
+          topicPartition = TopicPartition(topic, partition)
+          partitionRecords = records.values get topicPartition map (_.toList) getOrElse Nil
+          _ <- flow(partitionRecords)
         } yield ()
+      }
+      offsets <- pendingCommits getAndSet Map.empty
+      _ <- commit(offsets.toList)
+    } yield ()
 
-        def commit(offsets: List[(TopicPartition, OffsetAndMetadata)]) = {
+    def commit(offsets: List[(TopicPartition, OffsetAndMetadata)]) = {
 
-          def partitionOffsets = {
+      def partitionOffsets = offsets map { case (topicPartition, offsetAndMetadata) =>
+        PartitionOffset(topicPartition.partition, offsetAndMetadata.offset)
+      } mkString (", ")
 
-            val partitionOffsets = for {
-              (topicPartition, offsetAndMetadata) <- offsets
-            } yield {
-              PartitionOffset(topicPartition.partition, offsetAndMetadata.offset)
-            }
-            partitionOffsets.mkString(", ")
+      offsets.toNem.traverse_ { offsets =>
+        consumer
+        .commit(offsets)
+        .handleErrorWith { error =>
+          log.error(s"consumer.commit failed for $partitionOffsets: $error", error)
+        }
+      }
+    }
+
+    def remove(partitions: NonEmptySet[Partition]) = {
+      val offsets = partitions.toList parFlatTraverse { partition =>
+        for {
+          _ <- cache.remove(partition).flatten
+          offsets <- pendingCommits modify { pendingCommits =>
+            val key = TopicPartition(topic, partition)
+            val state = pendingCommits - key
+            val offset = pendingCommits get key
+            (state, offset)
           }
+        } yield offsets.toList map (TopicPartition(topic, partition) -> _)
+      }
+      offsets flatMap commit
+    }
 
-          offsets.toNem.traverse_ { offsets =>
-            consumer
-            .commit(offsets)
-            .handleErrorWith { error =>
-              log.error(s"consumer.commit failed for $partitionOffsets: $error", error)
-            }
+    def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] = {
+      partitions parTraverse_ { case (partition, offset) =>
+        val context = new PartitionContext[F] {
+          def commit(offset: Offset) = pendingCommits update { pendingCommits =>
+            pendingCommits + (TopicPartition(topic, partition) -> OffsetAndMetadata(offset))
           }
         }
-
-        def remove(partitions: NonEmptySet[Partition]) =
-          partitions parTraverse_ (cache.remove(_).flatten)
-
-        def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] = {
-          partitions parTraverse_ { case (partition, offset) =>
-            val context = new PartitionContext[F] {
-              def commit(offset: Offset) = pendingCommits update { pendingCommits =>
-                pendingCommits + (TopicPartition(topic, partition) -> OffsetAndMetadata(offset))
-              }
-            }
-            cache.getOrUpdateReleasable(partition) {
-              Releasable.of(partitionFlowOf(TopicPartition(topic, partition), offset, context))
-            }
-          }
+        cache.getOrUpdateReleasable(partition) {
+          Releasable.of(partitionFlowOf(TopicPartition(topic, partition), offset, context))
         }
       }
     }
   }
+
 }

@@ -41,14 +41,11 @@ object PartitionFlow {
     keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig
   ): Resource[F, PartitionFlow[F]] =
-    for {
-      log   <- LogResource[F](getClass, topicPartition.toString)
-      cache <- Cache.loading[F, String, PartitionKey[F]]
-      flow  <- Resource.liftF {
-        implicit val _log = log
+    LogResource[F](getClass, topicPartition.toString) flatMap { implicit log =>
+      Cache.loading[F, String, PartitionKey[F]] flatMap { cache =>
         of(topicPartition, assignedAt, keyStateOf, cache, config)
       }
-    } yield flow
+    }
 
   def of[F[_]: Concurrent: Parallel: PartitionContext: Clock: Log, S](
     topicPartition: TopicPartition,
@@ -56,12 +53,12 @@ object PartitionFlow {
     keyStateOf: KeyStateOf[F],
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig
-  ): F[PartitionFlow[F]] = for {
-    clock <- Clock[F].instant
-    committedOffset <- Ref.of(assignedAt)
-    timestamp <- Ref.of(Timestamp(clock, None, assignedAt))
-    triggerTimersAt <- Ref.of(clock)
-    commitOffsetsAt <- Ref.of(clock)
+  ): Resource[F, PartitionFlow[F]] = for {
+    clock <- Resource.liftF(Clock[F].instant)
+    committedOffset <- Resource.liftF(Ref.of(assignedAt))
+    timestamp <- Resource.liftF(Ref.of(Timestamp(clock, None, assignedAt)))
+    triggerTimersAt <- Resource.liftF(Ref.of(clock))
+    commitOffsetsAt <- Resource.liftF(Ref.of(clock))
     flow <- of(
       topicPartition,
       keyStateOf,
@@ -84,7 +81,7 @@ object PartitionFlow {
     commitOffsetsAt: Ref[F, Instant],
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig
-  ): F[PartitionFlow[F]] = {
+  ): Resource[F, PartitionFlow[F]] = {
 
     def stateOf(createdAt: Timestamp, key: String) =
       cache.getOrUpdateReleasable(key) {
@@ -202,7 +199,7 @@ object PartitionFlow {
 
     } yield offsetToCommit
 
-    init as { records =>
+    val acquire: F[PartitionFlow[F]] = init as { records =>
       for {
         _ <- NonEmptyList.fromList(records).traverse_(processRecords)
 
@@ -217,6 +214,19 @@ object PartitionFlow {
 
       } yield ()
     }
+
+    val release: F[Unit] = if (config.commitOnRevoke) {
+      Log[F].info(s"committing on revoke...") *>
+      offsetToCommit flatMap { offsetToCommit =>
+        offsetToCommit traverse_ PartitionContext[F].commit
+      }
+    } else {
+      ().pure[F]
+    }
+
+    Resource.make(acquire) { _ => release }
+
   }
+
 
 }
