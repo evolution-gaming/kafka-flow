@@ -216,9 +216,11 @@ object PartitionFlow {
     }
 
     val release: F[Unit] = if (config.commitOnRevoke) {
-      offsetToCommit flatMap { offsetToCommit =>
-        Log[F].info(s"committing on revoke: $offsetToCommit") *>
-        (offsetToCommit traverse_ PartitionContext[F].commit)
+      offsetToCommit flatMap { offset =>
+        offset traverse_ { offset =>
+          Log[F].info(s"committing on revoke: $offset") *>
+          PartitionContext[F].commit(offset)
+        }
       }
     } else {
       ().pure[F]
