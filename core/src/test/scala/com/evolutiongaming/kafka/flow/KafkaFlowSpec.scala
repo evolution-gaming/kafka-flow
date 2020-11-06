@@ -162,9 +162,6 @@ object KafkaFlowSpec {
         def subscribe(topic: Topic, listener: RebalanceListener[F]) =
           state update (_ + Action.Subscribe(topic)(listener))
 
-        def unsubscribe =
-          state update (_ + Action.Unsubscribe)
-
         def poll(timeout: FiniteDuration) =
           state modify {
             case state @ State(Nil, _)          => (state, none[Command])
@@ -255,7 +252,6 @@ object KafkaFlowSpec {
     case object ReleaseTopicFlow extends Action
     case object AcquireConsumer extends Action
     case object ReleaseConsumer extends Action
-    case object Unsubscribe extends Action
     final case class RemovePartitions(partitions: NonEmptySet[Partition]) extends Action
     final case class AddPartitions(partitions: NonEmptySet[(Partition, Offset)]) extends Action
     final case class Subscribe(topic: Topic)(val listener: RebalanceListener[F]) extends Action

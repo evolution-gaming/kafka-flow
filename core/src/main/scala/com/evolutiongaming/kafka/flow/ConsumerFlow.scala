@@ -87,8 +87,6 @@ object ConsumerFlow {
           topic = topic,
           listener = new RebalanceListener[F] {
             def onPartitionsAssigned(topicPartitions: NonEmptySet[TopicPartition]) = {
-              println("Assigned!!!")
-              log.error("ASSIGNEED")
               val partitions = topicPartitions map (_.partition)
               for {
                 _ <- log.prefixed(topic).info(s"$partitions assigned")

@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
-import UnsubscribeSpec._
+import ShutdownSpec._
 import cats.Applicative
 import cats.Defer
 import cats.data.NonEmptySet
@@ -23,9 +23,9 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import weaver.GlobalResources
 
-class UnsubscribeSpec(val globalResources: GlobalResources) extends KafkaSpec {
+class ShutdownSpec(val globalResources: GlobalResources) extends KafkaSpec {
 
-  test("onPartitionsRevoked called after unsubscribe") { kafka =>
+  test("call and complete onPartitionsRevoked after shutdown started") { kafka =>
     implicit val retry = Retry.empty[IO]
 
     val producerConfig = ProducerConfig(
@@ -81,7 +81,7 @@ class UnsubscribeSpec(val globalResources: GlobalResources) extends KafkaSpec {
   }
 
 }
-object UnsubscribeSpec {
+object ShutdownSpec {
 
   def topicFlow(state: Ref[IO, Set[Partition]]): TopicFlow[IO] =
     new TopicFlow[IO] {
@@ -92,6 +92,9 @@ object UnsubscribeSpec {
         state update (_ ++ partitions.toList)
       }
       def remove(partitions: NonEmptySet[Partition]) =
+        // we wait for a second here to ensure the call is blocking
+        // i.e. if we update state immediately, the test might pass
+        // event if the call is non-blocking
         IO.sleep(1.second) *> {
           state update (_ -- partitions.toList)
         }

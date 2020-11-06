@@ -21,8 +21,6 @@ trait Consumer[F[_]] {
 
   def subscribe(topic: Topic, listener: RebalanceListener[F]): F[Unit]
 
-  def unsubscribe: F[Unit]
-
   def poll(timeout: FiniteDuration): F[ConsRecords]
 
   def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit]
@@ -40,9 +38,6 @@ object Consumer {
 
     def subscribe(topic: Topic, listener: RebalanceListener[F]) =
       consumer.subscribe(NonEmptySet.of(topic), listener.some)
-
-    def unsubscribe =
-      consumer.unsubscribe
 
     def poll(timeout: FiniteDuration) =
       consumer.poll(timeout)
