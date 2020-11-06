@@ -23,11 +23,8 @@ trait PartitionFlow[F[_]] {
     *
     * It is possible for `records` parameter to come empty (for an empty poll).
     * In this case only the timers will be called.
-    *
-    * Returns `Some(offsets)` if it is fine to do commit for `offset` in Kafka.
-    * Returns `None` if no new commits are required.
     */
-  def apply(records: List[ConsRecord]): F[Option[Offset]]
+  def apply(records: List[ConsRecord]): F[Unit]
 
 }
 
@@ -38,7 +35,7 @@ object PartitionFlow {
     def timers = state.timers
   }
 
-  def resource[F[_]: Concurrent: Parallel: Clock: LogOf, S](
+  def resource[F[_]: Concurrent: Parallel: PartitionContext: Clock: LogOf, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
@@ -53,7 +50,7 @@ object PartitionFlow {
       }
     } yield flow
 
-  def of[F[_]: Concurrent: Parallel: Clock: Log, S](
+  def of[F[_]: Concurrent: Parallel: PartitionContext: Clock: Log, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
@@ -78,7 +75,7 @@ object PartitionFlow {
   } yield flow
 
   // TODO: put most `Ref` variables into one state class?
-  def of[F[_]: Concurrent: Parallel: Clock: Log, S](
+  def of[F[_]: Concurrent: Parallel: PartitionContext: Clock: Log, S](
     topicPartition: TopicPartition,
     keyStateOf: KeyStateOf[F],
     committedOffset: Ref[F, Offset],
@@ -215,9 +212,10 @@ object PartitionFlow {
 
         clock <- Clock[F].instant
         commitOffsetsAt <- commitOffsetsAt.get
-        offsetToCommit <- if (clock isAfter commitOffsetsAt) offsetToCommit else None.pure[F]
+        offsetToCommit <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
+        _ <- offsetToCommit traverse_ PartitionContext[F].commit
 
-      } yield offsetToCommit
+      } yield ()
     }
   }
 

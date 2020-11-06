@@ -30,7 +30,7 @@ class KeyFlowSpec extends FunSuite {
     implicit val timers = f.timers
 
     // Given("writer that counts messages")
-    val messagesSent = Ref.of[SyncIO, Int](0).unsafeRunSync()
+    val messagesSent = Ref.unsafe[SyncIO, Int](0)
     val persistence = new Persistence[SyncIO, State, ConsRecord] {
       def appendEvent(event: ConsRecord) =
         for {
@@ -72,8 +72,8 @@ class KeyFlowSpec extends FunSuite {
     implicit val timers = f.timers
 
     // Given("writer that records if delete was called")
-    val deleteCalled = Ref.of[SyncIO, Boolean](false).unsafeRunSync()
-    val removeCalled = Ref.of[SyncIO, Boolean](false).unsafeRunSync()
+    val deleteCalled = Ref.unsafe[SyncIO, Boolean](false)
+    val removeCalled = Ref.unsafe[SyncIO, Boolean](false)
     val persistence = new Persistence[SyncIO, State, ConsRecord] {
       def appendEvent(event: ConsRecord) = SyncIO.unit
       def replaceState(state: State) = SyncIO.unit
@@ -120,8 +120,8 @@ class KeyFlowSpec extends FunSuite {
     implicit val timers = f.timers
 
     // Given("writer that records if delete was called")
-    val deleteCalled = Ref.of[SyncIO, Boolean](false).unsafeRunSync()
-    val removeCalled = Ref.of[SyncIO, Boolean](false).unsafeRunSync()
+    val deleteCalled = Ref.unsafe[SyncIO, Boolean](false)
+    val removeCalled = Ref.unsafe[SyncIO, Boolean](false)
     val persistence = new Persistence[SyncIO, State, ConsRecord] {
       def appendEvent(event: ConsRecord) = SyncIO.unit
       def replaceState(state: State) = SyncIO.unit
@@ -166,7 +166,7 @@ class KeyFlowSpec extends FunSuite {
     implicit val timers = f.timers
     // Given("writer that counts messages")
     // And("reader that restores a single message")
-    val messagesSent = Ref.of[SyncIO, Int](0).unsafeRunSync()
+    val messagesSent = Ref.unsafe[SyncIO, Int](0)
     val persistence = new Persistence[SyncIO, State, ConsRecord] {
       def appendEvent(event: ConsRecord) =
         for {

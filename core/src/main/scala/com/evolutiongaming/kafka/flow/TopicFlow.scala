@@ -12,6 +12,7 @@ import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.scache.Releasable
 import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, Partition, Topic, TopicPartition}
 import kafka.Consumer
+import cats.effect.concurrent.Ref
 
 trait TopicFlow[F[_]] {
 
@@ -42,25 +43,25 @@ object TopicFlow {
   ): Resource[F, TopicFlow[F]] = {
 
     for {
-      log   <- LogResource[F](getClass, topic)
-      cache <- Cache.loading[F, Partition, PartitionFlow[F]]
+      log            <- LogResource[F](getClass, topic)
+      pendingCommits <- Resource.liftF(Ref.of(Map.empty[TopicPartition, OffsetAndMetadata]))
+      cache          <- Cache.loading[F, Partition, PartitionFlow[F]]
     } yield {
 
       new TopicFlow[F] {
 
         def apply(records: ConsRecords) = for {
           partitons <- cache.values
-          offsets <- partitons.toList parTraverse { case (partition, flow) =>
+          _ <- partitons.toList parTraverse { case (partition, flow) =>
             for {
               flow <- flow
               topicPartition = TopicPartition(topic, partition)
               partitionRecords = records.values get topicPartition map (_.toList) getOrElse Nil
-              offset <- flow(partitionRecords)
-            } yield offset map { offset =>
-              topicPartition -> OffsetAndMetadata(offset/*TODO metadata*/)
-            }
+              _ <- flow(partitionRecords)
+            } yield ()
           }
-          _ <- commit(offsets.flatten)
+          offsets <- pendingCommits getAndSet Map.empty
+          _ <- commit(offsets.toList)
         } yield ()
 
         def commit(offsets: List[(TopicPartition, OffsetAndMetadata)]) = {
@@ -89,8 +90,13 @@ object TopicFlow {
 
         def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] = {
           partitions parTraverse_ { case (partition, offset) =>
+            val context = new PartitionContext[F] {
+              def commit(offset: Offset) = pendingCommits update { pendingCommits =>
+                pendingCommits + (TopicPartition(topic, partition) -> OffsetAndMetadata(offset))
+              }
+            }
             cache.getOrUpdateReleasable(partition) {
-              Releasable.of(partitionFlowOf(TopicPartition(topic, partition), offset))
+              Releasable.of(partitionFlowOf(TopicPartition(topic, partition), offset, context))
             }
           }
         }

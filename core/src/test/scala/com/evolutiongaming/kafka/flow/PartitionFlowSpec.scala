@@ -4,6 +4,7 @@ import cats.effect.Clock
 import cats.effect.ContextShift
 import cats.effect.IO
 import cats.effect.Resource
+import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
@@ -69,7 +70,8 @@ class PartitionFlowSpec extends FunSuite {
     val flow = f.flow use { flow =>
       for {
         // When("exactly 3 messages come")
-        offset <- flow(f.records("key1", 100, List("event1", "event2", "event3")))
+        _ <- flow(f.records("key1", 100, List("event1", "event2", "event3")))
+        offset <- f.pendingOffset.get
         // Then("offset of first message is returned")
         _ <- IO { assertEquals(offset, Some(Offset.unsafe(103))) }
       } yield ()
@@ -89,12 +91,14 @@ class PartitionFlowSpec extends FunSuite {
         // And("2 messages come for the key2")
         _ <- flow(f.records("key2", 102, List("event1", "event2")))
         // And("last message comes for a key1")
-        offset <- flow(f.records("key1", 104, List("event3")))
+        _ <- flow(f.records("key1", 104, List("event3")))
+        offset <- f.pendingOffset.get
         // Then("kafka commited to a first message of key2")
         _ <- IO { assertEquals(offset, Some(Offset.unsafe(102))) }
 
         // When("last messages come for the key2")
-        offset <- flow(f.records("key2", 105, List("event3")))
+        _ <- flow(f.records("key2", 105, List("event3")))
+        offset <- f.pendingOffset.get
         // Then("kafka commited to a last message of key2 + 1")
         _ <- IO { assertEquals(offset, Some(Offset.unsafe(106))) }
 
@@ -136,7 +140,8 @@ class PartitionFlowSpec extends FunSuite {
       for {
         // When("exactly 100000 messages come after first one")
         _ <- flow(f.records("key1", 100, List("event1")))
-        offset <- flow(f.records("key2", 101, events))
+        _ <- flow(f.records("key2", 101, events))
+        offset <- f.pendingOffset.get
         // Then("commit kafka")
         _ <- IO { assertEquals(offset, Some(Offset.unsafe(101))) }
         // And("database contains all the events") }
@@ -203,6 +208,11 @@ object PartitionFlowSpec {
           }
         }
       }
+
+    val pendingOffset: Ref[IO, Option[Offset]] = Ref.unsafe(None)
+    implicit val partitionContext: PartitionContext[IO] = new PartitionContext[IO] {
+      def commit(offset: Offset) = pendingOffset.set(Some(offset))
+    }
 
     val flow = {
       val keyStateOf: KeyStateOf[IO] = new KeyStateOf[IO] {
