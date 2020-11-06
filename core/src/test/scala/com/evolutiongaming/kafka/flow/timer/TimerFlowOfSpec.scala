@@ -16,8 +16,6 @@ import java.time.Instant
 import monocle.macros.GenLens
 import munit.FunSuite
 import scala.concurrent.duration._
-import scala.util.Success
-import scala.util.Try
 
 import TimerFlowSpec._
 

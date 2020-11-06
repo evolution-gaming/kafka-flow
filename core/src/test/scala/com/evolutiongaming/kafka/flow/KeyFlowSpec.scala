@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
-import cats.effect.Resource
 import cats.effect.SyncIO
 import cats.effect.concurrent.Ref
 import cats.syntax.all._
