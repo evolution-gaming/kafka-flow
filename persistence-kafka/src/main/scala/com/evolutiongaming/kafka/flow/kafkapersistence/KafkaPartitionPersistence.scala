@@ -4,7 +4,7 @@ import cats.implicits._
 import cats.mtl.MonadState
 import cats.{FlatMap, Monad, data}
 import com.evolutiongaming.catshelper.{BracketThrowable, FromTry, Log}
-import com.evolutiongaming.kafka.flow.consumer.Consumer
+import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.Snapshots.Snapshot

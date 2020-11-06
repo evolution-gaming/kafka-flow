@@ -13,7 +13,7 @@ import com.evolutiongaming.smetrics.MetricsHelper._
 import com.evolutiongaming.smetrics.Quantile
 import com.evolutiongaming.smetrics.Quantiles
 import com.evolutiongaming.skafka.Topic
-import consumer.Consumer
+import kafka.Consumer
 
 object TopicFlowMetrics {
 

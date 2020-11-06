@@ -19,7 +19,7 @@ import com.evolutiongaming.skafka.Topic
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, RebalanceListener, WithSize}
 import com.evolutiongaming.sstream.Stream
-import consumer.Consumer
+import kafka.Consumer
 import munit.FunSuite
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
@@ -43,7 +43,6 @@ class KafkaFlowSpec extends FunSuite {
       actions = List(
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
-        Action.Unsubscribe,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
         Action.Poll(ConsumerRecords.empty),
         Action.Poll(ConsumerRecords.empty),
@@ -70,7 +69,6 @@ class KafkaFlowSpec extends FunSuite {
       actions = List(
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
-        Action.Unsubscribe,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
         Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
@@ -79,7 +77,6 @@ class KafkaFlowSpec extends FunSuite {
         Action.RetryOnError(Error, OnError.Decision.retry(1.millis)),
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
-        Action.Unsubscribe,
         Action.Poll(ConsumerRecords.empty),
         Action.Subscribe(topic)(RebalanceListener.empty),
         Action.AcquireTopicFlow,
@@ -103,7 +100,6 @@ class KafkaFlowSpec extends FunSuite {
       actions = List(
         Action.ReleaseConsumer,
         Action.ReleaseTopicFlow,
-        Action.Unsubscribe,
         Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
         Action.RemovePartitions(NonEmptySet.of(Partition.unsafe(1))),
         Action.Poll(ConsumerRecords.empty),
@@ -134,7 +130,7 @@ object KafkaFlowSpec {
 
     def kafkaFlow: Stream[F, ConsRecords] = KafkaFlow.stream(
       consumer = consumer(state),
-      consumerFlowOf = ConsumerFlowOf(
+      flowOf = ConsumerFlowOf(
         topic = topic,
         flowOf = { (_, _) =>
           val result = state modify { s =>
