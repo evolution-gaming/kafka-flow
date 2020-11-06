@@ -2,7 +2,6 @@ package com.evolutiongaming.kafka.flow
 
 import cats.effect.Resource
 import cats.effect.Sync
-import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
 import persistence.Persistence
 import timer.TimerContext
