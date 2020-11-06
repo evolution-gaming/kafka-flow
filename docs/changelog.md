@@ -4,6 +4,20 @@ title: Changelog
 sidebar_label: Changelog
 ---
 
+## 0.4.x
+
+### New features
+
+- Graceful shutdown is implemented. See `PartitionFlowConfig.commitOnRevoke` and
+`flushOnRevoke` parameter in `TimerFlowOf.unloadOrphaned` for more details.
+
+### Breaking changes
+
+- `ConsumerModule` renamed to `KafkaModule` and moved to a different package
+again to reflect the purpose, sorry :(
+- The following classes now return `Resource[F, T]` instead of `F[T]` to
+allow graceful shutdown: `PartitionFlowOf`, `ConsumerOf` and `TimerFlowOf`.
+
 ## 0.3.x
 
 ### New features
