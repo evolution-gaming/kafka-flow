@@ -5,7 +5,7 @@ import cats.effect.Resource
 import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.skafka.Topic
-import consumer.Consumer
+import kafka.Consumer
 
 /** Factory which creates `ConsumerFlow` instances */
 trait ConsumerFlowOf[F[_]] {

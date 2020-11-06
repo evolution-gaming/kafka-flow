@@ -1,4 +1,4 @@
-package com.evolutiongaming.kafka.flow.consumer
+package com.evolutiongaming.kafka.flow.kafka
 
 import cats.effect.Blocker
 import cats.effect.Clock
@@ -25,21 +25,22 @@ import com.evolutiongaming.smetrics.CollectorRegistry
 import com.evolutiongaming.smetrics.MeasureDuration
 import scodec.bits.ByteVector
 
-trait ConsumerModule[F[_]] {
+trait KafkaModule[F[_]] {
 
   def healthCheck: KafkaHealthCheck[F]
 
   def consumerOf: ConsumerOf[F]
+  def producerOf: RawProducerOf[F]
 
 }
-object ConsumerModule {
+object KafkaModule {
 
   def of[F[_]: ConcurrentEffect: ContextShift: FromTry: ToTry: ToFuture: Timer: LogOf](
     applicationId: String,
     config: ConsumerConfig,
     registry: CollectorRegistry[F],
     blocker: Blocker
-  ): Resource[F, ConsumerModule[F]] = {
+  ): Resource[F, KafkaModule[F]] = {
     implicit val measureDuration = MeasureDuration.fromClock[F](Clock[F])
     for {
       producerMetrics      <- ProducerMetrics.of(registry)
@@ -54,9 +55,9 @@ object ConsumerModule {
           config = KafkaHealthCheck.Config.default,
           kafkaConfig = KafkaConfig(ProducerConfig(common = config.common), config)
         )
-        LogResource[F](ConsumerModule.getClass, "KafkaHealthCheck") *> healthCheck
+        LogResource[F](KafkaModule.getClass, "KafkaHealthCheck") *> healthCheck
       }
-    } yield new ConsumerModule[F] {
+    } yield new KafkaModule[F] {
 
       def healthCheck = _healthCheck
 
@@ -73,6 +74,8 @@ object ConsumerModule {
           }
         }
       }
+
+      def producerOf = _producerOf
 
     }
   }

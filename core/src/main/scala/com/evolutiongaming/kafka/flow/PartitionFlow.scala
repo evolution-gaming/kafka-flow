@@ -13,7 +13,7 @@ import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.scache.Releasable
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
-import consumer.OffsetToCommit
+import kafka.OffsetToCommit
 import java.time.Instant
 import timer.Timestamp
 

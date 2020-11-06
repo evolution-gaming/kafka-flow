@@ -11,7 +11,7 @@ import com.evolutiongaming.kafka.journal.PartitionOffset
 import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.scache.Releasable
 import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, Partition, Topic, TopicPartition}
-import consumer.Consumer
+import kafka.Consumer
 
 trait TopicFlow[F[_]] {
 

@@ -6,7 +6,7 @@ import cats.effect.Resource
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.StartKafka
-import com.evolutiongaming.kafka.flow.consumer.ConsumerModule
+import com.evolutiongaming.kafka.flow.kafka.KafkaModule
 import com.evolutiongaming.skafka.consumer.ConsumerConfig
 import com.evolutiongaming.smetrics.CollectorRegistry
 import java.util.concurrent.Executor
@@ -19,10 +19,10 @@ import weaver._
 
 object SharedResources extends GlobalResourcesInit {
 
-  implicit object ConsumerModuleTag extends ResourceTag[ConsumerModule[IO]] {
-    def description: String = "ConsumerModule"
-    def cast(obj: Any): Option[ConsumerModule[IO]] =
-      Try(obj.asInstanceOf[ConsumerModule[IO]]).toOption
+  implicit object ConsumerModuleTag extends ResourceTag[KafkaModule[IO]] {
+    def description: String = "KafkaModule"
+    def cast(obj: Any): Option[KafkaModule[IO]] =
+      Try(obj.asInstanceOf[KafkaModule[IO]]).toOption
   }
 
   def sharedResources(store: GlobalResources.Write[IO]): Resource[IO, Unit] = {
@@ -36,20 +36,20 @@ object SharedResources extends GlobalResourcesInit {
     val config = ConsumerConfig()
 
     val start = IO {
-      // set logging to WARN level to avoid spamming the logs
-      Logger.root
-      .clearHandlers()
-      .clearModifiers()
-      .withHandler(minimumLevel = Some(Level.Warn))
-      .replace()
+      // set root logging to WARN level to avoid spamming the logs
+      Logger.root.clearHandlers().clearModifiers()
+      .withHandler(minimumLevel = Some(Level.Warn)).replace()
+      Logger("com.evolutiongaming.kafka.flow")
+      .withHandler(minimumLevel = Some(Level.Info)).replace()
+
       // proceed starting Kafka
       StartKafka()
     }
     for {
       _ <- Resource.make(start) { shutdown => IO(shutdown()) }
       blocker <- Blocker[IO]
-      consumer <- ConsumerModule.of[IO]("SharedResources", config, CollectorRegistry.empty, blocker)
-      _ <- store.putR(consumer)
+      kafka <- KafkaModule.of[IO]("SharedResources", config, CollectorRegistry.empty, blocker)
+      _ <- store.putR(kafka)
     } yield ()
 
   }

@@ -1,10 +1,8 @@
-package com.evolutiongaming.journaltosql.timer
+package com.evolutiongaming.kafka.flow.timer
 
 import cats.effect.IO
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
-import com.evolutiongaming.kafka.flow.timer.CassandraTimers
-import com.evolutiongaming.kafka.flow.timer.KafkaTimer
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition

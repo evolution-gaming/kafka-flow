@@ -14,7 +14,7 @@ import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import com.evolutiongaming.skafka.consumer.RebalanceListener
 import com.evolutiongaming.sstream.Stream
-import consumer.Consumer
+import kafka.Consumer
 import scala.collection.immutable.SortedSet
 
 /** Represents evertything stateful happening on one `Consumer` */
@@ -87,6 +87,8 @@ object ConsumerFlow {
           topic = topic,
           listener = new RebalanceListener[F] {
             def onPartitionsAssigned(topicPartitions: NonEmptySet[TopicPartition]) = {
+              println("Assigned!!!")
+              log.error("ASSIGNEED")
               val partitions = topicPartitions map (_.partition)
               for {
                 _ <- log.prefixed(topic).info(s"$partitions assigned")
@@ -110,9 +112,10 @@ object ConsumerFlow {
       }
     }
 
-    val unsubscribe = log[F] flatMap { log =>
-      log.info("unsubscribing") *> consumer.unsubscribe
-    }
+    val unsubscribe = ().pure[F]
+      // log[F] flatMap { log =>
+      //   log.info("unsubscribing") *> consumer.unsubscribe
+      // }
 
     val subscription = Resource.make(subscribe) { _ => unsubscribe }
 
