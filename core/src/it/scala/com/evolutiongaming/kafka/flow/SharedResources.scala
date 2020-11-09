@@ -30,7 +30,6 @@ object SharedResources extends GlobalResourcesInit {
     implicit val executor = ExecutionContext.global
     implicit val contextShift = IO.contextShift(executor)
     implicit val timer = IO.timer(executor)
-    implicit val log = LogOf.empty[IO]
 
     // we use default config here, because we will launch Kafka locally
     val config = ConsumerConfig()
@@ -40,7 +39,7 @@ object SharedResources extends GlobalResourcesInit {
       Logger.root.clearHandlers().clearModifiers()
       .withHandler(minimumLevel = Some(Level.Warn)).replace()
       Logger("com.evolutiongaming.kafka.flow")
-      .withHandler(minimumLevel = Some(Level.Info)).replace()
+      .withHandler(minimumLevel = Some(Level.Debug)).replace()
 
       // proceed starting Kafka
       StartKafka()
@@ -48,7 +47,9 @@ object SharedResources extends GlobalResourcesInit {
     for {
       _ <- Resource.make(start) { shutdown => IO(shutdown()) }
       blocker <- Blocker[IO]
-      kafka <- KafkaModule.of[IO]("SharedResources", config, CollectorRegistry.empty, blocker)
+      kafka <- Resource.liftF(LogOf.slf4j[IO]) flatMap { implicit logOf =>
+        KafkaModule.of[IO]("SharedResources", config, CollectorRegistry.empty, blocker)
+      }
       _ <- store.putR(kafka)
     } yield ()
 
