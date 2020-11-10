@@ -115,7 +115,7 @@ object TopicFlow {
 
     Resource.make(acquire.pure[F]) { _ =>
       cache.keys flatMap { keys =>
-        val partitions = NonEmptySet.fromSet(SortedSet.from(keys.toList))
+        val partitions = NonEmptySet.fromSet(SortedSet.empty[Partition] ++ keys.toList)
         val removeAll = partitions parTraverse_ { partitions =>
           partitions parTraverse_ (cache.remove(_).flatten)
         }
