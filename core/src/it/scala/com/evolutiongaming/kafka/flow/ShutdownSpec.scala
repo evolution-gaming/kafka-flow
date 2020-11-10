@@ -89,9 +89,9 @@ class ShutdownSpec(val globalResources: GlobalResources) extends KafkaSpec {
 object ShutdownSpec {
 
   def topicFlowOf(state: Ref[IO, Set[Partition]]): TopicFlowOf[IO] =
-    (consumer, topic) => Resource.pure[IO, TopicFlow[IO]] {
+    (_, _) => Resource.pure[IO, TopicFlow[IO]] {
       new TopicFlow[IO] {
-        //implicit val timer = IO.timer(ExecutionContext.global)
+        implicit val timer = IO.timer(ExecutionContext.global)
         def apply(records: ConsRecords) = IO.unit
         def add(partitionsAndOffsets: NonEmptySet[(Partition, Offset)]) = {
           val partitions = partitionsAndOffsets map (_._1)
@@ -101,9 +101,7 @@ object ShutdownSpec {
           // we wait for a second here to ensure the call is blocking
           // i.e. if we update state immediately, the test might pass
           // event if the call is non-blocking
-          consumer.commit(NonEmptyMap.of(
-            TopicPartition(topic, Partition.min) -> OffsetAndMetadata(Offset.unsafe(2))
-          )) *> {
+          IO.sleep(1.second) *> {
             state update (_ -- partitions.toList)
           }
       }

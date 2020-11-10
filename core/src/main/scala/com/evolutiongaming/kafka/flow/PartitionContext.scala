@@ -13,14 +13,15 @@ import com.olegpy.meow.effects._
 
 /** Partition specific metainformation inside of topic */
 trait PartitionContext[F[_]] {
-  def commit(offset: Offset): F[Unit]
+  /** Request a commit to partition */
+  def scheduleCommit(offset: Offset): F[Unit]
 }
 object PartitionContext {
 
   def apply[F[_]](implicit F: PartitionContext[F]): PartitionContext[F] = F
 
   def empty[F[_]: Applicative]: PartitionContext[F] = new PartitionContext[F] {
-    def commit(offset: Offset) = ().pure[F]
+    def scheduleCommit(offset: Offset) = ().pure[F]
   }
 
   def of[F[_]: Sync: Log](removeFromCache: F[Unit]): F[KeyContext[F]] =

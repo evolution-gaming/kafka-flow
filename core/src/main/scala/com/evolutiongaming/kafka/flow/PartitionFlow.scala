@@ -210,7 +210,7 @@ object PartitionFlow {
         clock <- Clock[F].instant
         commitOffsetsAt <- commitOffsetsAt.get
         offsetToCommit <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
-        _ <- offsetToCommit traverse_ PartitionContext[F].commit
+        _ <- offsetToCommit traverse_ PartitionContext[F].scheduleCommit
 
       } yield ()
     }
@@ -219,7 +219,7 @@ object PartitionFlow {
       offsetToCommit flatMap { offset =>
         offset traverse_ { offset =>
           Log[F].info(s"committing on revoke: $offset") *>
-          PartitionContext[F].commit(offset)
+          PartitionContext[F].scheduleCommit(offset)
         }
       }
     } else {
