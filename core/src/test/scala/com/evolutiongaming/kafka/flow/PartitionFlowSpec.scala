@@ -211,7 +211,7 @@ object PartitionFlowSpec {
 
     val pendingOffset: Ref[IO, Option[Offset]] = Ref.unsafe(None)
     implicit val partitionContext: PartitionContext[IO] = new PartitionContext[IO] {
-      def commit(offset: Offset) = pendingOffset.set(Some(offset))
+      def scheduleCommit(offset: Offset) = pendingOffset.set(Some(offset))
     }
 
     val flow = {
