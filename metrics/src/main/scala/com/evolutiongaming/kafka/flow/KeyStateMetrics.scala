@@ -11,7 +11,7 @@ import com.evolutiongaming.smetrics.MeasureDuration
 
 object KeyStateMetrics {
 
-  implicit def keyStateOfMetricsOf[F[_]: Monad: MeasureDuration, S]: MetricsOf[F, KeyStateOf[F]] = { registry =>
+  implicit def keyStateOfMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, KeyStateOf[F]] = { registry =>
     registry.gauge(
       name = "key_flow_count",
       help = "The number of active key flows",

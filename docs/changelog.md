@@ -36,7 +36,7 @@ def keyStateOf: KeyStateOf[IO] = ???
 import com.evolutiongaming.kafka.flow.KeyStateMetrics._
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 
-def keyStateWithMetrics = keyStateOf.withCollectorRegistry[IO](???)
+def keyStateWithMetrics = keyStateOf.withCollectorRegistry(???)
 ```
 - `PartitionFlowOf.eagerRecoveryKafkaPersistence` lost `keyStateOfTransform`
 parameter used to construct metrics as the metric is provided out of the box.
