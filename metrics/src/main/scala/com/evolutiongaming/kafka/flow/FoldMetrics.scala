@@ -2,18 +2,15 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Monad
 import cats.arrow.FunctionK
-import cats.effect.Resource
 import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.metrics.MetricsK
 import com.evolutiongaming.kafka.flow.metrics.MetricsKOf
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.smetrics.CollectorRegistry
 import com.evolutiongaming.smetrics.LabelNames
 import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.smetrics.MetricsHelper._
 import com.evolutiongaming.smetrics.Quantile
 import com.evolutiongaming.smetrics.Quantiles
-import metrics.MetricsOf
 import metrics.syntax._
 
 object FoldMetrics {

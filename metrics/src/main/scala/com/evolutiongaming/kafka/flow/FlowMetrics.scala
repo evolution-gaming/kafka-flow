@@ -45,7 +45,13 @@ object FlowMetrics {
     journalDatabase <- journalDatabaseMetricsOf[F].apply(registry)
     snapshotDatabase <- snapshotDatabaseMetricsOf[F].apply(registry)
     timerDatabase <- timerDatabaseMetricsKOf[F].apply(registry)
-    persistenceModule <- persistenceModuleMetricsKOf[F].apply(registry)
+    persistenceModule = new MetricsK[PersistenceModule[F, *]] {
+      def withMetrics[S](module: PersistenceModule[F, S]) = new PersistenceModule[F, S] {
+        def keys = keyDatabase.withMetrics(module.keys)
+        def journals = journalDatabase.withMetrics(module.journals)
+        def snapshots = snapshotDatabase.withMetrics(module.snapshots)
+      }
+    }
     fold <- foldMetricsKOf[F].apply(registry)
     foldOption <- foldOptionMetricsKOf[F].apply(registry)
     keyStateOf <- keyStateOfMetricsOf[F].apply(registry)
