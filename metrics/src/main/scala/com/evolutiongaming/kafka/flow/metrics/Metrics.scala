@@ -19,18 +19,12 @@ trait MetricsOf[F[_], A] { self =>
   /** Use metrics from `A` for another type `B`.
     *
     * Useful to create metrics for factory classes.
+    *
+    * The signature makes it easier to pass metrics as implicit value.
+    * I.e. run it as `metrics.transform { implicit metrics => b => ... }.
     */
-  def transform[B](f: (B, Metrics[A]) => B)(implicit F: Applicative[F]): MetricsOf[F, B] = { registry =>
-    self(registry) map { metrics => b => f(b, metrics) }
+  def transform[B](f: Metrics[A] => B => B)(implicit F: Applicative[F]): MetricsOf[F, B] = { registry =>
+    self(registry) map { metrics => b => f(metrics)(b) }
   }
-  /** Use metrics from `A` for another type `B`.
-    *
-    * Useful to create metrics for factory classes.
-    *
-    * This version makes it easier to pass metrics as implicit value.
-    * I.e. run it as `metrics.transform { b => implicit metrics => ... }.
-    */
-  def transform[B](f: B => Metrics[A] => B)(implicit F: Applicative[F]): MetricsOf[F, B] =
-    transform { (b, metrics) => f(b)(metrics) }
 
 }

@@ -13,15 +13,23 @@ import scala.concurrent.duration.FiniteDuration
 package object syntax {
 
   implicit class MetricsOps[A](val a: A) extends AnyVal {
-
     def withMetrics(implicit metrics: Metrics[A]): A =
       metrics.withMetrics(a)
-
-    def withCollectorRegistry[F[_]: Applicative](
-      collectorRegistry: CollectorRegistry[F]
-    )(implicit F: MetricsOf[F, A]): Resource[F, A] =
-      F.apply(collectorRegistry) map { implicit metrics =>
-        withMetrics
+  }
+  implicit class MetricsOfOps[F[_], A](a: A)(implicit metricsOf: MetricsOf[F, A]) {
+    def withCollectorRegistry(registry: CollectorRegistry[F])(implicit F: Applicative[F]): Resource[F, A] =
+      metricsOf(registry) map { implicit metrics =>
+        a.withMetrics
+      }
+  }
+  implicit class MetricsKOps[F[_], A](val fa: F[A]) extends AnyVal {
+    def withMetricsK(implicit metrics: MetricsK[F]): F[A] =
+      metrics.withMetrics(fa)
+  }
+  implicit class MetricsKOfOps[F[_], G[_], A](ga: G[A])(implicit metricsOf: MetricsKOf[F, G]) {
+    def withCollectorRegistry(registry: CollectorRegistry[F])(implicit F: Applicative[F]): Resource[F, G[A]] =
+      metricsOf(registry) map { implicit metrics =>
+        ga.withMetricsK
       }
   }
 
