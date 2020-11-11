@@ -26,7 +26,7 @@ object JournalFold {
             if (seqRange.from > stateSeqNr)
               true.pure[F]
             else
-              log.warn(s"skipping ($stateSeqNr, $seqRange): $record") as false
+              log.info(s"skipping ($stateSeqNr, $seqRange): $record") as false
           }
         } yield condition
       }
