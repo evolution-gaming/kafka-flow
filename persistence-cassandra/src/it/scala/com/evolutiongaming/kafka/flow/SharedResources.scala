@@ -12,6 +12,8 @@ import java.util.concurrent.Executor
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.Try
+import scribe.Level
+import scribe.Logger
 import weaver._
 
 object SharedResources extends GlobalResourcesInit {
@@ -32,7 +34,17 @@ object SharedResources extends GlobalResourcesInit {
     // we use default config here, because we will launch Cassandra locally
     val config = CassandraConfig(client = SCassandraConfig())
 
-    val start = IO(StartCassandra())
+    val start = IO {
+      // set logging to WARN level to avoid spamming the logs
+      Logger.root
+      .clearHandlers()
+      .clearModifiers()
+      .withHandler(minimumLevel = Some(Level.Warn))
+      .replace()
+      // proceed starting Cassandra
+      StartCassandra()
+    }
+
     Resource.make(start) { shutdown => IO(shutdown()) } *>
     CassandraModule.of[IO](config) flatMap { cassandra =>
       store.putR(cassandra)

@@ -11,26 +11,17 @@ import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.skafka.Offset
 import com.olegpy.meow.effects._
 
-/** Key specific metainformation inside of parititon.
-  *
-  * Recreated each time `KeyState` is created or loaded
-  * from the storage.
-  */
-trait KeyContext[F[_]] {
-  def holding: F[Option[Offset]]
-  def hold(offset: Offset): F[Unit]
-  def remove: F[Unit]
-  def log: Log[F]
+/** Partition specific metainformation inside of topic */
+trait PartitionContext[F[_]] {
+  /** Request a commit to partition */
+  def scheduleCommit(offset: Offset): F[Unit]
 }
-object KeyContext {
+object PartitionContext {
 
-  def apply[F[_]](implicit F: KeyContext[F]): KeyContext[F] = F
+  def apply[F[_]](implicit F: PartitionContext[F]): PartitionContext[F] = F
 
-  def empty[F[_]: Applicative]: KeyContext[F] = new KeyContext[F] {
-    def log = Log.empty
-    def holding = none[Offset].pure[F]
-    def hold(offset: Offset) = ().pure[F]
-    def remove = ().pure[F]
+  def empty[F[_]: Applicative]: PartitionContext[F] = new PartitionContext[F] {
+    def scheduleCommit(offset: Offset) = ().pure[F]
   }
 
   def of[F[_]: Sync: Log](removeFromCache: F[Unit]): F[KeyContext[F]] =

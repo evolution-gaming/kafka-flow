@@ -1,4 +1,4 @@
-package com.evolutiongaming.kafka.flow.consumer
+package com.evolutiongaming.kafka.flow.kafka
 
 import com.evolutiongaming.catshelper.ApplicativeThrowable
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._

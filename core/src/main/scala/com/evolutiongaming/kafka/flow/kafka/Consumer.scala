@@ -1,4 +1,4 @@
-package com.evolutiongaming.kafka.flow.consumer
+package com.evolutiongaming.kafka.flow.kafka
 
 import cats.data.NonEmptyMap
 import cats.data.NonEmptySet

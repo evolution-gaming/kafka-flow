@@ -5,7 +5,7 @@ import cats.effect.Concurrent
 import cats.effect.Resource
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.skafka.Topic
-import consumer.Consumer
+import kafka.Consumer
 
 trait TopicFlowOf[F[_]] {
 

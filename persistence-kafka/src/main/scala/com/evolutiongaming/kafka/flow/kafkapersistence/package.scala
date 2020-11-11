@@ -9,7 +9,6 @@ import com.evolutiongaming.kafka.flow.timer.TimersOf
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.consumer.ConsumerConfig
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
-import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.{FoldWhile, Stream}
 import monocle.macros.GenLens
 import scodec.bits.ByteVector
@@ -28,7 +27,7 @@ package object kafkapersistence {
       * Creates PartitionFlowOf which on partition assignment reads respective partition of "snapshot" (usually compacted)
       * topic and eagerly recovers all the state from it.
       */
-    def eagerRecoveryKafkaPersistence[F[_]: Concurrent: Timer: Parallel: MeasureDuration: LogOf, S, A](
+    def eagerRecoveryKafkaPersistence[F[_]: Concurrent: Timer: Parallel: LogOf, S, A](
       applicationId: String,
       groupId: String,
       kafkaPersistenceOf: KafkaPersistence[F, KafkaKey, S],
@@ -40,7 +39,8 @@ package object kafkapersistence {
       new PartitionFlowOf[F] {
         override def apply(
           topicPartition: TopicPartition,
-          assignedAt: Offset
+          assignedAt: Offset,
+          context: PartitionContext[F]
         ): Resource[F, PartitionFlow[F]] = {
           for {
             persistence <- Resource.liftF(
@@ -57,7 +57,7 @@ package object kafkapersistence {
               tick = tick
             )
             partitionFlowOf = self(keyStateOf)
-            partitionFlow <- partitionFlowOf(topicPartition, assignedAt)
+            partitionFlow <- partitionFlowOf(topicPartition, assignedAt, context)
             _ <- Resource.liftF(persistence.onRecoveryFinished)
           } yield partitionFlow
         }

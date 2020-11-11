@@ -13,7 +13,7 @@ import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.scache.Releasable
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
-import consumer.OffsetToCommit
+import kafka.OffsetToCommit
 import java.time.Instant
 import timer.Timestamp
 
@@ -23,11 +23,8 @@ trait PartitionFlow[F[_]] {
     *
     * It is possible for `records` parameter to come empty (for an empty poll).
     * In this case only the timers will be called.
-    *
-    * Returns `Some(offsets)` if it is fine to do commit for `offset` in Kafka.
-    * Returns `None` if no new commits are required.
     */
-  def apply(records: List[ConsRecord]): F[Option[Offset]]
+  def apply(records: List[ConsRecord]): F[Unit]
 
 }
 
@@ -38,33 +35,30 @@ object PartitionFlow {
     def timers = state.timers
   }
 
-  def resource[F[_]: Concurrent: Parallel: Clock: LogOf, S](
+  def resource[F[_]: Concurrent: Parallel: PartitionContext: Clock: LogOf, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig
   ): Resource[F, PartitionFlow[F]] =
-    for {
-      log   <- LogResource[F](getClass, topicPartition.toString)
-      cache <- Cache.loading[F, String, PartitionKey[F]]
-      flow  <- Resource.liftF {
-        implicit val _log = log
+    LogResource[F](getClass, topicPartition.toString) flatMap { implicit log =>
+      Cache.loading[F, String, PartitionKey[F]] flatMap { cache =>
         of(topicPartition, assignedAt, keyStateOf, cache, config)
       }
-    } yield flow
+    }
 
-  def of[F[_]: Concurrent: Parallel: Clock: Log, S](
+  def of[F[_]: Concurrent: Parallel: PartitionContext: Clock: Log, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig
-  ): F[PartitionFlow[F]] = for {
-    clock <- Clock[F].instant
-    committedOffset <- Ref.of(assignedAt)
-    timestamp <- Ref.of(Timestamp(clock, None, assignedAt))
-    triggerTimersAt <- Ref.of(clock)
-    commitOffsetsAt <- Ref.of(clock)
+  ): Resource[F, PartitionFlow[F]] = for {
+    clock <- Resource.liftF(Clock[F].instant)
+    committedOffset <- Resource.liftF(Ref.of(assignedAt))
+    timestamp <- Resource.liftF(Ref.of(Timestamp(clock, None, assignedAt)))
+    triggerTimersAt <- Resource.liftF(Ref.of(clock))
+    commitOffsetsAt <- Resource.liftF(Ref.of(clock))
     flow <- of(
       topicPartition,
       keyStateOf,
@@ -78,7 +72,7 @@ object PartitionFlow {
   } yield flow
 
   // TODO: put most `Ref` variables into one state class?
-  def of[F[_]: Concurrent: Parallel: Clock: Log, S](
+  def of[F[_]: Concurrent: Parallel: PartitionContext: Clock: Log, S](
     topicPartition: TopicPartition,
     keyStateOf: KeyStateOf[F],
     committedOffset: Ref[F, Offset],
@@ -87,7 +81,7 @@ object PartitionFlow {
     commitOffsetsAt: Ref[F, Instant],
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig
-  ): F[PartitionFlow[F]] = {
+  ): Resource[F, PartitionFlow[F]] = {
 
     def stateOf(createdAt: Timestamp, key: String) =
       cache.getOrUpdateReleasable(key) {
@@ -205,7 +199,7 @@ object PartitionFlow {
 
     } yield offsetToCommit
 
-    init as { records =>
+    val acquire: F[PartitionFlow[F]] = init as { records =>
       for {
         _ <- NonEmptyList.fromList(records).traverse_(processRecords)
 
@@ -215,10 +209,26 @@ object PartitionFlow {
 
         clock <- Clock[F].instant
         commitOffsetsAt <- commitOffsetsAt.get
-        offsetToCommit <- if (clock isAfter commitOffsetsAt) offsetToCommit else None.pure[F]
+        offsetToCommit <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
+        _ <- offsetToCommit traverse_ PartitionContext[F].scheduleCommit
 
-      } yield offsetToCommit
+      } yield ()
     }
+
+    val release: F[Unit] = if (config.commitOnRevoke) {
+      offsetToCommit flatMap { offset =>
+        offset traverse_ { offset =>
+          Log[F].info(s"committing on revoke: $offset") *>
+          PartitionContext[F].scheduleCommit(offset)
+        }
+      }
+    } else {
+      ().pure[F]
+    }
+
+    Resource.make(acquire) { _ => release }
+
   }
+
 
 }

@@ -14,7 +14,7 @@ import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import com.evolutiongaming.skafka.consumer.RebalanceListener
 import com.evolutiongaming.sstream.Stream
-import consumer.Consumer
+import kafka.Consumer
 import scala.collection.immutable.SortedSet
 
 /** Represents evertything stateful happening on one `Consumer` */
@@ -103,8 +103,11 @@ object ConsumerFlow {
               log.prefixed(topic).info(s"$partitions revoked, removing from topic flow") *>
               flow.remove(partitions)
             }
-            def onPartitionsLost(topicPartitions: NonEmptySet[TopicPartition]) =
-              onPartitionsRevoked(topicPartitions)
+            def onPartitionsLost(topicPartitions: NonEmptySet[TopicPartition]) = {
+              val partitions = topicPartitions map (_.partition)
+              log.prefixed(topic).info(s"$partitions lost, removing from topic flow") *>
+              flow.remove(partitions)
+            }
           }
         )
       }

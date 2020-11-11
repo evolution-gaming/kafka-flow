@@ -19,7 +19,7 @@ import com.evolutiongaming.skafka.Topic
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, RebalanceListener, WithSize}
 import com.evolutiongaming.sstream.Stream
-import consumer.Consumer
+import kafka.Consumer
 import munit.FunSuite
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
@@ -130,7 +130,7 @@ object KafkaFlowSpec {
 
     def kafkaFlow: Stream[F, ConsRecords] = KafkaFlow.stream(
       consumer = consumer(state),
-      consumerFlowOf = ConsumerFlowOf(
+      flowOf = ConsumerFlowOf(
         topic = topic,
         flowOf = { (_, _) =>
           val result = state modify { s =>
@@ -169,15 +169,7 @@ object KafkaFlowSpec {
           } flatMap {
             case None => ConsRecords.empty.pure[F]
             case Some(Command.ProduceRecords(records)) => records.pure[F]
-            case Some(Command.RemovePartitions(partitions)) =>
-              state.get flatMap { state =>
-                val revoke = state.actions collectFirst { case action: Action.Subscribe =>
-                  action.listener.onPartitionsRevoked(
-                    partitions map { partition => TopicPartition(action.topic, partition) }
-                  )
-                }
-                revoke.sequence_ *> poll(timeout)
-              }
+            case Some(Command.RemovePartitions(partitions)) => revoke(partitions) *> poll(timeout)
             case Some(Command.Fail(error)) => error.raiseError[F, ConsRecords]
           }
 
@@ -186,6 +178,16 @@ object KafkaFlowSpec {
 
         def position(partition: TopicPartition) =
           Offset.min.pure[F]
+
+        def revoke(partitions: NonEmptySet[Partition]) =
+          state.get flatMap { state =>
+            val revoke = state.actions collectFirst { case action: Action.Subscribe =>
+              action.listener.onPartitionsRevoked(
+                partitions map { partition => TopicPartition(action.topic, partition) }
+              )
+            }
+            revoke.sequence_
+          }
 
       }
 

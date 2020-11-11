@@ -1,10 +1,8 @@
-package com.evolutiongaming.journaltosql.snapshot
+package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.effect.IO
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
-import com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots
-import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.smetrics.CollectorRegistry

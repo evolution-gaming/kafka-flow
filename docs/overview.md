@@ -89,13 +89,13 @@ but with default retry strategy.
 The typical call of `KafkaFlow` could look like following:
 ```scala mdoc
 import com.evolutiongaming.kafka.flow.KafkaFlow
-import com.evolutiongaming.kafka.flow.consumer.ConsumerOf
+import com.evolutiongaming.kafka.flow.kafka.ConsumerOf
 
 def consumerOf: ConsumerOf[IO] = ???
 
 def kafkaFlow = KafkaFlow.retryOnError(
   consumer = consumerOf("consumer-group-id"),
-  consumerFlowOf = ???
+  flowOf = ???
 )
 ```
 
@@ -110,7 +110,7 @@ If one decides to construct `Consumer` directly, he or she should be aware that
 and `autoOffsetReset` should be set to an expected value (it is, currently,
 hardcoded to `AutoOffsetReset.Earliest` in `KafkaModule`).
 
-The `consumerFlowOf` parameter is discussed below.
+The `flowOf` parameter is discussed below.
 
 ## ConsumerFlowOf
 

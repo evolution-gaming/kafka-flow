@@ -26,9 +26,12 @@ import scala.concurrent.duration._
   *
   * @param parallelRecovery If `true` tries to recover the keys in parallel.
   * Note that it, currently, requires for all keys to fit in memory.
+  *
+  * @param commitOnRevoke Try commiting everything when partition is revoked.
   */
 case class PartitionFlowConfig(
   triggerTimersInterval: FiniteDuration = 1.second,
   commitOffsetsInterval: FiniteDuration = 1.minute,
-  parallelRecovery: Boolean = true
+  parallelRecovery: Boolean = true,
+  commitOnRevoke: Boolean = false
 )

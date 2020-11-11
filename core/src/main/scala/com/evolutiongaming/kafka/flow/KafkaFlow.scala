@@ -13,7 +13,7 @@ import com.evolutiongaming.retry.OnError
 import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.retry.Strategy
 import com.evolutiongaming.sstream.Stream
-import consumer.Consumer
+import kafka.Consumer
 import scala.concurrent.duration._
 
 object KafkaFlow {
@@ -28,7 +28,7 @@ object KafkaFlow {
     */
   def retryOnError[F[_]: Concurrent: Timer: LogOf](
     consumer: Resource[F, Consumer[F]],
-    consumerFlowOf: ConsumerFlowOf[F],
+    flowOf: ConsumerFlowOf[F],
   ): Resource[F, Unit] = {
 
     val retry = for {
@@ -46,7 +46,7 @@ object KafkaFlow {
     )
 
     Resource.liftF(retry) flatMap { implicit retry =>
-      resource(consumer, consumerFlowOf)
+      resource(consumer, flowOf)
     }
 
   }
@@ -61,12 +61,12 @@ object KafkaFlow {
     */
   def stream[F[_]: BracketThrowable: Retry](
     consumer: Resource[F, Consumer[F]],
-    consumerFlowOf: ConsumerFlowOf[F],
+    flowOf: ConsumerFlowOf[F],
   ): Stream[F, ConsRecords] =
     for {
       _        <- Stream.around(Retry[F].toFunctionK)
       consumer <- Stream.fromResource(consumer)
-      flow     <- Stream.fromResource(consumerFlowOf(consumer))
+      flow     <- Stream.fromResource(flowOf(consumer))
       records  <- flow.stream
     } yield records
 
@@ -76,9 +76,9 @@ object KafkaFlow {
     */
   def resource[F[_]: Concurrent: Retry](
     consumer: Resource[F, Consumer[F]],
-    consumerFlowOf: ConsumerFlowOf[F],
+    flowOf: ConsumerFlowOf[F],
   ): Resource[F, Unit] = {
-    val acquire = stream(consumer, consumerFlowOf).drain.start
+    val acquire = stream(consumer, flowOf).drain.start
     Resource.make(acquire)(_.cancel).void
   }
 

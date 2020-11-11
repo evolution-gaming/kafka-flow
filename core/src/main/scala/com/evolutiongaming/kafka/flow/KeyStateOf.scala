@@ -76,13 +76,14 @@ object KeyStateOf {
         topicPartition = topicPartition,
         key = key
       )
-      val keyState = for {
-        timers <- timersOf(kafkaKey, createdAt)
-        persistence <- persistenceOf(kafkaKey, fold, timers)
+
+      for {
+        timers <- Resource.liftF(timersOf(kafkaKey, createdAt))
+        persistence <- Resource.liftF(persistenceOf(kafkaKey, fold, timers))
         timerFlow <- timerFlowOf(context, persistence, timers)
-        keyFlow <- KeyFlow.of(fold, tick, persistence, timerFlow)
+        keyFlow <- Resource.liftF(KeyFlow.of(fold, tick, persistence, timerFlow))
       } yield KeyState(keyFlow, timers)
-      Resource.liftF(keyState)
+
     }
 
     def all(topicPartition: TopicPartition): Stream[F, String] =
@@ -182,12 +183,11 @@ object KeyStateOf {
         topicPartition = topicPartition,
         key = key
       )
-      val keyState = for {
-        timers <- timersOf(kafkaKey, createdAt)
-        persistence <- persistenceOf(kafkaKey, recover, timers)
+      for {
+        timers <- Resource.liftF(timersOf(kafkaKey, createdAt))
+        persistence <- Resource.liftF(persistenceOf(kafkaKey, recover, timers))
         keyFlow <- keyFlowOf(context, persistence, timers)
       } yield KeyState(keyFlow, timers)
-      Resource.liftF(keyState)
     }
 
     def all(topicPartition: TopicPartition): Stream[F, String] =

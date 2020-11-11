@@ -55,8 +55,8 @@ object PartitionFlowMetrics {
   implicit def partitionFlowOfMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, PartitionFlowOf[F]] =
     partitionFlowMetricsOf[F] transform { implicit metrics => partitionFlowOf =>
       new PartitionFlowOf[F] {
-        def apply(topicPartition: TopicPartition, assignedAt: Offset) =
-          partitionFlowOf(topicPartition, assignedAt) map (_.withMetrics)
+        def apply(topicPartition: TopicPartition, assignedAt: Offset, context: PartitionContext[F]) =
+          partitionFlowOf(topicPartition, assignedAt, context) map (_.withMetrics)
       }
     }
 
