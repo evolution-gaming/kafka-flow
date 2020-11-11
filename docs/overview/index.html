@@ -123,13 +123,13 @@ returns a <code>Unit</code> instead of stream. <code>retryOnError</code> provide
 but with default retry strategy.</p>
 <p>The typical call of <code>KafkaFlow</code> could look like following:</p>
 <pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">KafkaFlow</span>
-<span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.consumer.<span class="hljs-type">ConsumerOf</span>
+<span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.kafka.<span class="hljs-type">ConsumerOf</span>
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">consumerOf</span></span>: <span class="hljs-type">ConsumerOf</span>[<span class="hljs-type">IO</span>] = ???
 
 <span class="hljs-function"><span class="hljs-keyword">def</span> <span class="hljs-title">kafkaFlow</span> </span>= <span class="hljs-type">KafkaFlow</span>.retryOnError(
   consumer = consumerOf(<span class="hljs-string">"consumer-group-id"</span>),
-  consumerFlowOf = ???
+  flowOf = ???
 )
 </code></pre>
 <p>The consumer parameter is a thin wrapper over <code>Consumer</code> coming from <code>skafka</code>
@@ -141,7 +141,7 @@ a <code>KafkaHealthCheck</code> which could be used for application-wide health 
 <code>autoCommit</code> property must be set to <code>false</code> (most library logic depends on it)
 and <code>autoOffsetReset</code> should be set to an expected value (it is, currently,
 hardcoded to <code>AutoOffsetReset.Earliest</code> in <code>KafkaModule</code>).</p>
-<p>The <code>consumerFlowOf</code> parameter is discussed below.</p>
+<p>The <code>flowOf</code> parameter is discussed below.</p>
 <h2><a class="anchor" aria-hidden="true" id="consumerflowof"></a><a href="#consumerflowof" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>ConsumerFlowOf</h2>
 <p><code>ConsumerFlow</code> represents a stateful process which handles everything that happens
 to a single <code>Consumer</code> instance. The only method of the trait is <code>stream</code>, which
