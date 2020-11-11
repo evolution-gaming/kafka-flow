@@ -65,6 +65,7 @@ object TopicFlow {
       } mkString (", ")
 
       offsets.toNem.traverse_ { offsets =>
+        Log[F].info(s"commiting pending offsets: $offsets") *>
         consumer
         .commit(offsets)
         .handleErrorWith { error =>
@@ -96,7 +97,9 @@ object TopicFlow {
         val topicPartitions = partitions map (TopicPartition(topic, _))
         val removeOffsets = pendingCommits update (_ -- topicPartitions.toList)
 
-        removePartitions *> removeOffsets
+        removePartitions *> removeOffsets *> {
+          Log[F].info(s"removed offsets without commit for: $topicPartitions")
+        }
       }
 
       def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] = {
