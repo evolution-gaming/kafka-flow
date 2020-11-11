@@ -13,7 +13,6 @@ import com.evolutiongaming.kafka.flow.key.KeyDatabaseMetrics._
 import com.evolutiongaming.kafka.flow.metrics.Metrics
 import com.evolutiongaming.kafka.flow.metrics.MetricsK
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
-import com.evolutiongaming.kafka.flow.persistence.PersistenceModuleMetrics._
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabase
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabaseMetrics._
 import com.evolutiongaming.kafka.flow.timer.TimerDatabase

@@ -36,7 +36,7 @@ object FoldMetrics {
   }
 
   implicit def foldOptionMetricsKOf[F[_]: Monad: MeasureDuration]: MetricsKOf[F, FoldOption[F, *, ConsRecord]] =
-    foldMetricsKOf[F] transform { implicit metrics =>
+    foldMetricsKOf[F] transform[FoldOption[F, *, ConsRecord]] { implicit metrics =>
       new FunctionK[FoldOption[F, *, ConsRecord], FoldOption[F, *, ConsRecord]] {
         def apply[S](fold: FoldOption[F, S, ConsRecord]) =
           FoldOption(metrics.withMetrics(fold.value))
