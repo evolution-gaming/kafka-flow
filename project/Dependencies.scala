@@ -2,7 +2,7 @@ import sbt._
 
 object Dependencies {
 
-  val munit  = "org.scalameta"       %% "munit"            % "0.7.15"
+  val munit  = "org.scalameta"       %% "munit"            % "0.7.17"
   val scribe = "com.outr"            %% "scribe-slf4j"     % "3.0.3"
   val weaver = "com.disneystreaming" %% "weaver-framework" % "0.5.0"
 
@@ -11,7 +11,7 @@ object Dependencies {
   val kafkaLauncher     = "com.evolutiongaming" %% "kafka-launcher"     % "0.0.10"
   val scache            = "com.evolutiongaming" %% "scache"             % "3.2.0"
   val skafka            = "com.evolutiongaming" %% "skafka"             % "11.0.0"
-  val smetrics          = "com.evolutiongaming" %% "smetrics"           % "0.1.2"
+  val smetrics          = "com.evolutiongaming" %% "smetrics"           % "0.2.0"
   val sstream           = "com.evolutiongaming" %% "sstream"            % "0.2.1"
 
   object Cats {

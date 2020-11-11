@@ -48,7 +48,7 @@ object TopicFlowMetrics {
   }
 
   implicit def topicFlowOfMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, TopicFlowOf[F]] =
-    topicFlowMetricsOf[F] transform { topicFlowOf => implicit metrics =>
+    topicFlowMetricsOf[F] transform { implicit metrics => topicFlowOf =>
       new TopicFlowOf[F] {
         def apply(consumer: Consumer[F], topic: Topic) =
           topicFlowOf(consumer, topic) map (_.withMetrics)

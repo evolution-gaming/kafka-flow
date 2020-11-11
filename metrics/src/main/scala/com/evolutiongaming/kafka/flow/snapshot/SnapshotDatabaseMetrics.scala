@@ -3,7 +3,8 @@ package com.evolutiongaming.kafka.flow.snapshot
 import cats.Monad
 import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.KafkaKey
-import com.evolutiongaming.kafka.flow.metrics.MetricsOf
+import com.evolutiongaming.kafka.flow.metrics.MetricsK
+import com.evolutiongaming.kafka.flow.metrics.MetricsKOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.smetrics.LabelNames
 import com.evolutiongaming.smetrics.MeasureDuration
@@ -13,10 +14,10 @@ import com.evolutiongaming.smetrics.Quantiles
 
 object SnapshotDatabaseMetrics {
 
-  def of[F[_]: Monad: MeasureDuration, S]: MetricsOf[F, SnapshotDatabase[F, KafkaKey, S]] =
+  def of[F[_]: Monad: MeasureDuration]: MetricsKOf[F, SnapshotDatabase[F, KafkaKey, *]] =
     snapshotDatabaseMetricsOf
 
-  implicit def snapshotDatabaseMetricsOf[F[_]: Monad: MeasureDuration, S]: MetricsOf[F, SnapshotDatabase[F, KafkaKey, S]] = { registry =>
+  implicit def snapshotDatabaseMetricsOf[F[_]: Monad: MeasureDuration]: MetricsKOf[F, SnapshotDatabase[F, KafkaKey, *]] = { registry =>
     for {
       persistSummary <- registry.summary(
         name = "snapshot_database_persist_duration_seconds",
@@ -36,26 +37,27 @@ object SnapshotDatabaseMetrics {
         quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
         labels = LabelNames("topic", "partition")
       )
-    } yield database => new SnapshotDatabase[F, KafkaKey, S] {
-      def persist(key: KafkaKey, snapshot: S) =
-        database.persist(key, snapshot) measureDuration { duration =>
-          persistSummary
-          .labels(key.topicPartition.topic, key.topicPartition.partition.show)
-          .observe(duration.toNanos.nanosToSeconds)
-        }
-      def get(key: KafkaKey) =
-        database.get(key) measureDuration { duration =>
-          getSummary
-          .labels(key.topicPartition.topic, key.topicPartition.partition.show)
-          .observe(duration.toNanos.nanosToSeconds)
-        }
-      def delete(key: KafkaKey) =
-        database.delete(key) measureDuration { duration =>
-          deleteSummary
-          .labels(key.topicPartition.topic, key.topicPartition.partition.show)
-          .observe(duration.toNanos.nanosToSeconds)
-        }
-
+    } yield new MetricsK[SnapshotDatabase[F, KafkaKey, *]] {
+      def withMetrics[S](database: SnapshotDatabase[F, KafkaKey, S]) = new SnapshotDatabase[F, KafkaKey, S] {
+        def persist(key: KafkaKey, snapshot: S) =
+          database.persist(key, snapshot) measureDuration { duration =>
+            persistSummary
+            .labels(key.topicPartition.topic, key.topicPartition.partition.show)
+            .observe(duration.toNanos.nanosToSeconds)
+          }
+        def get(key: KafkaKey) =
+          database.get(key) measureDuration { duration =>
+            getSummary
+            .labels(key.topicPartition.topic, key.topicPartition.partition.show)
+            .observe(duration.toNanos.nanosToSeconds)
+          }
+        def delete(key: KafkaKey) =
+          database.delete(key) measureDuration { duration =>
+            deleteSummary
+            .labels(key.topicPartition.topic, key.topicPartition.partition.show)
+            .observe(duration.toNanos.nanosToSeconds)
+          }
+      }
     }
   }
 

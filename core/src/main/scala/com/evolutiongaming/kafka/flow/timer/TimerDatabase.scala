@@ -10,7 +10,7 @@ import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
 
-private[timer] trait TimerDatabase[F[_], K, T] {
+trait TimerDatabase[F[_], K, T] {
 
   /** Adds timer into a database if it does not exist yet */
   def persist(key: K, timer: T): F[Unit]
@@ -22,7 +22,7 @@ private[timer] trait TimerDatabase[F[_], K, T] {
   def delete(key: K): F[Unit]
 
 }
-private[timer] object TimerDatabase {
+object TimerDatabase {
 
   /** Creates in-memory database implementation. */
   def memory[F[_]: Sync, K, T]: F[TimerDatabase[F, K, T]] =
