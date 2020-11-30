@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
+import cats.Monad
 import cats.effect.Clock
 import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync
@@ -33,7 +34,7 @@ object CassandraPersistence {
   }
 
   /** Deletes all data in Cassandra */
-  def truncate[F[_]: MonadThrowable: Clock, S](
+  def truncate[F[_]: Monad](
     session: CassandraSession[F],
     sync: CassandraSync[F]
   ): F[Unit] =
