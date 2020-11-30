@@ -8,6 +8,7 @@ import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 private[timer] trait TimerSchema[F[_]] {
 
   def create: F[Unit]
+  def truncate: F[Unit]
 
 }
 private[timer] object TimerSchema {
@@ -48,6 +49,9 @@ private[timer] object TimerSchema {
           |)
           |""".stripMargin
       ).first.void
+    }
+    def truncate = synchronize("TimerSchema") {
+      session.execute("TRUNCATE timers").first.void
     }
   }
 

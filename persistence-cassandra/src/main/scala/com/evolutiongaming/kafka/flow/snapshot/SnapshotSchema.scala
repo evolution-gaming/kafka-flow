@@ -8,6 +8,7 @@ import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 private[snapshot] trait SnapshotSchema[F[_]] {
 
   def create: F[Unit]
+  def truncate: F[Unit]
 
 }
 private[snapshot] object SnapshotSchema {
@@ -32,6 +33,9 @@ private[snapshot] object SnapshotSchema {
           |)
           |""".stripMargin
       ).first.void
+    }
+    def truncate = synchronize("SnapshotSchema") {
+      session.execute("TRUNCATE snapshots").first.void
     }
   }
 

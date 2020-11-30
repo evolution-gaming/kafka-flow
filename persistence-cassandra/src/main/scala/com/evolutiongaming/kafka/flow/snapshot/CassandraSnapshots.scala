@@ -1,12 +1,14 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
+import cats.Monad
 import cats.effect.Clock
 import cats.syntax.all._
 import com.datastax.driver.core.Row
+import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.MonadThrowable
-import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
 import com.evolutiongaming.kafka.flow.KafkaKey
+import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
 import com.evolutiongaming.kafka.journal.FromBytes
 import com.evolutiongaming.kafka.journal.FromBytes.implicits._
 import com.evolutiongaming.kafka.journal.ToBytes
@@ -16,7 +18,6 @@ import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Offset
 import scodec.bits.ByteVector
-import com.evolutiongaming.cassandra.sync.CassandraSync
 
 class CassandraSnapshots[F[_]: MonadThrowable: Clock, T](
   session: CassandraSession[F]
@@ -133,5 +134,10 @@ object CassandraSnapshots {
     sync: CassandraSync[F]
   )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
     SnapshotSchema(session, sync).create as new CassandraSnapshots(session)
+
+  def truncate[F[_]: Monad](
+    session: CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[Unit] = SnapshotSchema(session, sync).truncate
 
 }

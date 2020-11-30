@@ -8,6 +8,7 @@ import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 private[journal] trait JournalSchema[F[_]] {
 
   def create: F[Unit]
+  def truncate: F[Unit]
 
 }
 private[journal] object JournalSchema {
@@ -35,6 +36,9 @@ private[journal] object JournalSchema {
           |)
           |""".stripMargin
       ).first.void
+    }
+    def truncate = synchronize("JournalSchema") {
+      session.execute("TRUNCATE records").first.void
     }
   }
 

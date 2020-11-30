@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.timer
 
+import cats.Monad
 import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.MonadThrowable
@@ -117,6 +118,11 @@ object CassandraTimers {
     sync: CassandraSync[F]
   ): F[TimerDatabase[F, KafkaKey, KafkaTimer]] =
     TimerSchema(session, sync).create as new CassandraTimers(session)
+
+  def truncate[F[_]: Monad](
+    session: CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[Unit] = TimerSchema(session, sync).truncate
 
   def apply[F[_]: MonadThrowable: MeasureDuration](
     session: CassandraSession[F]

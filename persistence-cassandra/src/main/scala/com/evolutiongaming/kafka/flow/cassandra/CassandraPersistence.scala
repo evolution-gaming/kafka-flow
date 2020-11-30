@@ -32,4 +32,13 @@ object CassandraPersistence {
     def snapshots = _snapshots
   }
 
+  /** Deletes all data in Cassandra */
+  def truncate[F[_]: MonadThrowable: Clock, S](
+    session: CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[Unit] =
+    CassandraKeys.truncate(session, sync) *>
+    CassandraJournals.truncate(session, sync) *>
+    CassandraSnapshots.truncate(session, sync)
+
 }

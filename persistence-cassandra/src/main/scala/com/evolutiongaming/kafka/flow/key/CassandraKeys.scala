@@ -185,4 +185,9 @@ object CassandraKeys {
     KeySchema(session, sync).create as new CassandraKeys(session)
   }
 
+  def truncate[F[_]: Monad](
+    session: CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[Unit] = KeySchema(session, sync).truncate
+
 }

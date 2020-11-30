@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.journal
 
+import cats.Monad
 import cats.effect.Clock
 import cats.syntax.all._
 import com.datastax.driver.core.Row
@@ -159,5 +160,10 @@ object CassandraJournals {
     sync: CassandraSync[F]
   ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =
     JournalSchema(session, sync).create as new CassandraJournals(session)
+
+  def truncate[F[_]: Monad](
+    session: CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[Unit] = JournalSchema(session, sync).truncate
 
 }

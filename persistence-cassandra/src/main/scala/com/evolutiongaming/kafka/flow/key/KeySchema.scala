@@ -8,6 +8,7 @@ import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 private[key] trait KeySchema[F[_]] {
 
   def create: F[Unit]
+  def truncate: F[Unit]
 
 }
 private[key] object KeySchema {
@@ -35,6 +36,9 @@ private[key] object KeySchema {
       session.execute(
         "CREATE INDEX IF NOT EXISTS keys_created_date_idx ON keys(created_date)"
       ).first.void
+    }
+    def truncate = synchronize("KeySchema") {
+      session.execute("TRUNCATE keys").first.void
     }
   }
 
