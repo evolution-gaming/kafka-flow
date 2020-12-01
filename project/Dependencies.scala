@@ -2,7 +2,7 @@ import sbt._
 
 object Dependencies {
 
-  val munit  = "org.scalameta"       %% "munit"            % "0.7.17"
+  val munit  = "org.scalameta"       %% "munit"            % "0.7.19"
   val scribe = "com.outr"            %% "scribe-slf4j"     % "3.1.5"
   val weaver = "com.disneystreaming" %% "weaver-framework" % "0.5.0"
 
@@ -17,7 +17,7 @@ object Dependencies {
   object Cats {
     private val version = "2.2.0"
     val core   = "org.typelevel" %% "cats-core"   % version
-    val effect = "org.typelevel" %% "cats-effect" % "2.2.0"
+    val effect = "org.typelevel" %% "cats-effect" % "2.3.0"
   }
 
   object KafkaJournal {
