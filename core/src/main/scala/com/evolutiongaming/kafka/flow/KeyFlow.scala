@@ -47,11 +47,12 @@ object KeyFlow {
     for {
       state <- persistence.read(KeyContext[F].log)
       _ <- storage.set(state)
+      timerCancelled = storage inspect (_.isEmpty)
       foldToState = FoldToState(storage, fold, persistence)
       tickToState = TickToState(storage, tick, persistence)
     } yield new KeyFlow[F, A] {
       def apply(records: NonEmptyList[A]) = foldToState(records)
-      def onTimer = tickToState.run *> timer.onTimer
+      def onTimer = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
 
 
@@ -65,11 +66,12 @@ object KeyFlow {
       startedAt <- ReadTimestamps[F].current
       _ <- KeyContext[F].hold(startedAt.offset)
       storage <- Ref.of(none[S])
+      timerCancelled = storage.get map (_.isEmpty)
       foldToState = FoldToState(storage.stateInstance, fold, Persistence.empty[F, S, A])
       tickToState = TickToState(storage.stateInstance, tick, Persistence.empty[F, S, A])
     } yield new KeyFlow[F, A] {
       def apply(records: NonEmptyList[A]) = foldToState(records)
-      def onTimer = tickToState.run *> timer.onTimer
+      def onTimer = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
 
   def empty[F[_]: Applicative, A]: RecordFlow[F, A] = new KeyFlow[F, A] {
