@@ -17,6 +17,12 @@ sidebar_label: Changelog
 again to reflect the purpose, sorry :(
 - The following classes now return `Resource[F, T]` instead of `F[T]` to
 allow graceful shutdown: `PartitionFlowOf`, `ConsumerOf` and `TimerFlowOf`.
+- `MetricsK` was introduced for traits which can have several instances
+with different types, i.e. `Fold[F, *, ConsRecord]` etc. Note, that it broke
+the syntax in some cases. I.e. one should use `withMetricsK` instead of
+`withMetrics` and also ensure that `*` parameter is last one int the type
+before using `withCollectorRegistry`. To simplify migration `FoldCons[F, *]`
+and `FoldOptionCons[F, *]` were introduced.
 
 ## 0.3.x
 
