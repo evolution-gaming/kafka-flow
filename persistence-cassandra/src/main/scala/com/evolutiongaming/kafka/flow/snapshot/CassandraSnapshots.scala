@@ -57,8 +57,8 @@ class CassandraSnapshots[F[_]: MonadThrowable: Clock, T](
     } yield ()
 
   def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] =
-    getLegacy(key) flatMap { snapshot =>
-      if (snapshot.isDefined) snapshot.pure else getNew(key)
+    getNew(key) flatMap { snapshot =>
+      if (snapshot.isDefined) snapshot.pure else getLegacy(key)
     }
 
   def getLegacy(key: KafkaKey): F[Option[KafkaSnapshot[T]]] = {
