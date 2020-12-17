@@ -44,7 +44,7 @@ private[snapshot] object SnapshotSchema {
           |created TIMESTAMP,
           |metadata TEXT,
           |value BLOB,
-          |PRIMARY KEY(application_id, group_id, topic, partition, key)
+          |PRIMARY KEY((application_id, group_id, topic, partition, key))
           |)
           |""".stripMargin
       ).first.void
