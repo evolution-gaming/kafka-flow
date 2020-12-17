@@ -27,18 +27,18 @@ class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
     for {
       preparedStatement <- session.prepare(
         """ UPDATE
-          |   snapshots
+          |   snapshots_v2
           | SET
           |   created = :created,
           |   metadata = :metadata,
-          |   value = :value
+          |   value = :value,
+          |   offset = :offset
           | WHERE
           |   application_id = :application_id
           |   AND group_id = :group_id
           |   AND topic = :topic
           |   AND partition = :partition
           |   AND key = :key
-          |   AND offset = :offset
         """.stripMargin
       )
       created <- Clock[F].instant
@@ -56,7 +56,12 @@ class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
       _ <- session.execute(boundStatement).first.void
     } yield ()
 
-  def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] = {
+  def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] =
+    getNew(key) flatMap { snapshot =>
+      if (snapshot.isDefined) snapshot.pure else getLegacy(key)
+    }
+
+  def getLegacy(key: KafkaKey): F[Option[KafkaSnapshot[T]]] = {
 
     // we cannot use DecodeRow here because Code[T].decode is effectful
     def decode(row: Row): F[KafkaSnapshot[T]] = {
@@ -100,12 +105,82 @@ class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
 
   }
 
-  def delete(key: KafkaKey): F[Unit] = {
+  def getNew(key: KafkaKey): F[Option[KafkaSnapshot[T]]] = {
+
+    // we cannot use DecodeRow here because Code[T].decode is effectful
+    def decode(row: Row): F[KafkaSnapshot[T]] = {
+      val value = row.decode[ByteVector]("value")
+      value.fromBytes map { value =>
+        KafkaSnapshot[T](
+          offset = row.decode[Offset]("offset"),
+          metadata = row.decode[String]("metadata"),
+          value = value
+        )
+      }
+    }
+
+    for {
+      preparedStatement <- session.prepare(
+        """ SELECT
+          |   offset,
+          |   metadata,
+          |   value
+          | FROM
+          |   snapshots_v2
+          | WHERE
+          |   application_id = :application_id
+          |   AND group_id = :group_id
+          |   AND topic = :topic
+          |   AND partition = :partition
+          |   AND key = :key
+        """.stripMargin
+      )
+      boundStatement = preparedStatement.bind()
+        .encode("application_id", key.applicationId)
+        .encode("group_id", key.groupId)
+        .encode("topic", key.topicPartition.topic)
+        .encode("partition", key.topicPartition.partition)
+        .encode("key", key.key)
+      row <- session.execute(boundStatement).first
+      snapshot <- (row map decode).sequence
+    } yield snapshot
+
+  }
+
+  def delete(key: KafkaKey): F[Unit] =
+    deleteLegacy(key) *> deleteNew(key)
+
+  def deleteLegacy(key: KafkaKey): F[Unit] = {
 
     for {
       preparedStatement <- session.prepare(
         """ DELETE FROM
           |   snapshots
+          | WHERE
+          |   application_id = :application_id
+          |   AND group_id = :group_id
+          |   AND topic = :topic
+          |   AND partition = :partition
+          |   AND key = :key
+        """.stripMargin
+      )
+      boundStatement = preparedStatement.bind()
+        .encode("application_id", key.applicationId)
+        .encode("group_id", key.groupId)
+        .encode("topic", key.topicPartition.topic)
+        .encode("partition", key.topicPartition.partition)
+        .encode("key", key.key)
+      _ <- session.execute(boundStatement).first.void
+    } yield ()
+
+  }
+
+  def deleteNew(key: KafkaKey): F[Unit] = {
+
+    for {
+      preparedStatement <- session.prepare(
+        """ DELETE FROM
+          |   snapshots_v2
           | WHERE
           |   application_id = :application_id
           |   AND group_id = :group_id

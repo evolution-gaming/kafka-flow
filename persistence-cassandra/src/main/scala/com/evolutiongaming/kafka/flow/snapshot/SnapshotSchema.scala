@@ -31,6 +31,21 @@ private[snapshot] object SnapshotSchema {
           |PRIMARY KEY((application_id, group_id, topic, partition, key), offset)
           |)
           |""".stripMargin
+      ).first *>
+      session.execute(
+        """CREATE TABLE IF NOT EXISTS snapshots_v2(
+          |application_id TEXT,
+          |group_id TEXT,
+          |topic TEXT,
+          |partition INT,
+          |key TEXT,
+          |offset BIGINT,
+          |created TIMESTAMP,
+          |metadata TEXT,
+          |value BLOB,
+          |PRIMARY KEY((application_id, group_id, topic, partition, key))
+          |)
+          |""".stripMargin
       ).first.void
     }
   }
