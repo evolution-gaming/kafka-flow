@@ -19,6 +19,14 @@ trait MetricsK[F[_]] {
 
 }
 
+object MetricsK {
+
+  def empty[F[_]]: MetricsK[F] = new MetricsK[F] {
+    override def withMetrics[A](fa: F[A]): F[A] = fa
+  }
+
+}
+
 /** Creates `MetricsK` for specific `CollectorRegistry` */
 trait MetricsKOf[F[_], G[_]] { self =>
 
