@@ -11,8 +11,15 @@ trait Metrics[A] {
 
 }
 
+object Metrics {
+
+  def empty[A]: Metrics[A] = (a: A) => a
+
+}
+
 /** Creates `Metrics` for specific `CollectorRegistry` */
-trait MetricsOf[F[_], A] { self =>
+trait MetricsOf[F[_], A] {
+  self =>
 
   def apply(collectorRegistry: CollectorRegistry[F]): Resource[F, Metrics[A]]
 

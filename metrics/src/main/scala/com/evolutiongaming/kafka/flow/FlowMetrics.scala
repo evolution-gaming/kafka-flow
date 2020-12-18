@@ -76,22 +76,18 @@ object FlowMetrics {
   }
 
   def empty[F[_]]: FlowMetrics[F] = new FlowMetrics[F] {
-    private def metrics[A]: Metrics[A] = (a: A) => a
-    private def metricsK[K[_]]: MetricsK[K] = new MetricsK[K] {
-      override def withMetrics[A](fa: K[A]): K[A] = fa
-    }
-    def keyDatabaseMetrics = metrics
-    def journalDatabaseMetrics = metrics
-    def snapshotDatabaseMetrics = metricsK[SnapshotDatabase[F, KafkaKey, *]]
-    def timerDatabaseMetrics = metricsK[TimerDatabase[F, KafkaKey, *]]
-    def persistenceModuleMetrics = metricsK[PersistenceModule[F, *]]
-    def foldMetrics = metricsK[Fold[F, *, ConsRecord]]
-    def foldOptionMetrics = metricsK[FoldOption[F, *, ConsRecord]]
-    def keyStateOfMetrics = metrics
-    def partitionFlowMetrics = metrics
-    def partitionFlowOfMetrics = metrics
-    def topicFlowMetrics = metrics
-    def topicFlowOfMetrics = metrics
+    def keyDatabaseMetrics = Metrics.empty
+    def journalDatabaseMetrics = Metrics.empty
+    def snapshotDatabaseMetrics = MetricsK.empty[SnapshotDatabase[F, KafkaKey, *]]
+    def timerDatabaseMetrics = MetricsK.empty[TimerDatabase[F, KafkaKey, *]]
+    def persistenceModuleMetrics = MetricsK.empty[PersistenceModule[F, *]]
+    def foldMetrics = MetricsK.empty[Fold[F, *, ConsRecord]]
+    def foldOptionMetrics = MetricsK.empty[FoldOption[F, *, ConsRecord]]
+    def keyStateOfMetrics = Metrics.empty
+    def partitionFlowMetrics = Metrics.empty
+    def partitionFlowOfMetrics = Metrics.empty
+    def topicFlowMetrics = Metrics.empty
+    def topicFlowOfMetrics = Metrics.empty
   }
 
 }
