@@ -75,4 +75,23 @@ object FlowMetrics {
     def topicFlowOfMetrics = topicFlowOf
   }
 
+  def empty[F[_]]: FlowMetrics[F] = new FlowMetrics[F] {
+    private def metrics[A]: Metrics[A] = (a: A) => a
+    private def metricsK[K[_]]: MetricsK[K] = new MetricsK[K] {
+      override def withMetrics[A](fa: K[A]): K[A] = fa
+    }
+    def keyDatabaseMetrics = metrics
+    def journalDatabaseMetrics = metrics
+    def snapshotDatabaseMetrics = metricsK[SnapshotDatabase[F, KafkaKey, *]]
+    def timerDatabaseMetrics = metricsK[TimerDatabase[F, KafkaKey, *]]
+    def persistenceModuleMetrics = metricsK[PersistenceModule[F, *]]
+    def foldMetrics = metricsK[Fold[F, *, ConsRecord]]
+    def foldOptionMetrics = metricsK[FoldOption[F, *, ConsRecord]]
+    def keyStateOfMetrics = metrics
+    def partitionFlowMetrics = metrics
+    def partitionFlowOfMetrics = metrics
+    def topicFlowMetrics = metrics
+    def topicFlowOfMetrics = metrics
+  }
+
 }
