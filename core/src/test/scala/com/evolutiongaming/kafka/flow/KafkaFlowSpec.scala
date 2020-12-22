@@ -1,26 +1,24 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.data.NonEmptyList
-import cats.data.NonEmptyMap
-import cats.data.NonEmptySet
-import cats.effect.SyncIO
+import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
 import cats.effect.concurrent.Ref
-import cats.effect.{Resource, Timer}
+import cats.effect.{Resource, SyncIO, Timer}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.catshelper.TimerHelper._
-import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.kafka.journal.ConsRecords
+import com.evolutiongaming.kafka.flow.kafka.Consumer
+import com.evolutiongaming.kafka.journal.{ConsRecord, ConsRecords}
 import com.evolutiongaming.retry.{OnError, Retry, Strategy}
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.OffsetAndMetadata
-import com.evolutiongaming.skafka.Partition
-import com.evolutiongaming.skafka.Topic
-import com.evolutiongaming.skafka.TopicPartition
-import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, RebalanceListener, WithSize}
+import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.consumer.{
+  ConsumerRecord,
+  ConsumerRecords,
+  RebalanceListener => SRebalanceListener,
+  WithSize
+}
 import com.evolutiongaming.sstream.Stream
-import kafka.Consumer
 import munit.FunSuite
+
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
 
@@ -29,83 +27,102 @@ class KafkaFlowSpec extends FunSuite {
 
   test("happy path") {
 
-    val state = State(commands = List(
-      Command.ProduceRecords(ConsumerRecords.empty),
-      Command.ProduceRecords(ConsumerRecords.empty),
-      Command.ProduceRecords(consumerRecords(consumerRecord(partition = 0, offset = 0)))))
+    val state = State(commands =
+      List(
+        Command.ProduceRecords(ConsumerRecords.empty),
+        Command.ProduceRecords(ConsumerRecords.empty),
+        Command.ProduceRecords(consumerRecords(consumerRecord(partition = 0, offset = 0)))
+      )
+    )
 
     val program = ConstFixture.of(state) flatMap { f =>
       f.kafkaFlow.take(1).drain *> f.state.get
     }
     val result = program.unsafeRunSync()
 
-    assertEquals(result, State(
-      actions = List(
-        Action.ReleaseConsumer,
-        Action.ReleaseTopicFlow,
-        Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
-        Action.Poll(ConsumerRecords.empty),
-        Action.Poll(ConsumerRecords.empty),
-        Action.Subscribe(topic)(RebalanceListener.empty),
-        Action.AcquireTopicFlow,
-        Action.AcquireConsumer))
+    assertEquals(
+      result,
+      State(
+        actions = List(
+          Action.ReleaseConsumer,
+          Action.ReleaseTopicFlow,
+          Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
+          Action.Poll(ConsumerRecords.empty),
+          Action.Poll(ConsumerRecords.empty),
+          Action.Subscribe(NonEmptySet.of(topic))(SRebalanceListener.empty),
+          Action.AcquireTopicFlow,
+          Action.AcquireConsumer
+        )
+      )
     )
   }
-
 
   test("retry") {
-    val state = State(commands = List(
-      Command.ProduceRecords(ConsumerRecords.empty),
-      Command.Fail(Error),
-      Command.ProduceRecords(ConsumerRecords.empty),
-      Command.ProduceRecords(consumerRecords(consumerRecord(partition = 0, offset = 0)))))
+    val state = State(commands =
+      List(
+        Command.ProduceRecords(ConsumerRecords.empty),
+        Command.Fail(Error),
+        Command.ProduceRecords(ConsumerRecords.empty),
+        Command.ProduceRecords(consumerRecords(consumerRecord(partition = 0, offset = 0)))
+      )
+    )
 
     val program = ConstFixture.of(state) flatMap { f =>
       f.kafkaFlow.take(1).drain *> f.state.get
     }
     val result = program.unsafeRunSync()
 
-    assertEquals(result, State(
-      actions = List(
-        Action.ReleaseConsumer,
-        Action.ReleaseTopicFlow,
-        Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
-        Action.Poll(ConsumerRecords.empty),
-        Action.Subscribe(topic)(RebalanceListener.empty),
-        Action.AcquireTopicFlow,
-        Action.AcquireConsumer,
-        Action.RetryOnError(Error, OnError.Decision.retry(1.millis)),
-        Action.ReleaseConsumer,
-        Action.ReleaseTopicFlow,
-        Action.Poll(ConsumerRecords.empty),
-        Action.Subscribe(topic)(RebalanceListener.empty),
-        Action.AcquireTopicFlow,
-        Action.AcquireConsumer))
+    assertEquals(
+      result,
+      State(
+        actions = List(
+          Action.ReleaseConsumer,
+          Action.ReleaseTopicFlow,
+          Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
+          Action.Poll(ConsumerRecords.empty),
+          Action.Subscribe(NonEmptySet.of(topic))(SRebalanceListener.empty),
+          Action.AcquireTopicFlow,
+          Action.AcquireConsumer,
+          Action.RetryOnError(Error, OnError.Decision.retry(1.millis)),
+          Action.ReleaseConsumer,
+          Action.ReleaseTopicFlow,
+          Action.Poll(ConsumerRecords.empty),
+          Action.Subscribe(NonEmptySet.of(topic))(SRebalanceListener.empty),
+          Action.AcquireTopicFlow,
+          Action.AcquireConsumer
+        )
+      )
     )
   }
 
-
   test("rebalance") {
-    val state = State(commands = List(
-      Command.ProduceRecords(ConsumerRecords.empty),
-      Command.RemovePartitions(NonEmptySet.of(Partition.unsafe(1))),
-      Command.ProduceRecords(consumerRecords(consumerRecord(partition = 0, offset = 0)))))
+    val state = State(commands =
+      List(
+        Command.ProduceRecords(ConsumerRecords.empty),
+        Command.RemovePartitions(NonEmptySet.of(Partition.unsafe(1))),
+        Command.ProduceRecords(consumerRecords(consumerRecord(partition = 0, offset = 0)))
+      )
+    )
 
     val program = ConstFixture.of(state) flatMap { f =>
       f.kafkaFlow.take(1).drain *> f.state.get
     }
     val result = program.unsafeRunSync()
 
-    assertEquals(result, State(
-      actions = List(
-        Action.ReleaseConsumer,
-        Action.ReleaseTopicFlow,
-        Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
-        Action.RemovePartitions(NonEmptySet.of(Partition.unsafe(1))),
-        Action.Poll(ConsumerRecords.empty),
-        Action.Subscribe(topic)(RebalanceListener.empty),
-        Action.AcquireTopicFlow,
-        Action.AcquireConsumer))
+    assertEquals(
+      result,
+      State(
+        actions = List(
+          Action.ReleaseConsumer,
+          Action.ReleaseTopicFlow,
+          Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
+          Action.RemovePartitions(NonEmptySet.of(Partition.unsafe(1))),
+          Action.Poll(ConsumerRecords.empty),
+          Action.Subscribe(NonEmptySet.of(topic))(SRebalanceListener.empty),
+          Action.AcquireTopicFlow,
+          Action.AcquireConsumer
+        )
+      )
     )
   }
 }
@@ -117,7 +134,7 @@ object KafkaFlowSpec {
 
   final case class State(
     commands: List[Command] = Nil,
-    actions: List[Action] = Nil,
+    actions: List[Action] = Nil
   ) {
 
     def +(action: Action): State = copy(actions = action :: actions)
@@ -159,18 +176,18 @@ object KafkaFlowSpec {
 
       val consumer: Consumer[F] = new Consumer[F] {
 
-        def subscribe(topic: Topic, listener: RebalanceListener[F]) =
-          state update (_ + Action.Subscribe(topic)(listener))
+        def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]) =
+          state update (_ + Action.Subscribe(topics)(listener))
 
         def poll(timeout: FiniteDuration) =
           state modify {
             case state @ State(Nil, _)          => (state, none[Command])
             case state @ State(head :: tail, _) => (state.copy(commands = tail), Some(head))
           } flatMap {
-            case None => ConsRecords.empty.pure[F]
-            case Some(Command.ProduceRecords(records)) => records.pure[F]
+            case None                                       => ConsRecords.empty.pure[F]
+            case Some(Command.ProduceRecords(records))      => records.pure[F]
             case Some(Command.RemovePartitions(partitions)) => revoke(partitions) *> poll(timeout)
-            case Some(Command.Fail(error)) => error.raiseError[F, ConsRecords]
+            case Some(Command.Fail(error))                  => error.raiseError[F, ConsRecords]
           }
 
         def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) =
@@ -183,7 +200,7 @@ object KafkaFlowSpec {
           state.get flatMap { state =>
             val revoke = state.actions collectFirst { case action: Action.Subscribe =>
               action.listener.onPartitionsRevoked(
-                partitions map { partition => TopicPartition(action.topic, partition) }
+                partitions concatMap { partition => action.topics.map { topic => TopicPartition(topic, partition) } }
               )
             }
             revoke.sequence_
@@ -219,14 +236,13 @@ object KafkaFlowSpec {
 
   def consumerRecord(partition: Int, offset: Long): ConsRecord = {
     ConsumerRecord(
-      topicPartition = TopicPartition(
-        topic = topic,
-        partition = Partition.unsafe(partition)),
+      topicPartition = TopicPartition(topic = topic, partition = Partition.unsafe(partition)),
       offset = Offset.unsafe(offset),
       timestampAndType = none,
       key = WithSize(key).some,
       value = none,
-      headers = List.empty)
+      headers = List.empty
+    )
   }
 
   def consumerRecords(records: ConsRecord*): ConsRecords = {
@@ -254,7 +270,7 @@ object KafkaFlowSpec {
     case object ReleaseConsumer extends Action
     final case class RemovePartitions(partitions: NonEmptySet[Partition]) extends Action
     final case class AddPartitions(partitions: NonEmptySet[(Partition, Offset)]) extends Action
-    final case class Subscribe(topic: Topic)(val listener: RebalanceListener[F]) extends Action
+    final case class Subscribe(topics: NonEmptySet[Topic])(val listener: SRebalanceListener[F]) extends Action
     final case class Poll(consumerRecords: ConsRecords) extends Action
     final case class Commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) extends Action
     final case class RetryOnError(error: Throwable, decision: OnError.Decision) extends Action

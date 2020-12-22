@@ -1,17 +1,13 @@
 package com.evolutiongaming.kafka.flow.kafka
 
-import cats.data.NonEmptyMap
-import cats.data.NonEmptySet
+import cats.data.{NonEmptyMap, NonEmptySet}
 import cats.syntax.all._
 import com.evolutiongaming.kafka.journal.ConsRecords
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.OffsetAndMetadata
-import com.evolutiongaming.skafka.Topic
-import com.evolutiongaming.skafka.TopicPartition
-import com.evolutiongaming.skafka.consumer.RebalanceListener
-import com.evolutiongaming.skafka.consumer.{Consumer => KafkaConsumer}
-import scala.concurrent.duration.FiniteDuration
+import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, Topic, TopicPartition}
+import com.evolutiongaming.skafka.consumer.{RebalanceListener, Consumer => KafkaConsumer}
 import scodec.bits.ByteVector
+
+import scala.concurrent.duration.FiniteDuration
 
 /** Simplfied version of skafka `Consumer` with less methods.
   *
@@ -19,7 +15,7 @@ import scodec.bits.ByteVector
   */
 trait Consumer[F[_]] {
 
-  def subscribe(topic: Topic, listener: RebalanceListener[F]): F[Unit]
+  def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener[F]): F[Unit]
 
   def poll(timeout: FiniteDuration): F[ConsRecords]
 
@@ -35,9 +31,8 @@ object Consumer {
   def apply[F[_]](
     consumer: KafkaConsumer[F, String, ByteVector]
   ): Consumer[F] = new Consumer[F] {
-
-    def subscribe(topic: Topic, listener: RebalanceListener[F]) =
-      consumer.subscribe(NonEmptySet.of(topic), listener.some)
+    def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener[F]) =
+      consumer.subscribe(topics, listener.some)
 
     def poll(timeout: FiniteDuration) =
       consumer.poll(timeout)
@@ -47,7 +42,6 @@ object Consumer {
 
     def position(partition: TopicPartition) =
       consumer.position(partition)
-
   }
 
 }

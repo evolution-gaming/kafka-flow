@@ -3,19 +3,12 @@ package com.evolutiongaming.kafka.flow
 import cats.data.NonEmptySet
 import cats.effect.Resource
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.BracketThrowable
-import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.catshelper.{Log, LogOf, MonadThrowable}
+import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.ConsRecords
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.Partition
 import com.evolutiongaming.skafka.Topic
-import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
-import com.evolutiongaming.skafka.consumer.RebalanceListener
 import com.evolutiongaming.sstream.Stream
-import kafka.Consumer
-import scala.collection.immutable.SortedSet
 
 /** Represents evertything stateful happening on one `Consumer` */
 trait ConsumerFlow[F[_]] {
@@ -38,7 +31,7 @@ object ConsumerFlow {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: BracketThrowable: LogOf](
+  def of[F[_]: MonadThrowable: LogOf](
     consumer: Consumer[F],
     topic: Topic,
     flowOf: TopicFlowOf[F],
@@ -55,7 +48,7 @@ object ConsumerFlow {
     * Note, that topics specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: BracketThrowable: LogOf](
+  def of[F[_]: MonadThrowable: LogOf](
     consumer: Consumer[F],
     topics: NonEmptySet[Topic],
     flowOf: TopicFlowOf[F],
@@ -75,43 +68,17 @@ object ConsumerFlow {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def apply[F[_]: BracketThrowable: LogOf](
+  def apply[F[_]: MonadThrowable: LogOf](
     consumer: Consumer[F],
     flows: Map[Topic, TopicFlow[F]],
     config: ConsumerFlowConfig
   ): ConsumerFlow[F] = new ConsumerFlow[F] {
 
-    val subscribe = log[F] flatMap { log =>
-      flows.toList traverse_ { case (topic, flow) =>
-        consumer.subscribe(
-          topic = topic,
-          listener = new RebalanceListener[F] {
-            def onPartitionsAssigned(topicPartitions: NonEmptySet[TopicPartition]) = {
-              val partitions = topicPartitions map (_.partition)
-              for {
-                _ <- log.prefixed(topic).info(s"$partitions assigned")
-                partitions <- topicPartitions.toList traverse { topicPartitions =>
-                  consumer.position(topicPartitions) map (topicPartitions.partition -> _)
-                }
-                _ <- log.prefixed(topic).info(s"committed offsets: $partitions")
-                // in Scala 2.13 one can just do SortedSet.from(...)
-                _ <- NonEmptySet.fromSet(SortedSet.empty[(Partition, Offset)] ++ partitions) traverse_ flow.add
-              } yield ()
-            }
-            def onPartitionsRevoked(topicPartitions: NonEmptySet[TopicPartition]) = {
-              val partitions = topicPartitions map (_.partition)
-              log.prefixed(topic).info(s"$partitions revoked, removing from topic flow") *>
-              flow.remove(partitions)
-            }
-            def onPartitionsLost(topicPartitions: NonEmptySet[TopicPartition]) = {
-              val partitions = topicPartitions map (_.partition)
-              log.prefixed(topic).info(s"$partitions lost, removing from topic flow") *>
-              flow.remove(partitions)
-            }
-          }
-        )
+    val subscribe =
+      flows.keySet.toList.toNel match {
+        case Some(topics) => consumer.subscribe(topics.toNes, RebalanceListener[F](consumer, flows))
+        case None         => new IllegalArgumentException("Parameter flows cannot be empty").raiseError[F, Unit]
       }
-    }
 
     def poll =
       consumer.poll(config.pollTimeout) flatTap { consumerRecords =>
