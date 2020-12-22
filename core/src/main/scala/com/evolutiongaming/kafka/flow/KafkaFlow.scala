@@ -39,7 +39,7 @@ object KafkaFlow {
         Strategy
         .exponential(100.millis)
         .jitter(random)
-        .limit(1.minute)
+        .cap(1.minute)
         .resetAfter(5.minutes),
       onError =
         OnError.fromLog(log)
