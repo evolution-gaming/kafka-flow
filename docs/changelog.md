@@ -24,6 +24,11 @@ the syntax in some cases. I.e. one should use `withMetricsK` instead of
 before using `withCollectorRegistry`. To simplify migration `FoldCons[F, *]`
 and `FoldOptionCons[F, *]` were introduced.
 
+### Bug fixes
+
+- Allow joining the fiber created by `KafkaFlow` to make sure the errors
+are not lost. See also: https://github.com/evolution-gaming/kafka-flow/issues/131
+
 ## 0.3.x
 
 ### New features

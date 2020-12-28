@@ -83,8 +83,9 @@ records in `StateT` or `Ref` to check if these were handled succesfully.
 
 As one does not need to have such an output and, often, does not want to handle
 `Stream` from `sstream` directly, a simpler `resource` method is provided, which
-returns a `Unit` instead of stream. `retryOnError` provides the same functionality,
-but with default retry strategy.
+returns a `Fiber[F, Unit]` instead of stream. `retryOnError` provides the same
+functionality, but with default retry strategy. The `Fiber` is required to allow
+correct error handling in case the underlying stream fails.
 
 The typical call of `KafkaFlow` could look like following:
 ```scala mdoc

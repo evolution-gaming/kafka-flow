@@ -1,6 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.effect.Concurrent
+import cats.effect.Fiber
 import cats.effect.Resource
 import cats.effect.Timer
 import cats.effect.implicits._
@@ -25,11 +26,14 @@ object KafkaFlow {
     * Note, that returned record does not guarantee that commit to
     * Kafka happened, i.e. that the record will not be processsed for the
     * second time.
+    *
+    * WARNING: Do not forget to call `join` on returned `Fiber` or the
+    * error may be lost.
     */
   def retryOnError[F[_]: Concurrent: Timer: LogOf](
     consumer: Resource[F, Consumer[F]],
     flowOf: ConsumerFlowOf[F],
-  ): Resource[F, Unit] = {
+  ): Resource[F, Fiber[F, Unit]] = {
 
     val retry = for {
       random <- Random.State.fromClock[F]()
@@ -73,13 +77,16 @@ object KafkaFlow {
   /** Process records from consumer with given flow and retry strategy
     *
     * Tears down if cancelled or retry strategy failed.
+    *
+    * WARNING: Do not forget to call `join` on returned `Fiber` or the
+    * error may be lost.
     */
   def resource[F[_]: Concurrent: Retry](
     consumer: Resource[F, Consumer[F]],
     flowOf: ConsumerFlowOf[F],
-  ): Resource[F, Unit] = {
+  ): Resource[F, Fiber[F, Unit]] = {
     val acquire = stream(consumer, flowOf).drain.start
-    Resource.make(acquire)(_.cancel).void
+    Resource.make(acquire)(_.cancel)
   }
 
 }
