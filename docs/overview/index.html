@@ -119,8 +119,9 @@ the application wide unit tests, as one does not need to accumulate the processe
 records in <code>StateT</code> or <code>Ref</code> to check if these were handled succesfully.</p>
 <p>As one does not need to have such an output and, often, does not want to handle
 <code>Stream</code> from <code>sstream</code> directly, a simpler <code>resource</code> method is provided, which
-returns a <code>Unit</code> instead of stream. <code>retryOnError</code> provides the same functionality,
-but with default retry strategy.</p>
+returns a <code>Fiber[F, Unit]</code> instead of stream. <code>retryOnError</code> provides the same
+functionality, but with default retry strategy. The <code>Fiber</code> is required to allow
+correct error handling in case the underlying stream fails.</p>
 <p>The typical call of <code>KafkaFlow</code> could look like following:</p>
 <pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.<span class="hljs-type">KafkaFlow</span>
 <span class="hljs-keyword">import</span> com.evolutiongaming.kafka.flow.kafka.<span class="hljs-type">ConsumerOf</span>
