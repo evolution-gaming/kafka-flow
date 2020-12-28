@@ -27,13 +27,13 @@ object KafkaFlow {
     * Kafka happened, i.e. that the record will not be processsed for the
     * second time.
     *
-    * WARNING: Do not forget to call `join` on returned `Fiber` or the
-    * error may be lost.
+    * WARNING: Do not forget to `flatMap` returned `F[Unit]` or the
+    * potential errors may be lost.
     */
   def retryOnError[F[_]: Concurrent: Timer: LogOf](
     consumer: Resource[F, Consumer[F]],
     flowOf: ConsumerFlowOf[F],
-  ): Resource[F, Fiber[F, Unit]] = {
+  ): Resource[F, F[Unit]] = {
 
     val retry = for {
       random <- Random.State.fromClock[F]()
@@ -78,15 +78,13 @@ object KafkaFlow {
     *
     * Tears down if cancelled or retry strategy failed.
     *
-    * WARNING: Do not forget to call `join` on returned `Fiber` or the
-    * error may be lost.
+    * WARNING: Do not forget to `flatMap` returned `F[Unit]` or the
+    * potential errors may be lost.
     */
   def resource[F[_]: Concurrent: Retry](
     consumer: Resource[F, Consumer[F]],
     flowOf: ConsumerFlowOf[F],
-  ): Resource[F, Fiber[F, Unit]] = {
-    val acquire = stream(consumer, flowOf).drain.start
-    Resource.make(acquire)(_.cancel)
-  }
+  ): Resource[F, F[Unit]] =
+    stream(consumer, flowOf).drain.background
 
 }
