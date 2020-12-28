@@ -57,8 +57,7 @@ object CassandraModule {
       // `syncSession` is `keyspaceSession` if `autoCreate` was disabled,
       // no need to reconnect
       unsafeSession   <- if (keyspace.autoCreate) keyspaceSession else Resource.liftF(syncSession.pure[F])
-      plainSession    <- SafeSession.of(unsafeSession)
-      _session        <- plainSession.cachePrepared
+      _session        <- SafeSession.of(unsafeSession)
       _healthCheck    <- CassandraHealthCheckOf(unsafeSession, config)
     } yield new CassandraModule[F] {
       def session  = _session
