@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.effect.Concurrent
-import cats.effect.Fiber
 import cats.effect.Resource
 import cats.effect.Timer
 import cats.effect.implicits._
