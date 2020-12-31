@@ -278,4 +278,6 @@ object KafkaFlowSpec {
 
   case object Error extends RuntimeException with NoStackTrace
 
+  implicit val timeout: Timeout[F] = Timeout.never
+
 }

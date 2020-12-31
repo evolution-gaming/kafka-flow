@@ -86,7 +86,8 @@ object ConsumerFlowSpec {
 
   type F[A] = StateT[SyncIO, Context, A]
 
-  implicit val logOf = LogOf.empty[F]
+  implicit val logOf: LogOf[F] = LogOf.empty
+  implicit val timeout: Timeout[F] = Timeout.never
 
   case class StopException(context: Context) extends Exception
 
