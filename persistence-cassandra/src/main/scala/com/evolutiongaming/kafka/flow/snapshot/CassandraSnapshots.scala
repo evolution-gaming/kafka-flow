@@ -22,11 +22,10 @@ import com.evolutiongaming.cassandra.sync.CassandraSync
 
 class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
   session: CassandraSession[F]
-)(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T], par: Parallel[F])
-    extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
+)(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]) extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
-    (persistNew(key, snapshot), persistLegacy(key, snapshot)).parTupled.void
+    persistNew(key, snapshot) *> persistLegacy(key, snapshot)
 
   def persistNew(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
@@ -251,11 +250,7 @@ object CassandraSnapshots {
   def withSchema[F[_]: MonadThrowable: Clock: MeasureDuration, T](
     session: CassandraSession[F],
     sync: CassandraSync[F]
-  )(implicit
-    fromBytes: FromBytes[F, T],
-    toBytes: ToBytes[F, T],
-    par: Parallel[F]
-  ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
+  )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
     SnapshotSchema(session, sync).create as new CassandraSnapshots(session)
 
 }
