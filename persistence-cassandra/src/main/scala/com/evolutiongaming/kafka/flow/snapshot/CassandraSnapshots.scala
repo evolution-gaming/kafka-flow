@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
+import cats.Parallel
 import cats.effect.Clock
 import cats.syntax.all._
 import com.datastax.driver.core.Row
@@ -21,9 +22,13 @@ import com.evolutiongaming.cassandra.sync.CassandraSync
 
 class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
   session: CassandraSession[F]
-)(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]) extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
+)(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T], par: Parallel[F])
+    extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
+    (persistNew(key, snapshot), persistLegacy(key, snapshot)).parTupled.void
+
+  def persistNew(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
       preparedStatement <- session.prepare(
         """ UPDATE
@@ -43,7 +48,42 @@ class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
       )
       created <- Clock[F].instant
       value <- snapshot.value.toBytes
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
+        .encode("application_id", key.applicationId)
+        .encode("group_id", key.groupId)
+        .encode("topic", key.topicPartition.topic)
+        .encode("partition", key.topicPartition.partition)
+        .encode("key", key.key)
+        .encode("offset", snapshot.offset)
+        .encode("created", created)
+        .encode("metadata", snapshot.metadata)
+        .encode("value", value)
+      _ <- session.execute(boundStatement).first.void
+    } yield ()
+
+  def persistLegacy(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
+    for {
+      preparedStatement <- session.prepare(
+        """ UPDATE
+          |   snapshots
+          | SET
+          |   created = :created,
+          |   metadata = :metadata,
+          |   value = :value
+          | WHERE
+          |   application_id = :application_id
+          |   AND group_id = :group_id
+          |   AND topic = :topic
+          |   AND partition = :partition
+          |   AND key = :key
+          |   AND offset = :offset
+        """.stripMargin
+      )
+      created <- Clock[F].instant
+      value <- snapshot.value.toBytes
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("topic", key.topicPartition.topic)
@@ -93,7 +133,8 @@ class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
           | LIMIT 1
         """.stripMargin
       )
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("topic", key.topicPartition.topic)
@@ -135,7 +176,8 @@ class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
           |   AND key = :key
         """.stripMargin
       )
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("topic", key.topicPartition.topic)
@@ -164,7 +206,8 @@ class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
           |   AND key = :key
         """.stripMargin
       )
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("topic", key.topicPartition.topic)
@@ -189,7 +232,8 @@ class CassandraSnapshots[F[_]: MonadThrowable: Clock: MeasureDuration, T](
           |   AND key = :key
         """.stripMargin
       )
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("topic", key.topicPartition.topic)
@@ -207,7 +251,11 @@ object CassandraSnapshots {
   def withSchema[F[_]: MonadThrowable: Clock: MeasureDuration, T](
     session: CassandraSession[F],
     sync: CassandraSync[F]
-  )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
+  )(implicit
+    fromBytes: FromBytes[F, T],
+    toBytes: ToBytes[F, T],
+    par: Parallel[F]
+  ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
     SnapshotSchema(session, sync).create as new CassandraSnapshots(session)
 
 }
