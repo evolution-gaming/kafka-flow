@@ -1,6 +1,5 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
-import cats.Parallel
 import cats.effect.Clock
 import cats.syntax.all._
 import com.datastax.driver.core.Row
