@@ -1,8 +1,9 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
-import cats.implicits._
+import cats.syntax.all._
 import cats.mtl.MonadState
 import cats.{FlatMap, Monad, data}
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.catshelper.{BracketThrowable, FromTry, Log}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
@@ -15,10 +16,9 @@ import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf, ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.producer.Producer
 import com.evolutiongaming.sstream.Stream
-import scodec.bits.ByteVector
-
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
+import scodec.bits.ByteVector
 
 final class KafkaPartitionPersistence[F[_], K, S](
   private[kafkapersistence] val keysOf: KeysOf[F, K],
@@ -126,6 +126,7 @@ object KafkaPartitionPersistence {
     snapshotTopic: Topic,
     partition: Partition
   ): F[BytesByKey] = {
+    implicit val logOf = LogOf.empty[F]
     consumerOf
       .apply[String, ByteVector](
         ConsumerConfig.clientId
@@ -143,8 +144,9 @@ object KafkaPartitionPersistence {
             endOffsets.get(snapshotsPartition),
             MissingOffsetError(snapshotsPartition)
           )
+          consumer <- Consumer.of(consumer)
           bytesByKey <- readPartition(
-            Consumer(consumer),
+            consumer,
             snapshotsPartition,
             targetOffset
           )
