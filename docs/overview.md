@@ -60,6 +60,7 @@ import cats.effect.IO
 import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.Timeout
 import com.evolutiongaming.smetrics.MeasureDuration
 import scala.concurrent.ExecutionContext
 
@@ -69,6 +70,7 @@ implicit val bracketThrowable = BracketThrowable[IO]
 implicit val measureDuration = MeasureDuration.empty[IO]
 implicit val logOf = LogOf.empty[IO]
 implicit val log = Log.empty[IO]
+implicit val timetout = Timeout.never[IO]
 ```
 
 ## KafkaFlow
