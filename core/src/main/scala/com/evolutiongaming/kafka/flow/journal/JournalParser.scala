@@ -1,8 +1,8 @@
 package com.evolutiongaming.kafka.flow.journal
 
+import cats.arrow.FunctionK
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.MonadThrowable
-import com.evolutiongaming.catshelper.ToTry
 import com.evolutiongaming.kafka.journal.Action
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.Event
@@ -19,6 +19,8 @@ import com.evolutiongaming.kafka.journal.conversions.KafkaRead
 import com.evolutiongaming.kafka.journal.util.Fail
 import play.api.libs.json.JsResult
 import play.api.libs.json.Reads
+
+import scala.util.Try
 
 /** Deciphers the structures coming from Kafka Journal */
 trait JournalParser[F[_]] {
@@ -41,16 +43,16 @@ object JournalParser {
 
   def apply[F[_]](implicit F: JournalParser[F]): JournalParser[F] = F
 
-  def of[F[_]: MonadThrowable: JsonCodec: ToTry]: JournalParser[F] = new JournalParser[F] {
+  def of[F[_]: MonadThrowable](implicit jsonCodec: JsonCodec[Try]): JournalParser[F] = new JournalParser[F] {
 
     implicit val fail = Fail.lift[F]
     implicit val fromJsResult = FromJsResult.lift[F]
     implicit val fromAttempt = FromAttempt.lift[F]
+    implicit val jsonCodecF = jsonCodec mapK FunctionK.liftFunction[Try, F](MonadThrowable[F].fromTry)
 
     implicit val parseAction = ConsRecordToActionRecord[F]
 
     implicit val parsePayload = {
-      implicit val jsonCodecTry = JsonCodec.summon[F] mapK ToTry.functionK[F]
       implicit val fromBytes = Events.eventsFromBytes[F, Payload]
       KafkaRead.summon[F, Payload]
     }
