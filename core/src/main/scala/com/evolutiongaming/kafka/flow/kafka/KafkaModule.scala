@@ -70,8 +70,8 @@ object KafkaModule {
             autoOffsetReset = AutoOffsetReset.Earliest
           )
         ) evalMap { consumer =>
-          LogOf[F].apply(Consumer.getClass) flatMap { log =>
-            Consumer.of(consumer.withLogging(log))
+          LogOf[F].apply(Consumer.getClass) map { log =>
+            Consumer(consumer.withLogging(log))
           }
         }
       }
