@@ -12,7 +12,9 @@ import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraHealthCheck
 import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession => SafeSession}
 import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.evolutiongaming.scassandra.util.FromGFuture
+import com.google.common.util.concurrent.ListenableFuture
 import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.duration._
 
 trait CassandraModule[F[_]] {
   def session: SafeSession[F]
@@ -20,6 +22,8 @@ trait CassandraModule[F[_]] {
   def healthCheck: CassandraHealthCheck[F]
 }
 object CassandraModule {
+
+  val FutureTimeout: FiniteDuration = 5.minutes
 
   /** Creates connection, synchronization and health check routines
    *
@@ -31,7 +35,14 @@ object CassandraModule {
   def of[F[_]: Concurrent: Timer: LogOf](
     config: CassandraConfig
   )(implicit executor: ExecutionContextExecutor): Resource[F, CassandraModule[F]] = {
-    implicit val fromGFuture = FromGFuture.lift[F]
+
+    implicit val fromGFuture = new FromGFuture[F] {
+      val self = FromGFuture.lift[F]
+      def apply[A](future: => ListenableFuture[A]) = {
+        Concurrent.timeout(self(future), FutureTimeout)
+      }
+    }
+
     val clusterOf = CassandraClusterOf.of[F]
     for {
       clusterOf       <- Resource.liftF(clusterOf)
