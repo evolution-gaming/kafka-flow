@@ -2,10 +2,12 @@ package com.evolutiongaming.kafka.flow.cassandra
 
 import cats.effect.Concurrent
 import cats.effect.Resource
+import cats.effect.Sync
 import cats.effect.Timer
 import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.AutoCreate
 import com.evolutiongaming.cassandra.sync.CassandraSync
+import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.LogResource
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraHealthCheck
@@ -23,7 +25,16 @@ trait CassandraModule[F[_]] {
 }
 object CassandraModule {
 
+  def log[F[_]: LogOf]: F[Log[F]] = LogOf[F].apply(CassandraModule.getClass)
+
   val FutureTimeout: FiniteDuration = 5.minutes
+
+  def clusterOf[F[_]: Sync](
+    fromGFuture: FromGFuture[F]
+  ): F[CassandraClusterOf[F]] = {
+    implicit val _fromGFuture = fromGFuture
+    CassandraClusterOf.of[F]
+  }
 
   /** Creates connection, synchronization and health check routines
    *
@@ -36,16 +47,18 @@ object CassandraModule {
     config: CassandraConfig
   )(implicit executor: ExecutionContextExecutor): Resource[F, CassandraModule[F]] = {
 
-    implicit val fromGFuture = new FromGFuture[F] {
-      val self = FromGFuture.lift[F]
-      def apply[A](future: => ListenableFuture[A]) = {
-        Concurrent.timeout(self(future), FutureTimeout)
-      }
-    }
-
-    val clusterOf = CassandraClusterOf.of[F]
     for {
-      clusterOf       <- Resource.liftF(clusterOf)
+      log             <- Resource.liftF(log[F])
+      fromGFuture     = new FromGFuture[F] {
+        val self = FromGFuture.lift[F]
+        def apply[A](future: => ListenableFuture[A]) = {
+          val fa = self(future) onError { e =>
+            log.error("Cassandra request failed", e)
+          }
+          Concurrent.timeout(fa, FutureTimeout)
+        }
+      }
+      clusterOf       <- Resource.liftF(clusterOf[F](fromGFuture))
       cluster         <- clusterOf(config.client)
       keyspace        = config.schema.keyspace
       globalSession   = {
@@ -75,6 +88,7 @@ object CassandraModule {
       def sync = _sync
       def healthCheck = _healthCheck
     }
+
   }
 
 }
