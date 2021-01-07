@@ -52,7 +52,7 @@ object CassandraModule {
       fromGFuture     = new FromGFuture[F] {
         val self = FromGFuture.lift[F]
         def apply[A](future: => ListenableFuture[A]) = {
-          val fa = self(future) onError { e =>
+          val fa = self(future) onError { case e =>
             log.error("Cassandra request failed", e)
           }
           Concurrent.timeout(fa, FutureTimeout)
