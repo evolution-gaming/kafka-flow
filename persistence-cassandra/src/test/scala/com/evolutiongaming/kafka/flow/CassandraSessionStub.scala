@@ -1,6 +1,5 @@
 package com.evolutiongaming.kafka.flow
 
-import com.datastax.driver.core.PreparedStatement
 import com.datastax.driver.core.Statement
 import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession

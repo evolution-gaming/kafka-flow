@@ -1,6 +1,5 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Defer
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import scala.concurrent.duration._
 
