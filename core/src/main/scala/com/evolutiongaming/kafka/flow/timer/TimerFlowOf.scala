@@ -1,6 +1,8 @@
 package com.evolutiongaming.kafka.flow.timer
 
 import cats.Monad
+import cats.effect.ExitCase.Canceled
+import cats.effect.ExitCase.Completed
 import cats.effect.Resource
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.MonadThrowable
@@ -75,8 +77,14 @@ object TimerFlowOf {
       }
     } yield ()
 
-    Resource.make(acquire) { _ =>
-      cancel
+    Resource.makeCase(acquire) {
+      case (_, Completed) => cancel
+      case (_, Canceled) => cancel
+      // there is no point to try flushing if it failed with an error
+      // the state might not be consistend and storage not accessible
+      // plus this is a concurrent operation, and we do not want anything
+      // to happen concurrently for a specific key
+      case (_, _) => ().pure[F]
     }
 
   }
