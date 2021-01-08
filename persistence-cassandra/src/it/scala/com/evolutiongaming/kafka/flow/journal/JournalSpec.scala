@@ -1,6 +1,8 @@
 package com.evolutiongaming.kafka.flow.journal
 
 import cats.effect.IO
+import cats.effect.concurrent.Ref
+import com.evolutiongaming.kafka.flow.CassandraSessionStub
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -35,6 +37,17 @@ class JournalSpec(val globalResources: GlobalResources) extends CassandraSpec {
       expect(journalAfterPersist == List(record)) and
       expect(journalAfterDelete.isEmpty)
     }
+  }
+
+  test("failures") { cassandra =>
+    val key = KafkaKey("JournalSpec", "integration-tests-1", TopicPartition.empty, "failures")
+    for {
+      failAfter <- Ref.of(100)
+      session    = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
+      journals  <- CassandraJournals.withSchema(session, cassandra.sync)
+      _ <- failAfter.set(1)
+      records <- journals.get(key).toList.attempt
+    } yield expect(records.isLeft)
   }
 
 }

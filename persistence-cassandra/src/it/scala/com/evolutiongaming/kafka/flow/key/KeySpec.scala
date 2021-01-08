@@ -1,12 +1,19 @@
 package com.evolutiongaming.kafka.flow.key
 
 import cats.effect.IO
+import cats.effect.concurrent.Ref
 import cats.syntax.all._
+import com.evolutiongaming.kafka.flow.CassandraSessionStub
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
+import com.evolutiongaming.kafka.flow.journal.CassandraJournals
 import com.evolutiongaming.kafka.flow.key.CassandraKeys
+import com.evolutiongaming.kafka.journal.ConsRecord
+import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.Partition
 import com.evolutiongaming.skafka.TopicPartition
+import com.evolutiongaming.skafka.consumer.WithSize
+import scodec.bits.ByteVector
 import weaver.GlobalResources
 
 class KeySpec(val globalResources: GlobalResources) extends CassandraSpec {
@@ -41,6 +48,16 @@ class KeySpec(val globalResources: GlobalResources) extends CassandraSpec {
       expect(partition1KeysAfterDelete.isEmpty) and
       expect(partition2KeysAfterDelete.isEmpty)
     }
+  }
+
+  test("failures") { cassandra =>
+    for {
+      failAfter <- Ref.of(100)
+      session    = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
+      keys      <- CassandraKeys.withSchema(session, cassandra.sync)
+      _ <- failAfter.set(1)
+      keys <- keys.all("KeySpec", "integration-tests-1").toList.attempt
+    } yield expect(keys.isLeft)
   }
 
 }
