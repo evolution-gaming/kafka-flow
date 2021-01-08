@@ -81,6 +81,6 @@ class FlowSpec(val globalResources: GlobalResources) extends CassandraSpec {
 
   }
 
-  implicit val log: LogOf[IO] = LogOf.empty
+  implicit val log: LogOf[IO] = LogOf.slf4j.unsafeRunSync()
 
 }

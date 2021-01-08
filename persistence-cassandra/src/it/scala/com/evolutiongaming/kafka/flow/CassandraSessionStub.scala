@@ -23,18 +23,18 @@ object CassandraSessionStub {
     failAfter: Ref[F, Int]
   ): CassandraSession[F] = new CassandraSession[F] {
 
-    def fail[T]: F[T] = MonadThrowable[F].raiseError {
-      new RuntimeException("CassandraSessionStub: failing after proper calls exhausted")
+    def fail[T](query: String): F[T] = MonadThrowable[F].raiseError {
+      new RuntimeException(s"CassandraSessionStub: failing after proper calls exhausted: $query")
     }
 
     val failed = failAfter modify { failAfter =>
       (failAfter - 1, failAfter <= 0)
     }
 
-    def prepare(query: String) = failed.ifM(fail, session.prepare(query))
+    def prepare(query: String) = failed.ifM(fail(query), session.prepare(query))
 
     def execute(statement: Statement) = Stream.lift(failed) flatMap { failed =>
-      if (failed) Stream.lift(fail) else session.execute(statement)
+      if (failed) Stream.lift(fail(statement.toString)) else session.execute(statement)
     }
 
     def unsafe = sys.error("CassandraSessionStub: no unsafe session")
