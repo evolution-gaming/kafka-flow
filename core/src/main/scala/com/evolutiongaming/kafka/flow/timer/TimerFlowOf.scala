@@ -67,7 +67,7 @@ object TimerFlowOf {
     val cancel = for {
       holding <- context.holding
       _ <- if (holding.isDefined && flushOnRevoke) {
-        context.log.info(s"flush on revoke, holding offset: $holding")
+        context.log.info(s"flush on revoke, holding offset: $holding") *>
         persistence.flush *>
         context.remove
       } else {
