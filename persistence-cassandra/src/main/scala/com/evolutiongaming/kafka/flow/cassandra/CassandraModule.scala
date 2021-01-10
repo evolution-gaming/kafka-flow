@@ -27,8 +27,6 @@ object CassandraModule {
 
   def log[F[_]: LogOf]: F[Log[F]] = LogOf[F].apply(CassandraModule.getClass)
 
-  val FutureTimeout: FiniteDuration = 5.minutes
-
   def clusterOf[F[_]: Sync](
     fromGFuture: FromGFuture[F]
   ): F[CassandraClusterOf[F]] = {
@@ -49,13 +47,16 @@ object CassandraModule {
 
     for {
       log             <- Resource.liftF(log[F])
+      // this is required to log all Cassandra errors before popping them up,
+      // which is useful because popped up errors might be lost in some cases
+      // while kafka-flow is accessing Cassandra in bracket/resource release
+      // routine
       fromGFuture     = new FromGFuture[F] {
         val self = FromGFuture.lift[F]
         def apply[A](future: => ListenableFuture[A]) = {
-          val fa = self(future) onError { case e =>
+          self(future) onError { case e =>
             log.error("Cassandra request failed", e)
           }
-          Concurrent.timeout(fa, FutureTimeout)
         }
       }
       clusterOf       <- Resource.liftF(clusterOf[F](fromGFuture))

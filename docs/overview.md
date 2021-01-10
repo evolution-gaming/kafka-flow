@@ -70,7 +70,6 @@ implicit val bracketThrowable = BracketThrowable[IO]
 implicit val measureDuration = MeasureDuration.empty[IO]
 implicit val logOf = LogOf.empty[IO]
 implicit val log = Log.empty[IO]
-implicit val timetout = Timeout.never[IO]
 ```
 
 ## KafkaFlow

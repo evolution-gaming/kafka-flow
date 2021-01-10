@@ -64,7 +64,6 @@ class FlowSpec(val globalResources: GlobalResources) extends CassandraSpec {
        ConsumerRecords(Map(TopicPartition.empty -> records))
      }
      join <- {
-        implicit val timeout = Timeout.of(10.minutes)
         implicit val retry = Retry.empty[IO]
         KafkaFlow.resource(
           consumer = Resource.liftF(consumer),

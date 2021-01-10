@@ -31,7 +31,7 @@ object ConsumerFlow {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: MonadThrowable: Timeout: LogOf](
+  def of[F[_]: MonadThrowable: LogOf](
     consumer: Consumer[F],
     topic: Topic,
     flowOf: TopicFlowOf[F],
@@ -48,7 +48,7 @@ object ConsumerFlow {
     * Note, that topics specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: MonadThrowable: Timeout: LogOf](
+  def of[F[_]: MonadThrowable: LogOf](
     consumer: Consumer[F],
     topics: NonEmptySet[Topic],
     flowOf: TopicFlowOf[F],
@@ -68,7 +68,7 @@ object ConsumerFlow {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def apply[F[_]: MonadThrowable: Timeout: LogOf](
+  def apply[F[_]: MonadThrowable: LogOf](
     consumer: Consumer[F],
     flows: Map[Topic, TopicFlow[F]],
     config: ConsumerFlowConfig
@@ -92,7 +92,7 @@ object ConsumerFlow {
 
     def stream = for {
       _ <- Stream.lift(subscribe)
-      records <- Stream.repeat(Timeout[F].timeout(poll))
+      records <- Stream.repeat(poll)
       // we process empty polls to trigger timers, but do not return them
       if records.values.nonEmpty
     } yield records
