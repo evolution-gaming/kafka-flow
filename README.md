@@ -15,10 +15,10 @@ https://evolution-gaming.github.io/kafka-flow
 resolvers += Resolver.bintrayRepo("evolutiongaming", "maven")
 
 libraryDependencies ++= Seq(
-  "com.evolutiongaming" %% "kafka-flow" % "0.3.8",
+  "com.evolutiongaming" %% "kafka-flow" % "0.4.21",
   // if you want to use Cassandra for storing persistent state
-  "com.evolutiongaming" %% "kafka-flow-persistence-cassandra" % "0.3.8",
+  "com.evolutiongaming" %% "kafka-flow-persistence-cassandra" % "0.4.21",
   // if you want to use predefined metrics
-  "com.evolutiongaming" %% "kafka-flow-metrics" % "0.3.8"
+  "com.evolutiongaming" %% "kafka-flow-metrics" % "0.4.21"
 )
 ```
