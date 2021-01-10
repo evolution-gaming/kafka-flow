@@ -60,7 +60,6 @@ import cats.effect.IO
 import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.Timeout
 import com.evolutiongaming.smetrics.MeasureDuration
 import scala.concurrent.ExecutionContext
 
