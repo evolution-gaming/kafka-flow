@@ -16,7 +16,6 @@ import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.evolutiongaming.scassandra.util.FromGFuture
 import com.google.common.util.concurrent.ListenableFuture
 import scala.concurrent.ExecutionContextExecutor
-import scala.concurrent.duration._
 
 trait CassandraModule[F[_]] {
   def session: SafeSession[F]
