@@ -1,9 +1,9 @@
 package com.evolutiongaming.kafka.flow.timer
 
 import cats.Monad
+import cats.MonadThrow
 import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync
-import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
@@ -12,7 +12,7 @@ import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.Stream
 
-class CassandraTimers[F[_]: MonadThrowable: MeasureDuration](
+class CassandraTimers[F[_]: MonadThrow: MeasureDuration](
   session: CassandraSession[F]
 ) extends TimerDatabase[F, KafkaKey, KafkaTimer] {
 
@@ -113,7 +113,7 @@ class CassandraTimers[F[_]: MonadThrowable: MeasureDuration](
 object CassandraTimers {
 
   /** Creates schema in Cassandra if not there yet */
-  def withSchema[F[_]: MonadThrowable: MeasureDuration](
+  def withSchema[F[_]: MonadThrow: MeasureDuration](
     session: CassandraSession[F],
     sync: CassandraSync[F]
   ): F[TimerDatabase[F, KafkaKey, KafkaTimer]] =
@@ -124,7 +124,7 @@ object CassandraTimers {
     sync: CassandraSync[F]
   ): F[Unit] = TimerSchema(session, sync).truncate
 
-  def apply[F[_]: MonadThrowable: MeasureDuration](
+  def apply[F[_]: MonadThrow: MeasureDuration](
     session: CassandraSession[F]
   ): TimerDatabase[F, KafkaKey, KafkaTimer] =
     new CassandraTimers[F](session)

@@ -1,11 +1,11 @@
 package com.evolutiongaming.kafka.flow.timer
 
 import cats.Monad
+import cats.MonadThrow
 import cats.effect.ExitCase.Canceled
 import cats.effect.ExitCase.Completed
 import cats.effect.Resource
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.flow.KeyContext
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
 import scala.concurrent.duration._
@@ -32,7 +32,7 @@ object TimerFlowOf {
     * @param maxIdle How long since the state was recovered, or last record was processed
     * should pass before persist is initiated.
     */
-  def unloadOrphaned[F[_]: MonadThrowable](
+  def unloadOrphaned[F[_]: MonadThrow](
     fireEvery: FiniteDuration = 10.minutes,
     maxOffsetDifference: Int = 100000,
     maxIdle: FiniteDuration = 10.minutes,

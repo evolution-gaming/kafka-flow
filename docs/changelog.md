@@ -96,7 +96,7 @@ do not require `MeasureDuration` anymore as it was not used anyway.
 
 ### Breaking changes
 
-- `CassandraKeys.withSchema` requires `MonadThrowable` instead of `Fail` to
+- `CassandraKeys.withSchema` requires `MonadThrow` instead of `Fail` to
 minimize custom DSL.
 - `KafkaModule` renamed to `ConsumerModule` to reflect the purpose.
 - `Tick.unit` and `TickOption.unit` renamed to `Tick.id` and `TickOption.id`.

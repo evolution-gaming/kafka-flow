@@ -1,12 +1,12 @@
 package com.evolutiongaming.kafka.flow.journal
 
 import cats.Monad
+import cats.MonadThrow
 import cats.effect.Clock
 import cats.syntax.all._
 import com.datastax.driver.core.Row
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
-import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -26,7 +26,7 @@ import com.evolutiongaming.sstream.Stream
 import java.time.Instant
 import scodec.bits.ByteVector
 
-class CassandraJournals[F[_]: MonadThrowable: Clock](
+class CassandraJournals[F[_]: MonadThrow: Clock](
   session: CassandraSession[F]
 ) extends JournalDatabase[F, KafkaKey, ConsRecord] {
 
@@ -155,7 +155,7 @@ class CassandraJournals[F[_]: MonadThrowable: Clock](
 object CassandraJournals {
 
   /** Creates schema in Cassandra if not there yet */
-  def withSchema[F[_]: MonadThrowable: Clock](
+  def withSchema[F[_]: MonadThrow: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F]
   ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =

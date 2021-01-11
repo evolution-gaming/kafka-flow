@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.timer
 
+import cats.ApplicativeThrow
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.ApplicativeThrowable
 import com.evolutiongaming.skafka.{Offset => KafkaOffset}
 import java.time.Instant
 import scala.concurrent.duration._
@@ -36,7 +36,7 @@ object KafkaTimer {
     def toWindow: TimerWindow = TimerWindow.of(value, 100000)
   }
 
-  def of[F[_]: ApplicativeThrowable](valueType: String, value: Long): F[KafkaTimer] =
+  def of[F[_]: ApplicativeThrow](valueType: String, value: Long): F[KafkaTimer] =
     valueType match {
       case "clock"     => Clock.ofEpochMilli(value).pure[F].widen
       case "watermark" => Watermark.ofEpochMilli(value).pure[F].widen

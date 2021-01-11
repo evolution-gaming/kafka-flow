@@ -1,11 +1,11 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
 import cats.Monad
+import cats.MonadThrow
 import cats.arrow.FunctionK
 import cats.effect.Clock
 import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync
-import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.flow.journal.CassandraJournals
 import com.evolutiongaming.kafka.flow.key.CassandraKeys
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
@@ -19,7 +19,7 @@ trait CassandraPersistence[F[_], S] extends PersistenceModule[F, S]
 object CassandraPersistence {
 
   /** Creates schema in Cassandra if not there yet */
-  def withSchemaF[F[_]: MonadThrowable: Clock, S](
+  def withSchemaF[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
     sync: CassandraSync[F]
   )(implicit
@@ -40,14 +40,14 @@ object CassandraPersistence {
     * This method uses the same `JsonCodec[Try]` as `JournalParser` does to
     * simplify defining the basic application.
     */
-  def withSchema[F[_]: MonadThrowable: Clock, S](
+  def withSchema[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
     sync: CassandraSync[F]
   )(implicit
     fromBytes: FromBytes[Try, S],
     toBytes: ToBytes[Try, S]
   ): F[PersistenceModule[F, S]] = {
-    val fromTry = FunctionK.liftFunction[Try, F](MonadThrowable[F].fromTry)
+    val fromTry = FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
     implicit val _fromBytes = fromBytes mapK fromTry
     implicit val _toBytes = toBytes mapK fromTry
     withSchemaF(session, sync)

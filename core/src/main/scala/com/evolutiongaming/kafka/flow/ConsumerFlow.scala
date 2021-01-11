@@ -1,9 +1,10 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.MonadThrow
 import cats.data.NonEmptySet
 import cats.effect.Resource
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.{Log, LogOf, MonadThrowable}
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka.Topic
@@ -31,7 +32,7 @@ object ConsumerFlow {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: MonadThrowable: LogOf](
+  def of[F[_]: MonadThrow: LogOf](
     consumer: Consumer[F],
     topic: Topic,
     flowOf: TopicFlowOf[F],
@@ -48,7 +49,7 @@ object ConsumerFlow {
     * Note, that topics specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: MonadThrowable: LogOf](
+  def of[F[_]: MonadThrow: LogOf](
     consumer: Consumer[F],
     topics: NonEmptySet[Topic],
     flowOf: TopicFlowOf[F],
@@ -68,7 +69,7 @@ object ConsumerFlow {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def apply[F[_]: MonadThrowable: LogOf](
+  def apply[F[_]: MonadThrow: LogOf](
     consumer: Consumer[F],
     flows: Map[Topic, TopicFlow[F]],
     config: ConsumerFlowConfig

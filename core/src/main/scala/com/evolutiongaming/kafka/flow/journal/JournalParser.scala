@@ -1,8 +1,8 @@
 package com.evolutiongaming.kafka.flow.journal
 
+import cats.MonadThrow
 import cats.arrow.FunctionK
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.MonadThrowable
 import com.evolutiongaming.kafka.journal.Action
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.Event
@@ -43,12 +43,12 @@ object JournalParser {
 
   def apply[F[_]](implicit F: JournalParser[F]): JournalParser[F] = F
 
-  def of[F[_]: MonadThrowable](implicit jsonCodec: JsonCodec[Try]): JournalParser[F] = new JournalParser[F] {
+  def of[F[_]: MonadThrow](implicit jsonCodec: JsonCodec[Try]): JournalParser[F] = new JournalParser[F] {
 
     implicit val fail = Fail.lift[F]
     implicit val fromJsResult = FromJsResult.lift[F]
     implicit val fromAttempt = FromAttempt.lift[F]
-    implicit val jsonCodecF = jsonCodec mapK FunctionK.liftFunction[Try, F](MonadThrowable[F].fromTry)
+    implicit val jsonCodecF = jsonCodec mapK FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
 
     implicit val parseAction = ConsRecordToActionRecord[F]
 
@@ -83,7 +83,7 @@ object JournalParser {
       }
 
     def toEvents[T: Reads](record: ConsRecord) = toPayloads(record) flatMap { events =>
-      val F = MonadThrowable[F]
+      val F = MonadThrow[F]
       events traverse { event =>
         for {
           payload <- F.fromOption(event.payload, new RuntimeException(s"Payload is empty: $event"))

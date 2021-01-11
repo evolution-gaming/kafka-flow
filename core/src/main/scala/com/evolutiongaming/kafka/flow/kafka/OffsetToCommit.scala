@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.kafka
 
-import com.evolutiongaming.catshelper.ApplicativeThrowable
+import cats.ApplicativeThrow
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.skafka.Offset
 
@@ -11,6 +11,6 @@ import com.evolutiongaming.skafka.Offset
   */
 object OffsetToCommit {
 
-  def apply[F[_]: ApplicativeThrowable](offset: Offset): F[Offset] = offset.inc[F]
+  def apply[F[_]: ApplicativeThrow](offset: Offset): F[Offset] = offset.inc[F]
 
 }
