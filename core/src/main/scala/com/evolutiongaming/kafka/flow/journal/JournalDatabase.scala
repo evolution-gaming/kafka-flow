@@ -66,11 +66,11 @@ object JournalDatabase {
 
     }
 
-  def empty[F[_], K, R](implicit F: Applicative[F]): JournalDatabase[F, K, R] =
+  def empty[F[_]: Applicative, K, R]: JournalDatabase[F, K, R] =
     new JournalDatabase[F, K, R] {
-      def persist(key: K, event: R) = F.unit
+      def persist(key: K, event: R) = ().pure
       def get(key: K) = Stream.empty
-      def delete(key: K) = F.unit
+      def delete(key: K) = ().pure
     }
 
 }

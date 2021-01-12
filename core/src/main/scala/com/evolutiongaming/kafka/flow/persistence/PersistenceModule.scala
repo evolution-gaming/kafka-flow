@@ -48,7 +48,7 @@ trait PersistenceModule[F[_], S] {
 
 object PersistenceModule {
 
-  def empty[F[_], S](implicit F: Applicative[F]): PersistenceModule[F, S] =
+  def empty[F[_]: Applicative, S]: PersistenceModule[F, S] =
     new PersistenceModule[F, S] {
       def keys = KeyDatabase.empty
       def journals = JournalDatabase.empty

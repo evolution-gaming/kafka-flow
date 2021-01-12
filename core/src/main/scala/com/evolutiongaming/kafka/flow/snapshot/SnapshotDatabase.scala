@@ -73,11 +73,11 @@ object SnapshotDatabase {
       override def get(key: K): F[Option[S]] = read.get(key)
     }
 
-  def empty[F[_], K, S](implicit F: Applicative[F]): SnapshotDatabase[F, K, S] =
+  def empty[F[_]: Applicative, K, S]: SnapshotDatabase[F, K, S] =
     new SnapshotDatabase[F, K, S] {
       def get(key: K) = none[S].pure
-      def persist(key: K, snapshot: S) = F.unit
-      def delete(key: K) = F.unit
+      def persist(key: K, snapshot: S) = ().pure
+      def delete(key: K) = ().pure
     }
 
   implicit class SnapshotDatabaseKafkaSnapshotOps[F[_], K, S](
