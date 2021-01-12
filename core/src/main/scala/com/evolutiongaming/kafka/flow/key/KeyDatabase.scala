@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.key
 
-import cats.Monad
+import cats.{Applicative, Monad}
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
 import cats.syntax.all._
@@ -56,4 +56,11 @@ object KeyDatabase {
 
     }
 
+  def empty[F[_], K](implicit F: Applicative[F]): KeyDatabase[F, K] =
+    new KeyDatabase[F, K] {
+      def persist(key: K) = F.unit
+      def delete(key: K) = F.unit
+      def all(applicationId: String, groupId: String) = Stream.empty
+      def all(applicationId: String, groupId: String, topicPartition: TopicPartition) = Stream.empty
+    }
 }

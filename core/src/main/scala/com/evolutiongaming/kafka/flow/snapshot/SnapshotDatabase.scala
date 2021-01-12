@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
-import cats.Functor
+import cats.{Applicative, Functor}
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
 import cats.mtl.MonadState
@@ -71,6 +71,13 @@ object SnapshotDatabase {
       override def delete(key: K): F[Unit] = write.delete(key)
 
       override def get(key: K): F[Option[S]] = read.get(key)
+    }
+
+  def empty[F[_], K, S](implicit F: Applicative[F]): SnapshotDatabase[F, K, S] =
+    new SnapshotDatabase[F, K, S] {
+      def get(key: K) = none[S].pure
+      def persist(key: K, snapshot: S) = F.unit
+      def delete(key: K) = F.unit
     }
 
   implicit class SnapshotDatabaseKafkaSnapshotOps[F[_], K, S](

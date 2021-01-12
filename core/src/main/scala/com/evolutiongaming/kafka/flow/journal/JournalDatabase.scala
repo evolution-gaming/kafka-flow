@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.journal
 
-import cats.Monad
+import cats.{Applicative, Monad}
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
 import cats.mtl.MonadState
@@ -64,6 +64,13 @@ object JournalDatabase {
 
       def delete(key: K) = storage modify (_ - key)
 
+    }
+
+  def empty[F[_], K, R](implicit F: Applicative[F]): JournalDatabase[F, K, R] =
+    new JournalDatabase[F, K, R] {
+      def persist(key: K, event: R) = F.unit
+      def get(key: K) = Stream.empty
+      def delete(key: K) = F.unit
     }
 
 }
