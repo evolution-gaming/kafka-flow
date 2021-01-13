@@ -1,14 +1,13 @@
 package com.evolutiongaming.kafka.flow.persistence
 
-import cats.effect.Resource
-import cats.effect.Sync
+import cats.Applicative
+import cats.effect.{Resource, Sync}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.journal.JournalDatabase
 import com.evolutiongaming.kafka.flow.key.KeyDatabase
-import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
-import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabase
+import com.evolutiongaming.kafka.flow.snapshot.{KafkaSnapshot, SnapshotDatabase}
 import com.evolutiongaming.kafka.journal.ConsRecord
 
 /** Convenience methods to create most common persistence setups */
@@ -44,5 +43,16 @@ trait PersistenceModule[F[_], S] {
     keysOf <- keys.keysOf
     snapshotsOf <- snapshots.snapshotsOf
   } yield PersistenceOf.snapshotsOnly(keysOf, snapshotsOf)
+
+}
+
+object PersistenceModule {
+
+  def empty[F[_]: Applicative, S]: PersistenceModule[F, S] =
+    new PersistenceModule[F, S] {
+      def keys = KeyDatabase.empty
+      def journals = JournalDatabase.empty
+      def snapshots = SnapshotDatabase.empty
+    }
 
 }
