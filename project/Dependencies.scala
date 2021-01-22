@@ -2,7 +2,7 @@ import sbt._
 
 object Dependencies {
 
-  val munit  = "org.scalameta"       %% "munit"            % "0.7.20"
+  val munit  = "org.scalameta"       %% "munit"            % "0.7.21"
   val scribe = "com.outr"            %% "scribe-slf4j"     % "3.2.3"
   val weaver = "com.disneystreaming" %% "weaver-framework" % "0.5.1"
 
