@@ -8,7 +8,6 @@ import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 import scala.concurrent.duration.FiniteDuration
-import scala.concurrent.duration._
 import syntax._
 
 class SyntaxSpec extends FunSuite {
