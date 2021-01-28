@@ -10,8 +10,8 @@ jobs:
     strategy:
       matrix:
         scala:
-          - 2.13.3
-          - 2.12.10
+          - 2.13.4
+          - 2.12.12
 
     steps:
     - uses: actions/checkout@v2
@@ -32,18 +32,18 @@ jobs:
       run: sbt ++${{ matrix.scala }} coverageReport coverageAggregate coveralls
 
     - name: Publish documentation / Setup Node
-      if: success() && matrix.scala == '2.13.3'
+      if: success() && matrix.scala == '2.13.4'
       uses: actions/setup-node@v2-beta
       with:
         node-version: '12.x'
 
     - name: Publish documentation / Get yarn cache
-      if: success() && matrix.scala == '2.13.3'
+      if: success() && matrix.scala == '2.13.4'
       id: yarn-cache
       run: echo "::set-output name=dir::$(yarn cache dir)"
 
     - name: Publish documentation / Cache dependencies
-      if: success() && matrix.scala == '2.13.3'
+      if: success() && matrix.scala == '2.13.4'
       uses: actions/cache@v2
       with:
         path: ${{ steps.yarn-cache.outputs.dir }}
@@ -52,17 +52,17 @@ jobs:
           ${{ runner.os }}-website-
 
     - name: Publish documentation / Install dependencies
-      if: success() && matrix.scala == '2.13.3'
+      if: success() && matrix.scala == '2.13.4'
       working-directory: ./website
       run: yarn install --frozen-lockfile
 
     - name: Publish documentation / Build site
-      if: success() && matrix.scala == '2.13.3'
+      if: success() && matrix.scala == '2.13.4'
       working-directory: ./website
       run: yarn build
 
     - name: Publish documentation / Deploy
-      if: success() && matrix.scala == '2.13.3' && github.ref == 'refs/heads/master'
+      if: success() && matrix.scala == '2.13.4' && github.ref == 'refs/heads/master'
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
