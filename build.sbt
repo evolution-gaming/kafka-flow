@@ -9,6 +9,7 @@ lazy val commonSettings = Seq(
   bintrayOrganization := Some("evolutiongaming"),
   scalaVersion := crossScalaVersions.value.head,
   crossScalaVersions := Seq("2.13.4", "2.12.12"),
+  coverageScalacPluginVersion := "1.4.2",
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   releaseCrossBuild := true,
   testFrameworks += new TestFramework("munit.Framework"),
