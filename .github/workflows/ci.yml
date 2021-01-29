@@ -20,7 +20,7 @@ jobs:
 
     - uses: olafurpg/setup-scala@v10
       with:
-        java-version: graalvm-ce-java11@20.3.0
+        java-version: openjdk@1.11
 
     - name: Run tests ${{ matrix.scala }}
       run: sbt ++${{ matrix.scala }} clean coverage test docs/mdoc
