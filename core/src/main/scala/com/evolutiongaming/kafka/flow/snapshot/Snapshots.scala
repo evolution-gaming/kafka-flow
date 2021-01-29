@@ -8,7 +8,6 @@ import cats.syntax.all._
 import cats.mtl.MonadState
 import com.evolutiongaming.catshelper.Log
 import com.olegpy.meow.effects._
-import com.evolutiongaming.kafka.flow.snapshot.Snapshots.Snapshot.Version
 
 trait Snapshots[F[_], S] extends SnapshotReader[F, S] with SnapshotWriter[F, S]
 
@@ -19,6 +18,7 @@ trait SnapshotReader[F[_], S] {
   def read: F[Option[S]]
 
 }
+
 /** Provides a persistence for a specific key */
 trait SnapshotWriter[F[_], S] {
 
@@ -44,7 +44,8 @@ object Snapshots {
 
   /** Creates a buffer for a given writer */
   private[snapshot] def of[F[_]: Sync: Log, K, S](
-    key: K, database: SnapshotDatabase[F, K, S]
+    key: K,
+    database: SnapshotDatabase[F, K, S]
   ): F[Snapshots[F, S]] =
     Ref.of[F, Option[Snapshot[S]]](None) map { buffer =>
       Snapshots(key, database, buffer.stateInstance)
@@ -61,7 +62,7 @@ object Snapshots {
     def append(snapshot: S) = {
       buffer.modify {
         case Some(s) => s.updateValue(snapshot).some
-        case None => Snapshot.init(snapshot).some
+        case None    => Snapshot.init(snapshot).some
       }
     }
 
@@ -69,12 +70,12 @@ object Snapshots {
       for {
         snapshot <- buffer.get
         _ <- snapshot traverse_ { snapshot =>
-          if(!snapshot.persisted) {
+          if (!snapshot.persisted) {
             for {
               _ <- database.persist(key, snapshot.value)
               _ <- buffer.modify {
-                case Some(s)  => s.persisted(snapshot.version).some
-                case s        => s
+                case Some(s) => s.persisted(snapshot.value).some
+                case s       => s
               }
             } yield ()
           } else ().pure[F]
@@ -85,7 +86,7 @@ object Snapshots {
     def delete(persist: Boolean) = {
       val delete = if (persist) {
         database.delete(key) *>
-        Log[F].info("deleted snapshot")
+          Log[F].info("deleted snapshot")
       } else {
         ().pure[F]
       }
@@ -101,23 +102,15 @@ object Snapshots {
     def delete(persist: Boolean) = ().pure[F]
   }
 
-  final case class Snapshot[S](value: S, version: Version, persistedVersion: Option[Version]) {
-    def updateValue(v: S): Snapshot[S] = {
-      copy(value = v, version = version.increment)
-    }
+  final case class Snapshot[S](value: S, persisted: Boolean) { self =>
 
-    def persisted(v: Version): Snapshot[S] = {
-      persistedVersion match {
-        case Some(persisted) if v.value <= persisted.value => this
-        case _                                 => copy(persistedVersion = v.some)
-      }
-    }
+    def updateValue(newValue: S): Snapshot[S] =
+      if (value == newValue) self
+      else copy(value = newValue, persisted = false)
 
-    def persisted: Boolean =
-      persistedVersion match {
-        case Some(v) if v == version => true
-        case _       => false
-      }
+    def persisted(persistedValue: S): Snapshot[S] =
+      if (value == persistedValue) copy(persisted = true)
+      else self
   }
 
   object Snapshot {
@@ -125,7 +118,7 @@ object Snapshots {
       def increment: Version = copy(value + 1)
     }
 
-    def init[S](value: S): Snapshot[S] = Snapshot(value, Version(0L), none)
+    def init[S](value: S): Snapshot[S] = Snapshot(value, persisted = false)
   }
 
 }
