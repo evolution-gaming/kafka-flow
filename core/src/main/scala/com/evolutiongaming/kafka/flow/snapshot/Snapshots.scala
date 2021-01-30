@@ -114,10 +114,6 @@ object Snapshots {
   }
 
   object Snapshot {
-    final case class Version(value: Long) {
-      def increment: Version = copy(value + 1)
-    }
-
     def init[S](value: S): Snapshot[S] = Snapshot(value, persisted = false)
   }
 
