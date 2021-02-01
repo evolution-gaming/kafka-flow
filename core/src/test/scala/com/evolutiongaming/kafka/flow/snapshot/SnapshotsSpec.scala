@@ -1,13 +1,12 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.data.State
-import cats.syntax.all._
 import cats.mtl.MonadState
 import cats.mtl.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.MonadStateHelper._
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
-import com.evolutiongaming.kafka.flow.snapshot.Snapshots.Snapshot.Version
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotsSpec._
 import com.evolutiongaming.skafka.Offset
 import monocle.macros.GenLens
@@ -32,7 +31,7 @@ class SnapshotsSpec extends FunSuite {
     val result = program.runS(Context()).value
 
     // Then("database is still empty")
-    assert(result.database.get("key1").isEmpty)
+    assert(!result.database.contains("key1"))
 
   }
 
@@ -68,7 +67,7 @@ class SnapshotsSpec extends FunSuite {
     val snapshots = Snapshots("key1", database, f.buffer)
     val context = Context(
       database = Map("key1" -> 102),
-      buffer = Some(Snapshots.Snapshot(103, Version(1L), none))
+      buffer = Some(Snapshots.Snapshot(103, persisted = false))
     )
 
     // When("delete is requested")
@@ -78,7 +77,7 @@ class SnapshotsSpec extends FunSuite {
     // Then("buffer is cleared")
     assert(result.buffer.isEmpty)
     // And("key is deleted")
-    assert(result.database.get("key1").isEmpty)
+    assert(!result.database.contains("key1"))
 
   }
 
@@ -91,7 +90,7 @@ class SnapshotsSpec extends FunSuite {
     val snapshots = Snapshots("key1", database, f.buffer)
     val context = Context(
       database = Map("key1" -> 102),
-      buffer = Some(Snapshots.Snapshot(103, Version(1L), none))
+      buffer = Some(Snapshots.Snapshot(103, persisted = false))
     )
 
     // When("delete is requested")
@@ -101,7 +100,7 @@ class SnapshotsSpec extends FunSuite {
     // Then("buffer is cleared")
     assert(result.buffer.isEmpty)
     // And("key is not deleted")
-    assert(result.database.get("key1").isDefined)
+    assert(result.database.contains("key1"))
 
   }
 
@@ -114,7 +113,7 @@ class SnapshotsSpec extends FunSuite {
     val snapshots = Snapshots("key1", database, f.buffer)
     val context = Context(
       database = Map("key1" -> 102),
-      buffer = Some(Snapshots.Snapshot(103, Version(1L), none))
+      buffer = Some(Snapshots.Snapshot(103, persisted = false))
     )
 
     // When("flush is requested multiple times")
