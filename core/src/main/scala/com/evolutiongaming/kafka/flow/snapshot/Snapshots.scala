@@ -73,10 +73,7 @@ object Snapshots {
           if (!snapshot.persisted) {
             for {
               _ <- database.persist(key, snapshot.value)
-              _ <- buffer.modify {
-                case Some(s) => s.persisted(snapshot.value).some
-                case s       => s
-              }
+              _ <- buffer.set(snapshot.copy(persisted = true).some)
             } yield ()
           } else ().pure[F]
         }
@@ -103,14 +100,9 @@ object Snapshots {
   }
 
   final case class Snapshot[S](value: S, persisted: Boolean) { self =>
-
     def updateValue(newValue: S): Snapshot[S] =
       if (value == newValue) self
       else copy(value = newValue, persisted = false)
-
-    def persisted(persistedValue: S): Snapshot[S] =
-      if (value == persistedValue) copy(persisted = true)
-      else self
   }
 
   object Snapshot {
