@@ -28,12 +28,9 @@ trait FlowMetrics[F[_]] {
   implicit def snapshotDatabaseMetrics: MetricsK[SnapshotDatabase[F, KafkaKey, *]]
   implicit def timerDatabaseMetrics: MetricsK[TimerDatabase[F, KafkaKey, *]]
   implicit def persistenceModuleMetrics: MetricsK[PersistenceModule[F, *]]
-  implicit def foldMetrics: MetricsK[Fold[F, *, ConsRecord]]
   implicit def foldOptionMetrics: MetricsK[FoldOption[F, *, ConsRecord]]
   implicit def keyStateOfMetrics: Metrics[KeyStateOf[F]]
-  implicit def partitionFlowMetrics: Metrics[PartitionFlow[F]]
   implicit def partitionFlowOfMetrics: Metrics[PartitionFlowOf[F]]
-  implicit def topicFlowMetrics: Metrics[TopicFlow[F]]
   implicit def topicFlowOfMetrics: Metrics[TopicFlowOf[F]]
 
 }
@@ -53,12 +50,9 @@ object FlowMetrics {
         def snapshots = snapshotDatabase.withMetrics(module.snapshots)
       }
     }
-    fold <- foldMetricsKOf[F].apply(registry)
     foldOption <- foldOptionMetricsKOf[F].apply(registry)
     keyStateOf <- keyStateOfMetricsOf[F].apply(registry)
-    partitionFlow <- partitionFlowMetricsOf[F].apply(registry)
     partitionFlowOf <- partitionFlowOfMetricsOf[F].apply(registry)
-    topicFlow <- topicFlowMetricsOf[F].apply(registry)
     topicFlowOf <- topicFlowOfMetricsOf[F].apply(registry)
   } yield new FlowMetrics[F] {
     def keyDatabaseMetrics = keyDatabase
@@ -66,12 +60,9 @@ object FlowMetrics {
     def snapshotDatabaseMetrics = snapshotDatabase
     def timerDatabaseMetrics = timerDatabase
     def persistenceModuleMetrics = persistenceModule
-    def foldMetrics = fold
     def foldOptionMetrics = foldOption
     def keyStateOfMetrics = keyStateOf
-    def partitionFlowMetrics = partitionFlow
     def partitionFlowOfMetrics = partitionFlowOf
-    def topicFlowMetrics = topicFlow
     def topicFlowOfMetrics = topicFlowOf
   }
 
@@ -81,12 +72,9 @@ object FlowMetrics {
     def snapshotDatabaseMetrics = MetricsK.empty[SnapshotDatabase[F, KafkaKey, *]]
     def timerDatabaseMetrics = MetricsK.empty[TimerDatabase[F, KafkaKey, *]]
     def persistenceModuleMetrics = MetricsK.empty[PersistenceModule[F, *]]
-    def foldMetrics = MetricsK.empty[Fold[F, *, ConsRecord]]
     def foldOptionMetrics = MetricsK.empty[FoldOption[F, *, ConsRecord]]
     def keyStateOfMetrics = Metrics.empty
-    def partitionFlowMetrics = Metrics.empty
     def partitionFlowOfMetrics = Metrics.empty
-    def topicFlowMetrics = Metrics.empty
     def topicFlowOfMetrics = Metrics.empty
   }
 
