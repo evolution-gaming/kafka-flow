@@ -51,9 +51,10 @@ object KafkaModule {
         implicit val randomIdOf = RandomIdOf.uuid[F]
         implicit val journalProducerOf = JournalProducerOf[F](_producerOf)
         implicit val journalConsumerOf = JournalConsumerOf[F](_consumerOf)
+        val commonConfig = config.common.copy(clientId = config.common.clientId.map(id => s"$id-HealthCheck"))
         val healthCheck = KafkaHealthCheck.of[F](
           config = KafkaHealthCheck.Config.default,
-          kafkaConfig = KafkaConfig(ProducerConfig(common = config.common), config)
+          kafkaConfig = KafkaConfig(ProducerConfig(common = commonConfig), config.copy(common = commonConfig))
         )
         LogResource[F](KafkaModule.getClass, "KafkaHealthCheck") *> healthCheck
       }
