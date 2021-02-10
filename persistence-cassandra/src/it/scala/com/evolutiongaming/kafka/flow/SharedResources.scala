@@ -8,9 +8,7 @@ import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.CassandraConfig
 import com.evolutiongaming.kafka.flow.cassandra.CassandraModule
 import com.evolutiongaming.scassandra.{CassandraConfig => SCassandraConfig}
-import java.util.concurrent.Executor
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration._
 import scala.util.Try
 import scribe.Level
 import scribe.Logger

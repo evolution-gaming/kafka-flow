@@ -5,14 +5,12 @@ import cats.effect.IO
 import cats.effect.Resource
 import cats.effect.concurrent.Ref
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.cassandra.CassandraModule
 import com.evolutiongaming.kafka.flow.cassandra.CassandraPersistence
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
 import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
 import com.evolutiongaming.kafka.flow.timer.TimersOf
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition

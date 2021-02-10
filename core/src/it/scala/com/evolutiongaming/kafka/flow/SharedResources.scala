@@ -3,15 +3,12 @@ package com.evolutiongaming.kafka.flow
 import cats.effect.Blocker
 import cats.effect.IO
 import cats.effect.Resource
-import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.StartKafka
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
 import com.evolutiongaming.skafka.consumer.ConsumerConfig
 import com.evolutiongaming.smetrics.CollectorRegistry
-import java.util.concurrent.Executor
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration._
 import scala.util.Try
 import scribe.Level
 import scribe.Logger

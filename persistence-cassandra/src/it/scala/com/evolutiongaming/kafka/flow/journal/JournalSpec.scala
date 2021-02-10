@@ -9,7 +9,6 @@ import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.WithSize
-import com.evolutiongaming.smetrics.CollectorRegistry
 import scodec.bits.ByteVector
 import weaver.GlobalResources
 

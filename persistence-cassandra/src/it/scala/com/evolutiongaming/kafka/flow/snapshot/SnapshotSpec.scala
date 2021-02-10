@@ -7,7 +7,6 @@ import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition
-import com.evolutiongaming.smetrics.CollectorRegistry
 import weaver.GlobalResources
 
 class SnapshotSpec(val globalResources: GlobalResources) extends CassandraSpec {

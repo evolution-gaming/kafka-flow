@@ -1,17 +1,11 @@
 package com.evolutiongaming.kafka.flow.timer
 
-import cats.effect.IO
 import cats.effect.concurrent.Ref
 import com.evolutiongaming.kafka.flow.CassandraSessionStub
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
-import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition
-import com.evolutiongaming.skafka.consumer.WithSize
-import com.evolutiongaming.smetrics.CollectorRegistry
 import java.time.Instant
-import scodec.bits.ByteVector
 import weaver.GlobalResources
 
 class TimerSpec(val globalResources: GlobalResources) extends CassandraSpec {

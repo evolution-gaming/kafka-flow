@@ -1,9 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
 import ShutdownSpec._
-import cats.Applicative
-import cats.Defer
-import cats.data.NonEmptyMap
 import cats.data.NonEmptySet
 import cats.effect.IO
 import cats.effect.Resource
@@ -11,16 +8,11 @@ import cats.effect.concurrent.Deferred
 import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.kafka.Consumer
-import com.evolutiongaming.kafka.flow.kafka.KafkaModule
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.skafka.CommonConfig
 import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.OffsetAndMetadata
 import com.evolutiongaming.skafka.Partition
-import com.evolutiongaming.skafka.Topic
-import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.producer.ProducerConfig
 import com.evolutiongaming.skafka.producer.ProducerRecord
 import com.evolutiongaming.sstream.Stream

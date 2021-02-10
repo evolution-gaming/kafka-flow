@@ -2,14 +2,8 @@ package com.evolutiongaming.kafka.flow
 
 import cats.effect.Resource
 import cats.effect._
-import cats.syntax.all._
-import com.evolutiongaming.cassandra.sync.CassandraSync
-import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.CassandraModule
-import com.evolutiongaming.kafka.journal.FromConfigReaderResult
-import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.smetrics.MeasureDuration
-import java.util.concurrent.Executor
 import weaver._
 import SharedResources._
 
