@@ -147,8 +147,8 @@ object JournalFoldSpec {
 
   }
 
+  implicit val logOf: LogOf[Try] = LogOf.empty
   implicit val jsonCodec: JsonCodec[Try] = JsonCodec.default
   implicit val journalParser: JournalParser[Try] = JournalParser.of
-  implicit val logOf: LogOf[Try] = LogOf.empty
 
 }

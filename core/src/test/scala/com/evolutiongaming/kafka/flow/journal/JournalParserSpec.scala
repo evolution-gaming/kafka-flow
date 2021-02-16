@@ -14,15 +14,17 @@ import com.evolutiongaming.skafka.TimestampAndType
 import com.evolutiongaming.skafka.TimestampType
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.WithSize
+
 import java.time.Instant
 import munit.FunSuite
 import play.api.libs.json.Json
 import play.api.libs.json.Reads
+
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 import scodec.bits.ByteVector
-
+import com.evolutiongaming.catshelper.LogOf
 import JournalParserSpec._
 
 class JournalParserSpec extends FunSuite {
@@ -119,6 +121,7 @@ object JournalParserSpec {
 
   }
 
-  implicit val jsonCodec: JsonCodec[Try] = JsonCodec.default[Try]
+  implicit val logOf: LogOf[Try] = LogOf.empty
+  implicit val jsonCodec: JsonCodec[Try] = JsonCodec.default
 
 }

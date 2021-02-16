@@ -3,6 +3,7 @@ package com.evolutiongaming.kafka.flow.journal
 import cats.MonadThrow
 import cats.arrow.FunctionK
 import cats.syntax.all._
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.journal.Action
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.Event
@@ -10,6 +11,7 @@ import com.evolutiongaming.kafka.journal.Events
 import com.evolutiongaming.kafka.journal.FromAttempt
 import com.evolutiongaming.kafka.journal.FromJsResult
 import com.evolutiongaming.kafka.journal.JsonCodec
+import com.evolutiongaming.kafka.journal.JournalError
 import com.evolutiongaming.kafka.journal.Payload
 import com.evolutiongaming.kafka.journal.PayloadAndType
 import com.evolutiongaming.kafka.journal.SeqNr
@@ -36,14 +38,16 @@ trait JournalParser[F[_]] {
   def toPayloads(record: ConsRecord): F[List[Event[Payload]]]
 
   /** Parsed events contained in `ConsRecord` if any */
-  def toEvents[T: Reads](record: ConsRecord):  F[List[(SeqNr, T)]]
+  def toEvents[T: Reads](record: ConsRecord): F[List[(SeqNr, T)]]
 
 }
 object JournalParser {
 
   def apply[F[_]](implicit F: JournalParser[F]): JournalParser[F] = F
 
-  def of[F[_]: MonadThrow](implicit jsonCodec: JsonCodec[Try]): JournalParser[F] = new JournalParser[F] {
+  def of[F[_]: MonadThrow: LogOf](implicit jsonCodec: JsonCodec[Try]): JournalParser[F] = new JournalParser[F] {
+
+    val F = MonadThrow[F]
 
     implicit val fail = Fail.lift[F]
     implicit val fromJsResult = FromJsResult.lift[F]
@@ -63,7 +67,7 @@ object JournalParser {
           record <- record
           append <- record.action match {
             case action: Action.Append => Some(action)
-            case _ => None
+            case _                     => None
           }
         } yield append
       }
@@ -74,7 +78,6 @@ object JournalParser {
         append map (_.header.range)
       }
 
-
     def toPayloads(record: ConsRecord) =
       toAppend(record) flatMap { append =>
         append.toList flatTraverse { append =>
@@ -82,20 +85,25 @@ object JournalParser {
         }
       }
 
-    def toEvents[T: Reads](record: ConsRecord) = toPayloads(record) flatMap { events =>
-      val F = MonadThrow[F]
-      events traverse { event =>
-        for {
-          payload <- F.fromOption(event.payload, new RuntimeException(s"Payload is empty: $event"))
-          payload <- payload match {
-            case payload: Payload.Json => payload.pure[F]
-            case payload => F.raiseError[Payload.Json](new RuntimeException(s"Payload is not JSON: $payload"))
-          }
-          payload <- F.fromTry(JsResult.toTry((payload.value \ "payload").validate[T])) adaptError { case e =>
-            new RuntimeException(s"Cannot parse payload: ${payload.value}", e)
-          }
-        } yield event.seqNr -> payload
-      }
+    def toEvents[T: Reads](record: ConsRecord) = {
+      for {
+        log <- LogOf[F].apply(getClass)
+        events <- toPayloads(record).recoverWith { case err: JournalError =>
+          log.error("parsing journal record failed", err) *> List.empty[Event[Payload]].pure[F]
+        }
+        entities <- events traverse { event =>
+          for {
+            payload <- F.fromOption(event.payload, new RuntimeException(s"Payload is empty: $event"))
+            payload <- payload match {
+              case payload: Payload.Json => payload.pure[F]
+              case payload               => F.raiseError[Payload.Json](new RuntimeException(s"Payload is not JSON: $payload"))
+            }
+            payload <- F.fromTry(JsResult.toTry((payload.value \ "payload").validate[T])) adaptError { case e =>
+              new RuntimeException(s"Cannot parse payload: ${payload.value}", e)
+            }
+          } yield event.seqNr -> payload
+        }
+      } yield entities
     }
 
   }
