@@ -6,7 +6,6 @@ import cats.effect.Resource
 import cats.effect.concurrent.Ref
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.CassandraPersistence
-import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
 import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
 import com.evolutiongaming.kafka.flow.timer.TimersOf
@@ -58,13 +57,13 @@ class FlowSpec(val globalResources: GlobalResources) extends CassandraSpec {
        timestampAndType = None,
        key = Some(WithSize("key"))
      ))
-     consumer = Consumer.repeat {
+     consumer = TestConsumer.repeat {
        ConsumerRecords(Map(TopicPartition.empty -> records))
      }
      join <- {
         implicit val retry = Retry.empty[IO]
         KafkaFlow.resource(
-          consumer = Resource.liftF(consumer),
+          consumer = Resource.pure(consumer),
           flowOf = ConsumerFlowOf(topic = "", flowOf = topicFlowOf)
         )
       }

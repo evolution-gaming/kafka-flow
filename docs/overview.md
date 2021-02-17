@@ -90,12 +90,12 @@ correct error handling in case the underlying stream fails.
 The typical call of `KafkaFlow` could look like following:
 ```scala mdoc
 import com.evolutiongaming.kafka.flow.KafkaFlow
-import com.evolutiongaming.kafka.flow.kafka.ConsumerOf
+import com.evolutiongaming.kafka.flow.kafka.KafkaModule
 
-def consumerOf: ConsumerOf[IO] = ???
+def kafkaModule: KafkaModule[IO] = ???
 
 def kafkaFlow = KafkaFlow.retryOnError(
-  consumer = consumerOf("consumer-group-id"),
+  consumer = kafkaModule.consumerOf,
   flowOf = ???
 )
 ```

@@ -1,14 +1,15 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.data.{NonEmptyMap, NonEmptySet, State}
+import cats.data.{NonEmptyMap, NonEmptySet, StateT}
+import cats.effect.SyncIO
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.RebalanceListenerSpec._
-import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.ConsRecords
-import com.evolutiongaming.skafka.consumer.{RebalanceListener => SRebalanceListener}
 import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.consumer.{Consumer, RebalanceListener => SRebalanceListener}
 import munit.FunSuite
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -27,7 +28,7 @@ class RebalanceListenerSpec extends FunSuite {
         )
       )
       .runS(Context())
-      .value
+      .unsafeRunSync()
 
     val expected = Map(
       topic1 -> Action.Add(NonEmptySet.of(partition1 -> offset, partition2 -> offset)),
@@ -46,7 +47,7 @@ class RebalanceListenerSpec extends FunSuite {
         )
       )
       .runS(Context())
-      .value
+      .unsafeRunSync()
 
     val expected = Map(
       topic1 -> Action.Remove(NonEmptySet.of(partition1)),
@@ -65,7 +66,7 @@ class RebalanceListenerSpec extends FunSuite {
         )
       )
       .runS(Context())
-      .value
+      .unsafeRunSync()
 
     val expected = Map(
       topic1 -> Action.Remove(NonEmptySet.of(partition1)),
@@ -86,7 +87,7 @@ object RebalanceListenerSpec {
   val partition4 = Partition.unsafe(4)
   val offset = Offset.unsafe(0)
 
-  type F[A] = State[Context, A]
+  type F[A] = StateT[SyncIO, Context, A]
 
   implicit val logOf = LogOf.empty[F]
 
@@ -104,8 +105,8 @@ object RebalanceListenerSpec {
 
   object Fixture {
 
-    val consumer: Consumer[F] = new Consumer[F] {
-      def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]): F[Unit] = ().pure[F]
+    val consumer: Consumer[F, String, ByteVector] = new TestConsumer[F] {
+      def subscribe(topics: NonEmptySet[Topic], listener: Option[SRebalanceListener[F]]): F[Unit] = ().pure[F]
       def poll(timeout: FiniteDuration): F[ConsRecords] = ConsRecords.empty.pure[F]
       def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] = ().pure[F]
       def position(partition: TopicPartition): F[Offset] = offset.pure[F]
@@ -114,9 +115,9 @@ object RebalanceListenerSpec {
     def flow(topic: String) = new TopicFlow[F] {
       def apply(records: ConsRecords): F[Unit] = ().pure[F]
       def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] =
-        State modify (_.add(topic, Action.Add(partitions)))
+        StateT modify[SyncIO, Context] (_.add(topic, Action.Add(partitions)))
       def remove(partitions: NonEmptySet[Partition]): F[Unit] =
-        State modify (_.add(topic, Action.Remove(partitions)))
+        StateT modify[SyncIO, Context] (_.add(topic, Action.Remove(partitions)))
     }
 
     def listener(topics: Topic*) =

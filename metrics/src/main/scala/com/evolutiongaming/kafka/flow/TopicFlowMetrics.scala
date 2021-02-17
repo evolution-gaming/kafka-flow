@@ -13,7 +13,8 @@ import com.evolutiongaming.smetrics.MetricsHelper._
 import com.evolutiongaming.smetrics.Quantile
 import com.evolutiongaming.smetrics.Quantiles
 import com.evolutiongaming.skafka.Topic
-import kafka.Consumer
+import com.evolutiongaming.skafka.consumer.Consumer
+import scodec.bits.ByteVector
 
 object TopicFlowMetrics {
 
@@ -50,7 +51,7 @@ object TopicFlowMetrics {
   implicit def topicFlowOfMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, TopicFlowOf[F]] =
     topicFlowMetricsOf[F] transform { implicit metrics => topicFlowOf =>
       new TopicFlowOf[F] {
-        def apply(consumer: Consumer[F], topic: Topic) =
+        def apply(consumer: Consumer[F, String, ByteVector], topic: Topic) =
           topicFlowOf(consumer, topic) map (_.withMetrics)
       }
     }

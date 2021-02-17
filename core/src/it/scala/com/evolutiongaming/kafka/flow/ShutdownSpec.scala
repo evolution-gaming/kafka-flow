@@ -1,37 +1,27 @@
 package com.evolutiongaming.kafka.flow
 
-import ShutdownSpec._
 import cats.data.NonEmptySet
-import cats.effect.IO
-import cats.effect.Resource
-import cats.effect.concurrent.Deferred
-import cats.effect.concurrent.Ref
+import cats.effect.{IO, Resource}
+import cats.effect.concurrent.{Deferred, Ref}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.ShutdownSpec._
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.retry.Retry
-import com.evolutiongaming.skafka.CommonConfig
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.Partition
-import com.evolutiongaming.skafka.producer.ProducerConfig
+import com.evolutiongaming.skafka.{Offset, Partition}
 import com.evolutiongaming.skafka.producer.ProducerRecord
 import com.evolutiongaming.sstream.Stream
+import weaver.GlobalResources
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import weaver.GlobalResources
 
 class ShutdownSpec(val globalResources: GlobalResources) extends KafkaSpec {
 
   test("call and complete onPartitionsRevoked after shutdown started") { kafka =>
     implicit val retry = Retry.empty[IO]
 
-    val producerConfig = ProducerConfig(
-      common = CommonConfig(
-        clientId = Some("UnsubscribeSpec-producer")
-      )
-    )
-
-    def send = kafka.producerOf(producerConfig) use { producer =>
+    def send = kafka.producerOf use { producer =>
       val record = ProducerRecord[String, String]("UnsubscribeSpec-topic")
       producer.send(record).flatten
     }
@@ -45,7 +35,7 @@ class ShutdownSpec(val globalResources: GlobalResources) extends KafkaSpec {
         _ <- Stream.lift(send)
         // wait for record to be processed
         _ <- KafkaFlow.stream(
-          consumer = kafka.consumerOf("UnsubscribeSpec-groupId"),
+          consumer = kafka.consumerOf,
           flowOf = ConsumerFlowOf[IO](
             topic = "UnsubscribeSpec-topic",
             flowOf = flowOf

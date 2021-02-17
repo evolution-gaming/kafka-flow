@@ -5,11 +5,11 @@ import cats.data.NonEmptySet
 import cats.effect.Resource
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka.Topic
-import com.evolutiongaming.skafka.consumer.ConsumerRecords
+import com.evolutiongaming.skafka.consumer.{Consumer, ConsumerRecords}
 import com.evolutiongaming.sstream.Stream
+import scodec.bits.ByteVector
 
 /** Represents evertything stateful happening on one `Consumer` */
 trait ConsumerFlow[F[_]] {
@@ -33,7 +33,7 @@ object ConsumerFlow {
     * journal in the format of `Kafka Journal` library.
     */
   def of[F[_]: MonadThrow: LogOf](
-    consumer: Consumer[F],
+    consumer: Consumer[F, String, ByteVector],
     topic: Topic,
     flowOf: TopicFlowOf[F],
     config: ConsumerFlowConfig
@@ -50,7 +50,7 @@ object ConsumerFlow {
     * journal in the format of `Kafka Journal` library.
     */
   def of[F[_]: MonadThrow: LogOf](
-    consumer: Consumer[F],
+    consumer: Consumer[F, String, ByteVector],
     topics: NonEmptySet[Topic],
     flowOf: TopicFlowOf[F],
     config: ConsumerFlowConfig
@@ -70,14 +70,14 @@ object ConsumerFlow {
     * journal in the format of `Kafka Journal` library.
     */
   def apply[F[_]: MonadThrow: LogOf](
-    consumer: Consumer[F],
+    consumer: Consumer[F, String, ByteVector],
     flows: Map[Topic, TopicFlow[F]],
     config: ConsumerFlowConfig
   ): ConsumerFlow[F] = new ConsumerFlow[F] {
 
     val subscribe =
       flows.keySet.toList.toNel match {
-        case Some(topics) => consumer.subscribe(topics.toNes, RebalanceListener[F](consumer, flows))
+        case Some(topics) => consumer.subscribe(topics.toNes, RebalanceListener[F](consumer, flows).some)
         case None         => new IllegalArgumentException("Parameter flows cannot be empty").raiseError[F, Unit]
       }
 

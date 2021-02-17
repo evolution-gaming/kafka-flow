@@ -1,15 +1,15 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Parallel
-import cats.effect.Concurrent
-import cats.effect.Resource
+import cats.effect.{Concurrent, Resource}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.skafka.Topic
-import kafka.Consumer
+import com.evolutiongaming.skafka.consumer.Consumer
+import scodec.bits.ByteVector
 
 trait TopicFlowOf[F[_]] {
 
-  def apply(consumer: Consumer[F], topic: Topic): Resource[F, TopicFlow[F]]
+  def apply(consumer: Consumer[F, String, ByteVector], topic: Topic): Resource[F, TopicFlow[F]]
 
 }
 object TopicFlowOf {

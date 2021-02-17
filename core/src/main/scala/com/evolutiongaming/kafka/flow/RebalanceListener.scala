@@ -5,14 +5,14 @@ import cats.data.NonEmptySet
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.ConsumerFlow.log
-import com.evolutiongaming.kafka.flow.kafka.Consumer
-import com.evolutiongaming.skafka.consumer.{RebalanceListener => SRebalanceListener}
+import com.evolutiongaming.skafka.consumer.{Consumer, RebalanceListener => SRebalanceListener}
 import com.evolutiongaming.skafka.{Partition, Topic, TopicPartition}
+import scodec.bits.ByteVector
 
 object RebalanceListener {
 
   def apply[F[_]: Monad: LogOf](
-    consumer: Consumer[F],
+    consumer: Consumer[F, String, ByteVector],
     flows: Map[Topic, TopicFlow[F]]
   ): SRebalanceListener[F] = new SRebalanceListener[F] {
 

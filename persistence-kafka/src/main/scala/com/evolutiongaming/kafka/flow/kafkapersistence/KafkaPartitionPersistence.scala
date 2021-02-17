@@ -4,7 +4,6 @@ import cats.implicits._
 import cats.mtl.MonadState
 import cats.{FlatMap, Monad, data}
 import com.evolutiongaming.catshelper.{BracketThrowable, FromTry, Log}
-import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.Snapshots.Snapshot
@@ -12,7 +11,7 @@ import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotWriteD
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf, ConsumerRecord, WithSize}
+import com.evolutiongaming.skafka.consumer.{Consumer, ConsumerConfig, ConsumerOf, ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.producer.Producer
 import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
@@ -84,7 +83,7 @@ object KafkaPartitionPersistence {
   }
 
   private[kafkapersistence] def readPartition[F[_]: Monad: Log](
-    consumer: Consumer[F],
+    consumer: Consumer[F, String, ByteVector],
     snapshotPartition: TopicPartition,
     targetOffset: Offset
   ): F[BytesByKey] =
@@ -144,7 +143,7 @@ object KafkaPartitionPersistence {
             MissingOffsetError(snapshotsPartition)
           )
           bytesByKey <- readPartition(
-            Consumer(consumer),
+            consumer,
             snapshotsPartition,
             targetOffset
           )

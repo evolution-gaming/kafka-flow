@@ -5,7 +5,6 @@ import cats.effect.SyncIO
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.ConsumerFlowSpec._
-import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.{RebalanceListener => SRebalanceListener}
@@ -112,13 +111,13 @@ object ConsumerFlowSpec {
     listener: Option[SRebalanceListener[F]] = None
   ) {
     def +(action: Action): Context = copy(actions = action :: actions)
-    def +(listener: SRebalanceListener[F]): Context = copy(listener = listener.some)
+    def +(listener: Option[SRebalanceListener[F]]): Context = copy(listener = listener)
   }
 
   object ConstFixture {
 
-    def consumer() = new Consumer[F] {
-      def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]): F[Unit] =
+    def consumer() = new TestConsumer[F] {
+      def subscribe(topics: NonEmptySet[Topic], listener: Option[SRebalanceListener[F]]): F[Unit] =
         StateT modify [SyncIO, Context] (_ + Action.Subscribe(topics) + listener)
 
       def poll(timeout: FiniteDuration): F[ConsRecords] = {

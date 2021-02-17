@@ -6,18 +6,19 @@ import cats.effect.{Resource, SyncIO, Timer}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.catshelper.TimerHelper._
-import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecord, ConsRecords}
 import com.evolutiongaming.retry.{OnError, Retry, Strategy}
 import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.{
+  Consumer,
   ConsumerRecord,
   ConsumerRecords,
-  RebalanceListener => SRebalanceListener,
-  WithSize
+  WithSize,
+  RebalanceListener => SRebalanceListener
 }
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
@@ -49,7 +50,7 @@ class KafkaFlowSpec extends FunSuite {
           Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
           Action.Poll(ConsumerRecords.empty),
           Action.Poll(ConsumerRecords.empty),
-          Action.Subscribe(NonEmptySet.of(topic))(SRebalanceListener.empty),
+          Action.Subscribe(NonEmptySet.of(topic))(none),
           Action.AcquireTopicFlow,
           Action.AcquireConsumer
         )
@@ -80,14 +81,14 @@ class KafkaFlowSpec extends FunSuite {
           Action.ReleaseTopicFlow,
           Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
           Action.Poll(ConsumerRecords.empty),
-          Action.Subscribe(NonEmptySet.of(topic))(SRebalanceListener.empty),
+          Action.Subscribe(NonEmptySet.of(topic))(none),
           Action.AcquireTopicFlow,
           Action.AcquireConsumer,
           Action.RetryOnError(Error, OnError.Decision.retry(1.millis)),
           Action.ReleaseConsumer,
           Action.ReleaseTopicFlow,
           Action.Poll(ConsumerRecords.empty),
-          Action.Subscribe(NonEmptySet.of(topic))(SRebalanceListener.empty),
+          Action.Subscribe(NonEmptySet.of(topic))(none),
           Action.AcquireTopicFlow,
           Action.AcquireConsumer
         )
@@ -118,7 +119,7 @@ class KafkaFlowSpec extends FunSuite {
           Action.Poll(consumerRecords(consumerRecord(partition = 0, offset = 0))),
           Action.RemovePartitions(NonEmptySet.of(Partition.unsafe(1))),
           Action.Poll(ConsumerRecords.empty),
-          Action.Subscribe(NonEmptySet.of(topic))(SRebalanceListener.empty),
+          Action.Subscribe(NonEmptySet.of(topic))(none),
           Action.AcquireTopicFlow,
           Action.AcquireConsumer
         )
@@ -172,11 +173,11 @@ object KafkaFlowSpec {
       )
     )
 
-    def consumer(state: Ref[F, State]): Resource[F, Consumer[F]] = {
+    def consumer(state: Ref[F, State]): Resource[F, Consumer[F, String, ByteVector]] = {
 
-      val consumer: Consumer[F] = new Consumer[F] {
+      val consumer: Consumer[F, String, ByteVector] = new TestConsumer[F] {
 
-        def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]) =
+        def subscribe(topics: NonEmptySet[Topic], listener: Option[SRebalanceListener[F]]) =
           state update (_ + Action.Subscribe(topics)(listener))
 
         def poll(timeout: FiniteDuration) =
@@ -199,16 +200,22 @@ object KafkaFlowSpec {
         def revoke(partitions: NonEmptySet[Partition]) =
           state.get flatMap { state =>
             val revoke = state.actions collectFirst { case action: Action.Subscribe =>
-              action.listener.onPartitionsRevoked(
-                partitions concatMap { partition => action.topics.map { topic => TopicPartition(topic, partition) } }
-              )
+              action.listener match {
+                case None => ().pure[F]
+                case Some(l) =>
+                  l.onPartitionsRevoked(
+                    partitions concatMap { partition =>
+                      action.topics.map { topic => TopicPartition(topic, partition) }
+                    }
+                  )
+              }
             }
             revoke.sequence_
           }
 
       }
 
-      val result: F[(Consumer[F], F[Unit])] = state modify { s =>
+      val result: F[(Consumer[F, String, ByteVector], F[Unit])] = state modify { s =>
         val s1 = s + Action.AcquireConsumer
         val release = state update (_ + Action.ReleaseConsumer)
         (s1, (consumer, release))
@@ -270,7 +277,7 @@ object KafkaFlowSpec {
     case object ReleaseConsumer extends Action
     final case class RemovePartitions(partitions: NonEmptySet[Partition]) extends Action
     final case class AddPartitions(partitions: NonEmptySet[(Partition, Offset)]) extends Action
-    final case class Subscribe(topics: NonEmptySet[Topic])(val listener: SRebalanceListener[F]) extends Action
+    final case class Subscribe(topics: NonEmptySet[Topic])(val listener: Option[SRebalanceListener[F]]) extends Action
     final case class Poll(consumerRecords: ConsRecords) extends Action
     final case class Commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) extends Action
     final case class RetryOnError(error: Throwable, decision: OnError.Decision) extends Action
