@@ -5,7 +5,6 @@ import cats.effect.SyncIO
 import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.kafka.flow.ToOffset
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.kafka.flow.timer.TimerContext
 import com.evolutiongaming.kafka.flow.timer.TimerFlow
