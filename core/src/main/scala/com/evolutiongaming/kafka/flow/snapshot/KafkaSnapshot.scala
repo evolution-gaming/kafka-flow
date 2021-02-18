@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
-import com.evolutiongaming.kafka.flow.kafka.ToOffset
+import com.evolutiongaming.kafka.flow.ToOffset
 import com.evolutiongaming.skafka.Offset
 
 /** Snapshot of the current state.

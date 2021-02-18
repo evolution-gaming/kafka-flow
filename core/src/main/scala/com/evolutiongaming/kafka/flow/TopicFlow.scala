@@ -7,11 +7,10 @@ import cats.effect.{Concurrent, Resource}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.DataHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
+import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecords, PartitionOffset}
 import com.evolutiongaming.scache.{Cache, Releasable}
-import com.evolutiongaming.skafka.consumer.Consumer
 import com.evolutiongaming.skafka._
-import scodec.bits.ByteVector
 
 import scala.collection.immutable.SortedSet
 
@@ -38,7 +37,7 @@ trait TopicFlow[F[_]] {
 object TopicFlow {
 
   def of[F[_]: Concurrent: Parallel: LogOf](
-    consumer: Consumer[F, String, ByteVector],
+    consumer: Consumer[F],
     topic: Topic,
     partitionFlowOf: PartitionFlowOf[F]
   ): Resource[F, TopicFlow[F]] = for {
@@ -50,7 +49,7 @@ object TopicFlow {
   } yield flow
 
   private def of[F[_]: Concurrent: Parallel: Log](
-    consumer: Consumer[F, String, ByteVector],
+    consumer: Consumer[F],
     topic: Topic,
     partitionFlowOf: PartitionFlowOf[F],
     cache: Cache[F, Partition, PartitionFlow[F]],

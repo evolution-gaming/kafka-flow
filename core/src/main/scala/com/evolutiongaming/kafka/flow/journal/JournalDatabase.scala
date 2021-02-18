@@ -6,7 +6,7 @@ import cats.effect.concurrent.Ref
 import cats.mtl.MonadState
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.kafka.ToOffset
+import com.evolutiongaming.kafka.flow.ToOffset
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._

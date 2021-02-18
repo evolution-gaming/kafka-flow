@@ -6,7 +6,7 @@ import cats.mtl.MonadState
 import cats.mtl.implicits._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.MonadStateHelper._
-import com.evolutiongaming.kafka.flow.kafka.ToOffset
+import com.evolutiongaming.kafka.flow.ToOffset
 import com.evolutiongaming.skafka.Offset
 import monocle.macros.GenLens
 import munit.FunSuite

@@ -1,4 +1,4 @@
-package com.evolutiongaming.kafka.flow.kafka
+package com.evolutiongaming.kafka.flow
 
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
@@ -11,9 +11,6 @@ trait ToOffset[T] {
 }
 object ToOffset {
 
-  implicit def consumerRecordToOffset[K, V]: ToOffset[ConsumerRecord[K, V]] =
-    new ToOffset[ConsumerRecord[K, V]] {
-      def offset(event: ConsumerRecord[K, V]): Offset = event.offset
-    }
+  implicit def consumerRecordToOffset[K, V]: ToOffset[ConsumerRecord[K, V]] = _.offset
 
 }

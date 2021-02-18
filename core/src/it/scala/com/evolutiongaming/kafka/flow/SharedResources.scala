@@ -1,13 +1,11 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.syntax.option._
 import cats.effect.{Blocker, IO, Resource}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.StartKafka
-import com.evolutiongaming.kafka.flow.kafka.KafkaModule
-import com.evolutiongaming.kafka.journal.KafkaConfig
+import com.evolutiongaming.kafka.flow.kafka.{KafkaConfig, KafkaModule}
+import com.evolutiongaming.kafka.journal.{KafkaConfig => JournalKafkaConfig}
 import com.evolutiongaming.smetrics.CollectorRegistry
-import monocle.macros.syntax.lens._
 import scribe.{Level, Logger}
 import weaver._
 
@@ -29,15 +27,21 @@ object SharedResources extends GlobalResourcesInit {
     implicit val timer = IO.timer(executor)
 
     // we use default config here, because we will launch Kafka locally
-    val config = KafkaConfig.default
-      .lens(_.producer.common.clientId).set("UnsubscribeSpec-producer".some)
+    val config = KafkaConfig(
+      groupId = "SharedResources-groupId",
+      config = JournalKafkaConfig.default
+    )
 
     val start = IO {
       // set root logging to WARN level to avoid spamming the logs
-      Logger.root.clearHandlers().clearModifiers()
-      .withHandler(minimumLevel = Some(Level.Warn)).replace()
+      Logger.root
+        .clearHandlers()
+        .clearModifiers()
+        .withHandler(minimumLevel = Some(Level.Warn))
+        .replace()
       Logger("com.evolutiongaming.kafka.flow")
-      .withHandler(minimumLevel = Some(Level.Debug)).replace()
+        .withHandler(minimumLevel = Some(Level.Debug))
+        .replace()
 
       // proceed starting Kafka
       StartKafka()
@@ -46,7 +50,7 @@ object SharedResources extends GlobalResourcesInit {
       _ <- Resource.make(start) { shutdown => IO(shutdown()) }
       blocker <- Blocker[IO]
       kafka <- Resource.liftF(LogOf.slf4j[IO]) flatMap { implicit logOf =>
-        KafkaModule.of[IO]("SharedResources", "SharedResources-groupId", config, CollectorRegistry.empty, blocker)
+        KafkaModule.of[IO]("SharedResources", config, CollectorRegistry.empty, blocker)
       }
       _ <- store.putR(kafka)
     } yield ()

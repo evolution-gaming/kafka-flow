@@ -7,23 +7,22 @@ import com.evolutiongaming.catshelper.{FromTry, LogOf, ToFuture, ToTry}
 import com.evolutiongaming.kafka.flow.LogResource
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.kafka.journal.{
-  KafkaConfig,
   KafkaHealthCheck,
   RandomIdOf,
   KafkaConsumerOf => JournalConsumerOf,
   KafkaProducerOf => JournalProducerOf
 }
-import com.evolutiongaming.skafka.consumer._
+import com.evolutiongaming.skafka.CommonConfig
+import com.evolutiongaming.skafka.consumer.{Consumer => _, _}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerMetrics, ProducerOf}
 import com.evolutiongaming.smetrics.{CollectorRegistry, MeasureDuration}
-import monocle.macros.syntax.lens._
 import scodec.bits.ByteVector
 
 trait KafkaModule[F[_]] {
 
   def healthCheck: KafkaHealthCheck[F]
 
-  def consumerOf: Resource[F, Consumer[F, String, ByteVector]]
+  def consumerOf: Resource[F, Consumer[F]]
   def producerOf: Resource[F, Producer[F]]
 
 }
@@ -31,7 +30,6 @@ object KafkaModule {
 
   def of[F[_]: ConcurrentEffect: ContextShift: FromTry: ToTry: ToFuture: Timer: LogOf](
     applicationId: String,
-    groupId: String,
     config: KafkaConfig,
     registry: CollectorRegistry[F],
     blocker: Blocker
@@ -46,14 +44,15 @@ object KafkaModule {
         implicit val randomIdOf = RandomIdOf.uuid[F]
         implicit val journalProducerOf = JournalProducerOf[F](_producerOf)
         implicit val journalConsumerOf = JournalConsumerOf[F](_consumerOf)
-        val healthCheckConfig = config
-          .lens(_.consumer.common.clientId)
-          .modify(_.map(_ + "-HealthCheck"))
-          .lens(_.producer.common.clientId)
-          .modify(_.map(_ + "-HealthCheck"))
+        def setHealthCheckClientId(common: CommonConfig): CommonConfig =
+          common.copy(clientId = common.clientId.map(_ + "-HealthCheck"))
+        val healthCheckConfig = config.copy(
+          producer = config.producer.copy(common = setHealthCheckClientId(config.producer.common)),
+          consumer = config.consumer.copy(common = setHealthCheckClientId(config.consumer.common))
+        )
         val healthCheck = KafkaHealthCheck.of[F](
           config = KafkaHealthCheck.Config.default,
-          kafkaConfig = healthCheckConfig
+          kafkaConfig = healthCheckConfig.asJournal
         )
         LogResource[F](KafkaModule.getClass, "KafkaHealthCheck") *> healthCheck
       }
@@ -61,16 +60,11 @@ object KafkaModule {
 
       def healthCheck = _healthCheck
 
-      def consumerOf: Resource[F, Consumer[F, String, ByteVector]] = {
-        val flowConfig = config.consumer.copy(
-          groupId = groupId.some,
-          autoCommit = false,
-          autoOffsetReset = AutoOffsetReset.Earliest
-        )
+      def consumerOf: Resource[F, Consumer[F]] = {
         for {
-          _ <- LogResource[F](KafkaModule.getClass, s"Consumer($groupId)")
+          _ <- LogResource[F](KafkaModule.getClass, s"Consumer(${config.consumer.groupId})")
           log <- LogOf[F].apply(Consumer.getClass).toResource
-          consumer <- _consumerOf[String, ByteVector](flowConfig)
+          consumer <- _consumerOf[String, ByteVector](config.consumer)
         } yield consumer.withLogging(log)
       }
 

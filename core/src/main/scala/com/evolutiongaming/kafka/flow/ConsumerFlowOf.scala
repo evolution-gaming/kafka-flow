@@ -4,14 +4,13 @@ import cats.data.NonEmptySet
 import cats.effect.Resource
 import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.skafka.Topic
-import com.evolutiongaming.skafka.consumer.Consumer
-import scodec.bits.ByteVector
 
 /** Factory which creates `ConsumerFlow` instances */
 trait ConsumerFlowOf[F[_]] {
 
-  def apply(consumer: Consumer[F, String, ByteVector]): Resource[F, ConsumerFlow[F]]
+  def apply(consumer: Consumer[F]): Resource[F, ConsumerFlow[F]]
 
 }
 object ConsumerFlowOf {

@@ -4,7 +4,7 @@ import cats.data.State
 import cats.syntax.all._
 import cats.mtl.MonadState
 import cats.mtl.implicits._
-import com.evolutiongaming.kafka.flow.kafka.ToOffset
+import com.evolutiongaming.kafka.flow.ToOffset
 import com.evolutiongaming.skafka.Offset
 import munit.FunSuite
 import scala.collection.immutable.SortedMap

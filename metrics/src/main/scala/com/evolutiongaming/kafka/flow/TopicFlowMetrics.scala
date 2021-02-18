@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Monad
 import cats.data.NonEmptySet
+import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.journal.ConsRecords
@@ -13,8 +14,6 @@ import com.evolutiongaming.smetrics.MetricsHelper._
 import com.evolutiongaming.smetrics.Quantile
 import com.evolutiongaming.smetrics.Quantiles
 import com.evolutiongaming.skafka.Topic
-import com.evolutiongaming.skafka.consumer.Consumer
-import scodec.bits.ByteVector
 
 object TopicFlowMetrics {
 
@@ -51,7 +50,7 @@ object TopicFlowMetrics {
   implicit def topicFlowOfMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, TopicFlowOf[F]] =
     topicFlowMetricsOf[F] transform { implicit metrics => topicFlowOf =>
       new TopicFlowOf[F] {
-        def apply(consumer: Consumer[F, String, ByteVector], topic: Topic) =
+        def apply(consumer: Consumer[F], topic: Topic) =
           topicFlowOf(consumer, topic) map (_.withMetrics)
       }
     }

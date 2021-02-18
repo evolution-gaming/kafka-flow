@@ -7,14 +7,13 @@ import cats.effect.implicits._
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.random.Random
 import com.evolutiongaming.retry.OnError
 import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.retry.Strategy
-import com.evolutiongaming.skafka.consumer.Consumer
 import com.evolutiongaming.sstream.Stream
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -32,7 +31,7 @@ object KafkaFlow {
     * potential errors may be lost.
     */
   def retryOnError[F[_]: Concurrent: Timer: LogOf](
-    consumer: Resource[F, Consumer[F, String, ByteVector]],
+    consumer: Resource[F, Consumer[F]],
     flowOf: ConsumerFlowOf[F],
   ): Resource[F, F[Unit]] = {
 
@@ -65,7 +64,7 @@ object KafkaFlow {
     * second time.
     */
   def stream[F[_]: BracketThrowable: Retry](
-    consumer: Resource[F, Consumer[F, String, ByteVector]],
+    consumer: Resource[F, Consumer[F]],
     flowOf: ConsumerFlowOf[F],
   ): Stream[F, ConsRecords] =
     for {
@@ -83,7 +82,7 @@ object KafkaFlow {
     * potential errors may be lost.
     */
   def resource[F[_]: Concurrent: Retry](
-    consumer: Resource[F, Consumer[F, String, ByteVector]],
+    consumer: Resource[F, Consumer[F]],
     flowOf: ConsumerFlowOf[F],
   ): Resource[F, F[Unit]] =
     stream(consumer, flowOf).drain.background
