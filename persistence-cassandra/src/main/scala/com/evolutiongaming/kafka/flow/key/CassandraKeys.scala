@@ -86,13 +86,6 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
       key <- all(applicationId, groupId, segment, topicPartition)
     } yield key
 
-  def all(applicationId: String, groupId: String): Stream[F, KafkaKey] =
-    for {
-      segment <- Stream.from[F, List, Int]((0 until Segments.default.value).toList)
-      segment <- Stream.lift(SegmentNr.of[F](segment.toLong))
-      key <- all(applicationId, groupId, segment)
-    } yield key
-
   def all(applicationId: String, groupId: String, segment: SegmentNr): Stream[F, KafkaKey] = {
 
     val preparedStatement = session.prepare(

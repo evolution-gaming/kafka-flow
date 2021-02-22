@@ -42,11 +42,6 @@ object KeyDatabaseMetrics {
           persistSummary
           .observe(duration.toNanos.nanosToSeconds)
         }
-      def all(applicationId: String, groupId: String) =
-        database.all(applicationId, groupId) measureTotalDuration { duration =>
-          allSummary
-          .observe(duration.toNanos.nanosToSeconds)
-        }
       def all(applicationId: String, groupId: String, topicPartition: TopicPartition) =
         database.all(applicationId, groupId, topicPartition) measureTotalDuration { duration =>
           allSummary
