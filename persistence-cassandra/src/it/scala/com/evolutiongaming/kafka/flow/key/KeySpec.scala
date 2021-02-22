@@ -5,7 +5,6 @@ import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.CassandraSessionStub
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
-import com.evolutiongaming.kafka.flow.key.CassandraKeys
 import com.evolutiongaming.skafka.Partition
 import com.evolutiongaming.skafka.TopicPartition
 import weaver.GlobalResources
