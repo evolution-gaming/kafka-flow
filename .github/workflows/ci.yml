@@ -28,7 +28,7 @@ jobs:
 
     - name: Run tests ${{ matrix.scala }}
       if: success() && matrix.scala != '2.13.4'
-      run: sbt ++${{ matrix.scala }} clean coverage test it:test
+      run: sbt ++${{ matrix.scala }} clean coverage test
 
     - name: Report test coverage
       if: success()
