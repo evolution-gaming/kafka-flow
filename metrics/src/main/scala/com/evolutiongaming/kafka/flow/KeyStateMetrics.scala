@@ -7,11 +7,10 @@ import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.timer.Timestamp
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.smetrics.LabelNames
-import com.evolutiongaming.smetrics.MeasureDuration
 
 object KeyStateMetrics {
 
-  implicit def keyStateOfMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, KeyStateOf[F]] = { registry =>
+  implicit def keyStateOfMetricsOf[F[_]: Monad]: MetricsOf[F, KeyStateOf[F]] = { registry =>
     registry.gauge(
       name = "key_flow_count",
       help = "The number of active key flows",

@@ -4,7 +4,7 @@ import cats.Functor
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
 import cats.implicits._
-import com.evolutiongaming.catshelper.{BracketThrowable, FromTry, Log}
+import com.evolutiongaming.catshelper.{FromTry, Log}
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
 import com.evolutiongaming.kafka.flow.snapshot.Snapshots.Snapshot
 import com.evolutiongaming.skafka.consumer.AutoOffsetReset.Earliest
@@ -28,10 +28,7 @@ final class KafkaPersistence[F[_], K, S](
 }
 
 object KafkaPersistence {
-  def apply[F[_]: BracketThrowable: Producer: FromTry: Log: Sync, S: ToBytes[
-    F,
-    *
-  ]: FromBytes[F, *]](
+  def apply[F[_]: Producer: FromTry: Log: Sync, S: ToBytes[F, *]: FromBytes[F, *]](
     consumerOf: ConsumerOf[F],
     consumerConfig: ConsumerConfig,
     snapshotTopic: Topic

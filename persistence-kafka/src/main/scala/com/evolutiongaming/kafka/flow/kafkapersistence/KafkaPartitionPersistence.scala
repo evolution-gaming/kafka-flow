@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.kafkapersistence
 import cats.implicits._
 import cats.mtl.MonadState
 import cats.{FlatMap, Monad, data}
-import com.evolutiongaming.catshelper.{BracketThrowable, FromTry, Log}
+import com.evolutiongaming.catshelper.{BracketThrowable, Log}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
@@ -13,7 +13,6 @@ import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf, ConsumerRecord, WithSize}
-import com.evolutiongaming.skafka.producer.Producer
 import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
 
@@ -38,10 +37,7 @@ object KafkaPartitionPersistence {
 
   private case class MissingOffsetError(topicPartition: TopicPartition) extends NoStackTrace
 
-  def apply[F[_]: Producer: Monad: FromTry: Log, S: FromBytes[F, *]: ToBytes[
-    F,
-    *
-  ]](
+  def apply[F[_]: Monad: Log, S: FromBytes[F, *]](
     snapshotTopic: Topic,
     monadState: MonadState[F, BytesByKey],
     writeDatabase: SnapshotWriteDatabase[F, String, S],
@@ -117,10 +113,7 @@ object KafkaPartitionPersistence {
     case _                                                                            => map //ignore records with no key for now
   }
 
-  private[kafkapersistence] def readSnapshots[F[_]: BracketThrowable: FromBytes[
-    *[_],
-    String
-  ]: Log](
+  private[kafkapersistence] def readSnapshots[F[_]: BracketThrowable: FromBytes[*[_], String]: Log](
     consumerOf: ConsumerOf[F],
     consumerConfig: ConsumerConfig,
     snapshotTopic: Topic,
