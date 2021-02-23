@@ -27,12 +27,12 @@ class ShutdownSpec(val globalResources: GlobalResources) extends KafkaSpec {
 
     val producerConfig = ProducerConfig(
       common = CommonConfig(
-        clientId = Some("UnsubscribeSpec-producer")
+        clientId = Some("ShutdownSpec-producer")
       )
     )
 
     def send = kafka.producerOf(producerConfig) use { producer =>
-      val record = ProducerRecord[String, String]("UnsubscribeSpec-topic")
+      val record = ProducerRecord[String, String]("ShutdownSpec-topic")
       producer.send(record).flatten
     }
 
@@ -45,9 +45,9 @@ class ShutdownSpec(val globalResources: GlobalResources) extends KafkaSpec {
         _ <- Stream.lift(send)
         // wait for record to be processed
         _ <- KafkaFlow.stream(
-          consumer = kafka.consumerOf("UnsubscribeSpec-groupId"),
+          consumer = kafka.consumerOf("ShutdownSpec-groupId"),
           flowOf = ConsumerFlowOf[IO](
-            topic = "UnsubscribeSpec-topic",
+            topic = "ShutdownSpec-topic",
             flowOf = flowOf
           )
         )
@@ -64,7 +64,7 @@ class ShutdownSpec(val globalResources: GlobalResources) extends KafkaSpec {
       flowOf      = topicFlowOf(state)
       program    <- program(flowOf, finished).toList.start
       // wait for first record to process
-      _          <- finished.get
+      _          <- finished.get.timeoutTo(10.seconds, program.join)
       // validate subscriptions in active flow
       partitions <- state.get
       test1      <- assert(partitions == Set(Partition.min))
@@ -92,7 +92,7 @@ object ShutdownSpec {
         def remove(partitions: NonEmptySet[Partition]) =
           // we wait for a second here to ensure the call is blocking
           // i.e. if we update state immediately, the test might pass
-          // event if the call is non-blocking
+          // even if the call is non-blocking
           IO.sleep(1.second) *> {
             state update (_ -- partitions.toList)
           }
