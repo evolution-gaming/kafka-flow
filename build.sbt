@@ -48,7 +48,8 @@ lazy val core = (project in file("core"))
       weaver % IntegrationTest,
     ),
     Defaults.itSettings,
-    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.TestFramework")
+    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.TestFramework"),
+    IntegrationTest / fork := true
   )
 
 lazy val metrics = (project in file("metrics"))
