@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.timer
 
+import cats.Applicative
 import cats.Monad
 import cats.MonadThrow
 import cats.effect.ExitCase.Canceled
@@ -119,16 +120,13 @@ object TimerFlowOf {
   /** Performs flush when `Resource` is cancelled only */
   def flushOnCancel[F[_]: Monad]: TimerFlowOf[F] = { (context, persistence, _) =>
 
-    val cancel = for {
-      holding <- context.holding
-      _ <- if (holding.isDefined) {
+    val cancel = context.holding flatMap { holding =>
+      Applicative[F].whenA(holding.isDefined) {
         context.log.info(s"flush on revoke, holding offset: $holding") *>
         persistence.flush *>
         context.remove
-      } else {
-        ().pure[F]
       }
-    } yield ()
+    }
 
     Resource.makeCase(TimerFlow.empty.pure) {
       case (_, Completed) => cancel
