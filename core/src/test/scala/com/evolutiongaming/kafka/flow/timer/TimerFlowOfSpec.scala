@@ -112,7 +112,7 @@ class TimerFlowOfSpec extends FunSuite {
     }
     val result = program.runS(context).unsafeRunSync()
 
-    // Then("flush happens and remove do not happen")
+    // Then("neither flush or remove happens")
     assertEquals(result.flushed, 0)
     assertEquals(result.removed, 0)
 
@@ -142,7 +142,45 @@ class TimerFlowOfSpec extends FunSuite {
     }
     val result = program.runS(context).unsafeRunSync()
 
-    // Then("flush happens and remove do not happen")
+    // Then("neither flush or remove happens")
+    assertEquals(result.flushed, 0)
+    assertEquals(result.removed, 0)
+
+  }
+
+  test("unloadOrphaned flushes when resource is cancelled if configured to do so") {
+
+    val f = new ConstFixture
+
+    // Given("flow is configured to flush on revoke")
+    val context = Context(timestamps = TimestampState(f.timestamp))
+    val flowOf = TimerFlowOf.unloadOrphaned[F](flushOnRevoke = true)
+    val flow = flowOf(keyContext, flushBuffers, timerContext)
+
+    // When("flow is started and cancelled")
+    val program = flow use { _ => ().pure[F] }
+    val result = program.runS(context).unsafeRunSync()
+
+    // Then("state is flushed and removed")
+    assertEquals(result.flushed, 1)
+    assertEquals(result.removed, 1)
+
+  }
+
+  test("unloadOrphaned does not flush when resource is cancelled if not configured to do so") {
+
+    val f = new ConstFixture
+
+    // Given("flow is configured to flush on revoke")
+    val context = Context(timestamps = TimestampState(f.timestamp))
+    val flowOf = TimerFlowOf.unloadOrphaned[F](flushOnRevoke = false)
+    val flow = flowOf(keyContext, flushBuffers, timerContext)
+
+    // When("flow is started and cancelled")
+    val program = flow use { _ => ().pure[F] }
+    val result = program.runS(context).unsafeRunSync()
+
+    // Then("neither flush or remove happens")
     assertEquals(result.flushed, 0)
     assertEquals(result.removed, 0)
 
@@ -225,6 +263,44 @@ class TimerFlowOfSpec extends FunSuite {
     assertEquals(result.removed, 0)
     // And("last state still being held")
     assertEquals(result.holding, Some(Offset.unsafe(103)))
+
+  }
+
+  test("persistPeriodically flushes when resource is cancelled if configured to do so") {
+
+    val f = new ConstFixture
+
+    // Given("flow is configured to flush on revoke")
+    val context = Context(timestamps = TimestampState(f.timestamp))
+    val flowOf = TimerFlowOf.persistPeriodically[F](flushOnRevoke = true)
+    val flow = flowOf(keyContext, flushBuffers, timerContext)
+
+    // When("flow is started and cancelled")
+    val program = flow use { _ => ().pure[F] }
+    val result = program.runS(context).unsafeRunSync()
+
+    // Then("state is flushed and removed")
+    assertEquals(result.flushed, 1)
+    assertEquals(result.removed, 1)
+
+  }
+
+  test("persistPeriodically does not flush when resource is cancelled if not configured to do so") {
+
+    val f = new ConstFixture
+
+    // Given("flow is configured to flush on revoke")
+    val context = Context(timestamps = TimestampState(f.timestamp))
+    val flowOf = TimerFlowOf.persistPeriodically[F](flushOnRevoke = false)
+    val flow = flowOf(keyContext, flushBuffers, timerContext)
+
+    // When("flow is started and cancelled")
+    val program = flow use { _ => ().pure[F] }
+    val result = program.runS(context).unsafeRunSync()
+
+    // Then("neither flush or remove happens")
+    assertEquals(result.flushed, 0)
+    assertEquals(result.removed, 0)
 
   }
 
