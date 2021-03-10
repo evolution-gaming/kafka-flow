@@ -167,7 +167,7 @@ class TimerFlowOfSpec extends FunSuite {
 
   }
 
-  test("unloadOrphaned flushes when resource is cancelled if not configured to do so") {
+  test("unloadOrphaned does not flush when resource is cancelled if not configured to do so") {
 
     val f = new ConstFixture
 
@@ -285,7 +285,7 @@ class TimerFlowOfSpec extends FunSuite {
 
   }
 
-  test("persistPeriodically flushes when resource is cancelled if not configured to do so") {
+  test("persistPeriodically does not flush when resource is cancelled if not configured to do so") {
 
     val f = new ConstFixture
 
