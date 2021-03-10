@@ -42,50 +42,35 @@ object TimerFlowOf {
     def register(touchedAt: Timestamp) =
       timers.registerProcessing(touchedAt.clock plusMillis fireEvery.toMillis)
 
-    val acquire = for {
-      current <- timers.current
-      persistedAt <- timers.persistedAt
-      committedAt = persistedAt getOrElse current
-      _ <- context.hold(committedAt.offset)
-      _ <- register(committedAt)
-    } yield new TimerFlow[F] {
-      def onTimer = for {
+    val acquire = Resource.liftF {
+      for {
         current <- timers.current
-        processedAt <- timers.processedAt
-        touchedAt = processedAt getOrElse committedAt
-        expiredAt = touchedAt.clock plusMillis maxIdle.toMillis
-        expired = current.clock isAfter expiredAt
-        offsetDifference = current.offset.value - touchedAt.offset.value
-        _ <- if (expired || offsetDifference > maxOffsetDifference) {
-          context.log.info(s"flush, offset difference: $offsetDifference") *>
-          persistence.flush *>
-          context.remove
-        } else {
-          register(touchedAt)
-        }
-      } yield ()
-    }
-
-    val cancel = for {
-      holding <- context.holding
-      _ <- if (holding.isDefined && flushOnRevoke) {
-        context.log.info(s"flush on revoke, holding offset: $holding") *>
-        persistence.flush *>
-        context.remove
-      } else {
-        ().pure[F]
+        persistedAt <- timers.persistedAt
+        committedAt = persistedAt getOrElse current
+        _ <- context.hold(committedAt.offset)
+        _ <- register(committedAt)
+      } yield new TimerFlow[F] {
+        def onTimer = for {
+          current <- timers.current
+          processedAt <- timers.processedAt
+          touchedAt = processedAt getOrElse committedAt
+          expiredAt = touchedAt.clock plusMillis maxIdle.toMillis
+          expired = current.clock isAfter expiredAt
+          offsetDifference = current.offset.value - touchedAt.offset.value
+          _ <- if (expired || offsetDifference > maxOffsetDifference) {
+            context.log.info(s"flush, offset difference: $offsetDifference") *>
+            persistence.flush *>
+            context.remove
+          } else {
+            register(touchedAt)
+          }
+        } yield ()
       }
-    } yield ()
-
-    Resource.makeCase(acquire) {
-      case (_, Completed) => cancel
-      case (_, Canceled) => cancel
-      // there is no point to try flushing if it failed with an error
-      // the state might not be consistend and storage not accessible
-      // plus this is a concurrent operation, and we do not want anything
-      // to happen concurrently for a specific key
-      case (_, _) => ().pure[F]
     }
+
+    val cancel = flushOnCancel.apply(context, persistence, timers)
+
+    if (flushOnRevoke) acquire *> cancel else acquire
 
   }
 
@@ -95,13 +80,14 @@ object TimerFlowOf {
     */
   def persistPeriodically[F[_]: Monad](
     fireEvery: FiniteDuration = 1.minute,
-    persistEvery: FiniteDuration = 1.minute
+    persistEvery: FiniteDuration = 1.minute,
+    flushOnRevoke: Boolean = false,
   ): TimerFlowOf[F] = { (context, persistence, timers) =>
 
     def register(current: Timestamp) =
       timers.registerProcessing(current.clock plusMillis fireEvery.toMillis)
 
-    Resource.liftF {
+    val acquire = Resource.liftF {
       for {
         current <- timers.current
         persistedAt <- timers.persistedAt
@@ -124,5 +110,35 @@ object TimerFlowOf {
       }
     }
 
+    val cancel = flushOnCancel.apply(context, persistence, timers)
+
+    if (flushOnRevoke) acquire *> cancel else acquire
+
   }
+
+  /** Performs flush when `Resource` is cancelled only */
+  def flushOnCancel[F[_]: Monad]: TimerFlowOf[F] = { (context, persistence, _) =>
+
+    val cancel = for {
+      holding <- context.holding
+      _ <- if (holding.isDefined) {
+        context.log.info(s"flush on revoke, holding offset: $holding") *>
+        persistence.flush *>
+        context.remove
+      } else {
+        ().pure[F]
+      }
+    } yield ()
+
+    Resource.makeCase(TimerFlow.empty.pure) {
+      case (_, Completed) => cancel
+      case (_, Canceled) => cancel
+      // there is no point to try flushing if it failed with an error
+      // the state might not be consistend and storage not accessible
+      // plus this is a concurrent operation, and we do not want anything
+      // to happen concurrently for a specific key
+      case (_, _) => ().pure[F]
+    }
+  }
+
 }
