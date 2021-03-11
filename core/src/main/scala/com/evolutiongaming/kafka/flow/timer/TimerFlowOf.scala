@@ -71,7 +71,7 @@ object TimerFlowOf {
 
     val cancel = flushOnCancel.apply(context, persistence, timers)
 
-    if (flushOnRevoke) acquire *> cancel else acquire
+    if (flushOnRevoke) acquire <* cancel else acquire
 
   }
 
@@ -113,7 +113,7 @@ object TimerFlowOf {
 
     val cancel = flushOnCancel.apply(context, persistence, timers)
 
-    if (flushOnRevoke) acquire *> cancel else acquire
+    if (flushOnRevoke) acquire <* cancel else acquire
 
   }
 
