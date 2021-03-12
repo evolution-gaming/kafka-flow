@@ -186,6 +186,43 @@ class TimerFlowOfSpec extends FunSuite {
 
   }
 
+  test("unloadOrphaned flushes after offset is reached even if flushOnRevoke is enabled") {
+
+    val f = new ConstFixture
+
+    // Given("flow flushes after 3 messages accumulated")
+    val startedAt = f.timestamp.copy(offset = Offset.unsafe(1000))
+    val context = Context(timestamps = TimestampState(startedAt))
+    val flowOf = TimerFlowOf.unloadOrphaned[F](
+      fireEvery = 0.minutes,
+      maxOffsetDifference = 3,
+      flushOnRevoke = true
+    )
+    val flow = flowOf(keyContext, flushBuffers, timerContext)
+
+    // When("timers trigger called")
+    val program = flow use { flow =>
+      timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1001))) *>
+      timerContext.trigger(flow) *>
+      timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1002))) *>
+      timerContext.trigger(flow) *>
+      timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1003))) *>
+      timerContext.trigger(flow) *>
+      timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1004))) *>
+      timerContext.trigger(flow) *>
+      // Then("flush happens and remove happens before resource is closed")
+      StateT.inspectF { context =>
+        SyncIO {
+          assertEquals(context.flushed, 1)
+          assertEquals(context.removed, 1)
+        }
+      }
+    }
+
+    program.run(context).unsafeRunSync()
+
+  }
+
   test("persistPeriodically holds commits when started") {
 
     val f = new ConstFixture
@@ -301,6 +338,33 @@ class TimerFlowOfSpec extends FunSuite {
     // Then("neither flush or remove happens")
     assertEquals(result.flushed, 0)
     assertEquals(result.removed, 0)
+
+  }
+
+  test("persistPeriodically flushes periodically even if flushOnRevoke is enabled") {
+
+    val f = new ConstFixture
+
+    // Given("flow is configured to flush on revoke")
+    val context = Context(timestamps = TimestampState(f.timestamp))
+    val flowOf = TimerFlowOf.persistPeriodically[F](
+      fireEvery = 0.seconds,
+      persistEvery = 0.seconds,
+      flushOnRevoke = true
+    )
+    val flow = flowOf(keyContext, flushBuffers, timerContext)
+
+    // When("flow is started and cancelled")
+    val program = flow use { flow =>
+      flow.onTimer *>
+      // Then("flush happens before resource is closed")
+      StateT.inspectF { context =>
+        SyncIO {
+          assertEquals(context.flushed, 1)
+        }
+      }
+    }
+    program.run(context).unsafeRunSync()
 
   }
 
