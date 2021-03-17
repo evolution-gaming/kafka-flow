@@ -81,15 +81,17 @@ object ConsumerFlow {
         case None         => new IllegalArgumentException("Parameter flows cannot be empty").raiseError[F, Unit]
       }
 
-    def poll =
+    def poll = {
+      val flowList = flows.toList // optimization, execute toList once instead of on each `consumer.poll`
       consumer.poll(config.pollTimeout) flatTap { consumerRecords =>
-        flows.toList traverse { case (topic, flow) =>
+        flowList traverse { case (topic, flow) =>
           val topicRecords = consumerRecords.values filter { case (partition, _) =>
             partition.topic == topic
           }
           flow(ConsumerRecords(topicRecords))
         }
       }
+    }
 
     def stream = for {
       _ <- Stream.lift(subscribe)
