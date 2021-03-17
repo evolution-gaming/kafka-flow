@@ -24,7 +24,10 @@ lazy val commonSettings = Seq(
 lazy val root = (project in file("."))
   .aggregate(core, `persistence-cassandra`, `persistence-kafka`, metrics)
   .settings(commonSettings)
-  .settings(publish / skip := true)
+  .settings(
+    name := "kafka-flow",
+    publish / skip := true
+  )
 
 lazy val core = (project in file("core"))
   .configs(IntegrationTest)
