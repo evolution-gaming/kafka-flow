@@ -11,13 +11,13 @@ import com.evolutiongaming.skafka.Topic
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import com.evolutiongaming.sstream.Stream
 
-/** Represents evertything stateful happening on one `Consumer` */
+/** Represents everything stateful happening on one `Consumer` */
 trait ConsumerFlow[F[_]] {
 
   /** Returns records already processed by the `ConsumerFlow`.
     *
     * Note, that returned record does not guarantee that commit to
-    * Kafka happened, i.e. that the record will not be processsed for the
+    * Kafka happened, i.e. that the record will not be processed for the
     * second time.
     */
   def stream: Stream[F, ConsRecords]
