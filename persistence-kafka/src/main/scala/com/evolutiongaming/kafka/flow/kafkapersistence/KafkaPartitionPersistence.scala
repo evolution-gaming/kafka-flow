@@ -4,6 +4,7 @@ import cats.implicits._
 import cats.mtl.MonadState
 import cats.{FlatMap, Monad, data}
 import com.evolutiongaming.catshelper.{BracketThrowable, Log}
+import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
@@ -20,18 +21,10 @@ import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
 
 final class KafkaPartitionPersistence[F[_], K, S](
-  private[kafkapersistence] val keysOf: KeysOf[F, K],
-  private[kafkapersistence] val snapshots: SnapshotPersistenceOf[F, K, S, ConsRecord],
+  val keysOf: KeysOf[F, K],
+  val snapshots: SnapshotPersistenceOf[F, K, S, ConsRecord],
   private[kafkapersistence] val onRecoveryFinished: F[Unit]
-) { self =>
-
-  def imap[B](f: K => B)(g: B => K): KafkaPartitionPersistence[F, B, S] =
-    new KafkaPartitionPersistence[F, B, S](
-      keysOf = self.keysOf.imap(f)(g),
-      snapshots = self.snapshots.contramap(g),
-      onRecoveryFinished = self.onRecoveryFinished
-    )
-}
+)
 
 object KafkaPartitionPersistence {
 
@@ -40,17 +33,17 @@ object KafkaPartitionPersistence {
   def apply[F[_]: Monad: Log, S: FromBytes[F, *]](
     snapshotTopic: Topic,
     monadState: MonadState[F, BytesByKey],
-    writeDatabase: SnapshotWriteDatabase[F, String, S],
+    writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
     buffers: F[MonadState[F, Option[Snapshot[S]]]]
-  ): KafkaPartitionPersistence[F, String, S] = {
-    val snapshotsOf = new SnapshotsOf[F, String, S] {
-      override def apply(key: String): F[Snapshots[F, S]] =
+  ): KafkaPartitionPersistence[F, KafkaKey, S] = {
+    val snapshotsOf = new SnapshotsOf[F, KafkaKey, S] {
+      override def apply(key: KafkaKey): F[Snapshots[F, S]] =
         for {
           buffer <- buffers
         } yield Snapshots(
           key,
           SnapshotDatabase(
-            read = KafkaSnapshotReadDatabase[F, String, S](
+            read = KafkaSnapshotReadDatabase[F, S](
               snapshotTopic,
               monadState
             ),
@@ -59,8 +52,8 @@ object KafkaPartitionPersistence {
           buffer
         )
     }
-    val keysOf = new KeysOf[F, String] {
-      override def apply(key: String) = Keys.empty
+    val keysOf = new KeysOf[F, KafkaKey] {
+      override def apply(key: KafkaKey) = Keys.empty
 
       override def all(
         applicationId: String,
@@ -68,7 +61,7 @@ object KafkaPartitionPersistence {
         topicPartition: TopicPartition
       ) =
         Stream.fromF {
-          monadState.get.map(_.keys)
+          monadState.get.map(_.keys.map(KafkaKey(applicationId, groupId, topicPartition, _)))
         }
     }
 
