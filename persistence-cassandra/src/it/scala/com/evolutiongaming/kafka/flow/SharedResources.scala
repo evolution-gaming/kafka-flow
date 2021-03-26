@@ -14,7 +14,7 @@ import scribe.Level
 import scribe.Logger
 import weaver._
 
-object SharedResources extends GlobalResourcesInit {
+object SharedResources extends GlobalResource {
 
   implicit object CassandraModuleTag extends ResourceTag[CassandraModule[IO]] {
     def description: String = "CassandraModule"
@@ -22,7 +22,7 @@ object SharedResources extends GlobalResourcesInit {
       Try(obj.asInstanceOf[CassandraModule[IO]]).toOption
   }
 
-  def sharedResources(store: GlobalResources.Write[IO]): Resource[IO, Unit] = {
+  def sharedResources(store: GlobalWrite): Resource[IO, Unit] = {
 
     implicit val executor = ExecutionContext.global
     implicit val contextShift = IO.contextShift(executor)

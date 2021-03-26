@@ -13,9 +13,9 @@ abstract class CassandraSpec extends IOSuite {
 
   implicit val measureDuration: MeasureDuration[IO] = MeasureDuration.empty
 
-  def globalResources: GlobalResources
+  def globalRead: GlobalRead
 
   def sharedResource: Resource[IO, Res] =
-    globalResources.in[IO].getOrFailR[Res]()
+    globalRead.getOrFailR[Res]()
 
 }

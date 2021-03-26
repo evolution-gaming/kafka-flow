@@ -18,9 +18,9 @@ import com.evolutiongaming.skafka.producer.ProducerRecord
 import com.evolutiongaming.sstream.Stream
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import weaver.GlobalResources
+import weaver.GlobalRead
 
-class ShutdownSpec(val globalResources: GlobalResources) extends KafkaSpec {
+class ShutdownSpec(val globalRead: GlobalRead) extends KafkaSpec {
 
   test("call and complete onPartitionsRevoked after shutdown started") { kafka =>
     implicit val retry = Retry.empty[IO]
@@ -67,12 +67,12 @@ class ShutdownSpec(val globalResources: GlobalResources) extends KafkaSpec {
       _          <- finished.get.timeoutTo(10.seconds, program.join)
       // validate subscriptions in active flow
       partitions <- state.get
-      test1      <- assert(partitions == Set(Partition.min))
+      test1      = assert.same(Set(Partition.min), partitions)
       // cancel the program
       _          <- program.cancel
       // validate subscriptions in cancelled flow
       partitions <- state.get
-      test2      <- assert(partitions.isEmpty)
+      test2      = assert(partitions.isEmpty)
     } yield test1 and test2
 
   }

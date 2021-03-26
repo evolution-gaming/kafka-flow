@@ -7,9 +7,9 @@ import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition
-import weaver.GlobalResources
+import weaver.GlobalRead
 
-class SnapshotSpec(val globalResources: GlobalResources) extends CassandraSpec {
+class SnapshotSpec(val globalRead: GlobalRead) extends CassandraSpec {
 
   test("queries") { cassandra =>
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "queries")
@@ -23,7 +23,7 @@ class SnapshotSpec(val globalResources: GlobalResources) extends CassandraSpec {
       snapshotAfterDelete <- snapshots.get(key)
     } yield {
       expect(snapshotBeforeTest.isEmpty) and
-      expect(snapshotAfterPersist == Some(snapshot)) and
+      expect.same(Some(snapshot), snapshotAfterPersist) and
       expect(snapshotAfterDelete.isEmpty)
     }
   }

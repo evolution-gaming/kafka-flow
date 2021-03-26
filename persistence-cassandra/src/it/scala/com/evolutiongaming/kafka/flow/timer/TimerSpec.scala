@@ -6,9 +6,9 @@ import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.skafka.TopicPartition
 import java.time.Instant
-import weaver.GlobalResources
+import weaver.GlobalRead
 
-class TimerSpec(val globalResources: GlobalResources) extends CassandraSpec {
+class TimerSpec(val globalRead: GlobalRead) extends CassandraSpec {
 
   test("queries") { cassandra =>
     val key = KafkaKey("TimerSpec", "integration-tests-1", TopicPartition.empty, "queries")
@@ -22,7 +22,7 @@ class TimerSpec(val globalResources: GlobalResources) extends CassandraSpec {
       timerAfterDelete <- timers.get(key).toList
     } yield {
       expect(timerBeforeTest.isEmpty) and
-      expect(timerAfterPersist == List(timer)) and
+      expect.same(List(timer), timerAfterPersist) and
       expect(timerAfterDelete.isEmpty)
     }
   }

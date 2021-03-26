@@ -52,7 +52,7 @@ lazy val core = (project in file("core"))
       weaver % IntegrationTest,
     ),
     Defaults.itSettings,
-    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.TestFramework"),
+    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
     IntegrationTest / fork := true
   )
 
@@ -77,7 +77,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
       weaver % IntegrationTest,
     ),
     Defaults.itSettings,
-    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.TestFramework")
+    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect")
   )
 
 lazy val `persistence-kafka` = (project in file("persistence-kafka"))
@@ -92,7 +92,7 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
       weaver % IntegrationTest,
     ),
     Defaults.itSettings,
-    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.TestFramework")
+    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect")
   )
 
 lazy val docs = (project in file("kafka-flow-docs"))

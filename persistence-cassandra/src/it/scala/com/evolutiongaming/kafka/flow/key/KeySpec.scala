@@ -7,9 +7,9 @@ import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.skafka.Partition
 import com.evolutiongaming.skafka.TopicPartition
-import weaver.GlobalResources
+import weaver.GlobalRead
 
-class KeySpec(val globalResources: GlobalResources) extends CassandraSpec {
+class KeySpec(val globalRead: GlobalRead) extends CassandraSpec {
 
   test("queries") { cassandra =>
     val partition1 = TopicPartition("topic1", Partition.unsafe(1))

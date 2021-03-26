@@ -10,9 +10,9 @@ import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.WithSize
 import scodec.bits.ByteVector
-import weaver.GlobalResources
+import weaver.GlobalRead
 
-class JournalSpec(val globalResources: GlobalResources) extends CassandraSpec {
+class JournalSpec(val globalRead: GlobalRead) extends CassandraSpec {
 
   test("queries") { cassandra =>
     val key = KafkaKey("JournalSpec", "integration-tests-1", TopicPartition.empty, "queries")
@@ -33,7 +33,7 @@ class JournalSpec(val globalResources: GlobalResources) extends CassandraSpec {
       journalAfterDelete <- journals.get(key).toList
     } yield {
       expect(journalBeforeTest.isEmpty) and
-      expect(journalAfterPersist == List(record)) and
+      expect.same(List(record), journalAfterPersist) and
       expect(journalAfterDelete.isEmpty)
     }
   }

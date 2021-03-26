@@ -14,7 +14,7 @@ import scribe.Level
 import scribe.Logger
 import weaver._
 
-object SharedResources extends GlobalResourcesInit {
+object SharedResources extends GlobalResource {
 
   implicit object ConsumerModuleTag extends ResourceTag[KafkaModule[IO]] {
     def description: String = "KafkaModule"
@@ -22,7 +22,7 @@ object SharedResources extends GlobalResourcesInit {
       Try(obj.asInstanceOf[KafkaModule[IO]]).toOption
   }
 
-  def sharedResources(store: GlobalResources.Write[IO]): Resource[IO, Unit] = {
+  def sharedResources(store: GlobalWrite): Resource[IO, Unit] = {
 
     implicit val executor = ExecutionContext.global
     implicit val contextShift = IO.contextShift(executor)

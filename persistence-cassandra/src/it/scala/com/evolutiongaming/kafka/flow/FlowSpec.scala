@@ -17,9 +17,9 @@ import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import com.evolutiongaming.skafka.consumer.WithSize
 import scala.concurrent.duration._
-import weaver.GlobalResources
+import weaver.GlobalRead
 
-class FlowSpec(val globalResources: GlobalResources) extends CassandraSpec {
+class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
 
   test("flow fails when Cassandra insert fails") { cassandra =>
 
