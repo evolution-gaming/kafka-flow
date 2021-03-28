@@ -1,9 +1,10 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Monad
+import cats.{Applicative, Monad}
 import cats.data.NonEmptySet
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.catshelper.{LogOf, ToTry}
+import com.evolutiongaming.catshelper.CatsHelper._
 import com.evolutiongaming.kafka.flow.ConsumerFlow.log
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.skafka.consumer.{RebalanceListener => SRebalanceListener}
@@ -58,6 +59,21 @@ object RebalanceListener {
           .map(partition => (topic, flow, partition))
       }
 
+  }
+
+  def blocking[F[_]: ToTry: Applicative](listener: SRebalanceListener[F]): SRebalanceListener[F] = new SRebalanceListener[F] {
+    def onPartitionsAssigned(partitions: NonEmptySet[TopicPartition]): F[Unit] = {
+      listener.onPartitionsAssigned(partitions).toTry.get
+      Applicative[F].unit
+    }
+    def onPartitionsRevoked(partitions: NonEmptySet[TopicPartition]): F[Unit] = {
+      listener.onPartitionsRevoked(partitions).toTry.get
+      Applicative[F].unit
+    }
+    def onPartitionsLost(partitions: NonEmptySet[TopicPartition]): F[Unit] = {
+      listener.onPartitionsLost(partitions).toTry.get
+      Applicative[F].unit
+    }
   }
 
 }

@@ -165,20 +165,33 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
     // using unique input topic name per test as weaver is running tests in parallel
     val inputTopic = "in-memory-persistence-test"
     val persistence = inMemoryPersistence
-    testCase(kafka, persistence, inputTopic)
+    comboTestCase(kafka, persistence, inputTopic)
   }
 
   test("stateful processing using kafka persistence") { kafka =>
     // using unique input topic name per test as weaver is running tests in parallel
     val inputTopic = "kafka-persistence-test"
     val persistence = kafkaPersistence.allocated.unsafeRunSync()._1
-    testCase(kafka, persistence, inputTopic)
+    comboTestCase(kafka, persistence, inputTopic)
   }
 
-  private def testCase(kafka: KafkaModule[IO], persistence: Persistence, inputTopic: String) = {
+  private def comboTestCase(kafka: KafkaModule[IO], persistence: Persistence, inputTopic: String) = {
+    for {
+      tc1 <- testCase(kafka, persistence, inputTopic, Partition.unsafe(0), "key0")
+      tc2 <- testCase(kafka, persistence, inputTopic, Partition.unsafe(1), "key1")
+    } yield tc1 and tc2
+  }
+
+  private def testCase(
+    kafka: KafkaModule[IO],
+    persistence: Persistence,
+    inputTopic: String,
+    partition: Partition,
+    key: String
+  ) = {
     implicit val retry = Retry.empty[IO]
 
-    def produceInput(partition: Partition, key: String, value: Int): IO[RecordMetadata] = {
+    def produceInput(value: Int): IO[RecordMetadata] = {
       val producerConfig = ProducerConfig(
         common = CommonConfig(
           clientId = Some("StatefulProcessingWithKafkaSpec-producer")
@@ -209,55 +222,59 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
 
     for {
       _ <- IO.unit
-      p0 = Partition.unsafe(0)
-      k0 = "key0"
-      _ <- produceInput(p0, k0, 1)
-      _ <- produceInput(p0, k0, 2)
-      _ <- produceInput(p0, k0, 3)
+      _ <- produceInput(1)
+      _ <- produceInput(2)
+      _ <- produceInput(3)
       output <- program
       test1 = assert.same(
         List(
-          // first run of the program, starting with empty state and no committed offsets
+          // 1st run of the program, starting with empty state and no committed offsets
           // so that we read topic from the beginning
-          Output(k0, None, Input(1)),
-          Output(k0, State(1).some, Input(2)),
-          Output(k0, State(2).some, Input(3))
+          Output(key, None, Input(1)),
+          Output(key, State(1).some, Input(2)),
+          Output(key, State(2).some, Input(3))
         ),
         output
       )
 
-      _ <- produceInput(p0, k0, 4)
-      _ <- produceInput(p0, k0, 5)
-      _ <- produceInput(p0, k0, 6)
+      _ <- produceInput(4)
+      _ <- produceInput(5)
+      _ <- produceInput(6)
       output <- program
       test2 = assert.same(
         List(
-          // first run finished and should have persisted State(3) and committed offsets
+          // 1st run finished and should have persisted State(3) and committed offsets
           // so that we continue from Input(4)
 
-          // second run of the program:
-          Output(k0, State(3).some, Input(4)),
-          Output(k0, State(4).some, Input(5)),
-          Output(k0, State(5).some, Input(6))
+          // 2nd run of the program:
+          // recovered State(3) from persistence
+          Output(key, State(3).some, Input(4)),
+          Output(key, State(4).some, Input(5)),
+          Output(key, State(5).some, Input(6))
         ),
         output
       )
 
-//      p1 = Partition.unsafe(1)
-//      k1 = "key1"
-//      _ <- produceInput(p1, k1, 1)
-//      _ <- produceInput(p1, k1, 2)
-//      _ <- produceInput(p1, k1, 3)
-//      output <- program
-//      test3 = assert(
-//        output == List(
-//          // third run of the program processing messages of another entity (k1) from second kafka partition
-//          Output(k1, None, Input(1)),
-//          Output(k1, State(1).some, Input(2)),
-//          Output(k1, State(2).some, Input(3))
-//        )
-//      )
-    } yield test1 and test2
+      _ <- produceInput(0) // Input(0) removes state
+      output <- program
+      test3 = assert.same(
+        List(
+          // recovered State(6) from persistence, proving that we can overwrite existing state
+          Output(key, State(6).some, Input(0))
+        ),
+        output
+      )
+
+      _ <- produceInput(9)
+      output <- program
+      test4 = assert.same(
+        List(
+          // 4th run of the program started with empty state, proving that we can remove state from persistence
+          Output(key, none, Input(9)),
+        ),
+        output
+      )
+    } yield test1 and test2 and test3 and test4
   }
 
   def topicFlowOf(
@@ -277,7 +294,7 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
           KeyFlowOf(
             TimerFlowOf
               .persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds, flushOnRevoke = true),
-            bizLogic(output, finished),
+            bizLogic(output, finished, Log[IO]),
             TickOption.id[IO, State]
           )
         ),
@@ -343,16 +360,23 @@ object StatefulProcessingWithKafkaSpec {
     * @param output   list of Output(stateBeforeInput: Option[State], input: Input)
     * @param finished is completed on Input(n % 3 == 0 || n == 0)
     */
-  def bizLogic(output: Ref[IO, List[Output]], finished: Deferred[IO, Unit]): FoldOption[IO, State, ConsRecord] =
+  def bizLogic(
+    output: Ref[IO, List[Output]],
+    finished: Deferred[IO, Unit],
+    log: Log[IO]
+  ): FoldOption[IO, State, ConsRecord] =
     FoldOption.of { (state, record) =>
+      var isFinished = false
       for {
         // parse input assuming correct payload, otherwise intentionally exploding with exception to have simpler test
         input <- IO(Input(record.value.get.value.decodeUtf8.toOption.map(_.toInt).get))
+        key = record.key.get.value
         newState =
           if (input.n == 0) none
           else state.fold(State(input.n))(s => s.copy(n = input.n)).some
-        _ <- output.update(_ :+ Output(record.key.get.value, state, input))
-        _ <- if (input.n == 0 || input.n % 3 == 0) finished.complete(()) else IO.unit
+        _ <- output.update(_ :+ Output(key, state, input))
+        _ <- if (input.n == 0 || input.n % 3 == 0) finished.complete(()) <* IO({ isFinished = true }) else IO.unit
+        _ <- log.info(s"bizLogic: $key - $input, old state: $state, new state: $newState, finished: $isFinished")
       } yield newState
     }
 

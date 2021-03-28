@@ -24,6 +24,7 @@ import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerMetrics, Pro
 import com.evolutiongaming.smetrics.CollectorRegistry
 import com.evolutiongaming.smetrics.MeasureDuration
 import scodec.bits.ByteVector
+import skafka2.{ConsumerOf2}
 
 trait KafkaModule[F[_]] {
 
@@ -47,6 +48,7 @@ object KafkaModule {
       consumerMetrics      <- ConsumerMetrics.of(registry)
       _producerOf            = RawProducerOf[F](blocker.blockingContext, producerMetrics(applicationId).some)
       _consumerOf            = RawConsumerOf[F](blocker.blockingContext, consumerMetrics(applicationId).some)
+      _consumerOf2            = ConsumerOf2[F](blocker.blockingContext, consumerMetrics(applicationId).some)
       _healthCheck          <- {
         implicit val randomIdOf = RandomIdOf.uuid[F]
         implicit val journalProducerOf = JournalProducerOf[F](_producerOf)
@@ -64,7 +66,7 @@ object KafkaModule {
 
       def consumerOf = { groupId: String =>
         LogResource[F](KafkaModule.getClass, s"Consumer($groupId)") *>
-        _consumerOf[String, ByteVector](
+          _consumerOf2[String, ByteVector](
           config.copy(
             groupId = groupId.some,
             autoCommit = false,
