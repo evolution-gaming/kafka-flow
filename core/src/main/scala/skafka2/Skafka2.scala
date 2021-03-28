@@ -54,6 +54,13 @@ object Skafka2 {
       semaphore       <- Semaphore(1).toResource
       consumer        <- consumer.blocking.toResource
       around           = new Around {
+        // FIXME:
+        //  needed to fix the case when consumer is closed from within poll
+        //  otherwise ConcurrentModificationException("KafkaConsumer is not safe for multi-threaded access")
+        //  most probably it's happening because Resource.release is called at wrong time somewhere in kafka-flow
+        //  also it might be specific to StatefulProcessingWithKafkaSpec
+        //  as deferred is completed within poll, triggering release of the program
+        //  OR it could be a legit case and we need to handle case with consumer.close() from within consumer.poll(...) correctly
         def apply[A](f: => A) = {
           semaphore
             .withPermit { blocking { f } }
