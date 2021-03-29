@@ -2,20 +2,15 @@ package com.evolutiongaming.kafka.flow
 
 import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
 import cats.effect.concurrent.Ref
-import cats.effect.{Resource, SyncIO, Timer}
+import cats.effect.{IO, Resource, SyncIO, Timer}
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.catshelper.{LogOf, ToTry}
 import com.evolutiongaming.catshelper.TimerHelper._
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecord, ConsRecords}
 import com.evolutiongaming.retry.{OnError, Retry, Strategy}
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{
-  ConsumerRecord,
-  ConsumerRecords,
-  RebalanceListener => SRebalanceListener,
-  WithSize
-}
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, WithSize, RebalanceListener => SRebalanceListener}
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 
@@ -142,6 +137,10 @@ object KafkaFlowSpec {
   }
 
   type F[A] = SyncIO[A]
+
+  implicit val SyncIoToTry: ToTry[F] = new ToTry[SyncIO] {
+    def apply[A](fa: SyncIO[A]) = ToTry[IO].apply(fa.toIO)
+  }
 
   class ConstFixture(val state: Ref[F, State]) {
 
