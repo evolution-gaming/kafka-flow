@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.{NonEmptyMap, NonEmptySet, StateT}
-import cats.effect.SyncIO
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.ConsumerFlowSpec._
@@ -12,6 +11,7 @@ import com.evolutiongaming.skafka.consumer.{RebalanceListener => SRebalanceListe
 import munit.FunSuite
 
 import scala.concurrent.duration._
+import scala.util.Try
 
 class ConsumerFlowSpec extends FunSuite {
 
@@ -25,7 +25,7 @@ class ConsumerFlowSpec extends FunSuite {
       Command.Records()
     )
 
-    val result = ConstFixture.app(topic).runS(Context(commands = commands)).unsafeRunSync()
+    val result = ConstFixture.app(topic).runS(Context(commands = commands)).get
 
     assertEquals(
       result.actions.reverse,
@@ -60,7 +60,7 @@ class ConsumerFlowSpec extends FunSuite {
       Command.Records()
     )
 
-    val result = ConstFixture.app(topic1, topic2).runS(Context(commands = commands)).unsafeRunSync()
+    val result = ConstFixture.app(topic1, topic2).runS(Context(commands = commands)).get
 
     assertEquals(
       result.actions.reverse,
@@ -84,7 +84,7 @@ object ConsumerFlowSpec {
 
   val offset = Offset.unsafe(0)
 
-  type F[A] = StateT[SyncIO, Context, A]
+  type F[A] = StateT[Try, Context, A]
 
   implicit val logOf: LogOf[F] = LogOf.empty
 
@@ -119,19 +119,19 @@ object ConsumerFlowSpec {
 
     def consumer() = new Consumer[F] {
       def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]): F[Unit] =
-        StateT modify [SyncIO, Context] (_ + Action.Subscribe(topics) + listener)
+        StateT modify [Try, Context] (_ + Action.Subscribe(topics) + listener)
 
       def poll(timeout: FiniteDuration): F[ConsRecords] = {
         StateT { context =>
           context.commands match {
             case Nil =>
-              StopException(context).raiseError[SyncIO, (Context, ConsRecords)]
+              StopException(context).raiseError[Try, (Context, ConsRecords)]
             case head :: tail =>
               val next = context.copy(commands = tail)
-              def withListener(f: SRebalanceListener[F] => F[Unit]): SyncIO[(Context, ConsRecords)] =
+              def withListener(f: SRebalanceListener[F] => F[Unit]): Try[(Context, ConsRecords)] =
                 next.listener.traverse(f).run(next).map { case (context, _) => context -> ConsRecords.empty }
               head match {
-                case Command.Records(records)     => SyncIO.pure(next -> records)
+                case Command.Records(records)     => Try(next -> records)
                 case Command.Assigned(partitions) => withListener(_.onPartitionsAssigned(partitions))
                 case Command.Revoked(partitions)  => withListener(_.onPartitionsRevoked(partitions))
                 case Command.Lost(partitions)     => withListener(_.onPartitionsLost(partitions))
