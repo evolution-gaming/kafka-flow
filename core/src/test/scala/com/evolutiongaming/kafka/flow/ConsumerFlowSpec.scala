@@ -11,7 +11,7 @@ import com.evolutiongaming.skafka.consumer.{RebalanceListener => SRebalanceListe
 import munit.FunSuite
 
 import scala.concurrent.duration._
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
 class ConsumerFlowSpec extends FunSuite {
 
@@ -25,18 +25,20 @@ class ConsumerFlowSpec extends FunSuite {
       Command.Records()
     )
 
-    val result = ConstFixture.app(topic).runS(Context(commands = commands)).get
-
-    assertEquals(
-      result.actions.reverse,
-      List(
-        Action.Subscribe(NonEmptySet.of(topic)),
-        Action.Add(topic, NonEmptySet.of(partition -> offset)),
-        Action.Apply(topic),
-        Action.Apply(topic),
-        Action.Apply(topic)
-      )
-    )
+    ConstFixture.app(topic).runS(Context(commands = commands)) match {
+      case Failure(ex) => fail("Failed with", ex)
+      case Success(result) =>
+        assertEquals(
+          result.actions.reverse,
+          List(
+            Action.Subscribe(NonEmptySet.of(topic)),
+            Action.Add(topic, NonEmptySet.of(partition -> offset)),
+            Action.Apply(topic),
+            Action.Apply(topic),
+            Action.Apply(topic)
+          )
+        )
+    }
   }
 
   test("multi topic subscription") {
@@ -60,22 +62,24 @@ class ConsumerFlowSpec extends FunSuite {
       Command.Records()
     )
 
-    val result = ConstFixture.app(topic1, topic2).runS(Context(commands = commands)).get
-
-    assertEquals(
-      result.actions.reverse,
-      List(
-        Action.Subscribe(NonEmptySet.of(topic1, topic2)),
-        Action.Add(topic1, NonEmptySet.of(partition1 -> offset, partition2 -> offset)),
-        Action.Add(topic2, NonEmptySet.of(partition3 -> offset, partition4 -> offset)),
-        Action.Apply(topic1),
-        Action.Apply(topic2),
-        Action.Apply(topic1),
-        Action.Apply(topic2),
-        Action.Apply(topic1),
-        Action.Apply(topic2)
-      )
-    )
+    ConstFixture.app(topic1, topic2).runS(Context(commands = commands)) match {
+      case Failure(ex) => fail("Failed with", ex)
+      case Success(result) =>
+        assertEquals(
+          result.actions.reverse,
+          List(
+            Action.Subscribe(NonEmptySet.of(topic1, topic2)),
+            Action.Add(topic1, NonEmptySet.of(partition1 -> offset, partition2 -> offset)),
+            Action.Add(topic2, NonEmptySet.of(partition3 -> offset, partition4 -> offset)),
+            Action.Apply(topic1),
+            Action.Apply(topic2),
+            Action.Apply(topic1),
+            Action.Apply(topic2),
+            Action.Apply(topic1),
+            Action.Apply(topic2)
+          )
+        )
+    }
   }
 
 }
