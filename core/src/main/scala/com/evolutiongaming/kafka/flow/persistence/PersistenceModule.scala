@@ -21,9 +21,9 @@ trait PersistenceModule[F[_], S] {
   def restoreEvents(
     implicit F: Sync[F], logOf: LogOf[F]
   ): Resource[F, PersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
-    keysOf <- Resource.liftF(keys.keysOf)
-    journalsOf <- Resource.liftF(journals.journalsOf)
-    snapshotsOf <- Resource.liftF(snapshots.snapshotsOf)
+    keysOf <- Resource.eval(keys.keysOf)
+    journalsOf <- Resource.eval(journals.journalsOf)
+    snapshotsOf <- Resource.eval(snapshots.snapshotsOf)
     persistenceOf <- PersistenceOf.restoreEvents(keysOf, journalsOf, snapshotsOf)
   } yield persistenceOf
 
