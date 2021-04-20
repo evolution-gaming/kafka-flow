@@ -3,7 +3,7 @@ import sbt._
 object Dependencies {
 
   val munit  = "org.scalameta"       %% "munit"            % "0.7.22"
-  val scribe = "com.outr"            %% "scribe-slf4j"     % "3.5.0"
+  val scribe = "com.outr"            %% "scribe-slf4j"     % "3.5.3"
   val weaver = "com.disneystreaming" %% "weaver-cats"      % "0.6.0-M6"
 
   val cassandraLauncher = "com.evolutiongaming" %% "cassandra-launcher" % "0.0.4"
