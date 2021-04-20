@@ -10,7 +10,7 @@ import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecord, ConsRecords}
 import com.evolutiongaming.retry.{OnError, Retry, Strategy}
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, WithSize, RebalanceListener => SRebalanceListener}
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, WithSize, RebalanceListener1 => SRebalanceListener}
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 
@@ -192,15 +192,14 @@ object KafkaFlowSpec {
         def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) =
           state update (_ + Action.Commit(offsets))
 
-        def position(partition: TopicPartition) =
-          Offset.min.pure[F]
-
         def revoke(partitions: NonEmptySet[Partition]) =
           state.get flatMap { state =>
             val revoke = state.actions collectFirst { case action: Action.Subscribe =>
+              // rebalanceConsumer is not used in onPartitionsRevoked callback, so it's ok to have any implementation
+              val rebalanceConsumer = new ExplodingRebalanceConsumer
               action.listener.onPartitionsRevoked(
                 partitions concatMap { partition => action.topics.map { topic => TopicPartition(topic, partition) } }
-              )
+              ).run2(rebalanceConsumer)
             }
             revoke.sequence_
           }

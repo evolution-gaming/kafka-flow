@@ -4,13 +4,12 @@ import cats.MonadThrow
 import cats.data.NonEmptySet
 import cats.effect.Resource
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.{Log, LogOf, ToTry}
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka.Topic
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import com.evolutiongaming.sstream.Stream
-import com.evolutiongaming.skafka.consumer.{RebalanceListener => SRebalanceListener}
 
 /** Represents everything stateful happening on one `Consumer` */
 trait ConsumerFlow[F[_]] {
@@ -33,7 +32,7 @@ object ConsumerFlow {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: MonadThrow: LogOf: ToTry](
+  def of[F[_]: MonadThrow: LogOf](
     consumer: Consumer[F],
     topic: Topic,
     flowOf: TopicFlowOf[F],
@@ -50,7 +49,7 @@ object ConsumerFlow {
     * Note, that topics specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: MonadThrow: LogOf: ToTry](
+  def of[F[_]: MonadThrow: LogOf](
     consumer: Consumer[F],
     topics: NonEmptySet[Topic],
     flowOf: TopicFlowOf[F],
@@ -59,7 +58,7 @@ object ConsumerFlow {
     topics.toList traverse { topic =>
       flowOf(consumer, topic) map (topic -> _)
     } map { flows =>
-      ConsumerFlow(consumer, flows.toMap, config, RebalanceListener.blocking[F])
+      ConsumerFlow(consumer, flows.toMap, config)
     }
 
   /** Constructs a consumer for preconstructed topic flows.
@@ -73,13 +72,12 @@ object ConsumerFlow {
   def apply[F[_]: MonadThrow: LogOf](
     consumer: Consumer[F],
     flows: Map[Topic, TopicFlow[F]],
-    config: ConsumerFlowConfig,
-    transformSrl: SRebalanceListener[F] => SRebalanceListener[F] = (a: SRebalanceListener[F]) => a
+    config: ConsumerFlowConfig
   ): ConsumerFlow[F] = new ConsumerFlow[F] {
 
     val subscribe =
       flows.keySet.toList.toNel match {
-        case Some(topics) => consumer.subscribe(topics.toNes, transformSrl(RebalanceListener[F](consumer, flows)))
+        case Some(topics) => consumer.subscribe(topics.toNes, RebalanceListener[F](flows))
         case None         => new IllegalArgumentException("Parameter flows cannot be empty").raiseError[F, Unit]
       }
 

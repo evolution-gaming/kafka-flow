@@ -18,7 +18,8 @@ lazy val commonSettings = Seq(
     Resolver.bintrayRepo("evolutiongaming", "maven"),
     Resolver.sonatypeRepo("public")
   ),
-  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.11.3" cross CrossVersion.full)
+  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.11.3" cross CrossVersion.full),
+  scalacOptions -= "-Xfatal-warnings"
 )
 
 lazy val root = (project in file("."))
@@ -77,7 +78,8 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
       weaver % IntegrationTest,
     ),
     Defaults.itSettings,
-    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect")
+    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
+    IntegrationTest / fork := true
   )
 
 lazy val `persistence-kafka` = (project in file("persistence-kafka"))

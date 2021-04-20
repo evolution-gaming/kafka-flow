@@ -1,50 +1,52 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.{Applicative, Monad}
 import cats.data.NonEmptySet
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.{LogOf, ToTry}
-import com.evolutiongaming.catshelper.CatsHelper._
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.ConsumerFlow.log
-import com.evolutiongaming.kafka.flow.kafka.Consumer
-import com.evolutiongaming.skafka.consumer.{RebalanceListener => SRebalanceListener}
+import com.evolutiongaming.skafka.consumer.RebalanceCallback.implicits._
+import com.evolutiongaming.skafka.consumer.{
+  RebalanceCallback,
+  RebalanceListener1WithConsumer,
+  RebalanceListener1 => SRebalanceListener
+}
 import com.evolutiongaming.skafka.{Partition, Topic, TopicPartition}
 
 object RebalanceListener {
 
-  def apply[F[_]: Monad: LogOf](
-    consumer: Consumer[F],
+  def apply[F[_]: LogOf](
     flows: Map[Topic, TopicFlow[F]]
-  ): SRebalanceListener[F] = new SRebalanceListener[F] {
+  ): SRebalanceListener[F] = new RebalanceListener1WithConsumer[F] {
 
-    def onPartitionsAssigned(topicPartitions: NonEmptySet[TopicPartition]) =
+    def onPartitionsAssigned(topicPartitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] = {
       groupByTopic(topicPartitions) traverse_ { case (topic, flow, partitions) =>
         for {
-          log <- log[F]
-          _ <- log.prefixed(topic).info(s"$partitions assigned")
+          log <- log.lift
+          _ <- log.prefixed(topic).info(s"$partitions assigned").lift
           partitions <- partitions.toNonEmptyList traverse { partition =>
             consumer.position(TopicPartition(topic, partition)) map (partition -> _)
           }
-          _ <- log.prefixed(topic).info(s"committed offsets: $partitions")
-          _ <- flow.add(partitions.toNes)
+          _ <- log.prefixed(topic).info(s"committed offsets: $partitions").lift
+          _ <- flow.add(partitions.toNes).lift
+        } yield ()
+      }
+    }
+
+    def onPartitionsRevoked(topicPartitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
+      groupByTopic(topicPartitions) traverse_ { case (topic, flow, partitions) =>
+        for {
+          log <- log.lift
+          _ <- log.prefixed(topic).info(s"$partitions revoked, removing from topic flow").lift
+          _ <- flow.remove(partitions).lift
         } yield ()
       }
 
-    def onPartitionsRevoked(topicPartitions: NonEmptySet[TopicPartition]) =
+    def onPartitionsLost(topicPartitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
       groupByTopic(topicPartitions) traverse_ { case (topic, flow, partitions) =>
         for {
-          log <- log[F]
-          _ <- log.prefixed(topic).info(s"$partitions revoked, removing from topic flow")
-          _ <- flow.remove(partitions)
-        } yield ()
-      }
-
-    def onPartitionsLost(topicPartitions: NonEmptySet[TopicPartition]) =
-      groupByTopic(topicPartitions) traverse_ { case (topic, flow, partitions) =>
-        for {
-          log <- log[F]
-          _ <- log.prefixed(topic).info(s"$partitions lost, removing from topic flow")
-          _ <- flow.remove(partitions)
+          log <- log[F].lift
+          _ <- log.prefixed(topic).info(s"$partitions lost, removing from topic flow").lift
+          _ <- flow.remove(partitions).lift
         } yield ()
       }
 
@@ -59,21 +61,6 @@ object RebalanceListener {
           .map(partition => (topic, flow, partition))
       }
 
-  }
-
-  def blocking[F[_]: ToTry: Applicative](listener: SRebalanceListener[F]): SRebalanceListener[F] = new SRebalanceListener[F] {
-    def onPartitionsAssigned(partitions: NonEmptySet[TopicPartition]): F[Unit] = {
-      listener.onPartitionsAssigned(partitions).toTry.get
-      Applicative[F].unit
-    }
-    def onPartitionsRevoked(partitions: NonEmptySet[TopicPartition]): F[Unit] = {
-      listener.onPartitionsRevoked(partitions).toTry.get
-      Applicative[F].unit
-    }
-    def onPartitionsLost(partitions: NonEmptySet[TopicPartition]): F[Unit] = {
-      listener.onPartitionsLost(partitions).toTry.get
-      Applicative[F].unit
-    }
   }
 
 }
