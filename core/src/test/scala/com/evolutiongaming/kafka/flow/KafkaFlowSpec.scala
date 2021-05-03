@@ -199,7 +199,7 @@ object KafkaFlowSpec {
               val rebalanceConsumer = new ExplodingRebalanceConsumer
               action.listener.onPartitionsRevoked(
                 partitions concatMap { partition => action.topics.map { topic => TopicPartition(topic, partition) } }
-              ).run2(rebalanceConsumer)
+              ).toF(rebalanceConsumer)
             }
             revoke.sequence_
           }

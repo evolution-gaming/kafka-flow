@@ -4,7 +4,7 @@ import cats.data.NonEmptySet
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.ConsumerFlow.log
-import com.evolutiongaming.skafka.consumer.RebalanceCallback.implicits._
+import com.evolutiongaming.skafka.consumer.RebalanceCallback.syntax._
 import com.evolutiongaming.skafka.consumer.{
   RebalanceCallback,
   RebalanceListener1WithConsumer,

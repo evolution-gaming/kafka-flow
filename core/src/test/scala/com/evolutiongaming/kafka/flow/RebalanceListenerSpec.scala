@@ -1,7 +1,5 @@
 package com.evolutiongaming.kafka.flow
 
-import java.lang.{Long => LongJ}
-
 import cats.data.{NonEmptyMap, NonEmptySet, StateT}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
@@ -11,7 +9,6 @@ import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.{RebalanceListener1 => SRebalanceListener}
 import munit.FunSuite
-import org.apache.kafka.common.{TopicPartition => TopicPartitionJ}
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Success, Try}
@@ -29,7 +26,7 @@ class RebalanceListenerSpec extends FunSuite {
           TopicPartition(topic2, partition4)
         )
       )
-      .run2(Fixture.rebalanceConsumer)
+      .toF(Fixture.rebalanceConsumer)
       .runS(Context())
 
     val expected = Map(
@@ -48,7 +45,7 @@ class RebalanceListenerSpec extends FunSuite {
           TopicPartition(topic2, partition3)
         )
       )
-      .run2(Fixture.rebalanceConsumer)
+      .toF(Fixture.rebalanceConsumer)
       .runS(Context())
 
     val expected = Map(
@@ -67,7 +64,7 @@ class RebalanceListenerSpec extends FunSuite {
           TopicPartition(topic2, partition3)
         )
       )
-      .run2(Fixture.rebalanceConsumer)
+      .toF(Fixture.rebalanceConsumer)
       .runS(Context())
 
     val expected = Map(
@@ -127,7 +124,7 @@ object RebalanceListenerSpec {
       )
 
     val rebalanceConsumer = new ExplodingRebalanceConsumer {
-      override def position(partition: TopicPartitionJ): LongJ = 0L
+      override def position(partition: TopicPartition) = Try(Offset.min)
     }
   }
 }

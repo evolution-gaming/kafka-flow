@@ -9,7 +9,6 @@ import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.{RebalanceCallback, RebalanceListener1 => SRebalanceListener}
 import munit.FunSuite
-import org.apache.kafka.common.{TopicPartition => TopicPartitionJ}
 
 import scala.concurrent.duration._
 import scala.util.{Success, Try}
@@ -131,7 +130,7 @@ object ConsumerFlowSpec {
               val next = context.copy(commands = tail)
               def withListener(f: SRebalanceListener[F] => RebalanceCallback[F, Unit]): Try[(Context, ConsRecords)] = {
                 next.listener
-                  .traverse(f(_).run2(rebalanceConsumer))
+                  .traverse(f(_).toF(rebalanceConsumer))
                   .run(next)
                   .map { case (context, _) => context -> ConsRecords.empty }
               }
@@ -173,6 +172,6 @@ object ConsumerFlowSpec {
   }
 
   val rebalanceConsumer = new ExplodingRebalanceConsumer {
-    override def position(partition: TopicPartitionJ) = 0L
+    override def position(partition: TopicPartition) = Try(Offset.min)
   }
 }

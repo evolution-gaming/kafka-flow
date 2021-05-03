@@ -1,82 +1,77 @@
 package com.evolutiongaming.kafka.flow.kafka
 
-import java.lang.{Long => LongJ}
-import java.time.{Duration => DurationJ}
-import java.util.{Collection => CollectionJ, List => ListJ, Map => MapJ, Set => SetJ}
+import java.time.Instant
 
-import com.evolutiongaming.skafka.consumer.RebalanceConsumerJ
-import org.apache.kafka.clients.consumer.{
-  ConsumerGroupMetadata => ConsumerGroupMetadataJ,
-  OffsetAndMetadata => OffsetAndMetadataJ,
-  OffsetAndTimestamp => OffsetAndTimestampJ
-}
-import org.apache.kafka.common.{PartitionInfo, TopicPartition => TopicPartitionJ}
+import cats.data.{NonEmptyMap, NonEmptySet}
+import com.evolutiongaming.skafka.consumer.{ConsumerGroupMetadata, OffsetAndTimestamp, RebalanceConsumer}
+import com.evolutiongaming.skafka._
 
-class EmptyRebalanceConsumer extends RebalanceConsumerJ {
-  def assignment(): SetJ[TopicPartitionJ] = SetJ.of()
+import scala.concurrent.duration.FiniteDuration
+import scala.util.Try
 
-  def subscription(): SetJ[String] = SetJ.of()
+class EmptyRebalanceConsumer extends RebalanceConsumer {
+  def assignment(): Try[Set[TopicPartition]] = Try(Set.empty)
 
-  def commitSync(): Unit = ()
-
-  def commitSync(timeout: DurationJ): Unit = ()
-
-  def commitSync(offsets: MapJ[TopicPartitionJ, OffsetAndMetadataJ]): Unit = ()
-
-  def commitSync(offsets: MapJ[TopicPartitionJ, OffsetAndMetadataJ], timeout: DurationJ): Unit = ()
-
-  def seek(partition: TopicPartitionJ, offset: LongJ): Unit = ()
-
-  def seek(partition: TopicPartitionJ, OffsetAndMetadataJ: OffsetAndMetadataJ): Unit = ()
-
-  def seekToBeginning(partitions: CollectionJ[TopicPartitionJ]): Unit = ()
-
-  def seekToEnd(partitions: CollectionJ[TopicPartitionJ]): Unit = ()
-
-  def position(partition: TopicPartitionJ): LongJ = 0L
-
-  def position(partition: TopicPartitionJ, timeout: DurationJ): LongJ = 0L
-
-  def committed(partitions: SetJ[TopicPartitionJ]): MapJ[TopicPartitionJ, OffsetAndMetadataJ] = MapJ.of()
-
-  def committed(
-    partitions: SetJ[TopicPartitionJ],
-    timeout: DurationJ
-  ): MapJ[TopicPartitionJ, OffsetAndMetadataJ] = MapJ.of()
-
-  def partitionsFor(topic: String): ListJ[PartitionInfo] = ListJ.of()
-
-  def partitionsFor(topic: String, timeout: DurationJ): ListJ[PartitionInfo] = ListJ.of()
-
-  def listTopics(): MapJ[String, ListJ[PartitionInfo]] = MapJ.of()
-
-  def listTopics(timeout: DurationJ): MapJ[String, ListJ[PartitionInfo]] = MapJ.of()
-
-  def paused(): SetJ[TopicPartitionJ] = SetJ.of()
-
-  def offsetsForTimes(
-    timestampsToSearch: MapJ[TopicPartitionJ, LongJ]
-  ): MapJ[TopicPartitionJ, OffsetAndTimestampJ] = MapJ.of()
-
-  def offsetsForTimes(
-    timestampsToSearch: MapJ[TopicPartitionJ, LongJ],
-    timeout: DurationJ
-  ): MapJ[TopicPartitionJ, OffsetAndTimestampJ] = MapJ.of()
-
-  def beginningOffsets(partitions: CollectionJ[TopicPartitionJ]): MapJ[TopicPartitionJ, LongJ] = MapJ.of()
+  def beginningOffsets(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, Offset]] = Try(Map.empty)
 
   def beginningOffsets(
-    partitions: CollectionJ[TopicPartitionJ],
-    timeout: DurationJ
-  ): MapJ[TopicPartitionJ, LongJ] = MapJ.of()
+    partitions: NonEmptySet[TopicPartition],
+    timeout: FiniteDuration
+  ): Try[Map[TopicPartition, Offset]] = Try(Map.empty)
 
-  def endOffsets(partitions: CollectionJ[TopicPartitionJ]): MapJ[TopicPartitionJ, LongJ] = MapJ.of()
+  def commit(): Try[Unit] = Try(())
 
-  def endOffsets(
-    partitions: CollectionJ[TopicPartitionJ],
-    timeout: DurationJ
-  ): MapJ[TopicPartitionJ, LongJ] = MapJ.of()
+  def commit(timeout: FiniteDuration): Try[Unit] = Try(())
 
-  def groupMetadata(): ConsumerGroupMetadataJ = new ConsumerGroupMetadataJ("EmptyRebalanceConsumer-group-id")
+  def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): Try[Unit] = Try(())
 
+  def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata], timeout: FiniteDuration): Try[Unit] = Try(())
+
+  def committed(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, OffsetAndMetadata]] = Try(Map.empty)
+
+  def committed(
+    partitions: NonEmptySet[TopicPartition],
+    timeout: FiniteDuration
+  ): Try[Map[TopicPartition, OffsetAndMetadata]] = Try(Map.empty)
+
+  def endOffsets(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, Offset]] = Try(Map.empty)
+
+  def endOffsets(partitions: NonEmptySet[TopicPartition], timeout: FiniteDuration): Try[Map[TopicPartition, Offset]] =
+    Try(Map.empty)
+
+  def groupMetadata(): Try[ConsumerGroupMetadata] = Try(ConsumerGroupMetadata.Empty)
+
+  def topics(): Try[Map[Topic, List[PartitionInfo]]] = Try(Map.empty)
+
+  def topics(timeout: FiniteDuration): Try[Map[Topic, List[PartitionInfo]]] = Try(Map.empty)
+
+  def offsetsForTimes(
+    timestampsToSearch: NonEmptyMap[TopicPartition, Instant]
+  ): Try[Map[TopicPartition, Option[OffsetAndTimestamp]]] = Try(Map.empty)
+
+  def offsetsForTimes(
+    timestampsToSearch: NonEmptyMap[TopicPartition, Instant],
+    timeout: FiniteDuration
+  ): Try[Map[TopicPartition, Option[OffsetAndTimestamp]]] =
+    Try(Map.empty)
+
+  def partitionsFor(topic: Topic): Try[List[PartitionInfo]] = Try(List.empty)
+
+  def partitionsFor(topic: Topic, timeout: FiniteDuration): Try[List[PartitionInfo]] = Try(List.empty)
+
+  def paused(): Try[Set[TopicPartition]] = Try(Set.empty)
+
+  def position(partition: TopicPartition): Try[Offset] = Try(Offset.min)
+
+  def position(partition: TopicPartition, timeout: FiniteDuration): Try[Offset] = Try(Offset.min)
+
+  def seek(partition: TopicPartition, offset: Offset): Try[Unit] = Try(())
+
+  def seek(partition: TopicPartition, offsetAndMetadata: OffsetAndMetadata): Try[Unit] = Try(())
+
+  def seekToBeginning(partitions: NonEmptySet[TopicPartition]): Try[Unit] = Try(())
+
+  def seekToEnd(partitions: NonEmptySet[TopicPartition]): Try[Unit] = Try(())
+
+  def subscription(): Try[Set[Topic]] = Try(Set.empty)
 }

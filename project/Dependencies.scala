@@ -10,8 +10,8 @@ object Dependencies {
   val catsHelper        = "com.evolutiongaming" %% "cats-helper"        % "2.2.2"
   val kafkaLauncher     = "com.evolutiongaming" %% "kafka-launcher"     % "0.0.10"
   val scache            = "com.evolutiongaming" %% "scache"             % "3.2.0"
-  // TODO: 11.2.1-SNAPSHOT is a local build of https://github.com/evolution-gaming/skafka/tree/rebalance-callback-ergonomics
-  val skafka            = "com.evolutiongaming" %% "skafka"             % "11.2.1-SNAPSHOT"
+  // TODO: 11.1.0-SNAPSHOTis a local build of https://github.com/evolution-gaming/skafka/tree/rebalance-callback-ergonomics
+  val skafka            = "com.evolutiongaming" %% "skafka"             % "11.1.0-SNAPSHOT"
   val smetrics          = "com.evolutiongaming" %% "smetrics"           % "0.2.0"
   val sstream           = "com.evolutiongaming" %% "sstream"            % "0.2.1"
 

@@ -1,89 +1,73 @@
 package com.evolutiongaming.kafka.flow
 
-import java.lang.{Long => LongJ}
-import java.time.{Duration => DurationJ}
-import java.util.{Collection => CollectionJ, List => ListJ, Map => MapJ, Set => SetJ}
+import java.time.Instant
 
-import com.evolutiongaming.kafka.flow.ExplodingRebalanceConsumer._
-import com.evolutiongaming.skafka.consumer.RebalanceConsumerJ
-import org.apache.kafka.clients.consumer.{ConsumerGroupMetadata => ConsumerGroupMetadataJ, OffsetAndMetadata => OffsetAndMetadataJ, OffsetAndTimestamp => OffsetAndTimestampJ}
-import org.apache.kafka.common.{PartitionInfo, TopicPartition => TopicPartitionJ}
+import cats.data.{NonEmptyMap, NonEmptySet}
+import com.evolutiongaming.kafka.flow.ExplodingRebalanceConsumer.notImplemented
+import com.evolutiongaming.skafka.consumer.{ConsumerGroupMetadata, OffsetAndTimestamp, RebalanceConsumer}
+import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, PartitionInfo, Topic, TopicPartition}
 
+import scala.concurrent.duration.FiniteDuration
+import scala.util.Try
 import scala.util.control.NoStackTrace
 
-/**
- * It is intentional to have all methods as `notImplemented` (throws NotImplementedOnPurpose)
- *
- * It is used to verify the only expected interaction in corresponding tests
- * by implementing the only expected method to be called in test
- */
-class ExplodingRebalanceConsumer extends RebalanceConsumerJ {
-  def assignment(): SetJ[TopicPartitionJ] = notImplemented
+/** It is intentional to have all methods as `Try(notImplemented)` (fails with NotImplementedOnPurpose)
+  *
+  * It is used to verify the only expected interaction in corresponding tests
+  * by implementing the only expected method to be called in test
+  */
+class ExplodingRebalanceConsumer extends RebalanceConsumer {
+  def assignment(): Try[Set[TopicPartition]] = Try(notImplemented)
 
-  def subscription(): SetJ[String] = notImplemented
+  def beginningOffsets(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, Offset]] = Try(notImplemented)
 
-  def commitSync(): Unit = notImplemented
+  def beginningOffsets(partitions: NonEmptySet[TopicPartition], timeout: FiniteDuration): Try[Map[TopicPartition, Offset]] = Try(notImplemented)
 
-  def commitSync(timeout: DurationJ): Unit = notImplemented
+  def commit(): Try[Unit] = Try(notImplemented)
 
-  def commitSync(offsets: MapJ[TopicPartitionJ, OffsetAndMetadataJ]): Unit = notImplemented
+  def commit(timeout: FiniteDuration): Try[Unit] = Try(notImplemented)
 
-  def commitSync(offsets: MapJ[TopicPartitionJ, OffsetAndMetadataJ], timeout: DurationJ): Unit = notImplemented
+  def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): Try[Unit] = Try(notImplemented)
 
-  def seek(partition: TopicPartitionJ, offset: LongJ): Unit = notImplemented
+  def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata], timeout: FiniteDuration): Try[Unit] = Try(notImplemented)
 
-  def seek(partition: TopicPartitionJ, OffsetAndMetadataJ: OffsetAndMetadataJ): Unit = notImplemented
+  def committed(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, OffsetAndMetadata]] = Try(notImplemented)
 
-  def seekToBeginning(partitions: CollectionJ[TopicPartitionJ]): Unit = notImplemented
+  def committed(partitions: NonEmptySet[TopicPartition], timeout: FiniteDuration): Try[Map[TopicPartition, OffsetAndMetadata]] = Try(notImplemented)
 
-  def seekToEnd(partitions: CollectionJ[TopicPartitionJ]): Unit = notImplemented
+  def endOffsets(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, Offset]] = Try(notImplemented)
 
-  def position(partition: TopicPartitionJ): LongJ = notImplemented
+  def endOffsets(partitions: NonEmptySet[TopicPartition], timeout: FiniteDuration): Try[Map[TopicPartition, Offset]] = Try(notImplemented)
 
-  def position(partition: TopicPartitionJ, timeout: DurationJ): LongJ = notImplemented
+  def groupMetadata(): Try[ConsumerGroupMetadata] = Try(notImplemented)
 
-  def committed(partitions: SetJ[TopicPartitionJ]): MapJ[TopicPartitionJ, OffsetAndMetadataJ] = notImplemented
+  def topics(): Try[Map[Topic, List[PartitionInfo]]] = Try(notImplemented)
 
-  def committed(
-    partitions: SetJ[TopicPartitionJ],
-    timeout: DurationJ
-  ): MapJ[TopicPartitionJ, OffsetAndMetadataJ] = notImplemented
+  def topics(timeout: FiniteDuration): Try[Map[Topic, List[PartitionInfo]]] = Try(notImplemented)
 
-  def partitionsFor(topic: String): ListJ[PartitionInfo] = notImplemented
+  def offsetsForTimes(timestampsToSearch: NonEmptyMap[TopicPartition, Instant]): Try[Map[TopicPartition, Option[OffsetAndTimestamp]]] = Try(notImplemented)
 
-  def partitionsFor(topic: String, timeout: DurationJ): ListJ[PartitionInfo] = notImplemented
+  def offsetsForTimes(timestampsToSearch: NonEmptyMap[TopicPartition, Instant], timeout: FiniteDuration): Try[Map[TopicPartition, Option[OffsetAndTimestamp]]] = Try(notImplemented)
 
-  def listTopics(): MapJ[String, ListJ[PartitionInfo]] = notImplemented
+  def partitionsFor(topic: Topic): Try[List[PartitionInfo]] = Try(notImplemented)
 
-  def listTopics(timeout: DurationJ): MapJ[String, ListJ[PartitionInfo]] = notImplemented
+  def partitionsFor(topic: Topic, timeout: FiniteDuration): Try[List[PartitionInfo]] = Try(notImplemented)
 
-  def paused(): SetJ[TopicPartitionJ] = notImplemented
+  def paused(): Try[Set[TopicPartition]] = Try(notImplemented)
 
-  def offsetsForTimes(
-    timestampsToSearch: MapJ[TopicPartitionJ, LongJ]
-  ): MapJ[TopicPartitionJ, OffsetAndTimestampJ] = notImplemented
+  def position(partition: TopicPartition): Try[Offset] = Try(notImplemented)
 
-  def offsetsForTimes(
-    timestampsToSearch: MapJ[TopicPartitionJ, LongJ],
-    timeout: DurationJ
-  ): MapJ[TopicPartitionJ, OffsetAndTimestampJ] = notImplemented
+  def position(partition: TopicPartition, timeout: FiniteDuration): Try[Offset] = Try(notImplemented)
 
-  def beginningOffsets(partitions: CollectionJ[TopicPartitionJ]): MapJ[TopicPartitionJ, LongJ] = notImplemented
+  def seek(partition: TopicPartition, offset: Offset): Try[Unit] = Try(notImplemented)
 
-  def beginningOffsets(
-    partitions: CollectionJ[TopicPartitionJ],
-    timeout: DurationJ
-  ): MapJ[TopicPartitionJ, LongJ] = notImplemented
+  def seek(partition: TopicPartition, offsetAndMetadata: OffsetAndMetadata): Try[Unit] = Try(notImplemented)
 
-  def endOffsets(partitions: CollectionJ[TopicPartitionJ]): MapJ[TopicPartitionJ, LongJ] = notImplemented
+  def seekToBeginning(partitions: NonEmptySet[TopicPartition]): Try[Unit] = Try(notImplemented)
 
-  def endOffsets(
-    partitions: CollectionJ[TopicPartitionJ],
-    timeout: DurationJ
-  ): MapJ[TopicPartitionJ, LongJ] = notImplemented
+  def seekToEnd(partitions: NonEmptySet[TopicPartition]): Try[Unit] = Try(notImplemented)
 
-  def groupMetadata(): ConsumerGroupMetadataJ = notImplemented
-
+  def subscription(): Try[Set[Topic]] = Try(notImplemented)
 }
 
 object ExplodingRebalanceConsumer {
