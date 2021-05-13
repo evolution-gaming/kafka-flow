@@ -43,7 +43,7 @@ package object kafkapersistence {
           context: PartitionContext[F]
         ): Resource[F, PartitionFlow[F]] = {
           for {
-            persistence <- Resource.liftF(
+            persistence <- Resource.eval(
               kafkaPersistenceOf.ofPartition(topicPartition.partition)
             )
             keyStateOf = KeyStateOf.eagerRecovery[F, S](
@@ -58,7 +58,7 @@ package object kafkapersistence {
             )
             partitionFlowOf = self(keyStateOf)
             partitionFlow <- partitionFlowOf(topicPartition, assignedAt, context)
-            _ <- Resource.liftF(persistence.onRecoveryFinished)
+            _ <- Resource.eval(persistence.onRecoveryFinished)
           } yield partitionFlow
         }
       }

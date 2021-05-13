@@ -219,11 +219,11 @@ object PartitionFlowSpec {
         def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[IO]) = {
           implicit val _context = context
           for {
-            timers <- Resource.liftF(TimerContext.memory[IO, String](key, createdAt))
-            persistence <- Resource.liftF(persistenceOf(key, fold, timers))
+            timers <- Resource.eval(TimerContext.memory[IO, String](key, createdAt))
+            persistence <- Resource.eval(persistenceOf(key, fold, timers))
             timerFlowOf = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes)
             timerFlow <- timerFlowOf(context, persistence, timers)
-            keyFlow <- Resource.liftF(KeyFlow.of(fold, TickOption.id[IO, State], persistence, timerFlow))
+            keyFlow <- Resource.eval(KeyFlow.of(fold, TickOption.id[IO, State], persistence, timerFlow))
           } yield KeyState(keyFlow, timers)
         }
         def all(topicPartition: TopicPartition) = Stream.empty
