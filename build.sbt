@@ -18,7 +18,7 @@ lazy val commonSettings = Seq(
     Resolver.bintrayRepo("evolutiongaming", "maven"),
     Resolver.sonatypeRepo("public")
   ),
-  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.11.3" cross CrossVersion.full)
+  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.12.0" cross CrossVersion.full)
 )
 
 lazy val root = (project in file("."))
