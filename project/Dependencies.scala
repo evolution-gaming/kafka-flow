@@ -4,7 +4,7 @@ object Dependencies {
 
   val munit  = "org.scalameta"       %% "munit"            % "0.7.22"
   val scribe = "com.outr"            %% "scribe-slf4j"     % "3.5.0"
-  val weaver = "com.disneystreaming" %% "weaver-cats"      % "0.6.0-M6"
+  val weaver = "com.disneystreaming" %% "weaver-cats"      % "0.6.4"
 
   val cassandraLauncher = "com.evolutiongaming" %% "cassandra-launcher" % "0.0.4"
   val catsHelper        = "com.evolutiongaming" %% "cats-helper"        % "2.2.2"
