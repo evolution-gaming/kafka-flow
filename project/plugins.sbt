@@ -12,4 +12,4 @@ addSbtPlugin("com.evolutiongaming" % "sbt-scalac-opts-plugin" % "0.0.6")
 
 addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.2.18" )
 
-addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.2")
+addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.3")
