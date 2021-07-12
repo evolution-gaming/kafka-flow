@@ -6,7 +6,7 @@ addSbtPlugin("com.github.sbt" % "sbt-release" % "1.0.15")
 
 addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.2.18" )
 
-addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.2")
+addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.3")
 
 addSbtPlugin("com.evolution" % "sbt-scalac-opts-plugin" % "0.0.9")
 
