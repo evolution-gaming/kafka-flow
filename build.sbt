@@ -6,7 +6,7 @@ lazy val commonSettings = Seq(
   startYear := Some(2019),
   organizationName := "Evolution Gaming",
   organizationHomepage := Some(url("http://evolutiongaming.com")),
-  bintrayOrganization := Some("evolutiongaming"),
+  publishTo := Some(Resolver.evolutionReleases),
   scalaVersion := crossScalaVersions.value.head,
   crossScalaVersions := Seq("2.13.5", "2.12.11"),
   coverageScalacPluginVersion := "1.4.2",
@@ -18,7 +18,7 @@ lazy val commonSettings = Seq(
     Resolver.bintrayRepo("evolutiongaming", "maven"),
     Resolver.sonatypeRepo("public")
   ),
-  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.11.3" cross CrossVersion.full)
+  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.0" cross CrossVersion.full)
 )
 
 lazy val root = (project in file("."))
