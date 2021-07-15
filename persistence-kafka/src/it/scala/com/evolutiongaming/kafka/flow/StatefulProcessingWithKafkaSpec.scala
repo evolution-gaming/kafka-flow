@@ -7,23 +7,25 @@ import cats.{Applicative, Functor, Monad}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec._
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
-import com.evolutiongaming.kafka.flow.kafkapersistence.KafkaPersistence
+import com.evolutiongaming.kafka.flow.kafkapersistence.{
+  KafkaPersistenceModule,
+  KafkaPersistenceModuleOf,
+  kafkaEagerRecovery
+}
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
-import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf, Timestamps}
+import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.journal.{ConsRecord, FromJsResult, JsonCodec}
 import com.evolutiongaming.retry.Retry
-import com.evolutiongaming.scache.{Cache, Releasable}
 import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf, ProducerRecord, RecordMetadata}
-import com.evolutiongaming.skafka.{Bytes, CommonConfig, Partition, TopicPartition}
+import com.evolutiongaming.skafka.{Bytes, CommonConfig, Partition}
 import play.api.libs.json.{Json, OFormat, OWrites, Reads}
 import scodec.bits.ByteVector
-import weaver.GlobalRead
+import weaver.{Expectations, GlobalRead}
 
 import scala.concurrent.duration._
-import scala.util.control.NoStackTrace
 
 /*
  Using embedded/real kafka:
@@ -50,16 +52,20 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
     def reset: IO[Unit]
   }
 
-  private val inMemoryPersistence: Persistence = new Persistence {
-    val keysOf: KeysOf[IO, KafkaKey] = KeysOf.memory[IO, KafkaKey].unsafeRunSync()
-
+  private val inMemoryPersistenceModule: KafkaPersistenceModule[IO, State] = new KafkaPersistenceModule[IO, State] {
     private val db: SnapshotDatabase[IO, KafkaKey, State] = SnapshotDatabase.memory[IO, KafkaKey, State].unsafeRunSync()
     private val snapshotsOf: SnapshotsOf[IO, KafkaKey, State] = SnapshotsOf.backedBy(db)
     val snapshotPersistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsRecord] =
       PersistenceOf.snapshotsOnly(keysOf, snapshotsOf)
 
-    def reset: IO[Unit] = IO.unit
+    override def keysOf: KeysOf[IO, KafkaKey] = KeysOf.memory[IO, KafkaKey].unsafeRunSync()
+    override def persistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsRecord] = snapshotPersistenceOf
   }
+
+  private val inMemoryPersistenceModuleOf: KafkaPersistenceModuleOf[IO, State] =
+    new KafkaPersistenceModuleOf[IO, State] {
+      override def make(partition: Partition): Resource[IO, KafkaPersistenceModule[IO, State]] = Resource.pure(inMemoryPersistenceModule)
+    }
 
   private val appId = "app-id"
   private val testGroupId = "group-id"
@@ -81,114 +87,138 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
    * - and resources release when warm up is done (read compact kafka topic, fold by key, convert to case classes using FromBytes, release=throw away loaded bytes Map[Key, Bytes])
    * - oh actually it's not a Resource.release, as we're using the state store within scope of the Resource
    */
-  private def kafkaPersistence: Resource[IO, Persistence] = for {
-    cache <- Cache.loading[IO, TopicPartition, Persistence]
-  } yield new Persistence {
+  private def kafkaPersistenceModuleOf: Resource[IO, KafkaPersistenceModuleOf[IO, State]] = {
+    import Boilerplate._
 
-    def reset: IO[Unit] = cache.clear.flatten
-
-    // TODO: use 2 partitions to verify correct state recovery, that for key1 input-topic:0 state-topic:0 is used
-    // for key2 input-topic:1 state-topic:1, test case to check that key2 is removed when reached final state (when FoldOption returns None)
-    // state topic must have the same number of partitions as input topic, and same keys,
-    // so the data would be co-partitioned
     val stateTopic = "state-topic-StatefulProcessingWithKafkaSpec"
 
-    // looks like keyStateOf.all is our entry point to recover state for the partition
-    // PartitionFlow init:
-    //       keys = keyStateOf.all(topicPartition)
-    //      _ <- Log[F].info("partition recovery started")
-    // ...
-    //      keys.foldM(0) { (count, key) =>
-    //        stateOf(timestamp, key) as (count + 1)
-    //      }
-
-    case object ImpossibleError extends NoStackTrace
-
-    val keysOf: KeysOf[IO, KafkaKey] = new KeysOf[IO, KafkaKey] {
-
-      // KeyStateOf.eagerRecovery is not using this apply, it only needs to know how to load all keys
-      def apply(key: KafkaKey) = ??? // fail fast, safe as it is not used in KeyStateOf.eagerRecovery
-
-      def all(applicationId: String, groupId: String, topicPartition: TopicPartition) = {
-        import Boilerplate._
-        // FIXME keys are never deleted from the cache (should be removed on consumer rebalance listener partitions revoked)
-        com.evolutiongaming.sstream.Stream.lift {
-          cache
-            .getOrUpdateReleasable(topicPartition) {
-              // recover state for topicPartition
-              Releasable.of(
-                for {
-                  _ <- Resource.liftF(IO.unit)
-                  blocker <- Blocker[IO]
-                  producer <- ProducerOf[IO](blocker.blockingContext).apply(
-                    ProducerConfig.Default.copy(common =
-                      ProducerConfig.Default.common.copy(
-                        clientId = s"$topicPartition-producer".some
-                      )
-                    )
-                  )
-                  // use recovery consumer
-                  // read state from recovery topic
-                  stateRestoreConsumerConfig = ConsumerConfig(
-                    autoCommit = false,
-                    autoOffsetReset = AutoOffsetReset.Earliest
-                  )
-                  kafkaPersistence = KafkaPersistence.of[IO, State](
-                    ConsumerOf[IO](blocker.blockingContext),
-                    stateRestoreConsumerConfig,
-                    stateTopic,
-                    producer
-                  )
-                  p <- Resource.liftF(kafkaPersistence.ofPartition(topicPartition.partition))
-
-                } yield new Persistence {
-                  def keysOf = p.keysOf
-                  def snapshotPersistenceOf = p.snapshots
-                  def reset: IO[Unit] = IO.unit
-                }
-              )
-            }
-            .map(p => p.keysOf.all(applicationId, groupId, topicPartition))
-        }.flatten
-      }
+    Blocker[IO].map { blocker =>
+      KafkaPersistenceModuleOf.caching[IO, State](
+        consumerOf = ConsumerOf[IO](blocker.blockingContext),
+        producerOf = ProducerOf[IO](blocker.blockingContext),
+        consumerConfig = ConsumerConfig(
+          autoCommit = false,
+          autoOffsetReset = AutoOffsetReset.Earliest
+        ),
+        producerConfig = ProducerConfig.Default,
+        snapshotTopic = stateTopic
+      )
     }
-
-    def snapshotPersistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsRecord] =
-      (key: KafkaKey, timestamps: Timestamps[IO]) => {
-        cache
-          .getOrElse(key.topicPartition, IO.raiseError(ImpossibleError))
-          .flatMap(_.snapshotPersistenceOf.apply(key, timestamps))
-      }
   }
+
+//  private def kafkaPersistence: Resource[IO, Persistence] = for {
+//    cache <- Cache.loading[IO, TopicPartition, Persistence]
+//  } yield new Persistence {
+//
+//    def reset: IO[Unit] = cache.clear.flatten
+//
+//    // TODO: use 2 partitions to verify correct state recovery, that for key1 input-topic:0 state-topic:0 is used
+//    // for key2 input-topic:1 state-topic:1, test case to check that key2 is removed when reached final state (when FoldOption returns None)
+//    // state topic must have the same number of partitions as input topic, and same keys,
+//    // so the data would be co-partitioned
+//    val stateTopic = "state-topic-StatefulProcessingWithKafkaSpec"
+//
+//    // looks like keyStateOf.all is our entry point to recover state for the partition
+//    // PartitionFlow init:
+//    //       keys = keyStateOf.all(topicPartition)
+//    //      _ <- Log[F].info("partition recovery started")
+//    // ...
+//    //      keys.foldM(0) { (count, key) =>
+//    //        stateOf(timestamp, key) as (count + 1)
+//    //      }
+//
+//    case object ImpossibleError extends NoStackTrace
+//
+//    val keysOf: KeysOf[IO, KafkaKey] = new KeysOf[IO, KafkaKey] {
+//
+//      // KeyStateOf.eagerRecovery is not using this apply, it only needs to know how to load all keys
+//      def apply(key: KafkaKey) = ??? // fail fast, safe as it is not used in KeyStateOf.eagerRecovery
+//
+//      def all(applicationId: String, groupId: String, topicPartition: TopicPartition) = {
+//        import Boilerplate._
+//        // FIXME keys are never deleted from the cache (should be removed on consumer rebalance listener partitions revoked)
+//        com.evolutiongaming.sstream.Stream.lift {
+//          cache
+//            .getOrUpdateReleasable(topicPartition) {
+//              // recover state for topicPartition
+//              Releasable.of(
+//                for {
+//                  _ <- Resource.liftF(IO.unit)
+//                  blocker <- Blocker[IO]
+//                  producer <- ProducerOf[IO](blocker.blockingContext).apply(
+//                    ProducerConfig.Default.copy(common =
+//                      ProducerConfig.Default.common.copy(
+//                        clientId = s"$topicPartition-producer".some
+//                      )
+//                    )
+//                  )
+//                  // use recovery consumer
+//                  // read state from recovery topic
+//                  stateRestoreConsumerConfig = ConsumerConfig(
+//                    autoCommit = false,
+//                    autoOffsetReset = AutoOffsetReset.Earliest
+//                  )
+//                  kafkaPersistence = KafkaPersistence.of[IO, State](
+//                    ConsumerOf[IO](blocker.blockingContext),
+//                    stateRestoreConsumerConfig,
+//                    stateTopic,
+//                    producer
+//                  )
+//                  p <- Resource.liftF(kafkaPersistence.ofPartition(topicPartition.partition))
+//
+//                } yield new Persistence {
+//                  def keysOf = p.keysOf
+//                  def snapshotPersistenceOf = p.snapshots
+//                  def reset: IO[Unit] = IO.unit
+//                }
+//              )
+//            }
+//            .map(p => p.keysOf.all(applicationId, groupId, topicPartition))
+//        }.flatten
+//      }
+//    }
+//
+//    def snapshotPersistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsRecord] =
+//      (key: KafkaKey, timestamps: Timestamps[IO]) => {
+//        cache
+//          .getOrElse(key.topicPartition, IO.raiseError(ImpossibleError))
+//          .flatMap(_.snapshotPersistenceOf.apply(key, timestamps))
+//      }
+//  }
 
   test("stateful processing using in-memory persistence") { kafka =>
     // using unique input topic name per test as weaver is running tests in parallel
     val inputTopic = "in-memory-persistence-test"
-    val persistence = inMemoryPersistence
-    comboTestCase(kafka, persistence, inputTopic)
+    val persistenceModuleOf = inMemoryPersistenceModuleOf
+    comboTestCase(kafka, persistenceModuleOf, inputTopic)
   }
 
   test("stateful processing using kafka persistence") { kafka =>
     // using unique input topic name per test as weaver is running tests in parallel
     val inputTopic = "kafka-persistence-test"
-    val persistence = kafkaPersistence.allocated.unsafeRunSync()._1
-    comboTestCase(kafka, persistence, inputTopic)
+    val persistenceModuleOf = kafkaPersistenceModuleOf.allocated.unsafeRunSync()._1
+    //val persistence = kafkaPersistence.allocated.unsafeRunSync()._1
+    comboTestCase(kafka, persistenceModuleOf, inputTopic)
   }
 
-  private def comboTestCase(kafka: KafkaModule[IO], persistence: Persistence, inputTopic: String) = {
+  private def comboTestCase(
+    kafka: KafkaModule[IO],
+    persistenceModuleOf: KafkaPersistenceModuleOf[IO, State],
+    inputTopic: String
+  ) = {
     for {
-      tc1 <- testCase(kafka, persistence, inputTopic, Partition.unsafe(0), "key0")
-      tc2 <- testCase(kafka, persistence, inputTopic, Partition.unsafe(1), "key1")
+      tc1 <- testCase(kafka, persistenceModuleOf, inputTopic, Partition.unsafe(0), "key0")
+      tc2 <- testCase(kafka, persistenceModuleOf, inputTopic, Partition.unsafe(1), "key1")
     } yield tc1 and tc2
   }
 
   private def testCase(
     kafka: KafkaModule[IO],
-    persistence: Persistence,
+    persistenceModuleOf: KafkaPersistenceModuleOf[IO, State],
     inputTopic: String,
     partition: Partition,
     key: String
-  ) = {
+  ): IO[Expectations] = {
     implicit val retry = Retry.empty[IO]
 
     def produceInput(value: Int): IO[RecordMetadata] = {
@@ -206,9 +236,8 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
     def program: IO[List[Output]] = for {
       output <- Ref.of(List.empty[Output])
       finished <- Deferred[IO, Unit]
-      _ <- persistence.reset
-      flowOf <- topicFlowOf(persistence, output, finished)
-      a = KafkaFlow.resource(
+      flowOf <- topicFlowOf(persistenceModuleOf, output, finished)
+      run = KafkaFlow.resource(
         consumer = kafka.consumerOf("groupId-StatefulProcessingWithKafkaSpec"),
         flowOf = ConsumerFlowOf[IO](
           topic = inputTopic,
@@ -216,7 +245,7 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
         )
       )
       // wait for records to be processed
-      _ <- a.use(_ => finished.get.timeout(5.seconds))
+      _ <- run.use(_ => finished.get.timeout(5.seconds))
       output <- output.get
     } yield output
 
@@ -270,7 +299,7 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
       test4 = assert.same(
         List(
           // 4th run of the program started with empty state, proving that we can remove state from persistence
-          Output(key, none, Input(9)),
+          Output(key, none, Input(9))
         ),
         output
       )
@@ -278,32 +307,28 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
   }
 
   def topicFlowOf(
-    persistence: Persistence,
+    persistenceModuleOf: KafkaPersistenceModuleOf[IO, State],
     output: Ref[IO, List[Output]],
     finished: Deferred[IO, Unit]
-  ): IO[TopicFlowOf[IO]] =
+  ): IO[TopicFlowOf[IO]] = {
     for {
       timersOf <- TimersOf.memory[IO, KafkaKey]
-      partitionFlowOf = PartitionFlowOf[IO, State](
-        KeyStateOf.eagerRecovery[IO, State](
-          appId,
-          testGroupId,
-          persistence.keysOf, // only .all method is needed from keysOf
-          timersOf,
-          persistence.snapshotPersistenceOf,
-          KeyFlowOf(
-            TimerFlowOf
-              .persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds, flushOnRevoke = true),
-            bizLogic(output, finished, Log[IO]),
-            TickOption.id[IO, State]
-          )
-        ),
-        PartitionFlowConfig(
+      partitionFlowOf = kafkaEagerRecovery[IO, State](
+        kafkaPersistenceModuleOf = persistenceModuleOf,
+        applicationId = appId,
+        groupId = testGroupId,
+        timersOf = timersOf,
+        timerFlowOf = TimerFlowOf
+          .persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds, flushOnRevoke = true),
+        fold = bizLogic(output, finished, Log[IO]),
+        partitionFlowConfig = PartitionFlowConfig(
           triggerTimersInterval = 0.seconds,
           commitOffsetsInterval = 0.seconds
-        )
+        ),
+        tick = TickOption.id[IO, State]
       )
     } yield TopicFlowOf(partitionFlowOf)
+  }
 
 }
 

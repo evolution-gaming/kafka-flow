@@ -16,17 +16,15 @@ object KafkaSnapshotWriteDatabase {
 
     override def delete(key: KafkaKey) = produce(key, none)
 
-    private def produce(key: KafkaKey, snapshot: Option[S]) =
-      Producer[F]
-        .send(
-          new ProducerRecord(
-            topic = snapshotTopicPartition.topic,
-            partition = snapshotTopicPartition.partition.some,
-            key = key.key.some,
-            value = snapshot
-          )
-        )
-        .flatten
-        .void
+    private def produce(key: KafkaKey, snapshot: Option[S]) = {
+      val record = new ProducerRecord(
+        topic = snapshotTopicPartition.topic,
+        partition = snapshotTopicPartition.partition.some,
+        key = key.key.some,
+        value = snapshot
+      )
+
+      Producer[F].send(record).flatten.void
+    }
   }
 }

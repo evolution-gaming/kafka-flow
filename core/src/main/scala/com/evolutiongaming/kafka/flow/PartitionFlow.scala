@@ -2,20 +2,18 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Parallel
 import cats.data.NonEmptyList
-import cats.effect.Clock
 import cats.effect.concurrent.Ref
-import cats.effect.{Concurrent, Resource}
+import cats.effect.{Clock, Concurrent, Resource}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.ClockHelper._
-import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.catshelper.{Log, LogOf}
+import com.evolutiongaming.kafka.flow.kafka.OffsetToCommit
+import com.evolutiongaming.kafka.flow.timer.Timestamp
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.scache.Cache
-import com.evolutiongaming.scache.Releasable
+import com.evolutiongaming.scache.{Cache, Releasable}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
-import kafka.OffsetToCommit
+
 import java.time.Instant
-import timer.Timestamp
 
 trait PartitionFlow[F[_]] {
 
@@ -60,14 +58,14 @@ object PartitionFlow {
     triggerTimersAt <- Resource.liftF(Ref.of(clock))
     commitOffsetsAt <- Resource.liftF(Ref.of(clock))
     flow <- of(
-      topicPartition,
-      keyStateOf,
-      committedOffset,
-      timestamp,
-      triggerTimersAt,
-      commitOffsetsAt,
-      cache,
-      config
+      topicPartition = topicPartition,
+      keyStateOf = keyStateOf,
+      committedOffset = committedOffset,
+      timestamp = timestamp,
+      triggerTimersAt = triggerTimersAt,
+      commitOffsetsAt = commitOffsetsAt,
+      cache = cache,
+      config = config
     )
   } yield flow
 
@@ -137,18 +135,20 @@ object PartitionFlow {
         )
         stateOf(startedAt, key) flatMap { state =>
           state.timers.set(startedAt) *>
-          state.flow(records) *>
-          state.timers.set(finishedAt) *>
-          state.timers.onProcessed
+            state.flow(records) *>
+            state.timers.set(finishedAt) *>
+            state.timers.onProcessed
         }
       }
       lastRecord = records.last
       maximumOffset <- OffsetToCommit[F](lastRecord.offset)
-      _ <- timestamp.set(Timestamp(
-        clock = clock,
-        watermark = lastRecord.timestampAndType map (_.timestamp),
-        offset = maximumOffset
-      ))
+      _ <- timestamp.set(
+        Timestamp(
+          clock = clock,
+          watermark = lastRecord.timestampAndType map (_.timestamp),
+          offset = maximumOffset
+        )
+      )
     } yield ()
 
     def triggerTimers = for {
@@ -158,7 +158,7 @@ object PartitionFlow {
       _ <- states.values.toList.parTraverse_ { state =>
         state flatMap { state =>
           state.timers.set(timestamp) *>
-          state.timers.trigger(state.flow)
+            state.timers.trigger(state.flow)
         }
       }
       _ <- triggerTimersAt update { triggerTimersAt =>
@@ -219,7 +219,7 @@ object PartitionFlow {
       offsetToCommit flatMap { offset =>
         offset traverse_ { offset =>
           Log[F].info(s"committing on revoke: $offset") *>
-          PartitionContext[F].scheduleCommit(offset)
+            PartitionContext[F].scheduleCommit(offset)
         }
       }
     } else {
@@ -229,6 +229,5 @@ object PartitionFlow {
     Resource.make(acquire) { _ => release }
 
   }
-
 
 }
