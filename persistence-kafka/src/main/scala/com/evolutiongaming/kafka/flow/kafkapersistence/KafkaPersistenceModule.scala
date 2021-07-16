@@ -27,8 +27,12 @@ trait KafkaPersistenceModule[F[_], S] {
 
 object KafkaPersistenceModule {
 
-  /** Creates an instance of [[KafkaPersistenceModule]] for a specific snapshot topic partition when the partition is assigned.
-    * The state is recovered from a snapshot which is (presumably) kept in a 'compacted' Kafka topic ([[https://kafka.apache.org/documentation/#compaction official documentation]]).
+  /** Creates an instance of [[KafkaPersistenceModule]] for state recovery from a specific partition of a snapshot
+    * Kafka 'compacted' ([[https://kafka.apache.org/documentation/#compaction official documentation]]) topic.
+    * The exposed `keysOf` and `persistenceOf` implementations will perform cached reading of all the snapshot data
+    * in that partition.
+    * This implementation is to be used only with `eagerRecovery` strategy since it relies on the order of state
+    * recovery actions during partition assignment. See the implementation details below.
     *
     * Implementation details:
     *
