@@ -8,7 +8,7 @@ import com.evolutiongaming.skafka.{FromBytes, Topic}
 import scodec.bits.ByteVector
 
 object KafkaSnapshotReadDatabase {
-  def apply[F[_]: Monad, S: FromBytes[F, *]](
+  def of[F[_]: Monad, S: FromBytes[F, *]](
     snapshotTopic: Topic,
     getState: String => F[Option[ByteVector]]
   ): SnapshotReadDatabase[F, KafkaKey, S] =

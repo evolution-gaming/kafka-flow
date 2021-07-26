@@ -31,7 +31,7 @@ object KafkaPartitionPersistence {
                 acc.asRight[BytesByKey].pure[F]
               case _ =>
                 consumer
-                  .poll(10.millis)
+                  .poll(10.millis) // TODO: make poll timeout configurable
                   .map(
                     _.values.values
                       .flatMap(_.toIterable)

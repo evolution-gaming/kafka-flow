@@ -30,7 +30,7 @@ object KafkaPersistenceModule {
   /** Creates an instance of [[KafkaPersistenceModule]] for state recovery from a specific partition of a snapshot
     * Kafka 'compacted' ([[https://kafka.apache.org/documentation/#compaction official documentation]]) topic.
     * The exposed `keysOf` and `persistenceOf` implementations will perform cached reading of all the snapshot data
-    * in that partition.
+    * in that partition to the end without committing offsets.
     * This implementation is to be used only with `eagerRecovery` strategy since it relies on the order of state
     * recovery actions during partition assignment. See the implementation details below.
     *
@@ -45,19 +45,15 @@ object KafkaPersistenceModule {
     * Removing a value for a specific key from a cache is safe at that point since state recovery is performed only once -
     * either during initialization when a partition is assigned (and there is a snapshot for a key) or when the journal record is first seen (no snapshot for a key previously).
     *
-    * @param consumerOf
-    * @param producerOf
-    * @param consumerConfig
-    * @param producerConfig
-    * @param snapshotTopicPartition
-    * @tparam F
-    * @tparam S
-    * @return
+    * @param consumerOf Kafka consumer factory to create snapshot reading consumers
+    * @param producerOf Kafka producer factory to create producers for saving snapshots
+    * @param consumerConfig Kafka consumer config for snapshot reading consumers
+    * @param producerConfig Kafka producer config for snapshot writing producers
+    * @param snapshotTopicPartition snapshot topic-partition to read/write snapshots
     *
     * @see [[com.evolutiongaming.kafka.flow.PartitionFlow.of]] for implementations details of keys fetching and state recovery for a partition
     * @see [[com.evolutiongaming.kafka.flow.KeyStateOf.eagerRecovery]] for implementation details of constructing [[com.evolutiongaming.kafka.flow.KeyState]] for a specific key
     * @see [[com.evolutiongaming.kafka.flow.KeyFlow.of]] for implementation details of state recovery for a specific key
-    *
     */
   def caching[F[_]: LogOf: Concurrent: FromBytes[*[_], String]: ToBytes[*[_], S], S: FromBytes[F, *]](
     consumerOf: ConsumerOf[F],
@@ -100,7 +96,7 @@ object KafkaPersistenceModule {
     ): F[SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord]] = {
       LogOf[F].apply(classOf[SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord]]).map { implicit log =>
         implicit val producer_ = producer
-        val read = KafkaSnapshotReadDatabase[F, S](snapshotTopicPartition.topic, key => cache.remove(key).flatten)
+        val read = KafkaSnapshotReadDatabase.of[F, S](snapshotTopicPartition.topic, key => cache.remove(key).flatten)
 
         val snapshotsOf = new SnapshotsOf[F, KafkaKey, S] {
           override def apply(key: KafkaKey): F[Snapshots[F, S]] =
@@ -110,7 +106,7 @@ object KafkaPersistenceModule {
               key = key,
               database = SnapshotDatabase(
                 read = read,
-                write = KafkaSnapshotWriteDatabase[F, S](snapshotTopicPartition)
+                write = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition)
               ),
               buffer = buffer
             )

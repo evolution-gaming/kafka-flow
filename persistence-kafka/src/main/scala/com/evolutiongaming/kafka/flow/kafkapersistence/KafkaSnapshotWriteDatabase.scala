@@ -9,14 +9,14 @@ import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord}
 import com.evolutiongaming.skafka.{ToBytes, TopicPartition}
 
 object KafkaSnapshotWriteDatabase {
-  def apply[F[_]: FromTry: Monad: Producer, S: ToBytes[F, *]](
+  def of[F[_]: FromTry: Monad: Producer, S: ToBytes[F, *]](
     snapshotTopicPartition: TopicPartition
   ): SnapshotWriteDatabase[F, KafkaKey, S] = new SnapshotWriteDatabase[F, KafkaKey, S] {
-    override def persist(key: KafkaKey, snapshot: S) = produce(key, snapshot.some)
+    override def persist(key: KafkaKey, snapshot: S): F[Unit] = produce(key, snapshot.some)
 
-    override def delete(key: KafkaKey) = produce(key, none)
+    override def delete(key: KafkaKey): F[Unit] = produce(key, none)
 
-    private def produce(key: KafkaKey, snapshot: Option[S]) = {
+    private def produce(key: KafkaKey, snapshot: Option[S]): F[Unit] = {
       val record = new ProducerRecord(
         topic = snapshotTopicPartition.topic,
         partition = snapshotTopicPartition.partition.some,

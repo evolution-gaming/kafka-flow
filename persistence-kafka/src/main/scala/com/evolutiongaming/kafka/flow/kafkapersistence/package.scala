@@ -20,6 +20,49 @@ package object kafkapersistence {
     def empty: BytesByKey = Map.empty
   }
 
+  /** Create a [[PartitionFlowOf]] with a snapshot-based persistence and recovery from a Kafka
+    * [[https://kafka.apache.org/documentation/#compaction compacted topic]].
+    * State is restored eagerly on partition assignment by reading the content of a snapshot topic to the end
+    * without committing offsets.
+    *
+    * Note that the snapshot topic should have the same number of partitions as the input topic since state recovery
+    * will be performed based on a number of the assigned partition of the input topic (state for partition N of input
+    * topic will be restored from the Nth partition of a snapshot topic).
+    *
+    * Example usage:
+    * {{{
+    *   val timerFlowOf: TimerFlowOf = ...
+    *   val timersOf: TimersOf = ...
+    *   val persistenceModule = KafkaPersistenceModuleOf.caching(consumerOf, producerOf, consumerConfig, producerConfig, snapshotTopic)
+    *   val businessLogicFold: FoldOption[F, State, ConsRecord] = ... // your business logic here in this fold
+    *   val tick: TickOption[F, State] = ... // optional additional Tick to change state, use TickOption.id if not used
+    *   val partitionFlowConfig: PartitionFlowConfig = ... // additional configuration for partition flow
+    *
+    *   val partitionFlowOf = kafkaEagerRecovery[F, State](
+    *     kafkaPersistenceModuleOf  = persistenceModuleOf,
+    *     applicationId             = "appId",
+    *     groupId                   = "groupId",
+    *     timersOf                  = timersOf,
+    *     timerFlowOf               = timerFlowOf,
+    *     fold                      = businessLogicFold,
+    *     partitionFlowConfig       = partitionFlowConfig,
+    *     tick                      = tick
+    *   )
+    *
+    *   val topicFlowOf = TopicFlowOf(partitionFlowOf)
+    *
+    *   val kafkaFlow: Resource[F, F[Unit]] = KafkaFlow.resource(
+    *     consumer = ...,
+    *     flowOf = ConsumerFlowOf[F](
+    *       topic = inputTopic,
+    *       flowOf = flowOf
+    *     )
+    *   )
+    *   kafkaFlow.use(_ => ...)
+    * }}}
+    *
+    * For a complete example of usage you can refer to the integration test `StatefulProcessingWithKafkaSpec`.
+    */
   def kafkaEagerRecovery[F[_]: Concurrent: Timer: Parallel: LogOf, S](
     kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
     applicationId: String,
@@ -29,7 +72,7 @@ package object kafkapersistence {
     fold: FoldOption[F, S, ConsRecord],
     tick: TickOption[F, S],
     partitionFlowConfig: PartitionFlowConfig
-  ): PartitionFlowOf[F] = {
+  ): PartitionFlowOf[F] =
     new PartitionFlowOf[F] {
       override def apply(
         topicPartition: TopicPartition,
@@ -59,7 +102,6 @@ package object kafkapersistence {
         } yield partitionFlow
       }
     }
-  }
 
   private[kafkapersistence] implicit class ConsumerConfigCompanionOps(
     val self: ConsumerConfig.type
