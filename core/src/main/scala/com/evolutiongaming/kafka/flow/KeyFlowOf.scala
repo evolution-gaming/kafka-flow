@@ -19,10 +19,12 @@ object KeyFlowOf {
 
   /** Construct `KeyFlow` from the premade components
     *
-    * @param timerFlowOf storage / factory of timers flows, usually configures
-    * how often the timer ticks etc.
-    * @param fold defines how to change the state on incoming records.
-    * @param tick defines what to do when the timer ticks.
+    * @param timerFlowOf
+    *   storage / factory of timers flows, usually configures how often the timer ticks etc.
+    * @param fold
+    *   defines how to change the state on incoming records.
+    * @param tick
+    *   defines what to do when the timer ticks.
     */
   def apply[F[_]: Sync, K, S, A](
     timerFlowOf: TimerFlowOf[F],
@@ -34,6 +36,5 @@ object KeyFlowOf {
       KeyFlow.of(fold, tick, persistence, timerFlow)
     }
   }
-
 
 }

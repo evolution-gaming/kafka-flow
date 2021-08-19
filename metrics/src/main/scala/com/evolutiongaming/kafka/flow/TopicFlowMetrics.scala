@@ -20,18 +20,18 @@ object TopicFlowMetrics {
   implicit def topicFlowMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, TopicFlow[F]] = { registry =>
     for {
       applySummary <- registry.summary(
-        name      = "topic_flow_apply_duration_seconds",
-        help      = "Time required to process the records from the poll",
+        name = "topic_flow_apply_duration_seconds",
+        help = "Time required to process the records from the poll",
         quantiles = Quantiles(Quantile(1.0, 0.0001)),
-        labels    = LabelNames()
+        labels = LabelNames()
       )
       addSummary <- registry.summary(
-        name      = "topic_flow_add_duration_seconds",
-        help      = "Time required to add all assigned partitions to topic flow",
+        name = "topic_flow_add_duration_seconds",
+        help = "Time required to add all assigned partitions to topic flow",
         quantiles = Quantiles(Quantile(1.0, 0.0001)),
-        labels    = LabelNames()
+        labels = LabelNames()
       )
-     } yield { topicFlow =>
+    } yield { topicFlow =>
       new TopicFlow[F] {
         def apply(records: ConsRecords) =
           topicFlow.apply(records) measureDuration { duration =>

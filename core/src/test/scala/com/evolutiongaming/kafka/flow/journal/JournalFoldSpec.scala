@@ -127,10 +127,12 @@ object JournalFoldSpec {
       record = ConsRecord(
         topicPartition = TopicPartition.empty,
         offset = offset,
-        timestampAndType = Some(TimestampAndType(
-          timestamp = Instant.parse("2020-01-02T03:04:05.000Z"),
-          timestampType = TimestampType.Append
-        )),
+        timestampAndType = Some(
+          TimestampAndType(
+            timestamp = Instant.parse("2020-01-02T03:04:05.000Z"),
+            timestampType = TimestampType.Append
+          )
+        ),
         key = Some(WithSize("id")),
         value = Some(WithSize(ByteVector.empty)),
         headers = List(Header(ActionHeader.key, header.toArray))

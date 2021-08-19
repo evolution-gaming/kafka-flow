@@ -23,15 +23,13 @@ trait TopicFlow[F[_]] {
 
   /** Called when a new partition is added to a topic.
     *
-    * I.e. when Kafka rebalancing happens and this consumer is to consume an
-    * additional partition.
+    * I.e. when Kafka rebalancing happens and this consumer is to consume an additional partition.
     */
   def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit]
 
   /** Called when a partition is removed from topic.
     *
-    * I.e. when Kafka rebalancing happens and this consumer is to consume an
-    * additional partition.
+    * I.e. when Kafka rebalancing happens and this consumer is to consume an additional partition.
     */
   def remove(partitions: NonEmptySet[Partition]): F[Unit]
 
@@ -59,18 +57,17 @@ object TopicFlow {
   ): Resource[F, TopicFlow[F]] = {
 
     val commitPending = pendingCommits getAndSet Map.empty flatMap { offsets =>
-
       def partitionOffsets = offsets map { case (topicPartition, offsetAndMetadata) =>
         PartitionOffset(topicPartition.partition, offsetAndMetadata.offset)
       } mkString (", ")
 
       offsets.toNem.traverse_ { offsets =>
         Log[F].info(s"commiting pending offsets: $offsets") *>
-        consumer
-        .commit(offsets)
-        .handleErrorWith { error =>
-          Log[F].error(s"consumer.commit failed for $partitionOffsets: $error", error)
-        }
+          consumer
+            .commit(offsets)
+            .handleErrorWith { error =>
+              Log[F].error(s"consumer.commit failed for $partitionOffsets: $error", error)
+            }
       }
     }
 

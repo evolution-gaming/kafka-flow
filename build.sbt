@@ -49,7 +49,7 @@ lazy val core = (project in file("core"))
       scribe % IntegrationTest,
       skafka,
       sstream,
-      weaver % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
@@ -74,7 +74,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
       KafkaJournal.cassandra,
       cassandraLauncher % IntegrationTest exclude ("ch.qos.logback", "logback-classic"),
       scribe % IntegrationTest,
-      weaver % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect")
@@ -89,7 +89,7 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
     libraryDependencies ++= Seq(
       Monocle.core,
       Monocle.`macro`,
-      weaver % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect")
