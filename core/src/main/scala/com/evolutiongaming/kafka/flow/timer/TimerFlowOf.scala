@@ -22,24 +22,24 @@ trait TimerFlowOf[F[_]] {
 }
 object TimerFlowOf {
 
-  /** Performs persist based on the difference between the state offset and current offset
-    * and idle time since the state was last touched.
+  /** Performs persist based on the difference between the state offset and current offset and idle time since the state
+    * was last touched.
     *
     * Removes the state from memory after it is persisted.
     *
-    * @param fireEvery How often the check should be performed.
-    * @param maxOffsetDifference How many events could have happened without updates
-    * to the state before persist is initiated.
-    * @param maxIdle How long since the state was recovered, or last record was processed
-    * should pass before persist is initiated.
+    * @param fireEvery
+    *   How often the check should be performed.
+    * @param maxOffsetDifference
+    *   How many events could have happened without updates to the state before persist is initiated.
+    * @param maxIdle
+    *   How long since the state was recovered, or last record was processed should pass before persist is initiated.
     */
   def unloadOrphaned[F[_]: MonadThrow](
     fireEvery: FiniteDuration = 10.minutes,
     maxOffsetDifference: Int = 100000,
     maxIdle: FiniteDuration = 10.minutes,
-    flushOnRevoke: Boolean = false,
+    flushOnRevoke: Boolean = false
   ): TimerFlowOf[F] = { (context, persistence, timers) =>
-
     def register(touchedAt: Timestamp) =
       timers.registerProcessing(touchedAt.clock plusMillis fireEvery.toMillis)
 
@@ -58,13 +58,14 @@ object TimerFlowOf {
           expiredAt = touchedAt.clock plusMillis maxIdle.toMillis
           expired = current.clock isAfter expiredAt
           offsetDifference = current.offset.value - touchedAt.offset.value
-          _ <- if (expired || offsetDifference > maxOffsetDifference) {
-            context.log.info(s"flush, offset difference: $offsetDifference") *>
-            persistence.flush *>
-            context.remove
-          } else {
-            register(touchedAt)
-          }
+          _ <-
+            if (expired || offsetDifference > maxOffsetDifference) {
+              context.log.info(s"flush, offset difference: $offsetDifference") *>
+                persistence.flush *>
+                context.remove
+            } else {
+              register(touchedAt)
+            }
         } yield ()
       }
     }
@@ -82,9 +83,8 @@ object TimerFlowOf {
   def persistPeriodically[F[_]: Monad](
     fireEvery: FiniteDuration = 1.minute,
     persistEvery: FiniteDuration = 1.minute,
-    flushOnRevoke: Boolean = false,
+    flushOnRevoke: Boolean = false
   ): TimerFlowOf[F] = { (context, persistence, timers) =>
-
     def register(current: Timestamp) =
       timers.registerProcessing(current.clock plusMillis fireEvery.toMillis)
 
@@ -119,18 +119,17 @@ object TimerFlowOf {
 
   /** Performs flush when `Resource` is cancelled only */
   def flushOnCancel[F[_]: Monad]: TimerFlowOf[F] = { (context, persistence, _) =>
-
     val cancel = context.holding flatMap { holding =>
       Applicative[F].whenA(holding.isDefined) {
         context.log.info(s"flush on revoke, holding offset: $holding") *>
-        persistence.flush *>
-        context.remove
+          persistence.flush *>
+          context.remove
       }
     }
 
     Resource.makeCase(TimerFlow.empty.pure) {
       case (_, Completed) => cancel
-      case (_, Canceled) => cancel
+      case (_, Canceled)  => cancel
       // there is no point to try flushing if it failed with an error
       // the state might not be consistend and storage not accessible
       // plus this is a concurrent operation, and we do not want anything

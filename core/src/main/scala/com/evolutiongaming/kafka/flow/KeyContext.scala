@@ -13,8 +13,7 @@ import com.olegpy.meow.effects._
 
 /** Key specific metainformation inside of parititon.
   *
-  * Recreated each time `KeyState` is created or loaded
-  * from the storage.
+  * Recreated each time `KeyState` is created or loaded from the storage.
   */
 trait KeyContext[F[_]] {
   def holding: F[Option[Offset]]

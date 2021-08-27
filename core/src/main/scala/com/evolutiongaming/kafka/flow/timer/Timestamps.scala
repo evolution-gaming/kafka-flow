@@ -49,7 +49,8 @@ object Timestamps {
 
   /** Creates a timestamp storage for a key.
     *
-    * @param createdAt Current timestamp at the time the key was encountered.
+    * @param createdAt
+    *   Current timestamp at the time the key was encountered.
     */
   def of[F[_]: Sync](createdAt: Timestamp): F[Timestamps[F]] =
     Ref.of(TimestampState(createdAt)) map { storage =>
@@ -61,7 +62,7 @@ object Timestamps {
 
   /** Creates a timestamp storage for a key */
   def apply[F[_]: Functor](
-    storage: MonadState[F, TimestampState],
+    storage: MonadState[F, TimestampState]
   ): Timestamps[F] = new Timestamps[F] {
 
     def current = storage.get map (_.current)

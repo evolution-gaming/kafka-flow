@@ -25,8 +25,8 @@ class SnapshotsSpec extends FunSuite {
     // When("buffer is filled with state")
     val program =
       snapshots.append(100) *>
-      snapshots.append(101) *>
-      snapshots.append(102)
+        snapshots.append(101) *>
+        snapshots.append(102)
 
     val result = program.runS(Context()).value
 
@@ -47,9 +47,9 @@ class SnapshotsSpec extends FunSuite {
     // And("Snapshots is flushed")
     val program =
       snapshots.append(100) *>
-      snapshots.append(101) *>
-      snapshots.append(102) *>
-      snapshots.flush
+        snapshots.append(101) *>
+        snapshots.append(102) *>
+        snapshots.flush
 
     val result = program.runS(Context()).value
 

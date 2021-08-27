@@ -14,7 +14,6 @@ import scala.concurrent.duration.FiniteDuration
 
 class RebalanceListenerSpec extends FunSuite {
 
-
   test("Listener should handle partitions assignment") {
     val result = Fixture
       .listener(topic1, topic2)

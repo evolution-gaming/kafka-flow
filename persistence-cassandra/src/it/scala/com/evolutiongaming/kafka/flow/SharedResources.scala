@@ -35,18 +35,18 @@ object SharedResources extends GlobalResource {
     val start = IO {
       // set logging to WARN level to avoid spamming the logs
       Logger.root
-      .clearHandlers()
-      .clearModifiers()
-      .withHandler(minimumLevel = Some(Level.Warn))
-      .replace()
+        .clearHandlers()
+        .clearModifiers()
+        .withHandler(minimumLevel = Some(Level.Warn))
+        .replace()
       // proceed starting Cassandra
       StartCassandra()
     }
 
     Resource.make(start) { shutdown => IO(shutdown()) } *>
-    CassandraModule.of[IO](config) flatMap { cassandra =>
-      store.putR(cassandra)
-    }
+      CassandraModule.of[IO](config) flatMap { cassandra =>
+        store.putR(cassandra)
+      }
   }
 
 }

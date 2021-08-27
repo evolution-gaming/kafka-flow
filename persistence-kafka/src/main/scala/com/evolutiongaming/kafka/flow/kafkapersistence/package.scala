@@ -23,9 +23,8 @@ package object kafkapersistence {
 
   implicit class PartitionFlowOfCompanionOps(val self: PartitionFlowOf.type) extends AnyVal {
 
-    /**
-      * Creates PartitionFlowOf which on partition assignment reads respective partition of "snapshot" (usually compacted)
-      * topic and eagerly recovers all the state from it.
+    /** Creates PartitionFlowOf which on partition assignment reads respective partition of "snapshot" (usually
+      * compacted) topic and eagerly recovers all the state from it.
       */
     def eagerRecoveryKafkaPersistence[F[_]: Concurrent: Timer: Parallel: LogOf, S, A](
       applicationId: String,
@@ -34,7 +33,7 @@ package object kafkapersistence {
       timersOf: TimersOf[F, KafkaKey],
       timerFlowOf: TimerFlowOf[F],
       fold: FoldOption[F, S, ConsRecord],
-      tick: TickOption[F, S],
+      tick: TickOption[F, S]
     ): PartitionFlowOf[F] =
       new PartitionFlowOf[F] {
         override def apply(

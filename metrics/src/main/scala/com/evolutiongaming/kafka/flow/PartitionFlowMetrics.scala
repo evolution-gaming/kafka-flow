@@ -38,13 +38,13 @@ object PartitionFlowMetrics {
             val topicPartition = head.topicPartition
             processRecords measureDuration { duration =>
               applySummary
-              .labels(topicPartition.topic, topicPartition.partition.show)
-              .observe(duration.toNanos.nanosToSeconds)
+                .labels(topicPartition.topic, topicPartition.partition.show)
+                .observe(duration.toNanos.nanosToSeconds)
             }
           } getOrElse {
             processRecords measureDuration { duration =>
               triggerTimersSummary
-              .observe(duration.toNanos.nanosToSeconds)
+                .observe(duration.toNanos.nanosToSeconds)
             }
           }
         }
