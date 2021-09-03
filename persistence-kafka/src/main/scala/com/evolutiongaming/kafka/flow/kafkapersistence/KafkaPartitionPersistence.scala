@@ -110,7 +110,7 @@ object KafkaPartitionPersistence {
   ): BytesByKey = record match {
     case ConsumerRecord(_, _, _, Some(WithSize(key, _)), Some(WithSize(value, _)), _) => map + (key -> value)
     case ConsumerRecord(_, _, _, Some(WithSize(key, _)), None, _)                     => map - key
-    case _                                                                            => map //ignore records with no key for now
+    case _ => map //ignore records with no key for now
   }
 
   private[kafkapersistence] def readSnapshots[F[_]: BracketThrowable: FromBytes[*[_], String]: Log](

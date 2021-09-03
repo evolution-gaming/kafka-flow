@@ -33,8 +33,8 @@ object JournalDatabase {
 
   /** Creates in-memory database implementation.
     *
-    * The data will survive destruction of specific `Journals` instance,
-    * but will not survive destruction of specific `JournalDatabase` instance.
+    * The data will survive destruction of specific `Journals` instance, but will not survive destruction of specific
+    * `JournalDatabase` instance.
     */
   def memory[F[_]: Sync, K, E](implicit E: ToOffset[E]): F[JournalDatabase[F, K, E]] =
     Ref.of[F, Map[K, SortedMap[Offset, E]]](Map.empty) map { storage =>
@@ -43,8 +43,8 @@ object JournalDatabase {
 
   /** Creates in-memory database implementation.
     *
-    * The data will survive destruction of specific `Journals` instance,
-    * but will not survive destruction of specific `JournalDatabase` instance.
+    * The data will survive destruction of specific `Journals` instance, but will not survive destruction of specific
+    * `JournalDatabase` instance.
     */
   def memory[F[_]: Monad, K, E](
     storage: MonadState[F, Map[K, SortedMap[Offset, E]]]

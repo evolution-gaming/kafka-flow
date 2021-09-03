@@ -17,8 +17,8 @@ final class KafkaPersistence[F[_], K, S](
   val writeDatabase: SnapshotWriteDatabase[F, K, S],
   val ofPartition: Partition => F[KafkaPartitionPersistence[F, K, S]]
 ) { self =>
-  def imap[B](f: Partition => K => B)(g: B => K)(
-    implicit F: Functor[F]
+  def imap[B](f: Partition => K => B)(g: B => K)(implicit
+    F: Functor[F]
   ): KafkaPersistence[F, B, S] = new KafkaPersistence[F, B, S](
     writeDatabase = writeDatabase.contramap(g),
     ofPartition = { partition =>

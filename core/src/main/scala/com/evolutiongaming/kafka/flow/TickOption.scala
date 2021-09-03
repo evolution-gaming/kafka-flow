@@ -10,16 +10,14 @@ case class TickOption[F[_], S](value: Tick[F, Option[S]]) {
 
   /** Transforms the state `S` of the `Tick` to something else.
     *
-    * It is possible to use additional information from previous `T` to
-    * build a new state.
+    * It is possible to use additional information from previous `T` to build a new state.
     *
-    * The common use for this method is to augument original state with
-    * some metainformation, i.e. offset or sequence number.
+    * The common use for this method is to augument original state with some metainformation, i.e. offset or sequence
+    * number.
     *
     * See also `StateT#transformS` for more details.
     *
-    * If any of `S` or `T` is `None` then the output will also be `None`,
-    * though underlying `run` will be called anyway.
+    * If any of `S` or `T` is `None` then the output will also be `None`, though underlying `run` will be called anyway.
     */
   def expand[T](f: T => S)(g: (S, T) => T)(implicit F: Functor[F]): TickOption[F, T] =
     TickOption {

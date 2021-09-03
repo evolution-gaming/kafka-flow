@@ -58,7 +58,6 @@ object KeyFlow {
       def onTimer = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
 
-
   /** Does not save anything to the database */
   def transient[F[_]: Sync: KeyContext: ReadTimestamps, K, S, A](
     fold: FoldOption[F, S, A],

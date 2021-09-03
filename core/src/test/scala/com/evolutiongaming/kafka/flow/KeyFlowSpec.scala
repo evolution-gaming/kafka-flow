@@ -238,7 +238,7 @@ object KeyFlowSpec {
     val timestamp: Timestamp = Timestamp(
       offset = Offset.unsafe(100),
       watermark = Some(Instant.parse("2020-03-01T00:00:00.000Z")),
-      clock = Instant.parse("2020-03-02T00:00:00.000Z"),
+      clock = Instant.parse("2020-03-02T00:00:00.000Z")
     )
 
     def fold: FoldOption[SyncIO, State, ConsRecord] =

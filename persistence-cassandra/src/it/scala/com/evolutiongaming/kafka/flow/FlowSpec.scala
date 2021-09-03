@@ -22,7 +22,6 @@ import weaver.GlobalRead
 class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
 
   test("flow fails when Cassandra insert fails") { cassandra =>
-
     val flow = for {
       failAfter <- Resource.liftF(Ref.of(10000))
       session = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
@@ -51,17 +50,19 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
           commitOnRevoke = true
         )
       )
-     topicFlowOf = TopicFlowOf(partitionFlowOf)
-     records = NonEmptyList.of(ConsRecord(
-       topicPartition = TopicPartition.empty,
-       offset = Offset.min,
-       timestampAndType = None,
-       key = Some(WithSize("key"))
-     ))
-     consumer = Consumer.repeat {
-       ConsumerRecords(Map(TopicPartition.empty -> records))
-     }
-     join <- {
+      topicFlowOf = TopicFlowOf(partitionFlowOf)
+      records = NonEmptyList.of(
+        ConsRecord(
+          topicPartition = TopicPartition.empty,
+          offset = Offset.min,
+          timestampAndType = None,
+          key = Some(WithSize("key"))
+        )
+      )
+      consumer = Consumer.repeat {
+        ConsumerRecords(Map(TopicPartition.empty -> records))
+      }
+      join <- {
         implicit val retry = Retry.empty[IO]
         KafkaFlow.resource(
           consumer = Resource.liftF(consumer),
