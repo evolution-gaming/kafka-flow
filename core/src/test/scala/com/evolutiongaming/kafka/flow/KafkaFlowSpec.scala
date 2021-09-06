@@ -13,7 +13,7 @@ import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.{
   ConsumerRecord,
   ConsumerRecords,
-  RebalanceListener => SRebalanceListener,
+  RebalanceListener1 => SRebalanceListener,
   WithSize
 }
 import com.evolutiongaming.sstream.Stream
@@ -176,6 +176,8 @@ object KafkaFlowSpec {
 
       val consumer: Consumer[F] = new Consumer[F] {
 
+        private val noopConsumer = new Consumer.NoopRebalanceConsumer
+
         def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]) =
           state update (_ + Action.Subscribe(topics)(listener))
 
@@ -199,9 +201,11 @@ object KafkaFlowSpec {
         def revoke(partitions: NonEmptySet[Partition]) =
           state.get flatMap { state =>
             val revoke = state.actions collectFirst { case action: Action.Subscribe =>
-              action.listener.onPartitionsRevoked(
-                partitions concatMap { partition => action.topics.map { topic => TopicPartition(topic, partition) } }
-              )
+              action.listener
+                .onPartitionsRevoked(
+                  partitions concatMap { partition => action.topics.map { topic => TopicPartition(topic, partition) } }
+                )
+                .toF(noopConsumer)
             }
             revoke.sequence_
           }
