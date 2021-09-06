@@ -23,13 +23,11 @@ object RebalanceListener {
     override def onPartitionsAssigned(topicPartitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
       groupByTopic(topicPartitions) traverse_ { case (topic, flow, partitions) =>
         for {
-          log <- log[F].lift
-          _ <- log.prefixed(topic).info(s"$partitions assigned").lift
+          log <- log[F].flatTap(log => log.prefixed(topic).info(s"$partitions assigned")).lift
           partitions <- partitions.toNonEmptyList traverse { partition =>
             consumer.position(TopicPartition(topic, partition)) map (partition -> _)
           }
-          _ <- log.prefixed(topic).info(s"committed offsets: $partitions").lift
-          _ <- flow.add(partitions.toNes).lift
+          _ <- (log.prefixed(topic).info(s"committed offsets: $partitions") >> flow.add(partitions.toNes)).lift
         } yield ()
       }
 
