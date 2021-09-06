@@ -44,7 +44,7 @@ object SharedResources extends GlobalResource {
     for {
       _ <- Resource.make(start) { shutdown => IO(shutdown()) }
       blocker <- Blocker[IO]
-      kafka <- Resource.liftF(LogOf.slf4j[IO]) flatMap { implicit logOf =>
+      kafka <- Resource.eval(LogOf.slf4j[IO]) flatMap { implicit logOf =>
         KafkaModule.of[IO]("SharedResources", config, CollectorRegistry.empty, blocker)
       }
       _ <- store.putR(kafka)

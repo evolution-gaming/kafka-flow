@@ -7,7 +7,7 @@ import com.evolutiongaming.kafka.flow.ConsumerFlowSpec._
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{RebalanceListener => SRebalanceListener}
+import com.evolutiongaming.skafka.consumer.{RebalanceListener1 => SRebalanceListener}
 import munit.FunSuite
 
 import scala.concurrent.duration._
@@ -122,6 +122,8 @@ object ConsumerFlowSpec {
   object ConstFixture {
 
     def consumer() = new Consumer[F] {
+      private val noopConsumer = new Consumer.NoopRebalanceConsumer
+
       def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]): F[Unit] =
         StateT modify [Try, Context] (_ + Action.Subscribe(topics) + listener)
 
@@ -136,9 +138,9 @@ object ConsumerFlowSpec {
                 next.listener.traverse(f).run(next).map { case (context, _) => context -> ConsRecords.empty }
               head match {
                 case Command.Records(records)     => Try(next -> records)
-                case Command.Assigned(partitions) => withListener(_.onPartitionsAssigned(partitions))
-                case Command.Revoked(partitions)  => withListener(_.onPartitionsRevoked(partitions))
-                case Command.Lost(partitions)     => withListener(_.onPartitionsLost(partitions))
+                case Command.Assigned(partitions) => withListener(_.onPartitionsAssigned(partitions).toF(noopConsumer))
+                case Command.Revoked(partitions)  => withListener(_.onPartitionsRevoked(partitions).toF(noopConsumer))
+                case Command.Lost(partitions)     => withListener(_.onPartitionsLost(partitions).toF(noopConsumer))
               }
           }
         }
