@@ -45,7 +45,7 @@ object CassandraModule {
   )(implicit executor: ExecutionContextExecutor): Resource[F, CassandraModule[F]] = {
 
     for {
-      log             <- Resource.liftF(log[F])
+      log             <- Resource.eval(log[F])
       // this is required to log all Cassandra errors before popping them up,
       // which is useful because popped up errors might be lost in some cases
       // while kafka-flow is accessing Cassandra in bracket/resource release
@@ -58,7 +58,7 @@ object CassandraModule {
           }
         }
       }
-      clusterOf       <- Resource.liftF(clusterOf[F](fromGFuture))
+      clusterOf       <- Resource.eval(clusterOf[F](fromGFuture))
       cluster         <- clusterOf(config.client)
       keyspace        = config.schema.keyspace
       globalSession   = {
@@ -71,7 +71,7 @@ object CassandraModule {
       }
       // we need globally scoped session as connecting with non-existend keyspace will fail
       syncSession     <- if (keyspace.autoCreate) globalSession else keyspaceSession
-      _sync           <- Resource.liftF(
+      _sync           <- Resource.eval(
         CassandraSync.of[F](
           session = syncSession,
           keyspace = keyspace.name,
@@ -80,7 +80,7 @@ object CassandraModule {
       )
       // `syncSession` is `keyspaceSession` if `autoCreate` was disabled,
       // no need to reconnect
-      unsafeSession   <- if (keyspace.autoCreate) keyspaceSession else Resource.liftF(syncSession.pure[F])
+      unsafeSession   <- if (keyspace.autoCreate) keyspaceSession else Resource.eval(syncSession.pure[F])
       _session        <- SafeSession.of(unsafeSession)
       _healthCheck    <- CassandraHealthCheckOf(unsafeSession, config)
     } yield new CassandraModule[F] {

@@ -24,11 +24,11 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
   test("flow fails when Cassandra insert fails") { cassandra =>
 
     val flow = for {
-      failAfter <- Resource.liftF(Ref.of(10000))
+      failAfter <- Resource.eval(Ref.of(10000))
       session = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
-      storage <- Resource.liftF(CassandraPersistence.withSchema[IO, String](session, cassandra.sync))
-      timersOf <- Resource.liftF(TimersOf.memory[IO, KafkaKey])
-      keysOf <- Resource.liftF(storage.keys.keysOf)
+      storage <- Resource.eval(CassandraPersistence.withSchema[IO, String](session, cassandra.sync))
+      timersOf <- Resource.eval(TimersOf.memory[IO, KafkaKey])
+      keysOf <- Resource.eval(storage.keys.keysOf)
       persistenceOf <- storage.restoreEvents
       keyStateOf = KeyStateOf.eagerRecovery(
         applicationId = "FlowSpec",
@@ -64,7 +64,7 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
      join <- {
         implicit val retry = Retry.empty[IO]
         KafkaFlow.resource(
-          consumer = Resource.liftF(consumer),
+          consumer = Resource.eval(consumer),
           flowOf = ConsumerFlowOf(topic = "", flowOf = topicFlowOf)
         )
       }
