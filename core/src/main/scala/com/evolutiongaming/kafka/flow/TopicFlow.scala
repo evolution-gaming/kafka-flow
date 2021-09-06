@@ -42,7 +42,7 @@ object TopicFlow {
     partitionFlowOf: PartitionFlowOf[F]
   ): Resource[F, TopicFlow[F]] = for {
     cache <- Cache.loading[F, Partition, PartitionFlow[F]]
-    pendingCommits <- Resource.liftF(Ref.of(Map.empty[TopicPartition, OffsetAndMetadata]))
+    pendingCommits <- Resource.eval(Ref.of(Map.empty[TopicPartition, OffsetAndMetadata]))
     flow <- LogResource[F](getClass, topic) flatMap { implicit log =>
       of(consumer, topic, partitionFlowOf, cache, pendingCommits)
     }

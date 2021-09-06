@@ -76,7 +76,7 @@ object ConsumerFlow {
 
     val subscribe =
       flows.keySet.toList.toNel match {
-        case Some(topics) => consumer.subscribe(topics.toNes, RebalanceListener[F](consumer, flows))
+        case Some(topics) => consumer.subscribe(topics.toNes, RebalanceListener[F](flows))
         case None         => new IllegalArgumentException("Parameter flows cannot be empty").raiseError[F, Unit]
       }
 

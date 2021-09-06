@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.journal
 
+import cats.syntax.option._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.FoldOption
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
@@ -11,6 +12,7 @@ import com.evolutiongaming.kafka.journal.PayloadType
 import com.evolutiongaming.kafka.journal.SeqNr
 import com.evolutiongaming.kafka.journal.SeqRange
 import com.evolutiongaming.kafka.journal.ToBytes
+import com.evolutiongaming.kafka.journal.Version
 import com.evolutiongaming.skafka.Header
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TimestampAndType
@@ -120,6 +122,7 @@ object JournalFoldSpec {
         ActionHeader.Append(
           range = SeqRange(seqNr),
           origin = None,
+          version = Version.current.some,
           payloadType = PayloadType.Json,
           metadata = HeaderMetadata.empty
         )

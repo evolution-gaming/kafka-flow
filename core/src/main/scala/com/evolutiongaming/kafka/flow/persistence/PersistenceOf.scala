@@ -62,7 +62,7 @@ object PersistenceOf {
     snapshotsOf: SnapshotsOf[F, K, S]
   ): Resource[F, PersistenceOf[F, K, S, A]] = {
     val log = LogOf[F].apply(PersistenceOf.getClass)
-    Resource.liftF(log) map { implicit log => (key, fold, timestamps) =>
+    Resource.eval(log) map { implicit log => (key, fold, timestamps) =>
       implicit val _timestamps = timestamps
       for {
         journals <- journalsOf(key)

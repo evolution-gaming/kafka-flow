@@ -44,7 +44,7 @@ object KafkaFlow {
       onError = OnError.fromLog(log)
     )
 
-    Resource.liftF(retry) flatMap { implicit retry =>
+    Resource.eval(retry) flatMap { implicit retry =>
       resource(consumer, flowOf)
     }
 

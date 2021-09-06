@@ -45,7 +45,7 @@ object PartitionContext {
     log: Log[F]
   ): Resource[F, KeyContext[F]] = {
     implicit val _log = log
-    Resource.liftF(of(removeFromCache))
+    Resource.eval(of(removeFromCache))
   }
 
 }

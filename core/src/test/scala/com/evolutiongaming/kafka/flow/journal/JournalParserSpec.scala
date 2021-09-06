@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.journal
 
+import cats.syntax.option._
 import com.evolutiongaming.kafka.journal.ActionHeader
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.HeaderMetadata
@@ -8,6 +9,7 @@ import com.evolutiongaming.kafka.journal.PayloadType
 import com.evolutiongaming.kafka.journal.SeqNr
 import com.evolutiongaming.kafka.journal.SeqRange
 import com.evolutiongaming.kafka.journal.ToBytes
+import com.evolutiongaming.kafka.journal.Version
 import com.evolutiongaming.skafka.Header
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TimestampAndType
@@ -104,6 +106,7 @@ object JournalParserSpec {
       ActionHeader.Append(
         range = SeqRange.unsafe(from = 21398, to = 21398),
         origin = None,
+        version = Version.current.some,
         payloadType = PayloadType.Json,
         metadata = HeaderMetadata.empty
       )

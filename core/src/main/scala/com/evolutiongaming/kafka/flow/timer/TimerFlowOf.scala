@@ -43,7 +43,7 @@ object TimerFlowOf {
     def register(touchedAt: Timestamp) =
       timers.registerProcessing(touchedAt.clock plusMillis fireEvery.toMillis)
 
-    val acquire = Resource.liftF {
+    val acquire = Resource.eval {
       for {
         current <- timers.current
         persistedAt <- timers.persistedAt
@@ -88,7 +88,7 @@ object TimerFlowOf {
     def register(current: Timestamp) =
       timers.registerProcessing(current.clock plusMillis fireEvery.toMillis)
 
-    val acquire = Resource.liftF {
+    val acquire = Resource.eval {
       for {
         current <- timers.current
         persistedAt <- timers.persistedAt

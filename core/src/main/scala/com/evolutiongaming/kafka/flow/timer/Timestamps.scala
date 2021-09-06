@@ -58,7 +58,7 @@ object Timestamps {
     }
 
   def resource[F[_]: Sync](createdAt: Timestamp): Resource[F, Timestamps[F]] =
-    Resource.liftF(of(createdAt))
+    Resource.eval(of(createdAt))
 
   /** Creates a timestamp storage for a key */
   def apply[F[_]: Functor](
