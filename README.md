@@ -9,6 +9,9 @@
 
 https://evolution-gaming.github.io/kafka-flow
 
+## Changelog
+https://evolution-gaming.github.io/kafka-flow/docs/changelog
+
 ## Setup
 
 ```scala
