@@ -124,8 +124,8 @@ object KafkaPersistenceModule {
       producer <- producerOf.apply(
         producerConfig.copy(common = producerConfig.common.copy(clientId = s"$snapshotTopicPartition-producer".some))
       )
-      keysOf_ <- Resource.liftF(makeKeysOf(partitionDataCache))
-      persistence_ <- Resource.liftF(makeSnapshotPersistenceOf(keysOf_, partitionDataCache, producer))
+      keysOf_ <- Resource.eval(makeKeysOf(partitionDataCache))
+      persistence_ <- Resource.eval(makeSnapshotPersistenceOf(keysOf_, partitionDataCache, producer))
     } yield new KafkaPersistenceModule[F, S] {
       override def keysOf: KeysOf[F, KafkaKey] = keysOf_
       override def persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord] = persistence_

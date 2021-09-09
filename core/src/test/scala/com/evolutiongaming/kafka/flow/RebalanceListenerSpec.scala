@@ -11,12 +11,14 @@ import com.evolutiongaming.skafka.consumer.{RebalanceListener1 => SRebalanceList
 import munit.FunSuite
 
 import scala.concurrent.duration.FiniteDuration
-import scala.util.{Success, Try}
+import scala.util.Try
 
 class RebalanceListenerSpec extends FunSuite {
 
+  private val noopConsumer = new Consumer.NoopRebalanceConsumer
+
   test("Listener should handle partitions assignment") {
-    val Success(result) = Fixture
+    val result: Try[Context] = Fixture
       .listener(topic1, topic2)
       .onPartitionsAssigned(
         NonEmptySet.of(
@@ -26,18 +28,18 @@ class RebalanceListenerSpec extends FunSuite {
           TopicPartition(topic2, partition4)
         )
       )
-      .toF(Fixture.rebalanceConsumer)
+      .toF(noopConsumer)
       .runS(Context())
 
     val expected = Map(
       topic1 -> Action.Add(NonEmptySet.of(partition1 -> offset, partition2 -> offset)),
       topic2 -> Action.Add(NonEmptySet.of(partition3 -> offset, partition4 -> offset))
     )
-    assertEquals(result.actions, expected)
+    assertEquals(result.map(_.actions), expected.pure[Try])
   }
 
   test("Listener should handle partitions revoke") {
-    val Success(result) = Fixture
+    val result: Try[Context] = Fixture
       .listener(topic1, topic2)
       .onPartitionsRevoked(
         NonEmptySet.of(
@@ -45,18 +47,18 @@ class RebalanceListenerSpec extends FunSuite {
           TopicPartition(topic2, partition3)
         )
       )
-      .toF(Fixture.rebalanceConsumer)
+      .toF(noopConsumer)
       .runS(Context())
 
     val expected = Map(
       topic1 -> Action.Remove(NonEmptySet.of(partition1)),
       topic2 -> Action.Remove(NonEmptySet.of(partition3))
     )
-    assertEquals(result.actions, expected)
+    assertEquals(result.map(_.actions), expected.pure[Try])
   }
 
   test("Listener should handle partitions lost") {
-    val Success(result) = Fixture
+    val result: Try[Context] = Fixture
       .listener(topic1, topic2)
       .onPartitionsLost(
         NonEmptySet.of(
@@ -64,14 +66,14 @@ class RebalanceListenerSpec extends FunSuite {
           TopicPartition(topic2, partition3)
         )
       )
-      .toF(Fixture.rebalanceConsumer)
+      .toF(noopConsumer)
       .runS(Context())
 
     val expected = Map(
       topic1 -> Action.Remove(NonEmptySet.of(partition1)),
       topic2 -> Action.Remove(NonEmptySet.of(partition3))
     )
-    assertEquals(result.actions, expected)
+    assertEquals(result.map(_.actions), expected.pure[Try])
   }
 
 }
@@ -113,12 +115,12 @@ object RebalanceListenerSpec {
     def flow(topic: String) = new TopicFlow[F] {
       def apply(records: ConsRecords): F[Unit] = ().pure[F]
       def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] =
-        StateT modify [Try, Context](_.add(topic, Action.Add(partitions)))
+        StateT.modify(_.add(topic, Action.Add(partitions)))
       def remove(partitions: NonEmptySet[Partition]): F[Unit] =
-        StateT modify [Try, Context](_.add(topic, Action.Remove(partitions)))
+        StateT.modify(_.add(topic, Action.Remove(partitions)))
     }
 
-    def listener(topics: Topic*) =
+    def listener(topics: Topic*): SRebalanceListener[F] =
       RebalanceListener(
         flows = topics.map(topic => topic -> flow(topic)).toMap
       )

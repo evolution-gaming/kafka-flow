@@ -118,6 +118,8 @@ object ConsumerFlowSpec {
   object ConstFixture {
 
     def consumer() = new Consumer[F] {
+      private val noopConsumer = new Consumer.NoopRebalanceConsumer
+
       def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]): F[Unit] =
         StateT modify [Try, Context] (_ + Action.Subscribe(topics) + listener)
 
@@ -130,7 +132,7 @@ object ConsumerFlowSpec {
               val next = context.copy(commands = tail)
               def withListener(f: SRebalanceListener[F] => RebalanceCallback[F, Unit]): Try[(Context, ConsRecords)] = {
                 next.listener
-                  .traverse(f(_).toF(rebalanceConsumer))
+                  .traverse(f(_).toF(noopConsumer))
                   .run(next)
                   .map { case (context, _) => context -> ConsRecords.empty }
               }
@@ -145,7 +147,6 @@ object ConsumerFlowSpec {
       }
 
       def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] = ().pure[F]
-
     }
 
     def flow(topic: String) = new TopicFlow[F] {
@@ -169,9 +170,5 @@ object ConsumerFlowSpec {
         StateT.set(context)
       }
     }
-  }
-
-  val rebalanceConsumer = new ExplodingRebalanceConsumer {
-    override def position(partition: TopicPartition) = Try(Offset.min)
   }
 }

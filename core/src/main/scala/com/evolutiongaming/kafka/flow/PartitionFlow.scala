@@ -52,11 +52,11 @@ object PartitionFlow {
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig
   ): Resource[F, PartitionFlow[F]] = for {
-    clock <- Resource.liftF(Clock[F].instant)
-    committedOffset <- Resource.liftF(Ref.of(assignedAt))
-    timestamp <- Resource.liftF(Ref.of(Timestamp(clock, None, assignedAt)))
-    triggerTimersAt <- Resource.liftF(Ref.of(clock))
-    commitOffsetsAt <- Resource.liftF(Ref.of(clock))
+    clock <- Resource.eval(Clock[F].instant)
+    committedOffset <- Resource.eval(Ref.of(assignedAt))
+    timestamp <- Resource.eval(Ref.of(Timestamp(clock, None, assignedAt)))
+    triggerTimersAt <- Resource.eval(Ref.of(clock))
+    commitOffsetsAt <- Resource.eval(Ref.of(clock))
     flow <- of(
       topicPartition = topicPartition,
       keyStateOf = keyStateOf,

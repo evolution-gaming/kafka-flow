@@ -4,13 +4,18 @@ import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
 import cats.effect.concurrent.Ref
 import cats.effect.{IO, Resource, SyncIO, Timer}
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.{LogOf, ToTry}
 import com.evolutiongaming.catshelper.TimerHelper._
+import com.evolutiongaming.catshelper.{LogOf, ToTry}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecord, ConsRecords}
 import com.evolutiongaming.retry.{OnError, Retry, Strategy}
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, WithSize, RebalanceListener1 => SRebalanceListener}
+import com.evolutiongaming.skafka.consumer.{
+  ConsumerRecord,
+  ConsumerRecords,
+  RebalanceListener1 => SRebalanceListener,
+  WithSize
+}
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 
@@ -175,6 +180,8 @@ object KafkaFlowSpec {
 
       val consumer: Consumer[F] = new Consumer[F] {
 
+        private val noopConsumer = new Consumer.NoopRebalanceConsumer
+
         def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]) =
           state update (_ + Action.Subscribe(topics)(listener))
 
@@ -195,11 +202,11 @@ object KafkaFlowSpec {
         def revoke(partitions: NonEmptySet[Partition]) =
           state.get flatMap { state =>
             val revoke = state.actions collectFirst { case action: Action.Subscribe =>
-              // rebalanceConsumer is not used in onPartitionsRevoked callback, so it's ok to have any implementation
-              val rebalanceConsumer = new ExplodingRebalanceConsumer
-              action.listener.onPartitionsRevoked(
-                partitions concatMap { partition => action.topics.map { topic => TopicPartition(topic, partition) } }
-              ).toF(rebalanceConsumer)
+              action.listener
+                .onPartitionsRevoked(
+                  partitions concatMap { partition => action.topics.map { topic => TopicPartition(topic, partition) } }
+                )
+                .toF(noopConsumer)
             }
             revoke.sequence_
           }
