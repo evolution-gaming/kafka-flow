@@ -17,35 +17,39 @@ trait PersistenceOf[F[_], K, S, A] {
 
   /** Creates generic persistence for a key.
     *
-    * @param key key for which the values are stored into database,
-    * @param fold recovery function to use if the state is restored from journal,
-    * @param timerstamp service to register persistence events to.
+    * @param key
+    *   key for which the values are stored into database,
+    * @param fold
+    *   recovery function to use if the state is restored from journal,
+    * @param timerstamp
+    *   service to register persistence events to.
     */
   def apply(
     key: K,
     fold: FoldOption[F, S, A],
-    timestamps: Timestamps[F],
+    timestamps: Timestamps[F]
   ): F[Persistence[F, S, A]]
 
 }
+
 /** Creates snapshot persistence for a key.
   *
   * Ignores recovery function because the state is to be restored from snapshot.
   */
-trait SnapshotPersistenceOf[F[_], K, S, A] extends PersistenceOf[F, K, S, A] {self =>
+trait SnapshotPersistenceOf[F[_], K, S, A] extends PersistenceOf[F, K, S, A] { self =>
 
   def apply(
     key: K,
-    timestamps: Timestamps[F],
+    timestamps: Timestamps[F]
   ): F[Persistence[F, S, A]]
 
   def apply(
     key: K,
     fold: FoldOption[F, S, A],
-    timestamps: Timestamps[F],
+    timestamps: Timestamps[F]
   ): F[Persistence[F, S, A]] = apply(key, timestamps)
 
-  final def contramap[B](f: B => K ): SnapshotPersistenceOf[F, B,S,A] = new SnapshotPersistenceOf[F, B,S,A] {
+  final def contramap[B](f: B => K): SnapshotPersistenceOf[F, B, S, A] = new SnapshotPersistenceOf[F, B, S, A] {
     override def apply(key: B, timestamps: Timestamps[F]): F[Persistence[F, S, A]] = self(f(key), timestamps)
   }
 }
@@ -75,7 +79,7 @@ object PersistenceOf {
   def restoreSnapshots[F[_]: Monad, K, S, A](
     keysOf: KeysOf[F, K],
     journalsOf: JournalsOf[F, K, A],
-    snapshotsOf: SnapshotsOf[F, K, S],
+    snapshotsOf: SnapshotsOf[F, K, S]
   ): SnapshotPersistenceOf[F, K, S, A] = { (key, timestamps) =>
     implicit val _timestamps = timestamps
     for {
@@ -84,14 +88,14 @@ object PersistenceOf {
       keys = keysOf(key)
     } yield Persistence(
       readState = ReadState(snapshots),
-      buffers = Buffers(keys, journals, snapshots),
+      buffers = Buffers(keys, journals, snapshots)
     )
   }
 
   /** Saves snapshots only, restores state from snapshots */
   def snapshotsOnly[F[_]: Monad, K, S, A](
     keysOf: KeysOf[F, K],
-    snapshotsOf: SnapshotsOf[F, K, S],
+    snapshotsOf: SnapshotsOf[F, K, S]
   ): SnapshotPersistenceOf[F, K, S, A] = { (key, timestamps) =>
     implicit val _timestamps = timestamps
     for {
@@ -99,7 +103,7 @@ object PersistenceOf {
       keys = keysOf(key)
     } yield Persistence(
       readState = ReadState(snapshots),
-      buffers = Buffers(keys, Journals.empty[F, A], snapshots),
+      buffers = Buffers(keys, Journals.empty[F, A], snapshots)
     )
   }
 

@@ -42,7 +42,8 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
         """.stripMargin
       )
       created <- Clock[F].instant
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("segment", SegmentNr(key.key.hashCode, Segments.default))
@@ -69,7 +70,8 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
           |   AND key = :key
         """.stripMargin
       )
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("segment", SegmentNr(key.key.hashCode, Segments.default))
@@ -104,10 +106,11 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
       """.stripMargin
     )
     val boundStatement = preparedStatement map { preparedStatement =>
-      preparedStatement.bind()
-      .encode("application_id", applicationId)
-      .encode("group_id", groupId)
-      .encode("segment", segment)
+      preparedStatement
+        .bind()
+        .encode("application_id", applicationId)
+        .encode("group_id", groupId)
+        .encode("segment", segment)
     }
 
     Stream.lift(boundStatement) flatMap session.execute map { row =>
@@ -147,12 +150,13 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
       """.stripMargin
     )
     val boundStatement = preparedStatement map { preparedStatement =>
-      preparedStatement.bind()
-      .encode("application_id", applicationId)
-      .encode("group_id", groupId)
-      .encode("segment", segment)
-      .encode("topic", topicPartition.topic)
-      .encode("partition", topicPartition.partition.value)
+      preparedStatement
+        .bind()
+        .encode("application_id", applicationId)
+        .encode("group_id", groupId)
+        .encode("segment", segment)
+        .encode("topic", topicPartition.topic)
+        .encode("partition", topicPartition.partition.value)
     }
 
     Stream.lift(boundStatement) flatMap session.execute map { row =>

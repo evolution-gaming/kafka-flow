@@ -13,11 +13,11 @@ object SnapshotFold {
     fold: FoldOption[F, S, ConsRecord]
   ): FoldOption[F, KafkaSnapshot[S], ConsRecord] =
     fold
-    .transformState[KafkaSnapshot[S]](_.value) { (state, record) =>
-      KafkaSnapshot(value = state, offset = record.offset)
-    }
-    .filter { (snapshot, record) =>
-      record.offset > snapshot.offset
-    }
+      .transformState[KafkaSnapshot[S]](_.value) { (state, record) =>
+        KafkaSnapshot(value = state, offset = record.offset)
+      }
+      .filter { (snapshot, record) =>
+        record.offset > snapshot.offset
+      }
 
 }

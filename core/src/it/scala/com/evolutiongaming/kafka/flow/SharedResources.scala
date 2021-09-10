@@ -33,10 +33,14 @@ object SharedResources extends GlobalResource {
 
     val start = IO {
       // set root logging to WARN level to avoid spamming the logs
-      Logger.root.clearHandlers().clearModifiers()
-      .withHandler(minimumLevel = Some(Level.Warn)).replace()
+      Logger.root
+        .clearHandlers()
+        .clearModifiers()
+        .withHandler(minimumLevel = Some(Level.Warn))
+        .replace()
       Logger("com.evolutiongaming.kafka.flow")
-      .withHandler(minimumLevel = Some(Level.Debug)).replace()
+        .withHandler(minimumLevel = Some(Level.Debug))
+        .replace()
 
       // proceed starting Kafka
       StartKafka()

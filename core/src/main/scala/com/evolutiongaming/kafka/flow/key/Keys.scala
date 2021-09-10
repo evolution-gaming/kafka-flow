@@ -15,8 +15,8 @@ trait KeyWriter[F[_]] {
 
   /** Removes state from the buffers and optionally also from persistence.
     *
-    * @param persist if `true` then also calls underlying database, flushes
-    * buffers only otherwise.
+    * @param persist
+    *   if `true` then also calls underlying database, flushes buffers only otherwise.
     */
   def delete(persist: Boolean): F[Unit]
 
@@ -34,7 +34,7 @@ object Keys {
     def delete(persist: Boolean): F[Unit] =
       if (persist) {
         database.delete(key) *>
-        Log[F].info("deleted key")
+          Log[F].info("deleted key")
       } else {
         ().pure[F]
       }

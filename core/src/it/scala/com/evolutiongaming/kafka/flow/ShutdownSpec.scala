@@ -58,21 +58,21 @@ class ShutdownSpec(val globalRead: GlobalRead) extends KafkaSpec {
     }
 
     for {
-      state      <- Ref.of(Set.empty[Partition])
-      finished   <- Deferred[IO, Unit]
+      state <- Ref.of(Set.empty[Partition])
+      finished <- Deferred[IO, Unit]
       // start a stream
-      flowOf      = topicFlowOf(state)
-      program    <- program(flowOf, finished).toList.start
+      flowOf = topicFlowOf(state)
+      program <- program(flowOf, finished).toList.start
       // wait for first record to process
-      _          <- finished.get.timeoutTo(10.seconds, program.join)
+      _ <- finished.get.timeoutTo(10.seconds, program.join)
       // validate subscriptions in active flow
       partitions <- state.get
-      test1      = assert.same(Set(Partition.min), partitions)
+      test1 = assert.same(Set(Partition.min), partitions)
       // cancel the program
-      _          <- program.cancel
+      _ <- program.cancel
       // validate subscriptions in cancelled flow
       partitions <- state.get
-      test2      = assert(partitions.isEmpty)
+      test2 = assert(partitions.isEmpty)
     } yield test1 and test2
 
   }
@@ -81,22 +81,23 @@ class ShutdownSpec(val globalRead: GlobalRead) extends KafkaSpec {
 object ShutdownSpec {
 
   def topicFlowOf(state: Ref[IO, Set[Partition]]): TopicFlowOf[IO] =
-    (_, _) => Resource.pure[IO, TopicFlow[IO]] {
-      new TopicFlow[IO] {
-        implicit val timer = IO.timer(ExecutionContext.global)
-        def apply(records: ConsRecords) = IO.unit
-        def add(partitionsAndOffsets: NonEmptySet[(Partition, Offset)]) = {
-          val partitions = partitionsAndOffsets map (_._1)
-          state update (_ ++ partitions.toList)
-        }
-        def remove(partitions: NonEmptySet[Partition]) =
-          // we wait for a second here to ensure the call is blocking
-          // i.e. if we update state immediately, the test might pass
-          // even if the call is non-blocking
-          IO.sleep(1.second) *> {
-            state update (_ -- partitions.toList)
+    (_, _) =>
+      Resource.pure[IO, TopicFlow[IO]] {
+        new TopicFlow[IO] {
+          implicit val timer = IO.timer(ExecutionContext.global)
+          def apply(records: ConsRecords) = IO.unit
+          def add(partitionsAndOffsets: NonEmptySet[(Partition, Offset)]) = {
+            val partitions = partitionsAndOffsets map (_._1)
+            state update (_ ++ partitions.toList)
           }
+          def remove(partitions: NonEmptySet[Partition]) =
+            // we wait for a second here to ensure the call is blocking
+            // i.e. if we update state immediately, the test might pass
+            // even if the call is non-blocking
+            IO.sleep(1.second) *> {
+              state update (_ -- partitions.toList)
+            }
+        }
       }
-    }
 
 }
