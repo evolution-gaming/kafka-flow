@@ -11,11 +11,10 @@ case class Tick[F[_], S](run: S => F[S]) {
 
   /** Transforms the state `S` of the `Tick` to something else.
     *
-    * It is possible to use additional information from previous `T` to
-    * build a new state.
+    * It is possible to use additional information from previous `T` to build a new state.
     *
-    * The common use for this method is to augument original state with
-    * some metainformation, i.e. offset or sequence number.
+    * The common use for this method is to augument original state with some metainformation, i.e. offset or sequence
+    * number.
     *
     * See also `StateT#transformS` for more details.
     */

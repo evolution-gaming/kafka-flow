@@ -29,19 +29,19 @@ class KeySpec(val globalRead: GlobalRead) extends CassandraSpec {
       partition2KeysAfterDelete <- keys.all("KeySpec", "integration-tests-1", partition2).toList
     } yield {
       expect(partition1KeysBeforeTest.isEmpty) and
-      expect(partition2KeysBeforeTest.isEmpty) and
-      expect(partition1KeysAfterPersist.length == 1) and
-      expect(partition2KeysAfterPersist.length == 2) and
-      expect(partition1KeysAfterDelete.isEmpty) and
-      expect(partition2KeysAfterDelete.isEmpty)
+        expect(partition2KeysBeforeTest.isEmpty) and
+        expect(partition1KeysAfterPersist.length == 1) and
+        expect(partition2KeysAfterPersist.length == 2) and
+        expect(partition1KeysAfterDelete.isEmpty) and
+        expect(partition2KeysAfterDelete.isEmpty)
     }
   }
 
   test("failures") { cassandra =>
     for {
       failAfter <- Ref.of(100)
-      session    = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
-      keys      <- CassandraKeys.withSchema(session, cassandra.sync)
+      session = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
+      keys <- CassandraKeys.withSchema(session, cassandra.sync)
       _ <- failAfter.set(1)
       keys <- keys.all("KeySpec", "integration-tests-1", TopicPartition("topic", Partition.min)).toList.attempt
     } yield expect(keys.isLeft)

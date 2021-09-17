@@ -58,7 +58,8 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
       )
       headers <- event.headers traverse HeaderToTuple[F].apply
       created <- Clock[F].instant
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("topic", key.topicPartition.topic)
@@ -118,12 +119,13 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
       """.stripMargin
     )
     val boundStatement = preparedStatement map { preparedStatement =>
-      preparedStatement.bind()
-      .encode("application_id", key.applicationId)
-      .encode("group_id", key.groupId)
-      .encode("topic", key.topicPartition.topic)
-      .encode("partition", key.topicPartition.partition)
-      .encode("key", key.key)
+      preparedStatement
+        .bind()
+        .encode("application_id", key.applicationId)
+        .encode("group_id", key.groupId)
+        .encode("topic", key.topicPartition.topic)
+        .encode("partition", key.topicPartition.partition)
+        .encode("key", key.key)
     }
 
     Stream.lift(boundStatement) flatMap session.execute mapM decode
@@ -142,10 +144,11 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
           |   AND key = :key
         """.stripMargin
       )
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
-        .encode("topic",key.topicPartition.topic)
+        .encode("topic", key.topicPartition.topic)
         .encode("partition", key.topicPartition.partition)
         .encode("key", key.key)
       _ <- session.execute(boundStatement).first.void

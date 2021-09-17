@@ -18,8 +18,9 @@ trait PersistenceModule[F[_], S] {
   def snapshots: SnapshotDatabase[F, KafkaKey, KafkaSnapshot[S]]
 
   /** Saves both events and snapshots, restores state from events */
-  def restoreEvents(
-    implicit F: Sync[F], logOf: LogOf[F]
+  def restoreEvents(implicit
+    F: Sync[F],
+    logOf: LogOf[F]
   ): Resource[F, PersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
     keysOf <- Resource.eval(keys.keysOf)
     journalsOf <- Resource.eval(journals.journalsOf)
@@ -28,8 +29,9 @@ trait PersistenceModule[F[_], S] {
   } yield persistenceOf
 
   /** Saves both events and snapshots, restores state from snapshots */
-  def restoreSnapshots(
-    implicit F: Sync[F], logOf: LogOf[F]
+  def restoreSnapshots(implicit
+    F: Sync[F],
+    logOf: LogOf[F]
   ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
     keysOf <- keys.keysOf
     journalsOf <- journals.journalsOf
@@ -37,8 +39,9 @@ trait PersistenceModule[F[_], S] {
   } yield PersistenceOf.restoreSnapshots(keysOf, journalsOf, snapshotsOf)
 
   /** Saves snapshots only, restores state from snapshots */
-  def snapshotsOnly(
-    implicit F: Sync[F], logOf: LogOf[F]
+  def snapshotsOnly(implicit
+    F: Sync[F],
+    logOf: LogOf[F]
   ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
     keysOf <- keys.keysOf
     snapshotsOf <- snapshots.snapshotsOf

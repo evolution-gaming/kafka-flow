@@ -17,8 +17,6 @@ object KafkaSnapshotReadDatabase {
         state <- monadState.get
         s <- state
           .get(key)
-          .traverse(
-            bytes => FromBytes[F, S].apply(bytes.toArray, snapshotTopic)
-          )
+          .traverse(bytes => FromBytes[F, S].apply(bytes.toArray, snapshotTopic))
       } yield s
 }

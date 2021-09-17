@@ -36,16 +36,18 @@ class JournalParserSpec extends FunSuite {
 
     // Given("correctly formatted JSON")
     val json = Json.obj(
-      "events" -> Json.arr(Json.obj(
-        "seqNr" -> 1,
-        "tags" -> Json.arr(),
-        "payload" -> Json.obj(
+      "events" -> Json.arr(
+        Json.obj(
+          "seqNr" -> 1,
+          "tags" -> Json.arr(),
           "payload" -> Json.obj(
-            "field1" -> "value1",
-            "field2" -> 7L
+            "payload" -> Json.obj(
+              "field1" -> "value1",
+              "field2" -> 7L
+            )
           )
         )
-      ))
+      )
     )
     val payload = jsonCodec.encode.toBytes(json)
 
@@ -63,17 +65,19 @@ class JournalParserSpec extends FunSuite {
     val parser = JournalParser.of[Try]
 
     // Given("event with bad payload (string instead of digit)")
-        val json = Json.obj(
-      "events" -> Json.arr(Json.obj(
-        "seqNr" -> 1,
-        "tags" -> Json.arr(),
-        "payload" -> Json.obj(
+    val json = Json.obj(
+      "events" -> Json.arr(
+        Json.obj(
+          "seqNr" -> 1,
+          "tags" -> Json.arr(),
           "payload" -> Json.obj(
-            "field1" -> "value1",
-            "field2" -> "7"
+            "payload" -> Json.obj(
+              "field1" -> "value1",
+              "field2" -> "7"
+            )
           )
         )
-      ))
+      )
     )
     val payload = jsonCodec.encode.toBytes(json)
 
@@ -83,10 +87,10 @@ class JournalParserSpec extends FunSuite {
     // Then("error message contains JSON which failed to parse")
     output match {
       case Success(output) => fail(s"did not fail with exception as it should: $output")
-      case Failure(exception) => assert(exception.getMessage contains """{"payload":{"field1":"value1","field2":"7"}}""")
+      case Failure(exception) =>
+        assert(exception.getMessage contains """{"payload":{"field1":"value1","field2":"7"}}""")
     }
   }
-
 
 }
 object JournalParserSpec {
@@ -111,10 +115,12 @@ object JournalParserSpec {
     def record(payload: ByteVector) = ConsRecord(
       topicPartition = TopicPartition.empty,
       offset = Offset.unsafe(21398),
-      timestampAndType = Some(TimestampAndType(
-        timestamp = Instant.parse("2020-01-02T03:04:05.000Z"),
-        timestampType = TimestampType.Append
-      )),
+      timestampAndType = Some(
+        TimestampAndType(
+          timestamp = Instant.parse("2020-01-02T03:04:05.000Z"),
+          timestampType = TimestampType.Append
+        )
+      ),
       key = Some(WithSize("id")),
       value = Some(WithSize(payload)),
       headers = List(Header(ActionHeader.key, header.get.toArray))

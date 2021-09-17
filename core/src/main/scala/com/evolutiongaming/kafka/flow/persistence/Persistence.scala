@@ -14,14 +14,10 @@ import com.evolutiongaming.kafka.flow.timer.Timestamps
 
 /** Provides persistence for keys, events and snapshots.
   *
-  * Note, that the `Persistence` is stateful, i.e. it will do some interesting
-  * caching optimizations. It is recommended to have one `Persistence` instance
-  * per application therefore.
+  * Note, that the `Persistence` is stateful, i.e. it will do some interesting caching optimizations. It is recommended
+  * to have one `Persistence` instance per application therefore.
   */
-trait Persistence[F[_], S, E]
-  extends ReadState[F, S]
-  with WriteToBuffers[F, S, E]
-  with FlushBuffers[F] {
+trait Persistence[F[_], S, E] extends ReadState[F, S] with WriteToBuffers[F, S, E] with FlushBuffers[F] {
 
   /** Delete from buffers and from persistence if required */
   def delete: F[Unit]
@@ -37,8 +33,8 @@ trait Buffers[F[_], S, E] extends WriteToBuffers[F, S, E] {
 
   /** Removes state from the buffers and optionally also from persistence.
     *
-    * @param persist if `true` then also calls underlying database, flushes
-    * buffers only otherwise.
+    * @param persist
+    *   if `true` then also calls underlying database, flushes buffers only otherwise.
     */
   def delete(persist: Boolean): F[Unit]
 
@@ -53,9 +49,8 @@ trait WriteToBuffers[F[_], S, E] {
 
   /** Replace a state in the buffers.
     *
-    * It will be saved to a database when `flush` is called unless replaced by
-    * the next state before `flush`. In this case, the next state will be saved
-    * instead and this one discarded.
+    * It will be saved to a database when `flush` is called unless replaced by the next state before `flush`. In this
+    * case, the next state will be saved instead and this one discarded.
     */
   def replaceState(state: S): F[Unit]
 
@@ -69,6 +64,7 @@ trait FlushBuffers[F[_]] {
 object FlushBuffers {
   def apply[F[_]](implicit F: FlushBuffers[F]): FlushBuffers[F] = F
 }
+
 /** Allows to read a previously saved state */
 trait ReadState[F[_], S] {
 
@@ -110,7 +106,7 @@ object Persistence {
     def delete = Timestamps[F].persistedAt flatMap { persistedAt =>
       if (persistedAt.isDefined) {
         Timestamps[F].onPersisted *>
-        buffers.delete(true)
+          buffers.delete(true)
       } else {
         buffers.delete(false)
       }
@@ -147,7 +143,7 @@ object Buffers {
   def apply[F[_]: Monad, S, E](
     keys: Keys[F],
     journals: Journals[F, E],
-    snapshots: Snapshots[F, S],
+    snapshots: Snapshots[F, S]
   ): Buffers[F, S, E] = new Buffers[F, S, E] {
 
     def appendEvent(event: E) = journals.append(event)
@@ -177,7 +173,7 @@ object ReadState {
     def read = {
       val recover = journals.read.foldLeftM(Option.empty[S]) { (state, event) =>
         Log[F].info(s"Restoring: $event") *>
-        fold(state, event)
+          fold(state, event)
       }
       recover.last map (_.flatten)
     }

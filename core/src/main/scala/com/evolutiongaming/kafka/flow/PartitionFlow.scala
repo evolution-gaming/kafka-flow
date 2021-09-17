@@ -21,8 +21,8 @@ trait PartitionFlow[F[_]] {
 
   /** Processes incoming consumer records and triggers the underlying timers.
     *
-    * It is possible for `records` parameter to come empty (for an empty poll).
-    * In this case only the timers will be called.
+    * It is possible for `records` parameter to come empty (for an empty poll). In this case only the timers will be
+    * called.
     */
   def apply(records: List[ConsRecord]): F[Unit]
 
@@ -137,18 +137,20 @@ object PartitionFlow {
         )
         stateOf(startedAt, key) flatMap { state =>
           state.timers.set(startedAt) *>
-          state.flow(records) *>
-          state.timers.set(finishedAt) *>
-          state.timers.onProcessed
+            state.flow(records) *>
+            state.timers.set(finishedAt) *>
+            state.timers.onProcessed
         }
       }
       lastRecord = records.last
       maximumOffset <- OffsetToCommit[F](lastRecord.offset)
-      _ <- timestamp.set(Timestamp(
-        clock = clock,
-        watermark = lastRecord.timestampAndType map (_.timestamp),
-        offset = maximumOffset
-      ))
+      _ <- timestamp.set(
+        Timestamp(
+          clock = clock,
+          watermark = lastRecord.timestampAndType map (_.timestamp),
+          offset = maximumOffset
+        )
+      )
     } yield ()
 
     def triggerTimers = for {
@@ -158,7 +160,7 @@ object PartitionFlow {
       _ <- states.values.toList.parTraverse_ { state =>
         state flatMap { state =>
           state.timers.set(timestamp) *>
-          state.timers.trigger(state.flow)
+            state.timers.trigger(state.flow)
         }
       }
       _ <- triggerTimersAt update { triggerTimersAt =>
@@ -219,7 +221,7 @@ object PartitionFlow {
       offsetToCommit flatMap { offset =>
         offset traverse_ { offset =>
           Log[F].info(s"committing on revoke: $offset") *>
-          PartitionContext[F].scheduleCommit(offset)
+            PartitionContext[F].scheduleCommit(offset)
         }
       }
     } else {
@@ -229,6 +231,5 @@ object PartitionFlow {
     Resource.make(acquire) { _ => release }
 
   }
-
 
 }

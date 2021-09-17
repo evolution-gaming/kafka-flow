@@ -25,9 +25,9 @@ class PersistenceSpec extends FunSuite {
     // And("delete requested")
     val program =
       f.persistence.appendEvent("event1") *>
-      f.persistence.replaceState(0) *>
-      f.persistence.flush *>
-      f.persistence.delete
+        f.persistence.replaceState(0) *>
+        f.persistence.flush *>
+        f.persistence.delete
 
     // When("program is run")
     val context = program.runS(Context()).value
@@ -44,7 +44,7 @@ class PersistenceSpec extends FunSuite {
     // And("delete requested")
     val program =
       f.persistence.read *>
-      f.persistence.delete
+        f.persistence.delete
 
     // When("program is run")
     val context = program.runS(Context()).value
@@ -60,8 +60,8 @@ class PersistenceSpec extends FunSuite {
     // And("delete requested")
     val program =
       f.persistence.appendEvent("event1") *>
-      f.persistence.replaceState(0) *>
-      f.persistence.delete
+        f.persistence.replaceState(0) *>
+        f.persistence.delete
 
     // When("program is run")
     val context = program.runS(Context()).value
@@ -77,7 +77,7 @@ class PersistenceSpec extends FunSuite {
     // And("delete is called")
     val program =
       f.persistence.read *>
-      f.persistence.delete
+        f.persistence.delete
 
     // When("program is run")
     val context = program.runS(Context()).value
@@ -91,11 +91,13 @@ object PersistenceSpec {
 
   type F[T] = State[Context, T]
   case class Context(
-    timestamps: TimestampState = TimestampState(Timestamp(
-      clock = Instant.parse("2020-01-01T01:02:03.004Z"),
-      watermark = None,
-      offset = Offset.min
-    )),
+    timestamps: TimestampState = TimestampState(
+      Timestamp(
+        clock = Instant.parse("2020-01-01T01:02:03.004Z"),
+        watermark = None,
+        offset = Offset.min
+      )
+    ),
     deleteCalled: Boolean = false
   )
 

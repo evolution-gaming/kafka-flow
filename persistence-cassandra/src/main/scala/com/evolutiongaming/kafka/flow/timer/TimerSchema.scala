@@ -18,8 +18,9 @@ private[timer] object TimerSchema {
     synchronize: CassandraSync[F]
   ): TimerSchema[F] = new TimerSchema[F] {
     def create = synchronize("TimerSchema") {
-      session.execute(
-        """CREATE TABLE IF NOT EXISTS timers(
+      session
+        .execute(
+          """CREATE TABLE IF NOT EXISTS timers(
           |application_id TEXT,
           |group_id TEXT,
           |topic TEXT,
@@ -32,12 +33,14 @@ private[timer] object TimerSchema {
           |PRIMARY KEY((application_id, group_id, topic, partition, key), value_type, value)
           |)
           |""".stripMargin
-      ).first *>
-      // this table is not yet used anyhow for now, it is meant to search upcoming timers by the
-      // window (day, offset range, etc.) they are to fire in, feel free to rework it as needed
-      // when implementing functionality
-      session.execute(
-        """CREATE TABLE IF NOT EXISTS timers_by_value(
+        )
+        .first *>
+        // this table is not yet used anyhow for now, it is meant to search upcoming timers by the
+        // window (day, offset range, etc.) they are to fire in, feel free to rework it as needed
+        // when implementing functionality
+        session
+          .execute(
+            """CREATE TABLE IF NOT EXISTS timers_by_value(
           |application_id TEXT,
           |group_id TEXT,
           |topic TEXT,
@@ -48,7 +51,9 @@ private[timer] object TimerSchema {
           |PRIMARY KEY((application_id, group_id, topic, partition, value_type, value_window), key)
           |)
           |""".stripMargin
-      ).first.void
+          )
+          .first
+          .void
     }
     def truncate = synchronize("TimerSchema") {
       session.execute("TRUNCATE timers").first.void

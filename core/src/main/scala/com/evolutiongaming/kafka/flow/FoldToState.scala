@@ -21,21 +21,20 @@ object FoldToState {
   def of[F[_]: Sync: KeyContext, S, E](
     initialState: Option[S],
     fold: FoldOption[F, S, E],
-    persistence: Persistence[F, S, E],
+    persistence: Persistence[F, S, E]
   ): F[FoldToState[F, E]] = Ref.of(initialState) map { storage =>
     FoldToState(storage.stateInstance, fold, persistence)
   }
 
   /** Uses `fold` to apply the records to a state stored inside of `storage`.
     *
-    * Performs the necessary actions upon the state being changes, i.e.
-    * sends it to persistence, or removes the key if the flow processing
-    * is finished.
+    * Performs the necessary actions upon the state being changes, i.e. sends it to persistence, or removes the key if
+    * the flow processing is finished.
     */
   def apply[F[_]: Monad: KeyContext, S, E](
     storage: MonadState[F, Option[S]],
     fold: FoldOption[F, S, E],
-    persistence: Persistence[F, S, E],
+    persistence: Persistence[F, S, E]
   ): FoldToState[F, E] = { records =>
     for {
       state <- storage.get
@@ -67,11 +66,12 @@ object FoldToState {
       //
       // It makes me think that the initial implementation of returning `Done`
       // was not as bad as I thought.
-      _ <- if (state.isEmpty) {
-        persistence.delete *> KeyContext[F].remove
-      } else {
-        ().pure[F]
-      }
+      _ <-
+        if (state.isEmpty) {
+          persistence.delete *> KeyContext[F].remove
+        } else {
+          ().pure[F]
+        }
     } yield ()
   }
 

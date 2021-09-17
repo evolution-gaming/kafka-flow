@@ -17,7 +17,8 @@ object SnapshotDatabaseMetrics {
   def of[F[_]: Monad: MeasureDuration]: MetricsKOf[F, SnapshotDatabase[F, KafkaKey, *]] =
     snapshotDatabaseMetricsOf
 
-  implicit def snapshotDatabaseMetricsOf[F[_]: Monad: MeasureDuration]: MetricsKOf[F, SnapshotDatabase[F, KafkaKey, *]] = { registry =>
+  implicit def snapshotDatabaseMetricsOf[F[_]: Monad: MeasureDuration]
+    : MetricsKOf[F, SnapshotDatabase[F, KafkaKey, *]] = { registry =>
     for {
       persistSummary <- registry.summary(
         name = "snapshot_database_persist_duration_seconds",
@@ -42,20 +43,20 @@ object SnapshotDatabaseMetrics {
         def persist(key: KafkaKey, snapshot: S) =
           database.persist(key, snapshot) measureDuration { duration =>
             persistSummary
-            .labels(key.topicPartition.topic, key.topicPartition.partition.show)
-            .observe(duration.toNanos.nanosToSeconds)
+              .labels(key.topicPartition.topic, key.topicPartition.partition.show)
+              .observe(duration.toNanos.nanosToSeconds)
           }
         def get(key: KafkaKey) =
           database.get(key) measureDuration { duration =>
             getSummary
-            .labels(key.topicPartition.topic, key.topicPartition.partition.show)
-            .observe(duration.toNanos.nanosToSeconds)
+              .labels(key.topicPartition.topic, key.topicPartition.partition.show)
+              .observe(duration.toNanos.nanosToSeconds)
           }
         def delete(key: KafkaKey) =
           database.delete(key) measureDuration { duration =>
             deleteSummary
-            .labels(key.topicPartition.topic, key.topicPartition.partition.show)
-            .observe(duration.toNanos.nanosToSeconds)
+              .labels(key.topicPartition.topic, key.topicPartition.partition.show)
+              .observe(duration.toNanos.nanosToSeconds)
           }
       }
     }
