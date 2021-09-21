@@ -68,7 +68,7 @@ object TopicFlow {
       } mkString (", ")
 
       offsets.toNem.traverse_ { offsets =>
-        Log[F].info(s"commiting pending offsets: $offsets") *>
+        Log[F].info(s"committing pending offsets: $offsets") *>
           consumer
             .commit(offsets)
             .handleErrorWith { error =>
