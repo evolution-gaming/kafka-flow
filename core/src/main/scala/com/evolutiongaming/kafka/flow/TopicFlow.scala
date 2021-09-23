@@ -98,8 +98,11 @@ object TopicFlow {
       def remove(partitions: NonEmptySet[Partition]) = {
         val removePartitions = partitions parTraverse_ (cache.remove(_).flatten)
 
-        // rebalance in progress, so we cannot commit these offsets anyway
-        // so we are just removing them
+        // currently we don't execute pending commits on partitions' removal
+        // as when the code was written it was not possible to do the commit within rebalance listener using skafka
+        // and after it was fixed a next issue was discovered
+        // pendingCommits map is not updated on release of key/timer flows, it only persists the state
+        // see https://github.com/evolution-gaming/kafka-flow/issues/256 for more details
         val topicPartitions = partitions map (TopicPartition(topic, _))
         val removeOffsets = pendingCommits update (_ -- topicPartitions.toList)
 
