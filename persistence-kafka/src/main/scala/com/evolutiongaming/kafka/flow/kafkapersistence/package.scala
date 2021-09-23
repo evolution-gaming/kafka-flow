@@ -20,7 +20,7 @@ package object kafkapersistence {
     def empty: BytesByKey = Map.empty
   }
 
-  /** Create a [[PartitionFlowOf]] with a snapshot-based persistence and recovery from a Kafka
+  /** Create a PartitionFlowOf with a snapshot-based persistence and recovery from a Kafka
     * [[https://kafka.apache.org/documentation/#compaction compacted topic]].
     * State is restored eagerly on partition assignment by reading the content of a snapshot topic to the end
     * without committing offsets.

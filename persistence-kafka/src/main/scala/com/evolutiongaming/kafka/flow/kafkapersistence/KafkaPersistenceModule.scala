@@ -40,7 +40,7 @@ object KafkaPersistenceModule {
     * To avoid redundant reads from a snapshot topic, a per-partition cache of ''String (key) -> ByteVector (value)'' is created.
     * This cache only serves the purpose of avoiding duplicate reading from a snapshot topic during initialization process.
     *
-    * It is populated during fetching of all keys when [[KeysOf.all]] is called internally (which effectively reads all the data from the snapshot topic).
+    * It is populated during fetching of all keys when KeysOf.all is called internally (which effectively reads all the data from the snapshot topic).
     * Later, when a state is being recovered for a specific key, the value is obtained from the cache and then removed from it.
     * Removing a value for a specific key from a cache is safe at that point since state recovery is performed only once -
     * either during initialization when a partition is assigned (and there is a snapshot for a key) or when the journal record is first seen (no snapshot for a key previously).
@@ -51,9 +51,9 @@ object KafkaPersistenceModule {
     * @param producerConfig Kafka producer config for snapshot writing producers
     * @param snapshotTopicPartition snapshot topic-partition to read/write snapshots
     *
-    * @see [[com.evolutiongaming.kafka.flow.PartitionFlow.of]] for implementations details of keys fetching and state recovery for a partition
-    * @see [[com.evolutiongaming.kafka.flow.KeyStateOf.eagerRecovery]] for implementation details of constructing [[com.evolutiongaming.kafka.flow.KeyState]] for a specific key
-    * @see [[com.evolutiongaming.kafka.flow.KeyFlow.of]] for implementation details of state recovery for a specific key
+    * @see com.evolutiongaming.kafka.flow.PartitionFlow.of for implementations details of keys fetching and state recovery for a partition
+    * @see com.evolutiongaming.kafka.flow.KeyStateOf.eagerRecovery for implementation details of constructing com.evolutiongaming.kafka.flow.KeyState for a specific key
+    * @see com.evolutiongaming.kafka.flow.KeyFlow.of for implementation details of state recovery for a specific key
     */
   def caching[F[_]: LogOf: Concurrent: FromBytes[*[_], String]: ToBytes[*[_], S], S: FromBytes[F, *]](
     consumerOf: ConsumerOf[F],
