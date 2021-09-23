@@ -4,8 +4,8 @@ import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
 import cats.effect.concurrent.Ref
 import cats.effect.{Resource, SyncIO, Timer}
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.catshelper.TimerHelper._
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecord, ConsRecords}
 import com.evolutiongaming.retry.{OnError, Retry, Strategy}
@@ -194,9 +194,6 @@ object KafkaFlowSpec {
 
         def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) =
           state update (_ + Action.Commit(offsets))
-
-        def position(partition: TopicPartition) =
-          Offset.min.pure[F]
 
         def revoke(partitions: NonEmptySet[Partition]) =
           state.get flatMap { state =>
