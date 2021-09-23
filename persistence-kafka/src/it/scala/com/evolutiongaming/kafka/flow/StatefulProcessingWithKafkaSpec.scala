@@ -64,7 +64,8 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
 
   private val inMemoryPersistenceModuleOf: KafkaPersistenceModuleOf[IO, State] =
     new KafkaPersistenceModuleOf[IO, State] {
-      override def make(partition: Partition): Resource[IO, KafkaPersistenceModule[IO, State]] = Resource.pure(inMemoryPersistenceModule)
+      override def make(partition: Partition): Resource[IO, KafkaPersistenceModule[IO, State]] =
+        Resource.pure(inMemoryPersistenceModule)
     }
 
   private val appId = "app-id"
@@ -105,7 +106,6 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
       )
     }
   }
-
 
   test("stateful processing using in-memory persistence") { kafka =>
     // using unique input topic name per test as weaver is running tests in parallel
@@ -240,9 +240,19 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
         groupId = testGroupId,
         timersOf = timersOf,
         timerFlowOf = TimerFlowOf
-          .persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds, flushOnRevoke = true),
+          .persistPeriodically[IO](
+            // 0 seconds intervals are used to persist state after every consumer.poll
+            // to simplify test scenarios
+            fireEvery = 0.seconds,
+            persistEvery = 0.seconds,
+            // flush on revoke is set to false, as it has no impact on test outcomes
+            // coz we persist the state after every consumer.poll
+            flushOnRevoke = false
+          ),
         fold = bizLogic(output, finished, Log[IO]),
         partitionFlowConfig = PartitionFlowConfig(
+          // 0 seconds intervals are used to commit offsets after every consumer.poll
+          // to simplify test scenarios
           triggerTimersInterval = 0.seconds,
           commitOffsetsInterval = 0.seconds
         ),

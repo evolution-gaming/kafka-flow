@@ -44,25 +44,26 @@ object TopicFlow {
     consumer: Consumer[F],
     topic: Topic,
     partitionFlowOf: PartitionFlowOf[F]
-  ): Resource[F, TopicFlow[F]] = for {
-    cache <- Cache.loading[F, Partition, PartitionFlow[F]]
-    pendingCommits <- Resource.eval(Ref.of(Map.empty[TopicPartition, OffsetAndMetadata]))
-    semaphore <- Resource.eval(Semaphore(1))
-    flow <- LogResource[F](getClass, topic) flatMap { implicit log =>
-      of(consumer, topic, partitionFlowOf, cache, pendingCommits, semaphore)
-    }
-  } yield flow
+  ): Resource[F, TopicFlow[F]] =
+    safeguard(
+      for {
+        cache <- Cache.loading[F, Partition, PartitionFlow[F]]
+        pendingCommits <- Resource.eval(Ref.of(Map.empty[TopicPartition, OffsetAndMetadata]))
+        flow <- LogResource[F](getClass, topic) flatMap { implicit log =>
+          of(consumer, topic, partitionFlowOf, cache, pendingCommits)
+        }
+      } yield flow
+    )
 
   private def of[F[_]: Concurrent: Parallel: Log](
     consumer: Consumer[F],
     topic: Topic,
     partitionFlowOf: PartitionFlowOf[F],
     cache: Cache[F, Partition, PartitionFlow[F]],
-    pendingCommits: Ref[F, Map[TopicPartition, OffsetAndMetadata]],
-    semaphore: Semaphore[F]
+    pendingCommits: Ref[F, Map[TopicPartition, OffsetAndMetadata]]
   ): Resource[F, TopicFlow[F]] = {
 
-    val commitPending = pendingCommits getAndSet Map.empty flatMap { offsets =>
+    def commitPending(hint: String) = pendingCommits getAndSet Map.empty flatMap { offsets =>
       def partitionOffsets = offsets map { case (topicPartition, offsetAndMetadata) =>
         PartitionOffset(topicPartition.partition, offsetAndMetadata.offset)
       } mkString (", ")
@@ -72,7 +73,7 @@ object TopicFlow {
           consumer
             .commit(offsets)
             .handleErrorWith { error =>
-              Log[F].error(s"consumer.commit failed for $partitionOffsets: $error", error)
+              Log[F].error(s"consumer.commit failed at $hint for $partitionOffsets: $error", error)
             }
       }
     }
@@ -80,59 +81,18 @@ object TopicFlow {
     val acquire = new TopicFlow[F] {
 
       def apply(records: ConsRecords) = {
-        // Following TODOs are related to graceful shutdown which is also needed in StatefulProcessingWithKafkaSpec
-        // but it cannot be implemented properly at the moment as skafka does not allow to commit offsets on partition revocation
-        // so for now it's just semaphore + uncancelable, after fix in skafka it would be greatly simplified and improved
-
-        // TODO `consumer` can be closed at this point coz Resource.release happened already
-        //  and TopicFlow.apply is running concurrently
-        //  can be fixed outside of TopicFlow's scope with code like:
-        /*
-        implicit class Ops[A](val self: F[A]) extends AnyVal {
-          def startAwaitExit: F[Fiber[F, A]] = {
+        for {
+          partitions <- cache.values
+          _ <- partitions.toList parTraverse { case (partition, flow) =>
             for {
-              deferred <- Deferred[F, Unit]
-              fiber    <- self.guarantee { deferred.complete(()).handleError { _ => () } }.start
-            } yield {
-              new Fiber[F, A] {
-                def cancel = {
-                  for {
-                    _ <- fiber.cancel
-                    _ <- deferred.get  // TODO possible timeout
-                  } yield {}
-                }
-                def join = fiber.join
-              }
-            }
+              flow <- flow
+              topicPartition = TopicPartition(topic, partition)
+              partitionRecords = records.values get topicPartition map (_.toList) getOrElse Nil
+              _ <- flow(partitionRecords)
+            } yield ()
           }
-          def backgroundAwaitExit: Resource[F, Unit] = {
-            Resource
-              .make { self.startAwaitExit } { _.cancel }
-              .as(())
-          }
-        }
-         */
-
-        // TODO semaphore.withPermit should be part of KafkaFlow code where we glue together building blocks and
-        // starting a fiber in background which is doing consumer.poll and eventually calling this TopicFlow.apply
-        // TopicFlow.apply can be executed concurrently with TopicFlow's resource release
-        // KafkaFlow related code snippet:
-        //      stream    = Stream.around(Retry[F].toFunctionK) *> flow.stream
-        //      records  <- stream.drain.background
-        semaphore.withPermit {
-          for {
-            partitons <- cache.values
-            _ <- partitons.toList parTraverse { case (partition, flow) =>
-              for {
-                flow <- flow
-                topicPartition = TopicPartition(topic, partition)
-                partitionRecords = records.values get topicPartition map (_.toList) getOrElse Nil
-                _ <- flow(partitionRecords)
-              } yield ()
-            }
-            _ <- commitPending
-          } yield ()
-        }.uncancelable
+          _ <- commitPending("records processing")
+        } yield ()
       }
 
       def remove(partitions: NonEmptySet[Partition]) = {
@@ -163,17 +123,52 @@ object TopicFlow {
     }
 
     Resource.make(acquire.pure[F]) { _ =>
-      semaphore.withPermit {
-        cache.keys flatMap { keys =>
-          val partitions = NonEmptySet.fromSet(SortedSet.empty[Partition] ++ keys.toList)
-          val removeAll = partitions parTraverse_ { partitions =>
-            partitions parTraverse_ (cache.remove(_).flatten)
-          }
-          removeAll *> commitPending
+      cache.keys flatMap { keys =>
+        val partitions = NonEmptySet.fromSet(SortedSet.empty[Partition] ++ keys.toList)
+        val removeAll = partitions parTraverse_ { partitions =>
+          partitions parTraverse_ (cache.remove(_).flatten)
         }
+        removeAll *> commitPending("topicFlow release")
       }
     }
 
+  }
+
+  /** Safeguards a TopicFlow's resource to address a race between processing of messages and release of the resource.
+    *
+    * It provides following safeties in case of a fiber cancellation and resource's release:
+    *
+    *  - processing of current kafka messages won't be cancelled (TopicFlow.apply)
+    *  - pending offsets would be committed
+    *  - accumulated state would be persisted
+    *  - resource would be released only after previous steps are completed
+    *  - if resource is released before start of messages' processing, then it does nothing (no message processing, no commits, no persists)
+    */
+  private def safeguard[F[_]: Concurrent](a: Resource[F, TopicFlow[F]]): Resource[F, TopicFlow[F]] = {
+    // A combination of Semaphore and uncancelable is required to implement the aforementioned safeties
+    // 1. without Semaphore and with uncancelable on TopicFlow.apply we would get an exception saying that
+    // consumer.commit failed at records processing (caused by consumer is closed exception)
+    // as we would release TopicFlow's resource too early (before completion of records processing)
+    // which would close the consumer also before completion of records processing
+    // 2. without uncancelable most of the times we won't even get any errors from consumer.commit
+    // coz it simply won't be executed, as execution chain would be cancelled
+    val r =
+      for {
+        closed <- Ref.of(false)
+        semaphore <- Semaphore(1)
+        xx <- a.allocated
+        (topicFlow, release) = xx
+        safeTopicFlow = new TopicFlow[F] {
+          def apply(records: ConsRecords): F[Unit] =
+            semaphore.withPermit { closed.get.ifM(().pure[F], topicFlow.apply(records)) }.uncancelable
+          def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] =
+            semaphore.withPermit { closed.get.ifM(().pure[F], topicFlow.add(partitions)) }.uncancelable
+          def remove(partitions: NonEmptySet[Partition]): F[Unit] =
+            semaphore.withPermit { closed.get.ifM(().pure[F], topicFlow.remove(partitions)) }.uncancelable
+        }
+        safeRelease = semaphore.withPermit { closed.set(true) *> release }.uncancelable
+      } yield (safeTopicFlow, safeRelease)
+    Resource(r.uncancelable)
   }
 
 }
