@@ -110,7 +110,6 @@ object RebalanceListenerSpec {
       def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]): F[Unit] = ().pure[F]
       def poll(timeout: FiniteDuration): F[ConsRecords] = ConsRecords.empty.pure[F]
       def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] = ().pure[F]
-      def position(partition: TopicPartition): F[Offset] = offset.pure[F]
     }
 
     def flow(topic: String) = new TopicFlow[F] {
@@ -125,5 +124,9 @@ object RebalanceListenerSpec {
       RebalanceListener(
         flows = topics.map(topic => topic -> flow(topic)).toMap
       )
+
+    val rebalanceConsumer = new ExplodingRebalanceConsumer {
+      override def position(partition: TopicPartition) = Try(Offset.min)
+    }
   }
 }

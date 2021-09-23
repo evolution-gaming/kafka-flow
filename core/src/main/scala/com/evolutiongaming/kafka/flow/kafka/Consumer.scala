@@ -25,8 +25,6 @@ trait Consumer[F[_]] {
 
   def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit]
 
-  def position(partition: TopicPartition): F[Offset]
-
 }
 object Consumer {
 
@@ -35,17 +33,15 @@ object Consumer {
   def apply[F[_]](
     consumer: KafkaConsumer[F, String, ByteVector]
   ): Consumer[F] = new Consumer[F] {
-    def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener1[F]) =
+    def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener1[F]): F[Unit] =
       consumer.subscribe(topics, listener)
 
-    def poll(timeout: FiniteDuration) =
+    def poll(timeout: FiniteDuration): F[ConsRecords] =
       consumer.poll(timeout)
 
-    def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) =
+    def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] =
       consumer.commit(offsets)
 
-    def position(partition: TopicPartition) =
-      consumer.position(partition)
   }
 
   /** Does not call Kafka, returns specified records on every poll */
@@ -71,9 +67,6 @@ object Consumer {
 
       def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] =
         ().pure[F]
-
-      def position(partition: TopicPartition): F[Offset] =
-        Offset.min.pure[F]
     }
   }
 

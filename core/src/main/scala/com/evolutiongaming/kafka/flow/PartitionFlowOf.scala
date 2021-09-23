@@ -28,5 +28,4 @@ object PartitionFlowOf {
     implicit val _context = context
     PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config)
   }
-
 }

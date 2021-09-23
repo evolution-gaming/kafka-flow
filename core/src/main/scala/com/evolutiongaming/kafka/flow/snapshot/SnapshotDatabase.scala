@@ -24,14 +24,6 @@ trait SnapshotWriteDatabase[F[_], K, S] { self =>
   /** Deletes snapshot for they key, if any */
   def delete(key: K): F[Unit]
 
-  // TODO: clean up this code (coming from `kafka-flow-persistence-kafka`?)
-  final def contramap[B](f: B => K): SnapshotWriteDatabase[F, B, S] =
-    new SnapshotWriteDatabase[F, B, S] {
-      override def persist(key: B, snapshot: S): F[Unit] = self.persist(f(key), snapshot)
-
-      override def delete(key: B): F[Unit] = self.delete(f(key))
-    }
-
 }
 
 object SnapshotDatabase {
