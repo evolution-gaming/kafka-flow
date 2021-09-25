@@ -33,8 +33,8 @@ class JournalSpec(val globalRead: GlobalRead) extends CassandraSpec {
       journalAfterDelete <- journals.get(key).toList
     } yield {
       expect(journalBeforeTest.isEmpty) and
-      expect.same(List(record), journalAfterPersist) and
-      expect(journalAfterDelete.isEmpty)
+        expect.same(List(record), journalAfterPersist) and
+        expect(journalAfterDelete.isEmpty)
     }
   }
 
@@ -42,8 +42,8 @@ class JournalSpec(val globalRead: GlobalRead) extends CassandraSpec {
     val key = KafkaKey("JournalSpec", "integration-tests-1", TopicPartition.empty, "failures")
     for {
       failAfter <- Ref.of(100)
-      session    = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
-      journals  <- CassandraJournals.withSchema(session, cassandra.sync)
+      session = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
+      journals <- CassandraJournals.withSchema(session, cassandra.sync)
       _ <- failAfter.set(1)
       records <- journals.get(key).toList.attempt
     } yield expect(records.isLeft)

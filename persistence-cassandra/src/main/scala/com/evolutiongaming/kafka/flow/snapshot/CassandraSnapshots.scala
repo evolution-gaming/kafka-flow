@@ -21,7 +21,8 @@ import scodec.bits.ByteVector
 
 class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
   session: CassandraSession[F]
-)(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]) extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
+)(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
+    extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
@@ -43,7 +44,8 @@ class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
       )
       created <- Clock[F].instant
       value <- snapshot.value.toBytes
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("topic", key.topicPartition.topic)
@@ -86,7 +88,8 @@ class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
           |   AND key = :key
         """.stripMargin
       )
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("topic", key.topicPartition.topic)
@@ -112,7 +115,8 @@ class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
           |   AND key = :key
         """.stripMargin
       )
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("topic", key.topicPartition.topic)

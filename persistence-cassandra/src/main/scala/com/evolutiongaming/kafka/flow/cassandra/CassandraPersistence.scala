@@ -26,8 +26,8 @@ object CassandraPersistence {
     fromBytes: FromBytes[F, S],
     toBytes: ToBytes[F, S]
   ): F[PersistenceModule[F, S]] = for {
-    _keys      <- CassandraKeys.withSchema(session, sync)
-    _journals  <- CassandraJournals.withSchema(session, sync)
+    _keys <- CassandraKeys.withSchema(session, sync)
+    _journals <- CassandraJournals.withSchema(session, sync)
     _snapshots <- CassandraSnapshots.withSchema[F, S](session, sync)
   } yield new CassandraPersistence[F, S] {
     def keys = _keys
@@ -37,8 +37,7 @@ object CassandraPersistence {
 
   /** Creates schema in Cassandra if not there yet
     *
-    * This method uses the same `JsonCodec[Try]` as `JournalParser` does to
-    * simplify defining the basic application.
+    * This method uses the same `JsonCodec[Try]` as `JournalParser` does to simplify defining the basic application.
     */
   def withSchema[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
@@ -59,7 +58,7 @@ object CassandraPersistence {
     sync: CassandraSync[F]
   ): F[Unit] =
     CassandraKeys.truncate(session, sync) *>
-    CassandraJournals.truncate(session, sync) *>
-    CassandraSnapshots.truncate(session, sync)
+      CassandraJournals.truncate(session, sync) *>
+      CassandraSnapshots.truncate(session, sync)
 
 }

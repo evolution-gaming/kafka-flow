@@ -23,8 +23,8 @@ class SnapshotSpec(val globalRead: GlobalRead) extends CassandraSpec {
       snapshotAfterDelete <- snapshots.get(key)
     } yield {
       expect(snapshotBeforeTest.isEmpty) and
-      expect.same(Some(snapshot), snapshotAfterPersist) and
-      expect(snapshotAfterDelete.isEmpty)
+        expect.same(Some(snapshot), snapshotAfterPersist) and
+        expect(snapshotAfterDelete.isEmpty)
     }
   }
 
@@ -32,9 +32,9 @@ class SnapshotSpec(val globalRead: GlobalRead) extends CassandraSpec {
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "queries")
     for {
       failAfter <- Ref.of(100)
-      session    = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
+      session = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
       snapshots <- CassandraSnapshots.withSchema[IO, String](session, cassandra.sync)
-      _         <- failAfter.set(1)
+      _ <- failAfter.set(1)
       snapshots <- snapshots.get(key).attempt
     } yield expect(snapshots.isLeft)
   }

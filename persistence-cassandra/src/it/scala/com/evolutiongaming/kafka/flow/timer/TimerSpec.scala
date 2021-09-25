@@ -22,8 +22,8 @@ class TimerSpec(val globalRead: GlobalRead) extends CassandraSpec {
       timerAfterDelete <- timers.get(key).toList
     } yield {
       expect(timerBeforeTest.isEmpty) and
-      expect.same(List(timer), timerAfterPersist) and
-      expect(timerAfterDelete.isEmpty)
+        expect.same(List(timer), timerAfterPersist) and
+        expect(timerAfterDelete.isEmpty)
     }
   }
 
@@ -31,8 +31,8 @@ class TimerSpec(val globalRead: GlobalRead) extends CassandraSpec {
     val key = KafkaKey("TimerSpec", "integration-tests-1", TopicPartition.empty, "failures")
     for {
       failAfter <- Ref.of(100)
-      session    = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
-      journals  <- CassandraTimers.withSchema(session, cassandra.sync)
+      session = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
+      journals <- CassandraTimers.withSchema(session, cassandra.sync)
       _ <- failAfter.set(1)
       records <- journals.get(key).toList.attempt
     } yield expect(records.isLeft)
