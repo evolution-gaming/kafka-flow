@@ -43,11 +43,11 @@ object KafkaModule {
   ): Resource[F, KafkaModule[F]] = {
     implicit val measureDuration = MeasureDuration.fromClock[F](Clock[F])
     for {
-      producerMetrics      <- ProducerMetrics.of(registry)
-      consumerMetrics      <- ConsumerMetrics.of(registry)
-      _producerOf            = RawProducerOf[F](blocker.blockingContext, producerMetrics(applicationId).some)
-      _consumerOf            = RawConsumerOf[F](blocker.blockingContext, consumerMetrics(applicationId).some)
-      _healthCheck          <- {
+      producerMetrics <- ProducerMetrics.of(registry)
+      consumerMetrics <- ConsumerMetrics.of(registry)
+      _producerOf = RawProducerOf[F](blocker.blockingContext, producerMetrics(applicationId).some)
+      _consumerOf = RawConsumerOf[F](blocker.blockingContext, consumerMetrics(applicationId).some)
+      _healthCheck <- {
         implicit val randomIdOf = RandomIdOf.uuid[F]
         implicit val journalProducerOf = JournalProducerOf[F](_producerOf)
         implicit val journalConsumerOf = JournalConsumerOf[F](_consumerOf)
@@ -65,16 +65,16 @@ object KafkaModule {
       def consumerOf = { groupId: String =>
         LogResource[F](KafkaModule.getClass, s"Consumer($groupId)") *>
           _consumerOf[String, ByteVector](
-          config.copy(
-            groupId = groupId.some,
-            autoCommit = false,
-            autoOffsetReset = AutoOffsetReset.Earliest
-          )
-        ) evalMap { consumer =>
-          LogOf[F].apply(Consumer.getClass) map { log =>
-            Consumer(consumer.withLogging(log))
+            config.copy(
+              groupId = groupId.some,
+              autoCommit = false,
+              autoOffsetReset = AutoOffsetReset.Earliest
+            )
+          ) evalMap { consumer =>
+            LogOf[F].apply(Consumer.getClass) map { log =>
+              Consumer(consumer.withLogging(log))
+            }
           }
-        }
       }
 
       def producerOf = _producerOf

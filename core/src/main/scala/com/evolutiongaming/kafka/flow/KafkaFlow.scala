@@ -22,30 +22,26 @@ object KafkaFlow {
     *
     * Returns records already processed by the `KafkaFlow`.
     *
-    * Note, that returned record does not guarantee that commit to
-    * Kafka happened, i.e. that the record will not be processsed for the
-    * second time.
+    * Note, that returned record does not guarantee that commit to Kafka happened, i.e. that the record will not be
+    * processsed for the second time.
     *
-    * WARNING: Do not forget to `flatMap` returned `F[Unit]` or the
-    * potential errors may be lost.
+    * WARNING: Do not forget to `flatMap` returned `F[Unit]` or the potential errors may be lost.
     */
   def retryOnError[F[_]: Concurrent: Timer: LogOf](
     consumer: Resource[F, Consumer[F]],
-    flowOf: ConsumerFlowOf[F],
+    flowOf: ConsumerFlowOf[F]
   ): Resource[F, F[Unit]] = {
 
     val retry = for {
       random <- Random.State.fromClock[F]()
       log <- LogOf[F].apply(KafkaFlow.getClass)
     } yield Retry(
-      strategy =
-        Strategy
+      strategy = Strategy
         .exponential(100.millis)
         .jitter(random)
         .cap(1.minute)
         .resetAfter(5.minutes),
-      onError =
-        OnError.fromLog(log)
+      onError = OnError.fromLog(log)
     )
 
     Resource.eval(retry) flatMap { implicit retry =>
@@ -58,31 +54,29 @@ object KafkaFlow {
     *
     * Returns records already processed by the `KafkaFlow`.
     *
-    * Note, that returned record does not guarantee that commit to
-    * Kafka happened, i.e. that the record will not be processsed for the
-    * second time.
+    * Note, that returned record does not guarantee that commit to Kafka happened, i.e. that the record will not be
+    * processsed for the second time.
     */
   def stream[F[_]: BracketThrowable: Retry](
     consumer: Resource[F, Consumer[F]],
-    flowOf: ConsumerFlowOf[F],
+    flowOf: ConsumerFlowOf[F]
   ): Stream[F, ConsRecords] =
     for {
-      _        <- Stream.around(Retry[F].toFunctionK)
+      _ <- Stream.around(Retry[F].toFunctionK)
       consumer <- Stream.fromResource(consumer)
-      flow     <- Stream.fromResource(flowOf(consumer))
-      records  <- flow.stream
+      flow <- Stream.fromResource(flowOf(consumer))
+      records <- flow.stream
     } yield records
 
   /** Process records from consumer with given flow and retry strategy
     *
     * Tears down if cancelled or retry strategy failed.
     *
-    * WARNING: Do not forget to `flatMap` returned `F[Unit]` or the
-    * potential errors may be lost.
+    * WARNING: Do not forget to `flatMap` returned `F[Unit]` or the potential errors may be lost.
     */
   def resource[F[_]: Concurrent: Retry](
     consumer: Resource[F, Consumer[F]],
-    flowOf: ConsumerFlowOf[F],
+    flowOf: ConsumerFlowOf[F]
   ): Resource[F, F[Unit]] =
     stream(consumer, flowOf).drain.background
 

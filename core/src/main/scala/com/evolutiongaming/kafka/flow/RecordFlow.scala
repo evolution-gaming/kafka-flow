@@ -13,10 +13,9 @@ import timer.ReadTimestamps
 
 /** Processes the records with a specific key.
   *
-  * I.e., if one needs to react to the events incoming from Kafka, one is to
-  * build an appropriate `KeyFlow`. If the event must be triggered even
-  * if there is no specific key encountered in Kafka (i.e. for session expiration)
-  * then `TimerFlow` could be used instead.
+  * I.e., if one needs to react to the events incoming from Kafka, one is to build an appropriate `KeyFlow`. If the
+  * event must be triggered even if there is no specific key encountered in Kafka (i.e. for session expiration) then
+  * `TimerFlow` could be used instead.
   */
 trait RecordFlow[F[_], A] {
 
@@ -46,7 +45,6 @@ object RecordFlow {
       _ <- storage.set(state)
       foldToState = FoldToState(storage, fold, persistence)
     } yield records => foldToState(records)
-
 
   /** Does not save anything to the database */
   @deprecated("Use KeyFlow.of with fold parameter instead of RecordFlow.of", "0.1.0")

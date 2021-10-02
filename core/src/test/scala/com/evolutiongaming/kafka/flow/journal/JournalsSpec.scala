@@ -27,8 +27,8 @@ class JournalsSpec extends FunSuite {
     // When("buffer is filled with events")
     val program =
       journals.append(100 -> "event1") *>
-      journals.append(101 -> "event2") *>
-      journals.append(102 -> "event3")
+        journals.append(101 -> "event2") *>
+        journals.append(102 -> "event3")
 
     val result = program.runS(Context()).value
 
@@ -49,9 +49,9 @@ class JournalsSpec extends FunSuite {
     // And("journals is flushed")
     val program =
       journals.append(100 -> "event1") *>
-      journals.append(101 -> "event2") *>
-      journals.append(102 -> "event3") *>
-      journals.flush
+        journals.append(101 -> "event2") *>
+        journals.append(102 -> "event3") *>
+        journals.flush
 
     val result = program.runS(Context()).value
 

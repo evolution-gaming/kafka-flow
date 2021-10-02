@@ -13,14 +13,20 @@ trait KafkaPersistenceModuleOf[F[_], S] {
 
 object KafkaPersistenceModuleOf {
 
-  /** Create a [[KafkaPersistenceModuleOf]] factory instance which will then produce a caching implementation of [[KafkaPersistenceModule]]
-    * for an assigned partition. See [[KafkaPersistenceModule.caching]] documentation for further details.
-    * Needed mostly as a convenient helper to provide a part of necessary parameters beforehand and pass this factory around.
-    * @param consumerOf factory of consumers
-    * @param producerOf factory of producers
-    * @param consumerConfig consumer config to be used when creating snapshot topic consumer
-    * @param producerConfig producer config to be used when creating snapshot topic producer
-    * @param snapshotTopic snapshot topic name (should be configured as a 'compacted' topic)
+  /** Create a [[KafkaPersistenceModuleOf]] factory instance which will then produce a caching implementation of
+    * [[KafkaPersistenceModule]] for an assigned partition. See [[KafkaPersistenceModule.caching]] documentation for
+    * further details. Needed mostly as a convenient helper to provide a part of necessary parameters beforehand and
+    * pass this factory around.
+    * @param consumerOf
+    *   factory of consumers
+    * @param producerOf
+    *   factory of producers
+    * @param consumerConfig
+    *   consumer config to be used when creating snapshot topic consumer
+    * @param producerConfig
+    *   producer config to be used when creating snapshot topic producer
+    * @param snapshotTopic
+    *   snapshot topic name (should be configured as a 'compacted' topic)
     */
   def caching[F[_]: LogOf: Concurrent: FromBytes[*[_], String]: ToBytes[*[_], S], S: FromBytes[F, *]](
     consumerOf: ConsumerOf[F],

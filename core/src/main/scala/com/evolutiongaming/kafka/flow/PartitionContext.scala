@@ -13,6 +13,7 @@ import com.olegpy.meow.effects._
 
 /** Partition specific metainformation inside of topic */
 trait PartitionContext[F[_]] {
+
   /** Request a commit to partition */
   def scheduleCommit(offset: Offset): F[Unit]
 }

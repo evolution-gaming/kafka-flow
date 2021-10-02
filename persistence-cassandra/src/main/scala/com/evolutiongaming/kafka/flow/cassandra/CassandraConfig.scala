@@ -7,16 +7,14 @@ import pureconfig.generic.semiauto.deriveReader
 final case class CassandraConfig(
   schema: CassandraConfig.Schema = CassandraConfig.Schema.default,
   retries: Int = 100,
-  client: scassandra.CassandraConfig)
+  client: scassandra.CassandraConfig
+)
 
 object CassandraConfig {
 
   implicit val cassandraConfigReader: ConfigReader[CassandraConfig] = deriveReader
 
-
-  final case class Schema(
-    keyspace: Keyspace = Keyspace.default,
-    autoCreate: Boolean = true)
+  final case class Schema(keyspace: Keyspace = Keyspace.default, autoCreate: Boolean = true)
 
   object Schema {
 
@@ -25,10 +23,7 @@ object CassandraConfig {
     val default: Schema = Schema()
   }
 
-
-  final case class Keyspace(
-    name: String = "kafka_flow",
-    autoCreate: Boolean = true)
+  final case class Keyspace(name: String = "kafka_flow", autoCreate: Boolean = true)
 
   object Keyspace {
 
