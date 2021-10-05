@@ -28,7 +28,7 @@ object Dependencies {
   }
 
   object MeowMtl {
-    private val version = "0.4.1"
+    private val version = "0.5.0"
     val core    = "com.olegpy" %% "meow-mtl-core"    % version
     val effects = "com.olegpy" %% "meow-mtl-effects" % version
   }
