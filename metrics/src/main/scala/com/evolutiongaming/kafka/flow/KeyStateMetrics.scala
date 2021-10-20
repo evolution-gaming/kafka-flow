@@ -17,18 +17,19 @@ object KeyStateMetrics {
       labels = LabelNames()
     ) map { countGauge =>
       val count = Resource.make(countGauge.inc()) { _ => countGauge.dec() }
-      keyStateOf => new KeyStateOf[F] {
+      keyStateOf =>
+        new KeyStateOf[F] {
 
-        def apply(
-          topicPartition: TopicPartition,
-          key: String,
-          createdAt: Timestamp,
-          context: KeyContext[F]
-        ) = count *> keyStateOf(topicPartition, key, createdAt, context)
+          def apply(
+            topicPartition: TopicPartition,
+            key: String,
+            createdAt: Timestamp,
+            context: KeyContext[F]
+          ) = count *> keyStateOf(topicPartition, key, createdAt, context)
 
-        def all(topicPartition: TopicPartition) =
-          keyStateOf.all(topicPartition)
-      }
+          def all(topicPartition: TopicPartition) =
+            keyStateOf.all(topicPartition)
+        }
 
     }
   }

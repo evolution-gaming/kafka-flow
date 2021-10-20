@@ -32,8 +32,8 @@ object TimerDatabase {
 
   /** Creates in-memory database implementation.
     *
-    * The data will survive destruction of specific `Timers` instance,
-    * but will not survive destruction of specific `TimerDatabase` instance.
+    * The data will survive destruction of specific `Timers` instance, but will not survive destruction of specific
+    * `TimerDatabase` instance.
     */
   def memory[F[_]: Monad, K, T](
     storage: MonadState[F, Map[K, Set[T]]]
@@ -63,8 +63,9 @@ object TimerDatabase {
   implicit class TimerDatabaseKafkaTimerOps[F[_], K](
     val self: TimerDatabase[F, K, KafkaTimer]
   ) extends AnyVal {
-    def timersOf(
-      implicit F: Sync[F], log: Log[F]
+    def timersOf(implicit
+      F: Sync[F],
+      log: Log[F]
     ): TimersOf[F, K] = { (key, createdAt) =>
       Timestamps.of(createdAt) flatMap { implicit timestamps =>
         Timers.of(key, self) map { timers =>

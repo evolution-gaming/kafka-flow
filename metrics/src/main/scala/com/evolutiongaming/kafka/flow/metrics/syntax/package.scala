@@ -45,8 +45,9 @@ package object syntax {
       * expensiveOperation.measure(record)
       * ```
       */
-    def measureDuration(onFinish: FiniteDuration => F[Unit])
-    (implicit F: FlatMap[F], measure: MeasureDuration[F]): F[A] =
+    def measureDuration(
+      onFinish: FiniteDuration => F[Unit]
+    )(implicit F: FlatMap[F], measure: MeasureDuration[F]): F[A] =
       for {
         duration <- measure.start
         a <- fa
@@ -68,8 +69,7 @@ package object syntax {
       * expensiveStream.measure(record)
       * ```
       */
-    def measureTotalDuration(
-      onFinish: FiniteDuration => F[Unit])(implicit
+    def measureTotalDuration(onFinish: FiniteDuration => F[Unit])(implicit
       F: Monad[F],
       measureDuration: MeasureDuration[F]
     ): Stream[F, A] = {
@@ -77,9 +77,9 @@ package object syntax {
         def foldWhileM[L, R](l: L)(f: (L, A) => F[Either[L, R]]) = {
           for {
             duration <- measureDuration.start
-            result   <- self.foldWhileM(l)(f)
+            result <- self.foldWhileM(l)(f)
             duration <- duration
-            _        <- onFinish(duration)
+            _ <- onFinish(duration)
           } yield result
         }
       }

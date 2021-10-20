@@ -27,8 +27,8 @@ trait JournalParser[F[_]] {
 
   /** Sequence numbers of events contained in `ConsRecord` if any.
     *
-    * It could be a bit faster than `toPayloads` because it does not
-    * parse the actual payload, but looks at headers instead.
+    * It could be a bit faster than `toPayloads` because it does not parse the actual payload, but looks at headers
+    * instead.
     */
   def toSeqRange(record: ConsRecord): F[Option[SeqRange]]
 
@@ -36,7 +36,7 @@ trait JournalParser[F[_]] {
   def toPayloads(record: ConsRecord): F[List[Event[Payload]]]
 
   /** Parsed events contained in `ConsRecord` if any */
-  def toEvents[T: Reads](record: ConsRecord):  F[List[(SeqNr, T)]]
+  def toEvents[T: Reads](record: ConsRecord): F[List[(SeqNr, T)]]
 
 }
 object JournalParser {
@@ -63,7 +63,7 @@ object JournalParser {
           record <- record
           append <- record.action match {
             case action: Action.Append => Some(action)
-            case _ => None
+            case _                     => None
           }
         } yield append
       }
@@ -73,7 +73,6 @@ object JournalParser {
       toAppend(record) map { append =>
         append map (_.header.range)
       }
-
 
     def toPayloads(record: ConsRecord) =
       toAppend(record) flatMap { append =>
