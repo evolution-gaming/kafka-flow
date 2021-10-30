@@ -118,7 +118,7 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
     // using unique input topic name per test as weaver is running tests in parallel
     val inputTopic = "kafka-persistence-test"
     val persistenceModuleOf = kafkaPersistenceModuleOf.allocated.unsafeRunSync()._1
-    //val persistence = kafkaPersistence.allocated.unsafeRunSync()._1
+    // val persistence = kafkaPersistence.allocated.unsafeRunSync()._1
     comboTestCase(kafka, persistenceModuleOf, inputTopic)
   }
 
@@ -311,10 +311,12 @@ object StatefulProcessingWithKafkaSpec {
 
   final case class Output(key: String, stateBeforeInput: Option[State], input: Input)
 
-  /** processing kafka messages Input(n: Int) by storing `n` in State(n: Int)
-    * key is considered processed when n == 0 (i.e. state can be removed from persistent storage)
-    * @param output   list of Output(stateBeforeInput: Option[State], input: Input)
-    * @param finished is completed on Input(n % 3 == 0 || n == 0)
+  /** processing kafka messages Input(n: Int) by storing `n` in State(n: Int) key is considered processed when n == 0
+    * (i.e. state can be removed from persistent storage)
+    * @param output
+    *   list of Output(stateBeforeInput: Option[State], input: Input)
+    * @param finished
+    *   is completed on Input(n % 3 == 0 || n == 0)
     */
   def bizLogic(
     output: Ref[IO, List[Output]],

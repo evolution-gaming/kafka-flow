@@ -14,9 +14,8 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
 
   /** Transforms the input `A` of the `Fold` to something else.
     *
-    * The common use for this method is to use `Fold` with the parsed
-    * input to construct a new `Fold` which knows how to parse the
-    * binary representation.
+    * The common use for this method is to use `Fold` with the parsed input to construct a new `Fold` which knows how to
+    * parse the binary representation.
     */
   def contramap[B](f: B => A): FoldOption[F, S, B] =
     FoldOption(value contramap f)
@@ -32,8 +31,8 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     *
     * It is possible to use additional information from `A` to build a new state.
     *
-    * The common use for this method is to augument original state with
-    * some metainformation, i.e. offset or sequence number.
+    * The common use for this method is to augument original state with some metainformation, i.e. offset or sequence
+    * number.
     *
     * See also `StateT#transformS` for more details.
     */
@@ -48,8 +47,7 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     *
     * Same as `dimap`, but allows to have an effect when calculating new state.
     *
-    * Useful, for example, if `A` should be parsed to get the required
-    * additional information, but parsing may fail.
+    * Useful, for example, if `A` should be parsed to get the required additional information, but parsing may fail.
     */
   def transformStateM[T](f: T => F[S])(g: (S, A) => F[T])(implicit F: Monad[F]): FoldOption[F, T, A] =
     FoldOption {
@@ -66,7 +64,6 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
   def transformM[T, B](f: T => F[S], g: B => F[A])(h: (S, B) => F[T])(implicit F: Monad[F]): FoldOption[F, T, B] =
     contramapM(g).transformStateM(f)(h)
 
-
   /** Applies `A` second time using another `Fold`.
     *
     * If `None` is returned by first `Fold` then the second will not be executed.
@@ -79,9 +76,9 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     }
 
   /** Applies `A` second time using another `Fold`.
-   *
-   * If `None` is returned by first `Fold` then the second will not be executed.
-   */
+    *
+    * If `None` is returned by first `Fold` then the second will not be executed.
+    */
   def productR(that: FoldOption[F, S, A])(implicit F: Monad[F]): FoldOption[F, S, A] =
     this flatMap { _ => that }
 
@@ -121,7 +118,7 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     */
   def handleErrorWith[E](f: (S, E) => F[S])(implicit F: ApplicativeError[F, E]): FoldOption[F, S, A] =
     FoldOption {
-      value handleErrorWith[E] { (s, e) =>
+      value handleErrorWith [E] { (s, e) =>
         s traverse (f(_, e))
       }
     }

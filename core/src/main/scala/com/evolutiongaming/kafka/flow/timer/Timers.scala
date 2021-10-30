@@ -39,8 +39,8 @@ trait TimerWriter[F[_]] {
 
   /** Removes state from the buffers and optionally also from persistence.
     *
-    * @param persist if `true` then also calls underlying database, only clears
-    * buffers otherwise.
+    * @param persist
+    *   if `true` then also calls underlying database, only clears buffers otherwise.
     */
   def delete(persist: Boolean): F[Unit]
 
@@ -80,7 +80,7 @@ object Timers {
 
   def of[F[_]: Sync: ReadTimestamps: Log, K](
     key: K,
-    database: TimerDatabase[F, K, KafkaTimer],
+    database: TimerDatabase[F, K, KafkaTimer]
   ): F[Timers[F]] =
     Ref.of(TimerState()) map { storage =>
       Timers(key, database, storage.stateInstance)
@@ -135,7 +135,7 @@ object Timers {
     def delete(persist: Boolean) = {
       val delete = if (persist) {
         database.delete(key) *>
-        Log[F].info("deleted timers")
+          Log[F].info("deleted timers")
       } else {
         ().pure[F]
       }

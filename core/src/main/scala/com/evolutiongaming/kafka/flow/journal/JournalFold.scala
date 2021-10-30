@@ -14,7 +14,7 @@ object JournalFold {
 
   // TODO: introduce new state wrapper to not force library user to store `SeqNr` in state
   def explicitSeqNr[F[_]: Monad: JournalParser: LogOf, S](
-    fold: FoldOption[F, S, ConsRecord],
+    fold: FoldOption[F, S, ConsRecord]
   )(stateToSeqNr: S => SeqNr): F[FoldOption[F, KafkaSnapshot[S], ConsRecord]] =
     LogOf[F].apply(JournalFold.getClass) map { log =>
       SnapshotFold(fold) filterM { (snapshot, record) =>

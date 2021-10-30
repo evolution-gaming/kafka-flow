@@ -21,9 +21,8 @@ package object kafkapersistence {
   }
 
   /** Create a PartitionFlowOf with a snapshot-based persistence and recovery from a Kafka
-    * [[https://kafka.apache.org/documentation/#compaction compacted topic]].
-    * State is restored eagerly on partition assignment by reading the content of a snapshot topic to the end
-    * without committing offsets.
+    * [[https://kafka.apache.org/documentation/#compaction compacted topic]]. State is restored eagerly on partition
+    * assignment by reading the content of a snapshot topic to the end without committing offsets.
     *
     * Note that the snapshot topic should have the same number of partitions as the input topic since state recovery
     * will be performed based on a number of the assigned partition of the input topic (state for partition N of input
