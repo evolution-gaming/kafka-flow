@@ -7,11 +7,11 @@ import com.evolutiongaming.kafka.flow.ConsumerFlowSpec._
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{RebalanceListener1 => SRebalanceListener}
+import com.evolutiongaming.skafka.consumer.{RebalanceCallback, RebalanceListener1 => SRebalanceListener}
 import munit.FunSuite
 
 import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
+import scala.util.{Success, Try}
 
 class ConsumerFlowSpec extends FunSuite {
 
@@ -25,20 +25,18 @@ class ConsumerFlowSpec extends FunSuite {
       Command.Records()
     )
 
-    ConstFixture.app(topic).runS(Context(commands = commands)) match {
-      case Failure(ex) => fail("Failed with", ex)
-      case Success(result) =>
-        assertEquals(
-          result.actions.reverse,
-          List(
-            Action.Subscribe(NonEmptySet.of(topic)),
-            Action.Add(topic, NonEmptySet.of(partition -> offset)),
-            Action.Apply(topic),
-            Action.Apply(topic),
-            Action.Apply(topic)
-          )
-        )
-    }
+    val Success(result) = ConstFixture.app(topic).runS(Context(commands = commands))
+
+    assertEquals(
+      result.actions.reverse,
+      List(
+        Action.Subscribe(NonEmptySet.of(topic)),
+        Action.Add(topic, NonEmptySet.of(partition -> offset)),
+        Action.Apply(topic),
+        Action.Apply(topic),
+        Action.Apply(topic)
+      )
+    )
   }
 
   test("multi topic subscription") {
@@ -62,24 +60,22 @@ class ConsumerFlowSpec extends FunSuite {
       Command.Records()
     )
 
-    ConstFixture.app(topic1, topic2).runS(Context(commands = commands)) match {
-      case Failure(ex) => fail("Failed with", ex)
-      case Success(result) =>
-        assertEquals(
-          result.actions.reverse,
-          List(
-            Action.Subscribe(NonEmptySet.of(topic1, topic2)),
-            Action.Add(topic1, NonEmptySet.of(partition1 -> offset, partition2 -> offset)),
-            Action.Add(topic2, NonEmptySet.of(partition3 -> offset, partition4 -> offset)),
-            Action.Apply(topic1),
-            Action.Apply(topic2),
-            Action.Apply(topic1),
-            Action.Apply(topic2),
-            Action.Apply(topic1),
-            Action.Apply(topic2)
-          )
-        )
-    }
+    val Success(result) = ConstFixture.app(topic1, topic2).runS(Context(commands = commands))
+
+    assertEquals(
+      result.actions.reverse,
+      List(
+        Action.Subscribe(NonEmptySet.of(topic1, topic2)),
+        Action.Add(topic1, NonEmptySet.of(partition1 -> offset, partition2 -> offset)),
+        Action.Add(topic2, NonEmptySet.of(partition3 -> offset, partition4 -> offset)),
+        Action.Apply(topic1),
+        Action.Apply(topic2),
+        Action.Apply(topic1),
+        Action.Apply(topic2),
+        Action.Apply(topic1),
+        Action.Apply(topic2)
+      )
+    )
   }
 
 }
@@ -134,21 +130,23 @@ object ConsumerFlowSpec {
               StopException(context).raiseError[Try, (Context, ConsRecords)]
             case head :: tail =>
               val next = context.copy(commands = tail)
-              def withListener(f: SRebalanceListener[F] => F[Unit]): Try[(Context, ConsRecords)] =
-                next.listener.traverse(f).run(next).map { case (context, _) => context -> ConsRecords.empty }
+              def withListener(f: SRebalanceListener[F] => RebalanceCallback[F, Unit]): Try[(Context, ConsRecords)] = {
+                next.listener
+                  .traverse(f(_).toF(noopConsumer))
+                  .run(next)
+                  .map { case (context, _) => context -> ConsRecords.empty }
+              }
               head match {
                 case Command.Records(records)     => Try(next -> records)
-                case Command.Assigned(partitions) => withListener(_.onPartitionsAssigned(partitions).toF(noopConsumer))
-                case Command.Revoked(partitions)  => withListener(_.onPartitionsRevoked(partitions).toF(noopConsumer))
-                case Command.Lost(partitions)     => withListener(_.onPartitionsLost(partitions).toF(noopConsumer))
+                case Command.Assigned(partitions) => withListener(_.onPartitionsAssigned(partitions))
+                case Command.Revoked(partitions)  => withListener(_.onPartitionsRevoked(partitions))
+                case Command.Lost(partitions)     => withListener(_.onPartitionsLost(partitions))
               }
           }
         }
       }
 
       def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] = ().pure[F]
-
-      def position(partition: TopicPartition): F[Offset] = offset.pure[F]
     }
 
     def flow(topic: String) = new TopicFlow[F] {

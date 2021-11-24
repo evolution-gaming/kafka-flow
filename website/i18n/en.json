@@ -5,9 +5,21 @@
     "previous": "Previous",
     "tagline": "Reliable processing of Kafka Journal events",
     "docs": {
+      "changelog": {
+        "title": "Changelog",
+        "sidebar_label": "Changelog"
+      },
+      "faq": {
+        "title": "FAQ",
+        "sidebar_label": "FAQ"
+      },
       "overview": {
         "title": "Overview",
         "sidebar_label": "Overview"
+      },
+      "setup": {
+        "title": "Setup",
+        "sidebar_label": "Setup"
       },
       "styleguide": {
         "title": "Style Guide",
@@ -16,6 +28,7 @@
     },
     "links": {
       "Overview": "Overview",
+      "Setup": "Setup",
       "Help": "Help"
     },
     "categories": {
