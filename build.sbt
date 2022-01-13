@@ -8,7 +8,7 @@ lazy val commonSettings = Seq(
   organizationHomepage := Some(url("http://evolutiongaming.com")),
   publishTo := Some(Resolver.evolutionReleases),
   scalaVersion := crossScalaVersions.value.head,
-  crossScalaVersions := Seq("2.13.5", "2.12.14"),
+  crossScalaVersions := Seq("2.13.8", "2.12.14"),
   coverageScalacPluginVersion := "1.4.8",
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   releaseCrossBuild := true,
@@ -49,7 +49,7 @@ lazy val core = (project in file("core"))
       scribe % IntegrationTest,
       skafka,
       sstream,
-      weaver % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
@@ -74,7 +74,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
       KafkaJournal.cassandra,
       cassandraLauncher % IntegrationTest exclude ("ch.qos.logback", "logback-classic"),
       scribe % IntegrationTest,
-      weaver % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
@@ -92,7 +92,7 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
       Monocle.`macro`,
       kafkaLauncher % IntegrationTest,
       scribe % IntegrationTest,
-      weaver % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
