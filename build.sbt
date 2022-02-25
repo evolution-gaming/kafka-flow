@@ -82,7 +82,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
   )
 
 lazy val `persistence-kafka` = (project in file("persistence-kafka"))
-  .dependsOn(core)
+  .dependsOn(core, metrics)
   .configs(IntegrationTest)
   .settings(commonSettings)
   .settings(

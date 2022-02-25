@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow.kafkapersistence
 
 import cats.effect.{Concurrent, Resource}
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.FlowMetrics
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf}
 import com.evolutiongaming.skafka.{FromBytes, Partition, ToBytes, Topic, TopicPartition}
@@ -21,13 +22,15 @@ object KafkaPersistenceModuleOf {
     * @param consumerConfig consumer config to be used when creating snapshot topic consumer
     * @param producerConfig producer config to be used when creating snapshot topic producer
     * @param snapshotTopic snapshot topic name (should be configured as a 'compacted' topic)
+    * @param metrics instance of [[FlowMetrics]] for [[KafkaPersistenceModule]]
     */
   def caching[F[_]: LogOf: Concurrent: FromBytes[*[_], String]: ToBytes[*[_], S], S: FromBytes[F, *]](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
     consumerConfig: ConsumerConfig,
     producerConfig: ProducerConfig,
-    snapshotTopic: Topic
+    snapshotTopic: Topic,
+    metrics: FlowMetrics[F] = FlowMetrics.empty[F]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     override def make(partition: Partition): Resource[F, KafkaPersistenceModule[F, S]] = {
       KafkaPersistenceModule.caching[F, S](
@@ -35,7 +38,8 @@ object KafkaPersistenceModuleOf {
         producerOf = producerOf,
         consumerConfig = consumerConfig,
         producerConfig = producerConfig,
-        snapshotTopicPartition = TopicPartition(snapshotTopic, partition)
+        snapshotTopicPartition = TopicPartition(snapshotTopic, partition),
+        metrics = metrics
       )
     }
   }
