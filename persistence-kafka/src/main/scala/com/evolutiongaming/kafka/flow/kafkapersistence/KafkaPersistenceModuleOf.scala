@@ -22,7 +22,7 @@ object KafkaPersistenceModuleOf {
     * @param consumerConfig consumer config to be used when creating snapshot topic consumer
     * @param producerConfig producer config to be used when creating snapshot topic producer
     * @param snapshotTopic snapshot topic name (should be configured as a 'compacted' topic)
-    * @param metrics instance of [[FlowMetrics]] for [[KafkaPersistenceModule]]
+    * @param metrics instance of `FlowMetrics` for [[KafkaPersistenceModule]]
     */
   def caching[F[_]: LogOf: Concurrent: FromBytes[*[_], String]: ToBytes[*[_], S], S: FromBytes[F, *]](
     consumerOf: ConsumerOf[F],
