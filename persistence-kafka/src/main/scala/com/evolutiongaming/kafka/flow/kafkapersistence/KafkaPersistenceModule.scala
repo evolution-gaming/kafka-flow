@@ -51,7 +51,7 @@ object KafkaPersistenceModule {
     * @param consumerConfig Kafka consumer config for snapshot reading consumers
     * @param producerConfig Kafka producer config for snapshot writing producers
     * @param snapshotTopicPartition snapshot topic-partition to read/write snapshots
-    * @param metrics instance of [[FlowMetrics]] to customize metrics of internally created snapshot database
+    * @param metrics instance of `FlowMetrics` to customize metrics of internally created snapshot database
     *
     * @see com.evolutiongaming.kafka.flow.PartitionFlow.of for implementations details of keys fetching and state recovery for a partition
     * @see com.evolutiongaming.kafka.flow.KeyStateOf.eagerRecovery for implementation details of constructing com.evolutiongaming.kafka.flow.KeyState for a specific key
