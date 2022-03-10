@@ -4,11 +4,12 @@ import cats.effect.concurrent.Ref
 import cats.effect.{Concurrent, Resource}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
-import com.evolutiongaming.kafka.flow.KafkaKey
+import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey}
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.Snapshots.Snapshot
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, Snapshots, SnapshotsOf}
+import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
@@ -50,6 +51,7 @@ object KafkaPersistenceModule {
     * @param consumerConfig Kafka consumer config for snapshot reading consumers
     * @param producerConfig Kafka producer config for snapshot writing producers
     * @param snapshotTopicPartition snapshot topic-partition to read/write snapshots
+    * @param metrics instance of `FlowMetrics` to customize metrics of internally created snapshot database
     *
     * @see com.evolutiongaming.kafka.flow.PartitionFlow.of for implementations details of keys fetching and state recovery for a partition
     * @see com.evolutiongaming.kafka.flow.KeyStateOf.eagerRecovery for implementation details of constructing com.evolutiongaming.kafka.flow.KeyState for a specific key
@@ -60,7 +62,8 @@ object KafkaPersistenceModule {
     producerOf: ProducerOf[F],
     consumerConfig: ConsumerConfig,
     producerConfig: ProducerConfig,
-    snapshotTopicPartition: TopicPartition
+    snapshotTopicPartition: TopicPartition,
+    metrics: FlowMetrics[F] = FlowMetrics.empty[F]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     implicit val fromTry: FromTry[F] = FromTry.lift
 
@@ -107,7 +110,7 @@ object KafkaPersistenceModule {
               database = SnapshotDatabase(
                 read = read,
                 write = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition)
-              ),
+              ) withMetricsK metrics.snapshotDatabaseMetrics,
               buffer = buffer
             )
         }

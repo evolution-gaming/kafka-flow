@@ -4,6 +4,7 @@ import cats.effect.{Concurrent, Resource, Timer}
 import cats.syntax.all._
 import cats.{Eval, Foldable, Monad, Parallel}
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.consumer.ConsumerConfig
@@ -71,7 +72,8 @@ package object kafkapersistence {
     timerFlowOf: TimerFlowOf[F],
     fold: FoldOption[F, S, ConsRecord],
     tick: TickOption[F, S],
-    partitionFlowConfig: PartitionFlowConfig
+    partitionFlowConfig: PartitionFlowConfig,
+    metrics: FlowMetrics[F] = FlowMetrics.empty[F]
   ): PartitionFlowOf[F] =
     new PartitionFlowOf[F] {
       override def apply(
@@ -95,7 +97,7 @@ package object kafkapersistence {
                 fold = fold,
                 tick = tick
               )
-            ),
+            ) withMetrics metrics.keyStateOfMetrics,
             config = partitionFlowConfig
           )
           partitionFlow <- partitionFlowOf(topicPartition, assignedAt, context)
