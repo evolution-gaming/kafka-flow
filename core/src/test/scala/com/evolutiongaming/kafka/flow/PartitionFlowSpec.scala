@@ -12,7 +12,7 @@ import com.evolutiongaming.kafka.flow.journal.JournalsOf
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
-import com.evolutiongaming.kafka.flow.snapshot.SnapshotsOf
+import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.TimerContext
 import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
 import com.evolutiongaming.kafka.flow.timer.Timestamp
@@ -22,10 +22,10 @@ import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.WithSize
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scodec.bits.ByteVector
-
 import PartitionFlowSpec._
 
 class PartitionFlowSpec extends FunSuite {
@@ -170,6 +170,45 @@ class PartitionFlowSpec extends FunSuite {
     flow.unsafeRunSync()
   }
 
+  test("PartitionFlow doesn't commit new offset if periodic persisting fails with ignorePersistErrors = true") {
+    class LocalFixture(waitForN: Int) extends ConstFixture(waitForN) {
+      // It fails persisting for key = 'key2' on the 3rd event only
+      private val snapshotDatabase = new SnapshotDatabase[IO, String, State] {
+        def get(key: String): IO[Option[(Offset, Int)]] = IO.pure(none)
+        def persist(key: String, snapshot: (Offset, Int)): IO[Unit] = {
+          val (_, sent) = snapshot
+          IO.whenA(key == "key2" && sent == 3)(IO.raiseError(new Exception("Test error")))
+        }
+        def delete(key: String): IO[Unit] = IO.unit
+      }
+
+      override def flow: Resource[IO, PartitionFlow[IO]] = makeFlow(
+        timerFlowOf =
+          TimerFlowOf.persistPeriodically(fireEvery = 0.minute, persistEvery = 0.minute, ignorePersistErrors = true),
+        persistenceOf =
+          PersistenceOf.snapshotsOnly(keysOf = keysOf, snapshotsOf = SnapshotsOf.backedBy(snapshotDatabase))
+      )
+    }
+
+    val f = new LocalFixture(waitForN = 5)
+
+    val flow = f.flow.use { flow =>
+      for {
+        // The first two events for each state are handled without errors, offset is committed
+        _ <- flow(f.records("key1", 100, List("event1", "event2")) ++ f.records("key2", 102, List("event3", "event4")))
+        _ <- f.pendingOffset.get.map(offset => assertEquals(offset, Some(Offset.unsafe(104))))
+        // Then, persisting fails for "key2" and it doesn't commit any new offsets
+        _ <- flow(f.records("key1", 104, List("event5")) ++ f.records("key2", 105, List("event6")))
+        _ <- f.pendingOffset.get.map(offset => assertEquals(offset, Some(Offset.unsafe(104))))
+        // Then, on the next batch persisting succeeds and the latest offset is committed
+        _ <- flow(f.records("key1", 106, List("event7")) ++ f.records("key2", 107, List("event8")))
+        _ <- f.pendingOffset.get.map(offset => assertEquals(offset, Some(Offset.unsafe(108))))
+      } yield ()
+    }
+
+    flow.unsafeRunSync()
+  }
+
 }
 object PartitionFlowSpec {
 
@@ -214,19 +253,29 @@ object PartitionFlowSpec {
       def scheduleCommit(offset: Offset) = pendingOffset.set(Some(offset))
     }
 
-    val flow = {
+    def flow: Resource[IO, PartitionFlow[IO]] =
+      makeFlow(TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes), persistenceOf)
+
+    def makeFlow(
+      timerFlowOf: TimerFlowOf[IO],
+      persistenceOf: PersistenceOf[IO, String, State, ConsRecord]
+    ): Resource[IO, PartitionFlow[IO]] = {
       val keyStateOf: KeyStateOf[IO] = new KeyStateOf[IO] {
-        def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[IO]) = {
+        def apply(
+          topicPartition: TopicPartition,
+          key: String,
+          createdAt: Timestamp,
+          context: KeyContext[IO]
+        ): Resource[IO, KeyState[IO, ConsRecord]] = {
           implicit val _context = context
           for {
             timers <- Resource.eval(TimerContext.memory[IO, String](key, createdAt))
             persistence <- Resource.eval(persistenceOf(key, fold, timers))
-            timerFlowOf = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes)
             timerFlow <- timerFlowOf(context, persistence, timers)
             keyFlow <- Resource.eval(KeyFlow.of(fold, TickOption.id[IO, State], persistence, timerFlow))
           } yield KeyState(keyFlow, timers)
         }
-        def all(topicPartition: TopicPartition) = Stream.empty
+        def all(topicPartition: TopicPartition): Stream[IO, String] = Stream.empty
       }
       implicit val clock = Clock.create[IO]
       PartitionFlow.resource(
@@ -241,7 +290,7 @@ object PartitionFlowSpec {
     }
 
     def records(key: String, offset: Int, events: List[String]): List[ConsRecord] =
-      events.toList.zipWithIndex map { case (event, index) =>
+      events.zipWithIndex map { case (event, index) =>
         ConsRecord(
           topicPartition = TopicPartition.empty,
           timestampAndType = None,

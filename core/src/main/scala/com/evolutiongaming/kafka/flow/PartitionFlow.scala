@@ -8,7 +8,7 @@ import cats.syntax.all._
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.OffsetToCommit
-import com.evolutiongaming.kafka.flow.timer.Timestamp
+import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.scache.{Cache, Releasable}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
@@ -29,8 +29,8 @@ trait PartitionFlow[F[_]] {
 object PartitionFlow {
 
   final case class PartitionKey[F[_]](state: KeyState[F, ConsRecord], context: KeyContext[F]) {
-    def flow = state.flow
-    def timers = state.timers
+    def flow: KeyFlow[F, ConsRecord] = state.flow
+    def timers: TimerContext[F]      = state.timers
   }
 
   def resource[F[_]: Concurrent: Parallel: PartitionContext: Clock: LogOf, S](
@@ -166,7 +166,7 @@ object PartitionFlow {
       }
     } yield ()
 
-    def offsetToCommit = for {
+    def offsetToCommit: F[Option[Offset]] = for {
       // find minimum offset if any
       states <- cache.values
       stateOffsets <- states.values.toList.traverse { state =>
