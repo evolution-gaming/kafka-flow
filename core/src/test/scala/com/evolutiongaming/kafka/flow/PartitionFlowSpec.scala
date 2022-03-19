@@ -1,32 +1,27 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.Clock
-import cats.effect.ContextShift
-import cats.effect.IO
-import cats.effect.Resource
+import cats.effect.{Clock, ContextShift, IO, Resource}
 import cats.effect.concurrent.Ref
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.catshelper.{Log, LogOf}
+import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
+import com.evolutiongaming.kafka.flow.PartitionFlowSpec._
 import com.evolutiongaming.kafka.flow.journal.JournalsOf
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
-import com.evolutiongaming.kafka.flow.timer.TimerContext
-import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
-import com.evolutiongaming.kafka.flow.timer.Timestamp
+import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.TopicPartition
+import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.skafka.consumer.WithSize
 import com.evolutiongaming.sstream.Stream
+import com.olegpy.meow.effects._
 import munit.FunSuite
+import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import scodec.bits.ByteVector
-import PartitionFlowSpec._
 
 class PartitionFlowSpec extends FunSuite {
 
@@ -209,6 +204,65 @@ class PartitionFlowSpec extends FunSuite {
     flow.unsafeRunSync()
   }
 
+  test("PartitionFlow filters out events but commits offsets") {
+    val processedKey = "key1"
+    val skippedKey = "key2"
+
+    class LocalFixture(waitForN: Int) extends ConstFixture(waitForN) {
+      val foldedKeys = Ref.unsafe[IO, Set[String]](Set.empty)
+      override def fold: FoldOption[IO, (Offset, Int), ConsRecord] =
+        FoldOption.of { (state, record) =>
+          // memorize keys that were folded
+          record.key.map(_.value).traverse(key => foldedKeys.update(_ + key)) >>
+            IO {
+              // return number of records processed as a state
+              state map { case (_, messagesSent) =>
+                (record.offset, messagesSent + 1)
+              } orElse {
+                Some((record.offset, 1))
+              } filter { case (_, messagesSent) =>
+                messagesSent < waitForN
+              }
+            }
+        }
+
+      val snapshotRef = Ref.unsafe[IO, Map[String, State]](Map.empty)
+      private val snapshotDatabase = SnapshotDatabase.memory(snapshotRef.stateInstance)
+
+      override def flow: Resource[IO, PartitionFlow[IO]] = makeFlow(
+        timerFlowOf =
+          TimerFlowOf.persistPeriodically(fireEvery = 0.minute, persistEvery = 0.minute, ignorePersistErrors = true),
+        persistenceOf =
+          PersistenceOf.snapshotsOnly(keysOf = keysOf, snapshotsOf = SnapshotsOf.backedBy(snapshotDatabase)),
+        filter = record => record.key.map(key => IO(key.value != skippedKey)).getOrElse(IO.pure(true))
+      )
+    }
+
+    val f = new LocalFixture(waitForN = 5)
+
+    val flow = f.flow.use { flow =>
+      for {
+        // Only one key is processed and persisted, the second one is not, but the latest offset is committed nonetheless
+        _ <- flow(f.records(processedKey, 100, List("event1")) ++ f.records(skippedKey, 101, List("event2")))
+        _ <- f.pendingOffset.get.map(offset => assertEquals(offset, Some(Offset.unsafe(102))))
+        _ <- f.foldedKeys.get.map(keys => assertEquals(keys, Set(processedKey)))
+        _ <- f.snapshotRef.get.map(snapshots => assertEquals(snapshots, Map(processedKey -> ((Offset.unsafe(100), 1)))))
+        // Then we have a batch which events are completely skipped, but the latest offsets are committed
+        _ <- flow(f.records(skippedKey, 102, List("event3", "event4")))
+        _ <- f.pendingOffset.get.map(offset => assertEquals(offset, Some(Offset.unsafe(104))))
+        _ <- f.foldedKeys.get.map(keys => assertEquals(keys, Set(processedKey)))
+        _ <- f.snapshotRef.get.map(snapshots => assertEquals(snapshots, Map(processedKey -> ((Offset.unsafe(100), 1)))))
+        // Then again, a part of the batch is folded and persisted and the other one is not, latest offset is committed
+        _ <- flow(f.records(processedKey, 104, List("event5")) ++ f.records(skippedKey, 105, List("event6")))
+        _ <- f.pendingOffset.get.map(offset => assertEquals(offset, Some(Offset.unsafe(106))))
+        _ <- f.foldedKeys.get.map(keys => assertEquals(keys, Set(processedKey)))
+        _ <- f.snapshotRef.get.map(snapshots => assertEquals(snapshots, Map(processedKey -> ((Offset.unsafe(104), 2)))))
+      } yield ()
+    }
+
+    flow.unsafeRunSync()
+  }
+
 }
 object PartitionFlowSpec {
 
@@ -234,7 +288,7 @@ object PartitionFlowSpec {
     val snapshotsOf = SnapshotsOf.memory[IO, String, State].unsafeRunSync()
     val (persistenceOf, _) = PersistenceOf.restoreEvents(keysOf, journalsOf, snapshotsOf).allocated.unsafeRunSync()
 
-    val fold: FoldOption[IO, State, ConsRecord] =
+    def fold: FoldOption[IO, State, ConsRecord] =
       FoldOption.of { (state, record) =>
         IO {
           // return number of records processed as a state
@@ -258,7 +312,8 @@ object PartitionFlowSpec {
 
     def makeFlow(
       timerFlowOf: TimerFlowOf[IO],
-      persistenceOf: PersistenceOf[IO, String, State, ConsRecord]
+      persistenceOf: PersistenceOf[IO, String, State, ConsRecord],
+      filter: FilterRecord[IO] = FilterRecord.empty[IO]
     ): Resource[IO, PartitionFlow[IO]] = {
       val keyStateOf: KeyStateOf[IO] = new KeyStateOf[IO] {
         def apply(
@@ -268,11 +323,12 @@ object PartitionFlowSpec {
           context: KeyContext[IO]
         ): Resource[IO, KeyState[IO, ConsRecord]] = {
           implicit val _context = context
+          val fold0 = fold
           for {
             timers <- Resource.eval(TimerContext.memory[IO, String](key, createdAt))
-            persistence <- Resource.eval(persistenceOf(key, fold, timers))
+            persistence <- Resource.eval(persistenceOf(key, fold0, timers))
             timerFlow <- timerFlowOf(context, persistence, timers)
-            keyFlow <- Resource.eval(KeyFlow.of(fold, TickOption.id[IO, State], persistence, timerFlow))
+            keyFlow <- Resource.eval(KeyFlow.of(fold0, TickOption.id[IO, State], persistence, timerFlow))
           } yield KeyState(keyFlow, timers)
         }
         def all(topicPartition: TopicPartition): Stream[IO, String] = Stream.empty
@@ -285,7 +341,8 @@ object PartitionFlowSpec {
         PartitionFlowConfig(
           triggerTimersInterval = 0.seconds,
           commitOffsetsInterval = 0.seconds
-        )
+        ),
+        filter = filter
       )
     }
 

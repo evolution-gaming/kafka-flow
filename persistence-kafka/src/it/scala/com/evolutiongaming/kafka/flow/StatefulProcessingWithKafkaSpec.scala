@@ -5,13 +5,10 @@ import cats.effect.{Blocker, IO, Resource}
 import cats.syntax.all._
 import cats.{Applicative, Functor, Monad}
 import com.evolutiongaming.catshelper.{Log, LogOf}
+import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec._
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
-import com.evolutiongaming.kafka.flow.kafkapersistence.{
-  KafkaPersistenceModule,
-  KafkaPersistenceModuleOf,
-  kafkaEagerRecovery
-}
+import com.evolutiongaming.kafka.flow.kafkapersistence.{KafkaPersistenceModule, KafkaPersistenceModuleOf, kafkaEagerRecovery}
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
@@ -256,7 +253,8 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
           triggerTimersInterval = 0.seconds,
           commitOffsetsInterval = 0.seconds
         ),
-        tick = TickOption.id[IO, State]
+        tick = TickOption.id[IO, State],
+        filter = FilterRecord.empty[IO]
       )
     } yield TopicFlowOf(partitionFlowOf)
   }
