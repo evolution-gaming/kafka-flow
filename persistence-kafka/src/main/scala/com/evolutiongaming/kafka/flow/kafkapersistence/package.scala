@@ -40,7 +40,7 @@ package object kafkapersistence {
     *   val tick: TickOption[F, State] = ... // optional additional Tick to change state, use TickOption.id if not used
     *   val partitionFlowConfig: PartitionFlowConfig = ... // additional configuration for partition flow
     *   val metrics: FlowMetrics[F] = ... // internal metrics
-    *   val filter: FilterRecord[F] = ... // allows skipping some records, see the description in `PartitionFlowOf#apply`
+    *   val filter: Option[FilterRecord[F]] = ... // allows skipping some records, see the description in `PartitionFlowOf#apply`
     *
     *   val partitionFlowOf = kafkaEagerRecovery[F, State](
     *     kafkaPersistenceModuleOf  = persistenceModuleOf,
@@ -79,7 +79,7 @@ package object kafkapersistence {
     tick: TickOption[F, S],
     partitionFlowConfig: PartitionFlowConfig,
     metrics: FlowMetrics[F] = FlowMetrics.empty[F],
-    filter: FilterRecord[F]
+    filter: Option[FilterRecord[F]] = None
   ): PartitionFlowOf[F] =
     new PartitionFlowOf[F] {
       override def apply(

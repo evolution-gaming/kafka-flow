@@ -52,16 +52,8 @@ object PartitionFlow {
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
-    config: PartitionFlowConfig
-  ): Resource[F, PartitionFlow[F]] =
-    resource(topicPartition, assignedAt, keyStateOf, config, FilterRecord.empty[F])
-
-  def resource[F[_]: Concurrent: Parallel: PartitionContext: Clock: LogOf, S](
-    topicPartition: TopicPartition,
-    assignedAt: Offset,
-    keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig,
-    filter: FilterRecord[F]
+    filter: Option[FilterRecord[F]] = None
   ): Resource[F, PartitionFlow[F]] =
     LogResource[F](getClass, topicPartition.toString) flatMap { implicit log =>
       Cache.loading[F, String, PartitionKey[F]] flatMap { cache =>
@@ -75,7 +67,7 @@ object PartitionFlow {
     keyStateOf: KeyStateOf[F],
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig,
-    filter: FilterRecord[F]
+    filter: Option[FilterRecord[F]] = None
   ): Resource[F, PartitionFlow[F]] = for {
     clock <- Resource.eval(Clock[F].instant)
     committedOffset <- Resource.eval(Ref.of(assignedAt))
@@ -105,7 +97,7 @@ object PartitionFlow {
     commitOffsetsAt: Ref[F, Instant],
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig,
-    filter: FilterRecord[F]
+    filter: Option[FilterRecord[F]]
   ): Resource[F, PartitionFlow[F]] = {
 
     def stateOf(createdAt: Timestamp, key: String): F[PartitionKey[F]] =
@@ -149,9 +141,13 @@ object PartitionFlow {
         // we might return the support in future if such will be required
         case (Some(key), records) => (key, records)
       }
-      filteredRecords <- keys.toList.parTraverseFilter { case (key, records) =>
-        records.toList.filterA(filter.apply).map(filtered => NonEmptyList.fromList(filtered).map(nel => (key, nel)))
-      }
+      filteredRecords <- filter
+        .map(filter =>
+          keys.toList.parTraverseFilter { case (key, records) =>
+            records.toList.filterA(filter.apply).map(filtered => NonEmptyList.fromList(filtered).map(nel => (key, nel)))
+          }
+        )
+        .getOrElse(keys.toList.pure[F])
       _ <- filteredRecords.parTraverse_ { case (key, records) =>
         val startedAt = Timestamp(
           clock = clock,

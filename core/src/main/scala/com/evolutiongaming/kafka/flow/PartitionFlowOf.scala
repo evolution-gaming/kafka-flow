@@ -18,13 +18,7 @@ trait PartitionFlowOf[F[_]] {
 }
 object PartitionFlowOf {
 
-  /** Creates `PartitionFlowOf` for specific application without filtering of events */
-  def apply[F[_]: Concurrent: Timer: Parallel: LogOf, S](
-    keyStateOf: KeyStateOf[F],
-    config: PartitionFlowConfig = PartitionFlowConfig()
-  ): PartitionFlowOf[F] = apply(keyStateOf, config, FilterRecord.empty[F])
-
-  /** Creates `PartitionFlowOf` for specific application with filtering of events
+  /** Creates `PartitionFlowOf` for specific application with optional filtering of events
     *
     * @param filter determines whether an incoming consumer record should be processed or skipped.
     *               Skipping a record means that (1) no state will be restored for that key; (2) no fold will be executed for that event.
@@ -34,7 +28,7 @@ object PartitionFlowOf {
   def apply[F[_]: Concurrent: Timer: Parallel: LogOf, S](
     keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig,
-    filter: FilterRecord[F]
+    filter: Option[FilterRecord[F]] = None
   ): PartitionFlowOf[F] = { (topicPartition, assignedAt, context) =>
     implicit val _context = context
     PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config, filter)

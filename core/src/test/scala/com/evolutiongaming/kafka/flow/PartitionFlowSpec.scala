@@ -234,7 +234,7 @@ class PartitionFlowSpec extends FunSuite {
           TimerFlowOf.persistPeriodically(fireEvery = 0.minute, persistEvery = 0.minute, ignorePersistErrors = true),
         persistenceOf =
           PersistenceOf.snapshotsOnly(keysOf = keysOf, snapshotsOf = SnapshotsOf.backedBy(snapshotDatabase)),
-        filter = record => record.key.map(key => IO(key.value != skippedKey)).getOrElse(IO.pure(true))
+        filter = Some(record => record.key.map(key => IO(key.value != skippedKey)).getOrElse(IO.pure(true)))
       )
     }
 
@@ -313,7 +313,7 @@ object PartitionFlowSpec {
     def makeFlow(
       timerFlowOf: TimerFlowOf[IO],
       persistenceOf: PersistenceOf[IO, String, State, ConsRecord],
-      filter: FilterRecord[IO] = FilterRecord.empty[IO]
+      filter: Option[FilterRecord[IO]] = none
     ): Resource[IO, PartitionFlow[IO]] = {
       val keyStateOf: KeyStateOf[IO] = new KeyStateOf[IO] {
         def apply(
