@@ -27,7 +27,7 @@ object PartitionFlowOf {
     */
   def apply[F[_]: Concurrent: Timer: Parallel: LogOf, S](
     keyStateOf: KeyStateOf[F],
-    config: PartitionFlowConfig,
+    config: PartitionFlowConfig = PartitionFlowConfig(),
     filter: Option[FilterRecord[F]] = None
   ): PartitionFlowOf[F] = { (topicPartition, assignedAt, context) =>
     implicit val _context = context
