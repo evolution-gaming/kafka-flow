@@ -35,7 +35,7 @@ object KeyStateOf {
 
   /** Does not recover keys until record with such key is encountered.
     *
-    * This version only requires `TimerFlowOf` and uses default `RecordFlow`
+    * This version only requires `TimerFlowOf` and uses default `KeyFlow`
     * which reads the state from the generic persistence folds it using
     * default `FoldToState`.
     */
@@ -54,7 +54,7 @@ object KeyStateOf {
 
   /** Does not recover keys until record with such key is encountered.
     *
-    * This version only requires `TimerFlowOf` and uses default `RecordFlow`
+    * This version only requires `TimerFlowOf` and uses default `KeyFlow`
     * which reads the state from the generic persistence folds it using
     * default `FoldToState`.
     */
