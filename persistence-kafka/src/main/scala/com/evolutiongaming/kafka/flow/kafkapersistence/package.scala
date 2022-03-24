@@ -4,6 +4,7 @@ import cats.effect.{Concurrent, Resource, Timer}
 import cats.syntax.all._
 import cats.{Eval, Foldable, Monad, Parallel}
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -38,6 +39,8 @@ package object kafkapersistence {
     *   val businessLogicFold: FoldOption[F, State, ConsRecord] = ... // your business logic here in this fold
     *   val tick: TickOption[F, State] = ... // optional additional Tick to change state, use TickOption.id if not used
     *   val partitionFlowConfig: PartitionFlowConfig = ... // additional configuration for partition flow
+    *   val metrics: FlowMetrics[F] = ... // internal metrics
+    *   val filter: Option[FilterRecord[F]] = ... // allows skipping some records, see the description in `PartitionFlowOf#apply`
     *
     *   val partitionFlowOf = kafkaEagerRecovery[F, State](
     *     kafkaPersistenceModuleOf  = persistenceModuleOf,
@@ -47,7 +50,9 @@ package object kafkapersistence {
     *     timerFlowOf               = timerFlowOf,
     *     fold                      = businessLogicFold,
     *     partitionFlowConfig       = partitionFlowConfig,
-    *     tick                      = tick
+    *     tick                      = tick,
+    *     metrics                   = metrics,
+    *     filter                    = filter
     *   )
     *
     *   val topicFlowOf = TopicFlowOf(partitionFlowOf)
@@ -73,7 +78,8 @@ package object kafkapersistence {
     fold: FoldOption[F, S, ConsRecord],
     tick: TickOption[F, S],
     partitionFlowConfig: PartitionFlowConfig,
-    metrics: FlowMetrics[F] = FlowMetrics.empty[F]
+    metrics: FlowMetrics[F] = FlowMetrics.empty[F],
+    filter: Option[FilterRecord[F]] = None
   ): PartitionFlowOf[F] =
     new PartitionFlowOf[F] {
       override def apply(
@@ -85,7 +91,7 @@ package object kafkapersistence {
           // TODO: per-partition persistence module with 'String -> ByteVector' cache or global persistence module with 'KafkaKey -> ByteVector' cache?
           // Latter would require initialization of PartitionFlowOf as a Resource
           kafkaPersistenceModule <- kafkaPersistenceModuleOf.make(topicPartition.partition)
-          partitionFlowOf = PartitionFlowOf[F, S](
+          partitionFlowOf = PartitionFlowOf.apply[F, S](
             keyStateOf = KeyStateOf.eagerRecovery(
               applicationId = applicationId,
               groupId = groupId,
@@ -98,7 +104,8 @@ package object kafkapersistence {
                 tick = tick
               )
             ) withMetrics metrics.keyStateOfMetrics,
-            config = partitionFlowConfig
+            config = partitionFlowConfig,
+            filter = filter
           )
           partitionFlow <- partitionFlowOf(topicPartition, assignedAt, context)
         } yield partitionFlow
