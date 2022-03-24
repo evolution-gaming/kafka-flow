@@ -78,14 +78,28 @@ object TimerFlowOf {
   /** Performs flush periodically.
     *
     * The flush will be called every `persitEvery` FiniteDuration.
+    *
+    * Note that using `ignorePersistErrors` can cause the persisted state to become inconsistent with the committed offset.
+    * For example, if 9 out of 10 snapshots were persisted successfully but the last persisting fails,
+    * no new offset will be committed. Therefore, in case of an application crash or offset rebalance, the state will be
+    * restored from these snapshots and some messages will be reprocessed again, so it's important to have an idempotent
+    * processing logic
+    *
+    * @param fireEvery the interval at which `onTimer` triggers
+    * @param persistEvery the interval at which the state will be persisted
+    * @param flushOnRevoke controls whether persistence flushing should happen on partition revocation
+    * @param ignorePersistErrors if true, a failure to persist the state will not fail the computation.
+    *                            Instead, an error message will be logged and a new offset for the key will not be
+    *                            `held`, so as a result no new offset will be committed for the partition.
     */
-  def persistPeriodically[F[_]: Monad](
+  def persistPeriodically[F[_]: MonadThrow](
     fireEvery: FiniteDuration = 1.minute,
     persistEvery: FiniteDuration = 1.minute,
     flushOnRevoke: Boolean = false,
+    ignorePersistErrors: Boolean = false,
   ): TimerFlowOf[F] = { (context, persistence, timers) =>
 
-    def register(current: Timestamp) =
+    def register(current: Timestamp): F[Unit] =
       timers.registerProcessing(current.clock plusMillis fireEvery.toMillis)
 
     val acquire = Resource.eval {
@@ -96,16 +110,26 @@ object TimerFlowOf {
         _ <- context.hold(committedAt.offset)
         _ <- register(current)
       } yield new TimerFlow[F] {
-        def onTimer = for {
+        def onTimer: F[Unit] = for {
           current <- timers.current
           persistedAt <- timers.persistedAt
           flushedAt = persistedAt getOrElse committedAt
           triggerFlushAt = flushedAt.clock plusMillis persistEvery.toMillis
           _ <-
-            if ((current.clock compareTo triggerFlushAt) >= 0)
-              persistence.flush *> context.hold(current.offset)
-            else
-              ().pure[F]
+            MonadThrow[F].whenA((current.clock compareTo triggerFlushAt) >= 0) {
+              persistence.flush.attempt.flatMap {
+                case Left(err) if ignorePersistErrors =>
+                  // 'context' will continue holding the previous offset from the last time the state was persisted
+                  // and offsets committed (or just the last committed offset if no state has ever been persisted before).
+                  // Thus, when calculating the next offset to commit in `PartitionFlow#offsetToCommit` it will take
+                  // the minimal one (previous) and won't commit any offsets
+                  context.log.error("Failed to persist state, the error is ignored and offsets won't be committed", err)
+                case Left(err) =>
+                  err.raiseError[F, Unit]
+                case Right(_) =>
+                  context.hold(current.offset)
+              }
+            }
           _ <- register(current)
         } yield ()
       }
