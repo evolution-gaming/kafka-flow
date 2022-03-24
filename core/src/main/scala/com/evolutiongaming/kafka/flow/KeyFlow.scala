@@ -12,19 +12,11 @@ import com.evolutiongaming.kafka.flow.timer.ReadTimestamps
 import com.olegpy.meow.effects._
 import timer.TimerFlow
 
-trait KeyFlow[F[_], E] extends RecordFlow[F, E] with TimerFlow[F]
+trait KeyFlow[F[_], E] extends TimerFlow[F] {
+  def apply(records: NonEmptyList[E]): F[Unit]
+}
 
 object KeyFlow {
-
-  /** Create buffered flow from RecordFlow and TimerFlow */
-  @deprecated("Use KeyFlow.of with fold parameter instead of RecordFlow.of", "0.1.0")
-  def apply[F[_], E](
-    recordFlow: RecordFlow[F, E],
-    timerFlow: TimerFlow[F]
-  ): KeyFlow[F, E] = new KeyFlow[F, E] {
-    def apply(records: NonEmptyList[E]) = recordFlow(records)
-    def onTimer = timerFlow.onTimer
-  }
 
   /** Create flow which persists snapshots, events and restores state if needed */
   def of[F[_]: Sync: KeyContext, S, A](
@@ -80,7 +72,7 @@ object KeyFlow {
       def onTimer = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
 
-  def empty[F[_]: Applicative, A]: RecordFlow[F, A] = new KeyFlow[F, A] {
+  def empty[F[_]: Applicative, A]: KeyFlow[F, A] = new KeyFlow[F, A] {
     def apply(records: NonEmptyList[A]) = ().pure[F]
     def onTimer = ().pure[F]
   }

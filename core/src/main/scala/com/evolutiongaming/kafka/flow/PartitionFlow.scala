@@ -1,14 +1,14 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Parallel
 import cats.data.NonEmptyList
 import cats.effect.concurrent.Ref
 import cats.effect.{Clock, Concurrent, Resource}
 import cats.syntax.all._
+import cats.{Applicative, Parallel}
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.OffsetToCommit
-import com.evolutiongaming.kafka.flow.timer.Timestamp
+import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.scache.{Cache, Releasable}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
@@ -29,19 +29,35 @@ trait PartitionFlow[F[_]] {
 object PartitionFlow {
 
   final case class PartitionKey[F[_]](state: KeyState[F, ConsRecord], context: KeyContext[F]) {
-    def flow = state.flow
-    def timers = state.timers
+    def flow: KeyFlow[F, ConsRecord] = state.flow
+    def timers: TimerContext[F]      = state.timers
+  }
+
+  trait FilterRecord[F[_]] {
+    def apply(consRecord: ConsRecord): F[Boolean]
+  }
+
+  object FilterRecord {
+    def empty[F[_]: Applicative]: FilterRecord[F] =
+      _ => true.pure[F]
+
+    def of[F[_]](f: ConsRecord => F[Boolean]): FilterRecord[F] =
+      record => f(record)
+
+    def of[F[_]: Applicative](f: ConsRecord => Boolean): FilterRecord[F] =
+      record => f(record).pure[F]
   }
 
   def resource[F[_]: Concurrent: Parallel: PartitionContext: Clock: LogOf, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
-    config: PartitionFlowConfig
+    config: PartitionFlowConfig,
+    filter: Option[FilterRecord[F]] = None
   ): Resource[F, PartitionFlow[F]] =
     LogResource[F](getClass, topicPartition.toString) flatMap { implicit log =>
       Cache.loading[F, String, PartitionKey[F]] flatMap { cache =>
-        of(topicPartition, assignedAt, keyStateOf, cache, config)
+        of(topicPartition, assignedAt, keyStateOf, cache, config, filter)
       }
     }
 
@@ -50,7 +66,8 @@ object PartitionFlow {
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
     cache: Cache[F, String, PartitionKey[F]],
-    config: PartitionFlowConfig
+    config: PartitionFlowConfig,
+    filter: Option[FilterRecord[F]] = None
   ): Resource[F, PartitionFlow[F]] = for {
     clock <- Resource.eval(Clock[F].instant)
     committedOffset <- Resource.eval(Ref.of(assignedAt))
@@ -65,7 +82,8 @@ object PartitionFlow {
       triggerTimersAt = triggerTimersAt,
       commitOffsetsAt = commitOffsetsAt,
       cache = cache,
-      config = config
+      config = config,
+      filter = filter
     )
   } yield flow
 
@@ -78,10 +96,11 @@ object PartitionFlow {
     triggerTimersAt: Ref[F, Instant],
     commitOffsetsAt: Ref[F, Instant],
     cache: Cache[F, String, PartitionKey[F]],
-    config: PartitionFlowConfig
+    config: PartitionFlowConfig,
+    filter: Option[FilterRecord[F]]
   ): Resource[F, PartitionFlow[F]] = {
 
-    def stateOf(createdAt: Timestamp, key: String) =
+    def stateOf(createdAt: Timestamp, key: String): F[PartitionKey[F]] =
       cache.getOrUpdateReleasable(key) {
         Releasable.of {
           for {
@@ -122,7 +141,14 @@ object PartitionFlow {
         // we might return the support in future if such will be required
         case (Some(key), records) => (key, records)
       }
-      _ <- keys.toList parTraverse_ { case (key, records) =>
+      filteredRecords <- filter
+        .map(filter =>
+          keys.toList.parTraverseFilter { case (key, records) =>
+            records.toList.filterA(filter.apply).map(filtered => NonEmptyList.fromList(filtered).map(nel => (key, nel)))
+          }
+        )
+        .getOrElse(keys.toList.pure[F])
+      _ <- filteredRecords.parTraverse_ { case (key, records) =>
         val startedAt = Timestamp(
           clock = clock,
           watermark = records.head.timestampAndType map (_.timestamp),
@@ -166,7 +192,7 @@ object PartitionFlow {
       }
     } yield ()
 
-    def offsetToCommit = for {
+    def offsetToCommit: F[Option[Offset]] = for {
       // find minimum offset if any
       states <- cache.values
       stateOffsets <- states.values.toList.traverse { state =>
