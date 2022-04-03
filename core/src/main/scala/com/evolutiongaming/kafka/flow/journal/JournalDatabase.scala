@@ -2,7 +2,6 @@ package com.evolutiongaming.kafka.flow.journal
 
 import cats.{Applicative, Monad}
 import cats.effect.Sync
-import cats.effect.concurrent.Ref
 import cats.mtl.MonadState
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
@@ -11,6 +10,7 @@ import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
 import scala.collection.immutable.SortedMap
+import cats.effect.Ref
 
 trait JournalDatabase[F[_], K, R] {
 
