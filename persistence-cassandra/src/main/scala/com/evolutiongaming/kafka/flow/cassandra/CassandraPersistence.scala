@@ -55,7 +55,11 @@ object CassandraPersistence {
     withSchemaF(session, sync)
   }
 
-  def withSchemaAndConsistencyConfig[F[_]: MonadThrow: Clock, S](
+  /** Same as withSchema(session, sync) but applies
+    * ConsistencyConfig.Read for all read queries and
+    * ConsistencyConfig.Write for all the mutations
+    */
+  def withSchema[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyConfig: ConsistencyConfig
@@ -68,9 +72,9 @@ object CassandraPersistence {
     implicit val _toBytes = toBytes mapK fromTry
 
     for {
-      keys_ <- CassandraKeys.withSchemaAndConsistencyConfig(session, sync, consistencyConfig)
-      journals_ <- CassandraJournals.withSchemaAndConsistencyConfig(session, sync, consistencyConfig)
-      snapshots_ <- CassandraSnapshots.withSchemaAndConsistencyConfig(session, sync, consistencyConfig)
+      keys_ <- CassandraKeys.withSchema(session, sync, consistencyConfig)
+      journals_ <- CassandraJournals.withSchema(session, sync, consistencyConfig)
+      snapshots_ <- CassandraSnapshots.withSchema(session, sync, consistencyConfig)
     } yield new CassandraPersistence[F, S] {
       def keys: KeyDatabase[F, KafkaKey] = keys_
 

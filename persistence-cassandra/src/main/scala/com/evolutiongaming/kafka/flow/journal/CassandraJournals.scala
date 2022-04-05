@@ -35,21 +35,21 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
 
   def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
     for {
-      boundStatement <- CassandraJournals.persistStatement(session, key, event)
+      boundStatement <- Statements.persist(session, key, event)
       _ <- session.execute(boundStatement).first.void
     } yield ()
 
   def get(key: KafkaKey): Stream[F, ConsRecord] = {
-    val boundStatement = getStatement(session, key)
+    val boundStatement = Statements.get(session, key)
 
-    Stream.lift(boundStatement) flatMap session.execute mapM { row =>
+    Stream.lift(boundStatement).flatMap(session.execute).mapM { row =>
       decode(key, row)
     }
   }
 
   def delete(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- deleteStatement(session, key)
+      boundStatement <- Statements.delete(session, key)
       _ <- session.execute(boundStatement).first.void
     } yield ()
 
@@ -67,7 +67,7 @@ object CassandraJournals {
   ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =
     JournalSchema(session, sync).create as new CassandraJournals(session)
 
-  def withSchemaAndConsistencyConfig[F[_]: MonadThrow: Clock](
+  def withSchema[F[_]: MonadThrow: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyConfig: ConsistencyConfig
@@ -80,18 +80,18 @@ object CassandraJournals {
 
       def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
         for {
-          boundStatement <- persistStatement(session, key, event)
+          boundStatement <- Statements.persist(session, key, event)
           _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
         } yield ()
 
       def get(key: KafkaKey): Stream[F, ConsRecord] = {
-        val boundStatement = getStatement(session, key).map(_.setConsistencyLevel(readConsistency))
+        val boundStatement = Statements.get(session, key).map(_.setConsistencyLevel(readConsistency))
 
         Stream.lift(boundStatement).flatMap(session.execute).mapM(decode(key, _))
       }
 
       def delete(key: KafkaKey): F[Unit] = for {
-        boundStatement <- deleteStatement(session, key)
+        boundStatement <- Statements.delete(session, key)
         _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
       } yield ()
     }
@@ -100,103 +100,6 @@ object CassandraJournals {
     session: CassandraSession[F],
     sync: CassandraSync[F]
   ): F[Unit] = JournalSchema(session, sync).truncate
-
-  protected def getStatement[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
-    session
-      .prepare(
-        """ SELECT
-        |   offset,
-        |   created,
-        |   timestamp,
-        |   timestamp_type,
-        |   headers,
-        |   metadata,
-        |   value
-        | FROM
-        |   records
-        | WHERE
-        |   application_id = :application_id
-        |   AND group_id = :group_id
-        |   AND topic = :topic
-        |   AND partition = :partition
-        |   AND key = :key
-        | ORDER BY offset
-      """.stripMargin
-      )
-      .map(
-        _.bind()
-          .encode("application_id", key.applicationId)
-          .encode("group_id", key.groupId)
-          .encode("topic", key.topicPartition.topic)
-          .encode("partition", key.topicPartition.partition)
-          .encode("key", key.key)
-      )
-
-  protected def persistStatement[F[_]: MonadThrow: Clock](
-    session: CassandraSession[F],
-    key: KafkaKey,
-    event: ConsRecord
-  ): F[BoundStatement] = for {
-    preparedStatement <- session.prepare(
-      """ UPDATE
-          |   records
-          | SET
-          |   created = :created,
-          |   timestamp = :timestamp,
-          |   timestamp_type = :timestamp_type,
-          |   headers = :headers,
-          |   metadata = :metadata,
-          |   value = :value
-          | WHERE
-          |   application_id = :application_id
-          |   AND group_id = :group_id
-          |   AND topic = :topic
-          |   AND partition = :partition
-          |   AND key = :key
-          |   AND offset = :offset
-        """.stripMargin
-    )
-
-    headers <- event.headers traverse HeaderToTuple[F].apply
-    created <- Clock[F].instant
-  } yield {
-    preparedStatement
-      .bind()
-      .encode("application_id", key.applicationId)
-      .encode("group_id", key.groupId)
-      .encode("topic", key.topicPartition.topic)
-      .encode("partition", key.topicPartition.partition)
-      .encode("key", key.key)
-      .encode("offset", event.offset)
-      .encode("created", created)
-      .encodeSome("timestamp", event.timestampAndType map (_.timestamp))
-      .encodeSome("timestamp_type", event.timestampAndType map (_.timestampType))
-      .encode("headers", headers.toMap)
-      .encode("metadata", "")
-      .encodeSome("value", event.value map (_.value))
-  }
-
-  private def deleteStatement[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
-    session
-      .prepare(
-        """ DELETE FROM
-          |   records
-          | WHERE
-          |   application_id = :application_id
-          |   AND group_id = :group_id
-          |   AND topic = :topic
-          |   AND partition = :partition
-          |   AND key = :key
-        """.stripMargin
-      )
-      .map(
-        _.bind()
-          .encode("application_id", key.applicationId)
-          .encode("group_id", key.groupId)
-          .encode("topic", key.topicPartition.topic)
-          .encode("partition", key.topicPartition.partition)
-          .encode("key", key.key)
-      )
 
   // we cannot use DecodeRow here because TupleToHeader is effectful
   protected def decode[F[_]: MonadThrow](key: KafkaKey, row: Row): F[ConsRecord] = {
@@ -217,5 +120,104 @@ object CassandraJournals {
       headers = headers,
       value = value map { value => WithSize(value, value.length.toInt) }
     )
+  }
+
+  protected object Statements {
+    def get[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+      session
+        .prepare(
+          """ SELECT
+            |   offset,
+            |   created,
+            |   timestamp,
+            |   timestamp_type,
+            |   headers,
+            |   metadata,
+            |   value
+            | FROM
+            |   records
+            | WHERE
+            |   application_id = :application_id
+            |   AND group_id = :group_id
+            |   AND topic = :topic
+            |   AND partition = :partition
+            |   AND key = :key
+            | ORDER BY offset
+      """.stripMargin
+        )
+        .map(
+          _.bind()
+            .encode("application_id", key.applicationId)
+            .encode("group_id", key.groupId)
+            .encode("topic", key.topicPartition.topic)
+            .encode("partition", key.topicPartition.partition)
+            .encode("key", key.key)
+        )
+
+    def persist[F[_]: MonadThrow: Clock](
+      session: CassandraSession[F],
+      key: KafkaKey,
+      event: ConsRecord
+    ): F[BoundStatement] = for {
+      preparedStatement <- session.prepare(
+        """ UPDATE
+          |   records
+          | SET
+          |   created = :created,
+          |   timestamp = :timestamp,
+          |   timestamp_type = :timestamp_type,
+          |   headers = :headers,
+          |   metadata = :metadata,
+          |   value = :value
+          | WHERE
+          |   application_id = :application_id
+          |   AND group_id = :group_id
+          |   AND topic = :topic
+          |   AND partition = :partition
+          |   AND key = :key
+          |   AND offset = :offset
+        """.stripMargin
+      )
+
+      headers <- event.headers traverse HeaderToTuple[F].apply
+      created <- Clock[F].instant
+    } yield {
+      preparedStatement
+        .bind()
+        .encode("application_id", key.applicationId)
+        .encode("group_id", key.groupId)
+        .encode("topic", key.topicPartition.topic)
+        .encode("partition", key.topicPartition.partition)
+        .encode("key", key.key)
+        .encode("offset", event.offset)
+        .encode("created", created)
+        .encodeSome("timestamp", event.timestampAndType map (_.timestamp))
+        .encodeSome("timestamp_type", event.timestampAndType map (_.timestampType))
+        .encode("headers", headers.toMap)
+        .encode("metadata", "")
+        .encodeSome("value", event.value map (_.value))
+    }
+
+    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+      session
+        .prepare(
+          """ DELETE FROM
+            |   records
+            | WHERE
+            |   application_id = :application_id
+            |   AND group_id = :group_id
+            |   AND topic = :topic
+            |   AND partition = :partition
+            |   AND key = :key
+        """.stripMargin
+        )
+        .map(
+          _.bind()
+            .encode("application_id", key.applicationId)
+            .encode("group_id", key.groupId)
+            .encode("topic", key.topicPartition.topic)
+            .encode("partition", key.topicPartition.partition)
+            .encode("key", key.key)
+        )
   }
 }

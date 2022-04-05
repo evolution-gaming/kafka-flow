@@ -18,6 +18,7 @@ import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Partition
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
+import CassandraKeys.Statements
 
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -28,13 +29,13 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
 
   def persist(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- CassandraKeys.persistStatement(session, key)
+      boundStatement <- Statements.persist(session, key)
       _ <- session.execute(boundStatement).first.void
     } yield ()
 
   def delete(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- CassandraKeys.deleteStatement(session, key)
+      boundStatement <- Statements.delete(session, key)
       _ <- session.execute(boundStatement).first.void
     } yield ()
 
@@ -46,7 +47,7 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
     } yield key
 
   def all(applicationId: String, groupId: String, segment: SegmentNr): Stream[F, KafkaKey] = {
-    val boundStatement = CassandraKeys.allStatement(session, applicationId, groupId, segment)
+    val boundStatement = Statements.all(session, applicationId, groupId, segment)
 
     Stream.lift(boundStatement) flatMap session.execute map { row =>
       KafkaKey(
@@ -68,9 +69,9 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
     segment: SegmentNr,
     topicPartition: TopicPartition
   ): Stream[F, KafkaKey] = {
-    val boundStatement = CassandraKeys.allStatement(session, applicationId, groupId, segment, topicPartition)
+    val boundStatement = Statements.all(session, applicationId, groupId, segment, topicPartition)
 
-    Stream.lift(boundStatement) flatMap session.execute map { row =>
+    Stream.lift(boundStatement).flatMap(session.execute).map { row =>
       KafkaKey(
         applicationId = applicationId,
         groupId = groupId,
@@ -92,7 +93,7 @@ object CassandraKeys {
     KeySchema(session, sync).create as new CassandraKeys(session)
   }
 
-  def withSchemaAndConsistencyConfig[F[_]: MonadThrow: Clock](
+  def withSchema[F[_]: MonadThrow: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyConfig: ConsistencyConfig
@@ -102,24 +103,17 @@ object CassandraKeys {
     for {
       _ <- KeySchema(session, sync).create
     } yield new KeyDatabase[F, KafkaKey] {
+      private val writeConsistency = consistencyConfig.write.value
+      private val readConsistency = consistencyConfig.read.value
+
       def persist(key: KafkaKey): F[Unit] = for {
-        boundStatement <- persistStatement(session, key)
-        _ <- session
-          .execute(
-            boundStatement.setConsistencyLevel(consistencyConfig.write.value)
-          )
-          .first
-          .void
+        boundStatement <- Statements.persist(session, key)
+        _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
       } yield ()
 
       def delete(key: KafkaKey): F[Unit] = for {
-        boundStatement <- deleteStatement(session, key)
-        _ <- session
-          .execute(
-            boundStatement.setConsistencyLevel(consistencyConfig.write.value)
-          )
-          .first
-          .void
+        boundStatement <- Statements.delete(session, key)
+        _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
       } yield ()
 
       def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, KafkaKey] =
@@ -135,11 +129,13 @@ object CassandraKeys {
         segment: SegmentNr,
         topicPartition: TopicPartition
       ): Stream[F, KafkaKey] = {
-        val boundStatement = allStatement(session, applicationId, groupId, segment, topicPartition).map(
-          _.setConsistencyLevel(consistencyConfig.read.value)
-        )
+        val boundStatement = Statements
+          .all(session, applicationId, groupId, segment, topicPartition)
+          .map(
+            _.setConsistencyLevel(readConsistency)
+          )
 
-        Stream.lift(boundStatement) flatMap session.execute map { row =>
+        Stream.lift(boundStatement).flatMap(session.execute).map { row =>
           KafkaKey(
             applicationId = applicationId,
             groupId = groupId,
@@ -159,122 +155,124 @@ object CassandraKeys {
     sync: CassandraSync[F]
   ): F[Unit] = KeySchema(session, sync).truncate
 
-  protected def allStatement[F[_]: Monad](
-    session: CassandraSession[F],
-    applicationId: String,
-    groupId: String,
-    segment: SegmentNr
-  ) = {
-    session
-      .prepare(
-        """ SELECT
-        |   topic,
-        |   partition,
-        |   key
-        | FROM
-        |   keys
-        | WHERE
-        |   application_id = :application_id
-        |   AND group_id = :group_id
-        |   AND segment = :segment
-        | ORDER BY
-        |   topic, partition, key
+  protected object Statements {
+    def all[F[_]: Monad](
+      session: CassandraSession[F],
+      applicationId: String,
+      groupId: String,
+      segment: SegmentNr
+    ): F[BoundStatement] =
+      session
+        .prepare(
+          """ SELECT
+            |   topic,
+            |   partition,
+            |   key
+            | FROM
+            |   keys
+            | WHERE
+            |   application_id = :application_id
+            |   AND group_id = :group_id
+            |   AND segment = :segment
+            | ORDER BY
+            |   topic, partition, key
       """.stripMargin
-      )
-      .map(
-        _.bind()
-          .encode("application_id", applicationId)
-          .encode("group_id", groupId)
-          .encode("segment", segment)
-      )
-  }
-  protected def allStatement[F[_]: Monad](
-    session: CassandraSession[F],
-    applicationId: String,
-    groupId: String,
-    segment: SegmentNr,
-    topicPartition: TopicPartition
-  ): F[BoundStatement] =
-    session
-      .prepare(
-        """ SELECT
-        |   key
-        | FROM
-        |   keys
-        | WHERE
-        |   application_id = :application_id
-        |   AND group_id = :group_id
-        |   AND segment = :segment
-        |   AND topic = :topic
-        |   AND partition = :partition
-        | ORDER BY
-        |   topic, partition, key
-      """.stripMargin
-      )
-      .map(
-        _.bind()
-          .encode("application_id", applicationId)
-          .encode("group_id", groupId)
-          .encode("segment", segment)
-          .encode("topic", topicPartition.topic)
-          .encode("partition", topicPartition.partition.value)
-      )
+        )
+        .map(
+          _.bind()
+            .encode("application_id", applicationId)
+            .encode("group_id", groupId)
+            .encode("segment", segment)
+        )
 
-  protected def deleteStatement[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
-    session
-      .prepare(
-        """ DELETE FROM
-          |   keys
-          | WHERE
-          |   application_id = :application_id
-          |   AND group_id = :group_id
-          |   AND segment = :segment
-          |   AND topic = :topic
-          |   AND partition = :partition
-          |   AND key = :key
+    def all[F[_]: Monad](
+      session: CassandraSession[F],
+      applicationId: String,
+      groupId: String,
+      segment: SegmentNr,
+      topicPartition: TopicPartition
+    ): F[BoundStatement] =
+      session
+        .prepare(
+          """ SELECT
+            |   key
+            | FROM
+            |   keys
+            | WHERE
+            |   application_id = :application_id
+            |   AND group_id = :group_id
+            |   AND segment = :segment
+            |   AND topic = :topic
+            |   AND partition = :partition
+            | ORDER BY
+            |   topic, partition, key
+      """.stripMargin
+        )
+        .map(
+          _.bind()
+            .encode("application_id", applicationId)
+            .encode("group_id", groupId)
+            .encode("segment", segment)
+            .encode("topic", topicPartition.topic)
+            .encode("partition", topicPartition.partition.value)
+        )
+
+    def persist[F[_]: Monad: Clock](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+      for {
+        preparedStatement <- session.prepare(
+          """ UPDATE
+            |   keys
+            | SET
+            |   created = :created,
+            |   created_date = :created_date,
+            |   metadata = :metadata
+            | WHERE
+            |   application_id = :application_id
+            |   AND group_id = :group_id
+            |   AND segment = :segment
+            |   AND topic = :topic
+            |   AND partition = :partition
+            |   AND key = :key
         """.stripMargin
-      )
-      .map(
-        _.bind()
+        )
+
+        created <- Clock[F].instant
+      } yield {
+        preparedStatement
+          .bind()
           .encode("application_id", key.applicationId)
           .encode("group_id", key.groupId)
           .encode("segment", SegmentNr(key.key.hashCode, Segments.default))
           .encode("topic", key.topicPartition.topic)
           .encode("partition", key.topicPartition.partition)
           .encode("key", key.key)
-      )
+          .encode("created", created)
+          .encode("created_date", LocalDate.ofInstant(created, ZoneOffset.UTC))
+          .encode("metadata", "")
+      }
 
-  protected def persistStatement[F[_]: Monad: Clock](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
-    for {
-      preparedStatement <- session.prepare(
-        """ UPDATE
-          |   keys
-          | SET
-          |   created = :created,
-          |   created_date = :created_date,
-          |   metadata = :metadata
-          | WHERE
-          |   application_id = :application_id
-          |   AND group_id = :group_id
-          |   AND segment = :segment
-          |   AND topic = :topic
-          |   AND partition = :partition
-          |   AND key = :key
+    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+      session
+        .prepare(
+          """ DELETE FROM
+            |   keys
+            | WHERE
+            |   application_id = :application_id
+            |   AND group_id = :group_id
+            |   AND segment = :segment
+            |   AND topic = :topic
+            |   AND partition = :partition
+            |   AND key = :key
         """.stripMargin
-      )
-
-      created <- Clock[F].instant
-    } yield {
-      preparedStatement
-        .bind()
-        .encode("application_id", key.applicationId)
-        .encode("group_id", key.groupId)
-        .encode("segment", SegmentNr(key.key.hashCode, Segments.default))
-        .encode("topic", key.topicPartition.topic)
-        .encode("partition", key.topicPartition.partition)
-        .encode("key", key.key)
-        .encode("created", created)
-        .encode("created_date", LocalDate.ofInstant(created, ZoneOffset.UTC))
-        .encode("metadata", "")
-    }
+        )
+        .map(
+          _.bind()
+            .encode("application_id", key.applicationId)
+            .encode("group_id", key.groupId)
+            .encode("segment", SegmentNr(key.key.hashCode, Segments.default))
+            .encode("topic", key.topicPartition.topic)
+            .encode("partition", key.topicPartition.partition)
+            .encode("key", key.key)
+        )
+  }
 }

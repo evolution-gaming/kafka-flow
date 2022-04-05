@@ -23,24 +23,23 @@ class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
   session: CassandraSession[F]
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
-
   import CassandraSnapshots._
 
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
-      statement <- persistStatement(session, key, snapshot)
+      statement <- Statements.persist(session, key, snapshot)
       _ <- session.execute(statement).first.void
     } yield ()
 
   def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] =
     for {
-      statement <- getStatement(session, key)
+      statement <- Statements.get(session, key)
       row <- session.execute(statement).first
       snapshot <- row.map(row => decode(row)).sequence
     } yield snapshot
 
   def delete(key: KafkaKey): F[Unit] = for {
-    statement <- deleteStatement(session, key)
+    statement <- Statements.delete(session, key)
     _ <- session.execute(statement).first.void
   } yield ()
 
@@ -55,7 +54,7 @@ object CassandraSnapshots {
   )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
     SnapshotSchema(session, sync).create as new CassandraSnapshots(session)
 
-  def withSchemaAndConsistencyConfig[F[_]: MonadThrow: Clock, T](
+  def withSchema[F[_]: MonadThrow: Clock, T](
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyConfig: ConsistencyConfig
@@ -67,17 +66,17 @@ object CassandraSnapshots {
       private val readConsistency = consistencyConfig.read.value
 
       def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] = for {
-        statement <- persistStatement(session, key, snapshot)
+        statement <- Statements.persist(session, key, snapshot)
         _ <- session.execute(statement.setConsistencyLevel(writeConsistency)).first.void
       } yield ()
 
       def delete(key: KafkaKey): F[Unit] = for {
-        statement <- deleteStatement(session, key)
+        statement <- Statements.delete(session, key)
         _ <- session.execute(statement.setConsistencyLevel(writeConsistency)).first.void
       } yield ()
 
       def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] = for {
-        statement <- CassandraSnapshots.getStatement(session, key)
+        statement <- Statements.get(session, key)
         row <- session.execute(statement.setConsistencyLevel(readConsistency)).first
         snapshot <- row.map(decode[F, T]).sequence
       } yield snapshot
@@ -87,92 +86,6 @@ object CassandraSnapshots {
     session: CassandraSession[F],
     sync: CassandraSync[F]
   ): F[Unit] = SnapshotSchema(session, sync).truncate
-
-  protected def persistStatement[F[_]: Clock: Monad, T](
-    session: CassandraSession[F],
-    key: KafkaKey,
-    snapshot: KafkaSnapshot[T]
-  )(implicit toBytes: ToBytes[F, T]): F[BoundStatement] =
-    for {
-      preparedStatement <- session.prepare(
-        """ UPDATE
-          |   snapshots_v2
-          | SET
-          |   created = :created,
-          |   metadata = :metadata,
-          |   value = :value,
-          |   offset = :offset
-          | WHERE
-          |   application_id = :application_id
-          |   AND group_id = :group_id
-          |   AND topic = :topic
-          |   AND partition = :partition
-          |   AND key = :key
-        """.stripMargin
-      )
-      created <- Clock[F].instant
-      value <- snapshot.value.toBytes
-    } yield {
-      preparedStatement
-        .bind()
-        .encode("application_id", key.applicationId)
-        .encode("group_id", key.groupId)
-        .encode("topic", key.topicPartition.topic)
-        .encode("partition", key.topicPartition.partition)
-        .encode("key", key.key)
-        .encode("offset", snapshot.offset)
-        .encode("created", created)
-        .encode("metadata", snapshot.metadata)
-        .encode("value", value)
-    }
-
-  protected def getStatement[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
-    session
-      .prepare(
-        """ SELECT
-        |   offset,
-        |   metadata,
-        |   value
-        | FROM
-        |   snapshots_v2
-        | WHERE
-        |   application_id = :application_id
-        |   AND group_id = :group_id
-        |   AND topic = :topic
-        |   AND partition = :partition
-        |   AND key = :key
-        """.stripMargin
-      )
-      .map(
-        _.bind()
-          .encode("application_id", key.applicationId)
-          .encode("group_id", key.groupId)
-          .encode("topic", key.topicPartition.topic)
-          .encode("partition", key.topicPartition.partition)
-          .encode("key", key.key)
-      )
-
-  protected def deleteStatement[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
-    session
-      .prepare(
-        """ DELETE FROM
-          |   snapshots_v2
-          | WHERE
-          |   application_id = :application_id
-          |   AND group_id = :group_id
-          |   AND topic = :topic
-          |   AND partition = :partition
-          |   AND key = :key
-        """.stripMargin
-      )
-      .map(
-        _.bind()
-          .encode("application_id", key.applicationId)
-          .encode("group_id", key.groupId)
-          .encode("topic", key.topicPartition.topic)
-          .encode("partition", key.topicPartition.partition)
-          .encode("key", key.key)
-      )
 
   // we cannot use DecodeRow here because Code[T].decode is effectful
   protected def decode[F[_]: Monad, T](row: Row)(implicit fromBytes: FromBytes[F, T]): F[KafkaSnapshot[T]] = {
@@ -184,5 +97,93 @@ object CassandraSnapshots {
         value = value
       )
     }
+  }
+
+  protected object Statements {
+    def persist[F[_]: Clock: Monad, T](
+      session: CassandraSession[F],
+      key: KafkaKey,
+      snapshot: KafkaSnapshot[T]
+    )(implicit toBytes: ToBytes[F, T]): F[BoundStatement] =
+      for {
+        preparedStatement <- session.prepare(
+          """ UPDATE
+            |   snapshots_v2
+            | SET
+            |   created = :created,
+            |   metadata = :metadata,
+            |   value = :value,
+            |   offset = :offset
+            | WHERE
+            |   application_id = :application_id
+            |   AND group_id = :group_id
+            |   AND topic = :topic
+            |   AND partition = :partition
+            |   AND key = :key
+        """.stripMargin
+        )
+        created <- Clock[F].instant
+        value <- snapshot.value.toBytes
+      } yield {
+        preparedStatement
+          .bind()
+          .encode("application_id", key.applicationId)
+          .encode("group_id", key.groupId)
+          .encode("topic", key.topicPartition.topic)
+          .encode("partition", key.topicPartition.partition)
+          .encode("key", key.key)
+          .encode("offset", snapshot.offset)
+          .encode("created", created)
+          .encode("metadata", snapshot.metadata)
+          .encode("value", value)
+      }
+
+    def get[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+      session
+        .prepare(
+          """ SELECT
+            |   offset,
+            |   metadata,
+            |   value
+            | FROM
+            |   snapshots_v2
+            | WHERE
+            |   application_id = :application_id
+            |   AND group_id = :group_id
+            |   AND topic = :topic
+            |   AND partition = :partition
+            |   AND key = :key
+        """.stripMargin
+        )
+        .map(
+          _.bind()
+            .encode("application_id", key.applicationId)
+            .encode("group_id", key.groupId)
+            .encode("topic", key.topicPartition.topic)
+            .encode("partition", key.topicPartition.partition)
+            .encode("key", key.key)
+        )
+
+    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+      session
+        .prepare(
+          """ DELETE FROM
+            |   snapshots_v2
+            | WHERE
+            |   application_id = :application_id
+            |   AND group_id = :group_id
+            |   AND topic = :topic
+            |   AND partition = :partition
+            |   AND key = :key
+        """.stripMargin
+        )
+        .map(
+          _.bind()
+            .encode("application_id", key.applicationId)
+            .encode("group_id", key.groupId)
+            .encode("topic", key.topicPartition.topic)
+            .encode("partition", key.topicPartition.partition)
+            .encode("key", key.key)
+        )
   }
 }
