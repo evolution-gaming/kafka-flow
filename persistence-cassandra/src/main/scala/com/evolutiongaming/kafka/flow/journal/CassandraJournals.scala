@@ -4,7 +4,7 @@ import cats.Monad
 import cats.MonadThrow
 import cats.effect.Clock
 import cats.syntax.all._
-import com.datastax.driver.core.Row
+import com.datastax.driver.core.{BoundStatement, Row}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.kafka.flow.KafkaKey
@@ -15,6 +15,7 @@ import com.evolutiongaming.kafka.journal.conversions.HeaderToTuple
 import com.evolutiongaming.kafka.journal.conversions.TupleToHeader
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraHelper._
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
+import com.evolutiongaming.kafka.journal.eventual.cassandra.EventualCassandraConfig.ConsistencyConfig
 import com.evolutiongaming.kafka.journal.util.Fail
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.scassandra.syntax._
@@ -23,82 +24,87 @@ import com.evolutiongaming.skafka.TimestampAndType
 import com.evolutiongaming.skafka.TimestampType
 import com.evolutiongaming.skafka.consumer.WithSize
 import com.evolutiongaming.sstream.Stream
+
 import java.time.Instant
 import scodec.bits.ByteVector
 
 class CassandraJournals[F[_]: MonadThrow: Clock](
   session: CassandraSession[F]
 ) extends JournalDatabase[F, KafkaKey, ConsRecord] {
-
-  private implicit val fromAttempt: FromAttempt[F] = {
-    implicit val evidence = Fail.lift[F]
-    FromAttempt.lift[F]
-  }
+  import CassandraJournals._
 
   def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
     for {
-      preparedStatement <- session.prepare(
-        """ UPDATE
-          |   records
-          | SET
-          |   created = :created,
-          |   timestamp = :timestamp,
-          |   timestamp_type = :timestamp_type,
-          |   headers = :headers,
-          |   metadata = :metadata,
-          |   value = :value
-          | WHERE
-          |   application_id = :application_id
-          |   AND group_id = :group_id
-          |   AND topic = :topic
-          |   AND partition = :partition
-          |   AND key = :key
-          |   AND offset = :offset
-        """.stripMargin
-      )
-      headers <- event.headers traverse HeaderToTuple[F].apply
-      created <- Clock[F].instant
-      boundStatement = preparedStatement.bind()
-        .encode("application_id", key.applicationId)
-        .encode("group_id", key.groupId)
-        .encode("topic", key.topicPartition.topic)
-        .encode("partition", key.topicPartition.partition)
-        .encode("key", key.key)
-        .encode("offset", event.offset)
-        .encode("created", created)
-        .encodeSome("timestamp", event.timestampAndType map (_.timestamp))
-        .encodeSome("timestamp_type", event.timestampAndType map (_.timestampType))
-        .encode("headers", headers.toMap)
-        .encode("metadata", "")
-        .encodeSome("value", event.value map (_.value))
+      boundStatement <- CassandraJournals.persistStatement(session, key, event)
       _ <- session.execute(boundStatement).first.void
     } yield ()
 
   def get(key: KafkaKey): Stream[F, ConsRecord] = {
+    val boundStatement = getStatement(session, key)
 
-    // we cannot use DecodeRow here because TupleToHeader is effectful
-    def decode(row: Row): F[ConsRecord] = {
-      val headers = row.decode[Map[String, String]]("headers")
-      val value = row.decode[Option[ByteVector]]("value")
-      for {
-        headers <- headers.toList traverse { case (key, value) =>
-          TupleToHeader[F].apply(key, value)
-        }
-      } yield ConsRecord(
-        topicPartition = key.topicPartition,
-        key = Some(WithSize(key.key)),
-        offset = row.decode[Offset]("offset"),
-        timestampAndType = for {
-          timestamp <- row.decode[Option[Instant]]("timestamp")
-          timestampType <- row.decode[Option[TimestampType]]("timestamp_type")
-        } yield TimestampAndType(timestamp, timestampType),
-        headers = headers,
-        value = value map { value => WithSize(value, value.length.toInt) }
-      )
+    Stream.lift(boundStatement) flatMap session.execute mapM { row =>
+      decode(key, row)
+    }
+  }
+
+  def delete(key: KafkaKey): F[Unit] =
+    for {
+      boundStatement <- deleteStatement(session, key)
+      _ <- session.execute(boundStatement).first.void
+    } yield ()
+
+}
+object CassandraJournals {
+  implicit def fromAttempt[F[_]: MonadThrow]: FromAttempt[F] = {
+    implicit val evidence = Fail.lift[F]
+    FromAttempt.lift[F]
+  }
+
+  /** Creates schema in Cassandra if not there yet */
+  def withSchema[F[_]: MonadThrow: Clock](
+    session: CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =
+    JournalSchema(session, sync).create as new CassandraJournals(session)
+
+  def withSchemaAndConsistencyConfig[F[_]: MonadThrow: Clock](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyConfig: ConsistencyConfig
+  ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =
+    for {
+      _ <- JournalSchema(session, sync).create
+    } yield new JournalDatabase[F, KafkaKey, ConsRecord] {
+      private val writeConsistency = consistencyConfig.write.value
+      private val readConsistency = consistencyConfig.read.value
+
+      def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
+        for {
+          boundStatement <- persistStatement(session, key, event)
+          _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
+        } yield ()
+
+      def get(key: KafkaKey): Stream[F, ConsRecord] = {
+        val boundStatement = getStatement(session, key).map(_.setConsistencyLevel(readConsistency))
+
+        Stream.lift(boundStatement).flatMap(session.execute).mapM(decode(key, _))
+      }
+
+      def delete(key: KafkaKey): F[Unit] = for {
+        boundStatement <- deleteStatement(session, key)
+        _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
+      } yield ()
     }
 
-    val preparedStatement = session.prepare(
-      """ SELECT
+  def truncate[F[_]: Monad](
+    session: CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[Unit] = JournalSchema(session, sync).truncate
+
+  protected def getStatement[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    session
+      .prepare(
+        """ SELECT
         |   offset,
         |   created,
         |   timestamp,
@@ -116,22 +122,63 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
         |   AND key = :key
         | ORDER BY offset
       """.stripMargin
+      )
+      .map(
+        _.bind()
+          .encode("application_id", key.applicationId)
+          .encode("group_id", key.groupId)
+          .encode("topic", key.topicPartition.topic)
+          .encode("partition", key.topicPartition.partition)
+          .encode("key", key.key)
+      )
+
+  protected def persistStatement[F[_]: MonadThrow: Clock](
+    session: CassandraSession[F],
+    key: KafkaKey,
+    event: ConsRecord
+  ): F[BoundStatement] = for {
+    preparedStatement <- session.prepare(
+      """ UPDATE
+          |   records
+          | SET
+          |   created = :created,
+          |   timestamp = :timestamp,
+          |   timestamp_type = :timestamp_type,
+          |   headers = :headers,
+          |   metadata = :metadata,
+          |   value = :value
+          | WHERE
+          |   application_id = :application_id
+          |   AND group_id = :group_id
+          |   AND topic = :topic
+          |   AND partition = :partition
+          |   AND key = :key
+          |   AND offset = :offset
+        """.stripMargin
     )
-    val boundStatement = preparedStatement map { preparedStatement =>
-      preparedStatement.bind()
+
+    headers <- event.headers traverse HeaderToTuple[F].apply
+    created <- Clock[F].instant
+  } yield {
+    preparedStatement
+      .bind()
       .encode("application_id", key.applicationId)
       .encode("group_id", key.groupId)
       .encode("topic", key.topicPartition.topic)
       .encode("partition", key.topicPartition.partition)
       .encode("key", key.key)
-    }
-
-    Stream.lift(boundStatement) flatMap session.execute mapM decode
+      .encode("offset", event.offset)
+      .encode("created", created)
+      .encodeSome("timestamp", event.timestampAndType map (_.timestamp))
+      .encodeSome("timestamp_type", event.timestampAndType map (_.timestampType))
+      .encode("headers", headers.toMap)
+      .encode("metadata", "")
+      .encodeSome("value", event.value map (_.value))
   }
 
-  def delete(key: KafkaKey): F[Unit] =
-    for {
-      preparedStatement <- session.prepare(
+  private def deleteStatement[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    session
+      .prepare(
         """ DELETE FROM
           |   records
           | WHERE
@@ -142,28 +189,33 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
           |   AND key = :key
         """.stripMargin
       )
-      boundStatement = preparedStatement.bind()
-        .encode("application_id", key.applicationId)
-        .encode("group_id", key.groupId)
-        .encode("topic",key.topicPartition.topic)
-        .encode("partition", key.topicPartition.partition)
-        .encode("key", key.key)
-      _ <- session.execute(boundStatement).first.void
-    } yield ()
+      .map(
+        _.bind()
+          .encode("application_id", key.applicationId)
+          .encode("group_id", key.groupId)
+          .encode("topic", key.topicPartition.topic)
+          .encode("partition", key.topicPartition.partition)
+          .encode("key", key.key)
+      )
 
-}
-object CassandraJournals {
-
-  /** Creates schema in Cassandra if not there yet */
-  def withSchema[F[_]: MonadThrow: Clock](
-    session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =
-    JournalSchema(session, sync).create as new CassandraJournals(session)
-
-  def truncate[F[_]: Monad](
-    session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] = JournalSchema(session, sync).truncate
-
+  // we cannot use DecodeRow here because TupleToHeader is effectful
+  protected def decode[F[_]: MonadThrow](key: KafkaKey, row: Row): F[ConsRecord] = {
+    val headers = row.decode[Map[String, String]]("headers")
+    val value = row.decode[Option[ByteVector]]("value")
+    for {
+      headers <- headers.toList traverse { case (key, value) =>
+        TupleToHeader[F].apply(key, value)
+      }
+    } yield ConsRecord(
+      topicPartition = key.topicPartition,
+      key = Some(WithSize(key.key)),
+      offset = row.decode[Offset]("offset"),
+      timestampAndType = for {
+        timestamp <- row.decode[Option[Instant]]("timestamp")
+        timestampType <- row.decode[Option[TimestampType]]("timestamp_type")
+      } yield TimestampAndType(timestamp, timestampType),
+      headers = headers,
+      value = value map { value => WithSize(value, value.length.toInt) }
+    )
+  }
 }
