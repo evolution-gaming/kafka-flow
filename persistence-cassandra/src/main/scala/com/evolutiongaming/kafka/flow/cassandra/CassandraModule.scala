@@ -5,14 +5,12 @@ import cats.effect.Resource
 import cats.effect.Sync
 import cats.effect.Timer
 import cats.syntax.all._
-import com.datastax.driver.core.ConsistencyLevel
 import com.evolutiongaming.cassandra.sync.AutoCreate
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.LogResource
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraHealthCheck
-import com.evolutiongaming.kafka.journal.eventual.cassandra.EventualCassandraConfig.ConsistencyConfig
 import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession => SafeSession}
 import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.evolutiongaming.scassandra.util.FromGFuture
@@ -46,8 +44,6 @@ object CassandraModule {
   def of[F[_]: Concurrent: Timer: LogOf](
     config: CassandraConfig
   )(implicit executor: ExecutionContextExecutor): Resource[F, CassandraModule[F]] = {
-    val config1 = fillConsistencyConfig(config)
-
     for {
       log <- Resource.eval(log[F])
       // this is required to log all Cassandra errors before popping them up,
@@ -63,8 +59,8 @@ object CassandraModule {
         }
       }
       clusterOf <- Resource.eval(clusterOf[F](fromGFuture))
-      cluster <- clusterOf(config1.client)
-      keyspace = config1.schema.keyspace
+      cluster <- clusterOf(config.client)
+      keyspace = config.schema.keyspace
       globalSession = {
         LogResource[F](CassandraModule.getClass, "CassandraGlobal") *>
           cluster.connect
@@ -86,25 +82,12 @@ object CassandraModule {
       // no need to reconnect
       unsafeSession <- if (keyspace.autoCreate) keyspaceSession else Resource.eval(syncSession.pure[F])
       _session <- SafeSession.of(unsafeSession)
-      _healthCheck <- CassandraHealthCheckOf(unsafeSession, config1)
+      _healthCheck <- CassandraHealthCheckOf(unsafeSession, config)
     } yield new CassandraModule[F] {
       def session = _session
       def sync = _sync
       def healthCheck = _healthCheck
     }
 
-  }
-
-  /*
-    if consistencyLevel is Some— do nothing, otherwise infer it from client consistency level
-   */
-  private def fillConsistencyConfig(config: CassandraConfig): CassandraConfig = {
-    val fallback: ConsistencyLevel = config.client.query.consistency
-    val (fallbackRead, fallbackWrite) = (ConsistencyConfig.Read(fallback), ConsistencyConfig.Write(fallback))
-
-    config.consistencyConfig match {
-      case Some(_) => config
-      case None    => config.copy(consistencyConfig = Some(ConsistencyConfig(fallbackRead, fallbackWrite)))
-    }
   }
 }
