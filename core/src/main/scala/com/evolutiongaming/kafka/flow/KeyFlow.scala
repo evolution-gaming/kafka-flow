@@ -28,12 +28,31 @@ object KeyFlow {
     of(storage.stateInstance, fold, tick, persistence, timer)
   }
 
+  def of[F[_]: Sync: KeyContext, S, A](
+    fold: FoldOption[F, S, A],
+    tick: TickOption[F, S],
+    persistence: Persistence[F, S, A],
+    additionalPersist: AdditionalStatePersist[F, S, A],
+    timer: TimerFlow[F]
+  ): F[KeyFlow[F, A]] = Ref.of(none[S]) flatMap { storage =>
+    of(storage.stateInstance, fold, tick, persistence, additionalPersist, timer)
+  }
+
   /** Create flow which persists snapshots, events and restores state if needed */
   def of[F[_]: Monad: KeyContext, S, A](
     storage: MonadState[F, Option[S]],
     fold: FoldOption[F, S, A],
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
+    timer: TimerFlow[F]
+  ): F[KeyFlow[F, A]] = of(storage, fold, tick, persistence, AdditionalStatePersist.empty[F, S, A], timer)
+
+  def of[F[_]: Monad: KeyContext, S, A](
+    storage: MonadState[F, Option[S]],
+    fold: FoldOption[F, S, A],
+    tick: TickOption[F, S],
+    persistence: Persistence[F, S, A],
+    additionalPersist: AdditionalStatePersist[F, S, A],
     timer: TimerFlow[F]
   ): F[KeyFlow[F, A]] =
     for {
@@ -43,13 +62,12 @@ object KeyFlow {
       // by fold or tick to run the state, because in this
       // case we may flush the key which was already removed
       timerCancelled = storage inspect (_.isEmpty)
-      foldToState = FoldToState(storage, fold, persistence)
+      foldToState = FoldToState(storage, fold, persistence, additionalPersist)
       tickToState = TickToState(storage, tick, persistence)
     } yield new KeyFlow[F, A] {
-      def apply(records: NonEmptyList[A]) = foldToState(records)
-      def onTimer = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
+      def apply(records: NonEmptyList[A]): F[Unit] = foldToState(records)
+      def onTimer: F[Unit] = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
-
 
   /** Does not save anything to the database */
   def transient[F[_]: Sync: KeyContext: ReadTimestamps, K, S, A](

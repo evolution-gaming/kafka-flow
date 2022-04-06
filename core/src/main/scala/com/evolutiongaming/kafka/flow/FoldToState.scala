@@ -21,10 +21,16 @@ object FoldToState {
   def of[F[_]: Sync: KeyContext, S, E](
     initialState: Option[S],
     fold: FoldOption[F, S, E],
-    persistence: Persistence[F, S, E],
+    persistence: Persistence[F, S, E]
   ): F[FoldToState[F, E]] = Ref.of(initialState) map { storage =>
     FoldToState(storage.stateInstance, fold, persistence)
   }
+
+  def apply[F[_]: Monad: KeyContext, S, E](
+    storage: MonadState[F, Option[S]],
+    fold: FoldOption[F, S, E],
+    persistence: Persistence[F, S, E]
+  ): FoldToState[F, E] = apply(storage, fold, persistence, AdditionalStatePersist.empty[F, S, E])
 
   /** Uses `fold` to apply the records to a state stored inside of `storage`.
     *
@@ -36,12 +42,18 @@ object FoldToState {
     storage: MonadState[F, Option[S]],
     fold: FoldOption[F, S, E],
     persistence: Persistence[F, S, E],
+    additionalPersist: AdditionalStatePersist[F, S, E]
   ): FoldToState[F, E] = { records =>
     for {
       state <- storage.get
       state <- records.foldLeftM(state) { (state, record) =>
         fold(state, record) flatTap { state =>
-          persistence.appendEvent(record) *> (state traverse_ persistence.replaceState)
+          for {
+            _ <- persistence.appendEvent(record)
+            _ <- state.traverse_ { state =>
+              persistence.replaceState(state) >> additionalPersist.persistIfNeeded(state, record)
+            }
+          } yield ()
         }
       }
       _ <- storage set state
@@ -67,11 +79,12 @@ object FoldToState {
       //
       // It makes me think that the initial implementation of returning `Done`
       // was not as bad as I thought.
-      _ <- if (state.isEmpty) {
-        persistence.delete *> KeyContext[F].remove
-      } else {
-        ().pure[F]
-      }
+      _ <-
+        if (state.isEmpty) {
+          persistence.delete *> KeyContext[F].remove
+        } else {
+          ().pure[F]
+        }
     } yield ()
   }
 

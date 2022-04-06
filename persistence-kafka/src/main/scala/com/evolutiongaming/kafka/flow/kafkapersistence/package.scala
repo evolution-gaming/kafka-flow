@@ -81,6 +81,33 @@ package object kafkapersistence {
     metrics: FlowMetrics[F] = FlowMetrics.empty[F],
     filter: Option[FilterRecord[F]] = None
   ): PartitionFlowOf[F] =
+    kafkaEagerRecovery(
+      kafkaPersistenceModuleOf = kafkaPersistenceModuleOf,
+      applicationId = applicationId,
+      groupId = groupId,
+      timersOf = timersOf,
+      timerFlowOf = timerFlowOf,
+      fold = ContextFold.fromFold(fold),
+      tick = tick,
+      partitionFlowConfig = partitionFlowConfig,
+      metrics = metrics,
+      filter = filter,
+      additionalPersistOf = AdditionalStatePersistOf.empty[F, S]
+    )
+
+  def kafkaEagerRecovery[F[_]: Concurrent: Timer: Parallel: LogOf, S](
+    kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
+    applicationId: String,
+    groupId: String,
+    timersOf: TimersOf[F, KafkaKey],
+    timerFlowOf: TimerFlowOf[F],
+    fold: ContextFold[F, S, ConsRecord],
+    tick: TickOption[F, S],
+    partitionFlowConfig: PartitionFlowConfig,
+    metrics: FlowMetrics[F],
+    filter: Option[FilterRecord[F]],
+    additionalPersistOf: AdditionalStatePersistOf[F, S]
+  ): PartitionFlowOf[F] =
     new PartitionFlowOf[F] {
       override def apply(
         topicPartition: TopicPartition,
@@ -102,7 +129,8 @@ package object kafkapersistence {
                 timerFlowOf = timerFlowOf,
                 fold = fold,
                 tick = tick
-              )
+              ),
+              additionalPersistOf = additionalPersistOf
             ) withMetrics metrics.keyStateOfMetrics,
             config = partitionFlowConfig,
             filter = filter
