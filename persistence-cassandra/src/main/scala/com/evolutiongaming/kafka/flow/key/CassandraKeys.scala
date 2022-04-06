@@ -97,55 +97,50 @@ object CassandraKeys {
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyConfig: ConsistencyConfig
-  ): F[KeyDatabase[F, KafkaKey]] = {
-    implicit val fail = Fail.lift
+  ): F[KeyDatabase[F, KafkaKey]] = for {
+    _ <- KeySchema(session, sync).create
+  } yield new KeyDatabase[F, KafkaKey] {
+    private val writeConsistency = consistencyConfig.write.value
+    private val readConsistency = consistencyConfig.read.value
+    private implicit val fail: Fail[F] = Fail.lift
 
-    for {
-      _ <- KeySchema(session, sync).create
-    } yield new KeyDatabase[F, KafkaKey] {
-      private val writeConsistency = consistencyConfig.write.value
-      private val readConsistency = consistencyConfig.read.value
+    def persist(key: KafkaKey): F[Unit] = for {
+      boundStatement <- Statements.persist(session, key)
+      _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
+    } yield ()
 
-      def persist(key: KafkaKey): F[Unit] = for {
-        boundStatement <- Statements.persist(session, key)
-        _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
-      } yield ()
+    def delete(key: KafkaKey): F[Unit] = for {
+      boundStatement <- Statements.delete(session, key)
+      _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
+    } yield ()
 
-      def delete(key: KafkaKey): F[Unit] = for {
-        boundStatement <- Statements.delete(session, key)
-        _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
-      } yield ()
+    def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, KafkaKey] =
+      for {
+        segment <- Stream.from[F, List, Int]((0 until Segments.default.value).toList)
+        segment <- Stream.lift(SegmentNr.of[F](segment.toLong))
+        key <- all(applicationId, groupId, segment, topicPartition)
+      } yield key
 
-      def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, KafkaKey] =
-        for {
-          segment <- Stream.from[F, List, Int]((0 until Segments.default.value).toList)
-          segment <- Stream.lift(SegmentNr.of[F](segment.toLong))
-          key <- all(applicationId, groupId, segment, topicPartition)
-        } yield key
+    private def all(
+      applicationId: String,
+      groupId: String,
+      segment: SegmentNr,
+      topicPartition: TopicPartition
+    ): Stream[F, KafkaKey] = {
+      val boundStatement = Statements
+        .all(session, applicationId, groupId, segment, topicPartition)
+        .map(_.setConsistencyLevel(readConsistency))
 
-      private def all(
-        applicationId: String,
-        groupId: String,
-        segment: SegmentNr,
-        topicPartition: TopicPartition
-      ): Stream[F, KafkaKey] = {
-        val boundStatement = Statements
-          .all(session, applicationId, groupId, segment, topicPartition)
-          .map(
-            _.setConsistencyLevel(readConsistency)
-          )
-
-        Stream.lift(boundStatement).flatMap(session.execute).map { row =>
-          KafkaKey(
-            applicationId = applicationId,
-            groupId = groupId,
-            topicPartition = TopicPartition(
-              topic = row.decode[String]("topic"),
-              partition = row.decode[Partition]("partition")
-            ),
-            key = row.decode[String]("key")
-          )
-        }
+      Stream.lift(boundStatement).flatMap(session.execute).map { row =>
+        KafkaKey(
+          applicationId = applicationId,
+          groupId = groupId,
+          topicPartition = TopicPartition(
+            topic = row.decode[String]("topic"),
+            partition = row.decode[Partition]("partition")
+          ),
+          key = row.decode[String]("key")
+        )
       }
     }
   }

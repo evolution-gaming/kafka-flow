@@ -17,13 +17,14 @@ import com.evolutiongaming.kafka.journal.eventual.cassandra.EventualCassandraCon
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Offset
+import CassandraSnapshots._
+
 import scodec.bits.ByteVector
 
 class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
   session: CassandraSession[F]
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
-  import CassandraSnapshots._
 
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {

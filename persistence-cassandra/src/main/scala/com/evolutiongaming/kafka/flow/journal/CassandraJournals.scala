@@ -24,6 +24,7 @@ import com.evolutiongaming.skafka.TimestampAndType
 import com.evolutiongaming.skafka.TimestampType
 import com.evolutiongaming.skafka.consumer.WithSize
 import com.evolutiongaming.sstream.Stream
+import CassandraJournals._
 
 import java.time.Instant
 import scodec.bits.ByteVector
@@ -31,7 +32,6 @@ import scodec.bits.ByteVector
 class CassandraJournals[F[_]: MonadThrow: Clock](
   session: CassandraSession[F]
 ) extends JournalDatabase[F, KafkaKey, ConsRecord] {
-  import CassandraJournals._
 
   def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
     for {
