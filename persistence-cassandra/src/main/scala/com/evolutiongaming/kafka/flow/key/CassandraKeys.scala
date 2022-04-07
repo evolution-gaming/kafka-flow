@@ -4,7 +4,7 @@ import cats.Monad
 import cats.MonadThrow
 import cats.effect.Clock
 import cats.syntax.all._
-import com.datastax.driver.core.BoundStatement
+import com.datastax.driver.core.{BoundStatement, Row}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.kafka.flow.KafkaKey
@@ -18,7 +18,7 @@ import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Partition
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
-import CassandraKeys.Statements
+import CassandraKeys.{Statements, rowToKey}
 
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -71,15 +71,10 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
   ): Stream[F, KafkaKey] = {
     val boundStatement = Statements.all(session, applicationId, groupId, segment, topicPartition)
 
-    Stream.lift(boundStatement).flatMap(session.execute).map { row =>
-      KafkaKey(
-        applicationId = applicationId,
-        groupId = groupId,
-        topicPartition = topicPartition,
-        key = row.decode[String]("key")
-      )
-    }
-
+    Stream
+      .lift(boundStatement)
+      .flatMap(session.execute)
+      .map(rowToKey(_, applicationId, groupId, topicPartition))
   }
 }
 object CassandraKeys {
@@ -131,17 +126,10 @@ object CassandraKeys {
         .all(session, applicationId, groupId, segment, topicPartition)
         .map(_.setConsistencyLevel(readConsistency))
 
-      Stream.lift(boundStatement).flatMap(session.execute).map { row =>
-        KafkaKey(
-          applicationId = applicationId,
-          groupId = groupId,
-          topicPartition = TopicPartition(
-            topic = row.decode[String]("topic"),
-            partition = row.decode[Partition]("partition")
-          ),
-          key = row.decode[String]("key")
-        )
-      }
+      Stream
+        .lift(boundStatement)
+        .flatMap(session.execute)
+        .map(rowToKey(_, applicationId, groupId, topicPartition))
     }
   }
 
@@ -149,6 +137,14 @@ object CassandraKeys {
     session: CassandraSession[F],
     sync: CassandraSync[F]
   ): F[Unit] = KeySchema(session, sync).truncate
+
+  protected def rowToKey(row: Row, appId: String, groupId: String, topicPartition: TopicPartition): KafkaKey =
+    KafkaKey(
+      applicationId = appId,
+      groupId = groupId,
+      topicPartition = topicPartition,
+      key = row.decode[String]("key")
+    )
 
   protected object Statements {
     def all[F[_]: Monad](
