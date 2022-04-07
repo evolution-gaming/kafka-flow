@@ -6,6 +6,7 @@ import cats.effect.{Bracket, BracketThrow, Clock, Sync}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import cats.effect.syntax.all._
 import cats.syntax.all._
+import com.evolutiongaming.kafka.flow.kafka.OffsetToCommit
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 
 import java.time.Instant
@@ -58,7 +59,7 @@ object AdditionalStatePersist {
               _ <- F.whenA(lastPersisted.forall(ts => now - ts.toEpochMilli > cooldownMs)) {
                 for {
                   _ <- persistence.flush
-                  _ <- keyContext.hold(record.offset)
+                  _ <- OffsetToCommit[F](record.offset).flatMap(keyContext.hold)
                   _ <- lastPersistedRef.set(Instant.ofEpochMilli(now).some)
                   _ <- keyContext.log.info("Additional persisting success")
                 } yield ()
