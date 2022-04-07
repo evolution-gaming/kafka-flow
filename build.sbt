@@ -18,6 +18,9 @@ lazy val commonSettings = Seq(
     Resolver.bintrayRepo("evolutiongaming", "maven"),
     Resolver.sonatypeRepo("public")
   ),
+  libraryDependencySchemes ++= Seq(
+    "org.scala-lang.modules" %% "scala-java8-compat" % "always"
+  ),
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.0" cross CrossVersion.full)
 )
 
@@ -49,7 +52,7 @@ lazy val core = (project in file("core"))
       scribe % IntegrationTest,
       skafka,
       sstream,
-      weaver % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
@@ -74,7 +77,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
       KafkaJournal.cassandra,
       cassandraLauncher % IntegrationTest exclude ("ch.qos.logback", "logback-classic"),
       scribe % IntegrationTest,
-      weaver % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
@@ -92,7 +95,7 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
       Monocle.`macro`,
       kafkaLauncher % IntegrationTest,
       scribe % IntegrationTest,
-      weaver % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),

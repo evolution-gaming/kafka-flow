@@ -63,7 +63,7 @@ object CassandraPersistence {
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyConfig: ConsistencyConfig
-  )(
+  )(implicit
     fromBytes: FromBytes[Try, S],
     toBytes: ToBytes[Try, S]
   ): F[PersistenceModule[F, S]] = {
