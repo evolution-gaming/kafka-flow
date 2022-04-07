@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.snapshot
 import cats.{Monad, MonadThrow}
 import cats.effect.Clock
 import cats.syntax.all._
-import com.datastax.driver.core.{BoundStatement, Row}
+import com.datastax.driver.core.{BoundStatement, ConsistencyLevel, Row}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.kafka.flow.KafkaKey
@@ -18,29 +18,35 @@ import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Offset
 import CassandraSnapshots._
-
 import scodec.bits.ByteVector
 
 class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
-  session: CassandraSession[F]
+  session: CassandraSession[F],
+  consistencyConfigOpt: Option[ConsistencyConfig] = None
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
+  private val writeConsistency = consistencyConfigOpt.fold(Option.empty[ConsistencyLevel])(c => Some(c.write.value))
+  private val readConsistency = consistencyConfigOpt.fold(Option.empty[ConsistencyLevel])(c => Some(c.read.value))
+
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
-      statement <- Statements.persist(session, key, snapshot)
+      boundStatement <- Statements.persist(session, key, snapshot)
+      statement = boundStatement.setConsistencyLevel(writeConsistency.getOrElse(boundStatement.getConsistencyLevel))
       _ <- session.execute(statement).first.void
     } yield ()
 
   def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] =
     for {
-      statement <- Statements.get(session, key)
+      boundStatement <- Statements.get(session, key)
+      statement = boundStatement.setConsistencyLevel(readConsistency.getOrElse(boundStatement.getConsistencyLevel))
       row <- session.execute(statement).first
       snapshot <- row.map(row => decode(row)).sequence
     } yield snapshot
 
   def delete(key: KafkaKey): F[Unit] = for {
-    statement <- Statements.delete(session, key)
+    boundStatement <- Statements.delete(session, key)
+    statement = boundStatement.setConsistencyLevel(writeConsistency.getOrElse(boundStatement.getConsistencyLevel))
     _ <- session.execute(statement).first.void
   } yield ()
 
@@ -51,37 +57,10 @@ object CassandraSnapshots {
   /** Creates schema in Cassandra if not there yet */
   def withSchema[F[_]: MonadThrow: Clock, T](
     session: CassandraSession[F],
-    sync: CassandraSync[F]
-  )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
-    SnapshotSchema(session, sync).create as new CassandraSnapshots(session)
-
-  def withSchema[F[_]: MonadThrow: Clock, T](
-    session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyConfig: ConsistencyConfig
+    consistencyConfig: Option[ConsistencyConfig] = None
   )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
-    for {
-      _ <- SnapshotSchema(session, sync).create
-    } yield new SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
-      private val writeConsistency = consistencyConfig.write.value
-      private val readConsistency = consistencyConfig.read.value
-
-      def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] = for {
-        statement <- Statements.persist(session, key, snapshot)
-        _ <- session.execute(statement.setConsistencyLevel(writeConsistency)).first.void
-      } yield ()
-
-      def delete(key: KafkaKey): F[Unit] = for {
-        statement <- Statements.delete(session, key)
-        _ <- session.execute(statement.setConsistencyLevel(writeConsistency)).first.void
-      } yield ()
-
-      def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] = for {
-        statement <- Statements.get(session, key)
-        row <- session.execute(statement.setConsistencyLevel(readConsistency)).first
-        snapshot <- row.map(decode[F, T]).sequence
-      } yield snapshot
-    }
+    SnapshotSchema(session, sync).create as new CassandraSnapshots(session, consistencyConfig)
 
   def truncate[F[_]: Monad](
     session: CassandraSession[F],

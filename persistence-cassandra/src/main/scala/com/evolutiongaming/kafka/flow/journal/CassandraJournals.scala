@@ -4,7 +4,7 @@ import cats.Monad
 import cats.MonadThrow
 import cats.effect.Clock
 import cats.syntax.all._
-import com.datastax.driver.core.{BoundStatement, Row}
+import com.datastax.driver.core.{BoundStatement, ConsistencyLevel, Row}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.kafka.flow.KafkaKey
@@ -30,17 +30,24 @@ import java.time.Instant
 import scodec.bits.ByteVector
 
 class CassandraJournals[F[_]: MonadThrow: Clock](
-  session: CassandraSession[F]
+  session: CassandraSession[F],
+  consistencyConfigOpt: Option[ConsistencyConfig] = None
 ) extends JournalDatabase[F, KafkaKey, ConsRecord] {
+
+  private val writeConsistency = consistencyConfigOpt.fold(Option.empty[ConsistencyLevel])(c => Some(c.write.value))
+  private val readConsistency = consistencyConfigOpt.fold(Option.empty[ConsistencyLevel])(c => Some(c.read.value))
 
   def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
     for {
       boundStatement <- Statements.persist(session, key, event)
-      _ <- session.execute(boundStatement).first.void
+      statement = boundStatement.setConsistencyLevel(writeConsistency.getOrElse(boundStatement.getConsistencyLevel))
+      _ <- session.execute(statement).first.void
     } yield ()
 
   def get(key: KafkaKey): Stream[F, ConsRecord] = {
-    val boundStatement = Statements.get(session, key)
+    val boundStatement = Statements
+      .get(session, key)
+      .map(statement => statement.setConsistencyLevel(readConsistency.getOrElse(statement.getConsistencyLevel)))
 
     Stream.lift(boundStatement).flatMap(session.execute).mapM { row =>
       decode(key, row)
@@ -50,7 +57,8 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
   def delete(key: KafkaKey): F[Unit] =
     for {
       boundStatement <- Statements.delete(session, key)
-      _ <- session.execute(boundStatement).first.void
+      statement = boundStatement.setConsistencyLevel(writeConsistency.getOrElse(boundStatement.getConsistencyLevel))
+      _ <- session.execute(statement).first.void
     } yield ()
 
 }
@@ -63,38 +71,10 @@ object CassandraJournals {
   /** Creates schema in Cassandra if not there yet */
   def withSchema[F[_]: MonadThrow: Clock](
     session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =
-    JournalSchema(session, sync).create as new CassandraJournals(session)
-
-  def withSchema[F[_]: MonadThrow: Clock](
-    session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyConfig: ConsistencyConfig
+    consistencyConfig: Option[ConsistencyConfig] = None
   ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =
-    for {
-      _ <- JournalSchema(session, sync).create
-    } yield new JournalDatabase[F, KafkaKey, ConsRecord] {
-      private val writeConsistency = consistencyConfig.write.value
-      private val readConsistency = consistencyConfig.read.value
-
-      def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
-        for {
-          boundStatement <- Statements.persist(session, key, event)
-          _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
-        } yield ()
-
-      def get(key: KafkaKey): Stream[F, ConsRecord] = {
-        val boundStatement = Statements.get(session, key).map(_.setConsistencyLevel(readConsistency))
-
-        Stream.lift(boundStatement).flatMap(session.execute).mapM(decode(key, _))
-      }
-
-      def delete(key: KafkaKey): F[Unit] = for {
-        boundStatement <- Statements.delete(session, key)
-        _ <- session.execute(boundStatement.setConsistencyLevel(writeConsistency)).first.void
-      } yield ()
-    }
+    JournalSchema(session, sync).create as new CassandraJournals(session, consistencyConfig)
 
   def truncate[F[_]: Monad](
     session: CassandraSession[F],

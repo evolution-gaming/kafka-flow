@@ -6,12 +6,11 @@ import cats.arrow.FunctionK
 import cats.effect.Clock
 import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync
-import com.evolutiongaming.kafka.flow.KafkaKey
-import com.evolutiongaming.kafka.flow.journal.{CassandraJournals, JournalDatabase}
-import com.evolutiongaming.kafka.flow.key.{CassandraKeys, KeyDatabase}
+import com.evolutiongaming.kafka.flow.journal.CassandraJournals
+import com.evolutiongaming.kafka.flow.key.CassandraKeys
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
-import com.evolutiongaming.kafka.flow.snapshot.{CassandraSnapshots, KafkaSnapshot, SnapshotDatabase}
-import com.evolutiongaming.kafka.journal.{ConsRecord, FromBytes, ToBytes}
+import com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots
+import com.evolutiongaming.kafka.journal.{FromBytes, ToBytes}
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.kafka.journal.eventual.cassandra.EventualCassandraConfig.ConsistencyConfig
 
@@ -23,14 +22,15 @@ object CassandraPersistence {
   /** Creates schema in Cassandra if not there yet */
   def withSchemaF[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
-    sync: CassandraSync[F]
+    sync: CassandraSync[F],
+    consistencyConfig: Option[ConsistencyConfig] = None
   )(implicit
     fromBytes: FromBytes[F, S],
     toBytes: ToBytes[F, S]
   ): F[PersistenceModule[F, S]] = for {
-    _keys <- CassandraKeys.withSchema(session, sync)
-    _journals <- CassandraJournals.withSchema(session, sync)
-    _snapshots <- CassandraSnapshots.withSchema[F, S](session, sync)
+    _keys <- CassandraKeys.withSchema(session, sync, consistencyConfig)
+    _journals <- CassandraJournals.withSchema(session, sync, consistencyConfig)
+    _snapshots <- CassandraSnapshots.withSchema[F, S](session, sync, consistencyConfig)
   } yield new CassandraPersistence[F, S] {
     def keys = _keys
     def journals = _journals
@@ -41,28 +41,14 @@ object CassandraPersistence {
     *
     * This method uses the same `JsonCodec[Try]` as `JournalParser` does to
     * simplify defining the basic application.
-    */
-  def withSchema[F[_]: MonadThrow: Clock, S](
-    session: CassandraSession[F],
-    sync: CassandraSync[F]
-  )(implicit
-    fromBytes: FromBytes[Try, S],
-    toBytes: ToBytes[Try, S]
-  ): F[PersistenceModule[F, S]] = {
-    val fromTry = FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
-    implicit val _fromBytes = fromBytes mapK fromTry
-    implicit val _toBytes = toBytes mapK fromTry
-    withSchemaF(session, sync)
-  }
-
-  /** Same as withSchema(session, sync) but applies
+    * if @consistencyConfig is present then applies
     * ConsistencyConfig.Read for all read queries and
     * ConsistencyConfig.Write for all the mutations
     */
   def withSchema[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyConfig: ConsistencyConfig
+    consistencyConfig: Option[ConsistencyConfig] = None
   )(implicit
     fromBytes: FromBytes[Try, S],
     toBytes: ToBytes[Try, S]
@@ -70,18 +56,7 @@ object CassandraPersistence {
     val fromTry = FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
     implicit val _fromBytes = fromBytes mapK fromTry
     implicit val _toBytes = toBytes mapK fromTry
-
-    for {
-      keys_ <- CassandraKeys.withSchema(session, sync, consistencyConfig)
-      journals_ <- CassandraJournals.withSchema(session, sync, consistencyConfig)
-      snapshots_ <- CassandraSnapshots.withSchema(session, sync, consistencyConfig)
-    } yield new CassandraPersistence[F, S] {
-      def keys: KeyDatabase[F, KafkaKey] = keys_
-
-      def journals: JournalDatabase[F, KafkaKey, ConsRecord] = journals_
-
-      def snapshots: SnapshotDatabase[F, KafkaKey, KafkaSnapshot[S]] = snapshots_
-    }
+    withSchemaF(session, sync, consistencyConfig)
   }
 
   /** Deletes all data in Cassandra */

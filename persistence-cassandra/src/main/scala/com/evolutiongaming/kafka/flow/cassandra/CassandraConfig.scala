@@ -10,17 +10,7 @@ final case class CassandraConfig(
   retries: Int = 100,
   client: scassandra.CassandraConfig,
   consistencyConfig: Option[ConsistencyConfig] = None
-) {
-  val consistency: ConsistencyConfig =
-    consistencyConfig match {
-      case Some(conf) => conf
-      case None =>
-        val fallback = client.query.consistency
-        val (fallbackRead, fallbackWrite) = (ConsistencyConfig.Read(fallback), ConsistencyConfig.Write(fallback))
-
-        ConsistencyConfig(fallbackRead, fallbackWrite)
-    }
-}
+)
 
 object CassandraConfig {
 
