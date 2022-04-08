@@ -1,6 +1,5 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
-import com.evolutiongaming.kafka.journal.eventual.cassandra.EventualCassandraConfig.ConsistencyConfig
 import com.evolutiongaming.scassandra
 import pureconfig.ConfigReader
 import pureconfig.generic.semiauto.deriveReader
@@ -9,7 +8,7 @@ final case class CassandraConfig(
   schema: CassandraConfig.Schema = CassandraConfig.Schema.default,
   retries: Int = 100,
   client: scassandra.CassandraConfig,
-  consistencyConfig: Option[ConsistencyConfig] = None
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
 )
 
 object CassandraConfig {

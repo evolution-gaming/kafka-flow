@@ -13,40 +13,38 @@ import com.evolutiongaming.kafka.journal.FromBytes.implicits._
 import com.evolutiongaming.kafka.journal.ToBytes
 import com.evolutiongaming.kafka.journal.ToBytes.implicits._
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
-import com.evolutiongaming.kafka.journal.eventual.cassandra.EventualCassandraConfig.ConsistencyConfig
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Offset
 import CassandraSnapshots._
+import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
+import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import scodec.bits.ByteVector
 
 class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
   session: CassandraSession[F],
-  consistencyConfigOpt: Option[ConsistencyConfig] = None
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
-
-  private val writeConsistency = consistencyConfigOpt.map(_.write.value)
-  private val readConsistency = consistencyConfigOpt.map(_.read.value)
 
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
       boundStatement <- Statements.persist(session, key, snapshot)
-      statement = writeConsistency.map(boundStatement.setConsistencyLevel).getOrElse(boundStatement)
+      statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _ <- session.execute(statement).first.void
     } yield ()
 
   def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] =
     for {
       boundStatement <- Statements.get(session, key)
-      statement = readConsistency.map(boundStatement.setConsistencyLevel).getOrElse(boundStatement)
+      statement = boundStatement.withConsistencyLevel(consistencyOverrides.read)
       row <- session.execute(statement).first
       snapshot <- row.map(row => decode(row)).sequence
     } yield snapshot
 
   def delete(key: KafkaKey): F[Unit] = for {
     boundStatement <- Statements.delete(session, key)
-    statement = writeConsistency.map(boundStatement.setConsistencyLevel).getOrElse(boundStatement)
+    statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
     _ <- session.execute(statement).first.void
   } yield ()
 
@@ -58,9 +56,9 @@ object CassandraSnapshots {
   def withSchema[F[_]: MonadThrow: Clock, T](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyConfig: Option[ConsistencyConfig] = None
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
   )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
-    SnapshotSchema(session, sync).create as new CassandraSnapshots(session, consistencyConfig)
+    SnapshotSchema(session, sync).create as new CassandraSnapshots(session, consistencyOverrides)
 
   def truncate[F[_]: Monad](
     session: CassandraSession[F],

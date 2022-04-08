@@ -12,7 +12,6 @@ import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
 import com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots
 import com.evolutiongaming.kafka.journal.{FromBytes, ToBytes}
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
-import com.evolutiongaming.kafka.journal.eventual.cassandra.EventualCassandraConfig.ConsistencyConfig
 
 import scala.util.Try
 
@@ -23,14 +22,14 @@ object CassandraPersistence {
   def withSchemaF[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyConfig: Option[ConsistencyConfig] = None
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
   )(implicit
     fromBytes: FromBytes[F, S],
     toBytes: ToBytes[F, S]
   ): F[PersistenceModule[F, S]] = for {
-    _keys <- CassandraKeys.withSchema(session, sync, consistencyConfig)
-    _journals <- CassandraJournals.withSchema(session, sync, consistencyConfig)
-    _snapshots <- CassandraSnapshots.withSchema[F, S](session, sync, consistencyConfig)
+    _keys <- CassandraKeys.withSchema(session, sync, consistencyOverrides)
+    _journals <- CassandraJournals.withSchema(session, sync, consistencyOverrides)
+    _snapshots <- CassandraSnapshots.withSchema[F, S](session, sync, consistencyOverrides)
   } yield new CassandraPersistence[F, S] {
     def keys = _keys
     def journals = _journals
@@ -48,7 +47,7 @@ object CassandraPersistence {
   def withSchema[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyConfig: Option[ConsistencyConfig] = None
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
   )(implicit
     fromBytes: FromBytes[Try, S],
     toBytes: ToBytes[Try, S]
@@ -56,7 +55,7 @@ object CassandraPersistence {
     val fromTry = FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
     implicit val _fromBytes = fromBytes mapK fromTry
     implicit val _toBytes = toBytes mapK fromTry
-    withSchemaF(session, sync, consistencyConfig)
+    withSchemaF(session, sync, consistencyOverrides)
   }
 
   /** Deletes all data in Cassandra */

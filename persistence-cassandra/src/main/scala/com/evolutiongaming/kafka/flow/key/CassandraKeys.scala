@@ -9,7 +9,6 @@ import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
-import com.evolutiongaming.kafka.journal.eventual.cassandra.EventualCassandraConfig.ConsistencyConfig
 import com.evolutiongaming.kafka.journal.eventual.cassandra.SegmentNr
 import com.evolutiongaming.kafka.journal.eventual.cassandra.Segments
 import com.evolutiongaming.kafka.journal.util.Fail
@@ -19,29 +18,28 @@ import com.evolutiongaming.skafka.Partition
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 import CassandraKeys.{Statements, rowToKey}
+import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
+import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 
 import java.time.LocalDate
 import java.time.ZoneOffset
 
 class CassandraKeys[F[_]: Monad: Fail: Clock](
   session: CassandraSession[F],
-  consistencyConfigOpt: Option[ConsistencyConfig] = None
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
 ) extends KeyDatabase[F, KafkaKey] {
-
-  private val writeConsistency = consistencyConfigOpt.map(_.write.value)
-  private val readConsistency = consistencyConfigOpt.map(_.read.value)
 
   def persist(key: KafkaKey): F[Unit] =
     for {
       boundStatement <- Statements.persist(session, key)
-      statement = writeConsistency.map(boundStatement.setConsistencyLevel).getOrElse(boundStatement)
+      statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _ <- session.execute(statement).first.void
     } yield ()
 
   def delete(key: KafkaKey): F[Unit] =
     for {
       boundStatement <- Statements.delete(session, key)
-      statement = writeConsistency.map(boundStatement.setConsistencyLevel).getOrElse(boundStatement)
+      statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _ <- session.execute(statement).first.void
     } yield ()
 
@@ -55,7 +53,7 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
   def all(applicationId: String, groupId: String, segment: SegmentNr): Stream[F, KafkaKey] = {
     val boundStatement = Statements
       .all(session, applicationId, groupId, segment)
-      .map(statement => readConsistency.map(statement.setConsistencyLevel).getOrElse(statement))
+      .map(_.withConsistencyLevel(consistencyOverrides.read))
 
     Stream.lift(boundStatement) flatMap session.execute map { row =>
       KafkaKey(
@@ -79,7 +77,7 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
   ): Stream[F, KafkaKey] = {
     val boundStatement = Statements
       .all(session, applicationId, groupId, segment, topicPartition)
-      .map(statement => readConsistency.map(statement.setConsistencyLevel).getOrElse(statement))
+      .map(_.withConsistencyLevel(consistencyOverrides.read))
 
     Stream
       .lift(boundStatement)
@@ -93,10 +91,10 @@ object CassandraKeys {
   def withSchema[F[_]: MonadThrow: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyConfig: Option[ConsistencyConfig] = None
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
   ): F[KeyDatabase[F, KafkaKey]] = {
     implicit val fail = Fail.lift
-    KeySchema(session, sync).create as new CassandraKeys(session, consistencyConfig)
+    KeySchema(session, sync).create as new CassandraKeys(session, consistencyOverrides)
   }
 
   def truncate[F[_]: Monad](
