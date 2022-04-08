@@ -30,7 +30,7 @@ object FoldToState {
     storage: MonadState[F, Option[S]],
     fold: FoldOption[F, S, E],
     persistence: Persistence[F, S, E]
-  ): FoldToState[F, E] = apply(storage, fold, persistence, AdditionalStatePersist.empty[F, S, E])
+  ): FoldToState[F, E] = apply(storage, fold, persistence, AdditionalStatePersist.empty[F, E])
 
   /** Uses `fold` to apply the records to a state stored inside of `storage`.
     *
@@ -42,7 +42,7 @@ object FoldToState {
     storage: MonadState[F, Option[S]],
     fold: FoldOption[F, S, E],
     persistence: Persistence[F, S, E],
-    additionalPersist: AdditionalStatePersist[F, S, E]
+    additionalPersist: AdditionalStatePersist[F, E]
   ): FoldToState[F, E] = { records =>
     for {
       state <- storage.get
@@ -51,7 +51,7 @@ object FoldToState {
           for {
             _ <- persistence.appendEvent(record)
             _ <- state.traverse_ { state =>
-              persistence.replaceState(state) >> additionalPersist.persistIfNeeded(state, record)
+              persistence.replaceState(state) >> additionalPersist.persistIfNeeded(record)
             }
           } yield ()
         }

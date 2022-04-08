@@ -2,9 +2,15 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
 
-/** A context, providing additional functionality to be called by a user while executing `FoldOption` logic.
+/** A context, providing an access to some additional internal functionality of the framework.
+  *
+  * It's passed as an argument to a user-defined code of `ContextFold`, allowing one to use this functionality when
+  * processing incoming events.
+  *
   * This context is created per key when the key is recovered (either from persistence or when encountered the first
   * time in a source Kafka topic)
+  *
+  * @see [[com.evolutiongaming.kafka.flow.ContextFold]] for the user API allowing construction of a contextual fold
   */
 trait FoldContext[F[_]] {
 

@@ -12,7 +12,7 @@ trait KeyFlowOf[F[_], S, A] {
     context: KeyContext[F],
     persistence: Persistence[F, S, A],
     timers: TimerContext[F],
-    additionalPersist: AdditionalStatePersist[F, S, A]
+    additionalPersist: AdditionalStatePersist[F, A]
   ): Resource[F, KeyFlow[F, A]]
 
 }
@@ -32,6 +32,14 @@ object KeyFlowOf {
     tick: TickOption[F, S]
   ): KeyFlowOf[F, S, A] = apply(timerFlowOf, ContextFold.fromFold(fold), tick)
 
+  /** Construct `KeyFlow` from the premade components. This version accepts `ContextFold` which can use an additional
+    * functionality provided by `FoldContext`
+    *
+    * @param timerFlowOf storage / factory of timers flows, usually configures
+    * how often the timer ticks etc.
+    * @param fold defines how to change the state on incoming records
+    * @param tick defines what to do when the timer ticks
+    */
   def apply[F[_]: Sync, K, S, A](
     timerFlowOf: TimerFlowOf[F],
     fold: ContextFold[F, S, A],

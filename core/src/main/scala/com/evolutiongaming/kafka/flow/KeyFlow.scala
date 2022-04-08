@@ -32,7 +32,7 @@ object KeyFlow {
     fold: FoldOption[F, S, A],
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
-    additionalPersist: AdditionalStatePersist[F, S, A],
+    additionalPersist: AdditionalStatePersist[F, A],
     timer: TimerFlow[F]
   ): F[KeyFlow[F, A]] = Ref.of(none[S]) flatMap { storage =>
     of(storage.stateInstance, fold, tick, persistence, additionalPersist, timer)
@@ -45,14 +45,14 @@ object KeyFlow {
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
     timer: TimerFlow[F]
-  ): F[KeyFlow[F, A]] = of(storage, fold, tick, persistence, AdditionalStatePersist.empty[F, S, A], timer)
+  ): F[KeyFlow[F, A]] = of(storage, fold, tick, persistence, AdditionalStatePersist.empty[F, A], timer)
 
   def of[F[_]: Monad: KeyContext, S, A](
     storage: MonadState[F, Option[S]],
     fold: FoldOption[F, S, A],
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
-    additionalPersist: AdditionalStatePersist[F, S, A],
+    additionalPersist: AdditionalStatePersist[F, A],
     timer: TimerFlow[F]
   ): F[KeyFlow[F, A]] =
     for {
