@@ -3,12 +3,12 @@ package com.evolutiongaming.kafka.flow.journal
 import cats.Applicative
 import cats.Monad
 import cats.effect.Sync
+import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import cats.mtl.MonadState
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
-import cats.effect.Ref
 
 trait Journals[F[_], E] extends JournalReader[F, E] with JournalWriter[F, E]
 

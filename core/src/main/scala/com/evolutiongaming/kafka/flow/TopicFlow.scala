@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Parallel
 import cats.data.NonEmptySet
+import cats.effect.concurrent.{Ref, Semaphore}
 import cats.effect.{Concurrent, Resource}
 import cats.effect.syntax.all._
 import cats.syntax.all._
@@ -16,8 +17,6 @@ import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, Partition, Topic, 
 import kafka.Consumer
 
 import scala.collection.immutable.SortedSet
-import cats.effect.Ref
-import cats.effect.std.Semaphore
 
 trait TopicFlow[F[_]] {
 

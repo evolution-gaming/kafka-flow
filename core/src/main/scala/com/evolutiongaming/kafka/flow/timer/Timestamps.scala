@@ -3,10 +3,10 @@ package com.evolutiongaming.kafka.flow.timer
 import cats.Functor
 import cats.effect.Resource
 import cats.effect.Sync
+import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import cats.mtl.MonadState
 import com.olegpy.meow.effects._
-import cats.effect.Ref
 
 /** Contains timestamp related to a specific key.
   *
