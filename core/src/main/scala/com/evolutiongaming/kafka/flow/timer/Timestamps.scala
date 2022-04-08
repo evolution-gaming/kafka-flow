@@ -10,7 +10,7 @@ import com.olegpy.meow.effects._
 
 /** Contains timestamp related to a specific key.
   *
-  * I.e. when the key was persistted, processed etc.
+  * I.e. when the key was persisted, processed etc.
   */
 trait Timestamps[F[_]] extends ReadTimestamps[F] with WriteTimestamps[F]
 trait ReadTimestamps[F[_]] {

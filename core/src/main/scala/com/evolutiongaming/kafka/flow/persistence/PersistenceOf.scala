@@ -19,7 +19,7 @@ trait PersistenceOf[F[_], K, S, A] {
     *
     * @param key key for which the values are stored into database,
     * @param fold recovery function to use if the state is restored from journal,
-    * @param timerstamp service to register persistence events to.
+    * @param timestamps service to register persistence events to.
     */
   def apply(
     key: K,
