@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.snapshot
 import cats.{Monad, MonadThrow}
 import cats.effect.Clock
 import cats.syntax.all._
-import com.datastax.driver.core.{BoundStatement, ConsistencyLevel, Row}
+import com.datastax.driver.core.{BoundStatement, Row}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.kafka.flow.KafkaKey
@@ -26,27 +26,27 @@ class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
-  private val writeConsistency = consistencyConfigOpt.fold(Option.empty[ConsistencyLevel])(c => Some(c.write.value))
-  private val readConsistency = consistencyConfigOpt.fold(Option.empty[ConsistencyLevel])(c => Some(c.read.value))
+  private val writeConsistency = consistencyConfigOpt.map(_.write.value)
+  private val readConsistency = consistencyConfigOpt.map(_.read.value)
 
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
       boundStatement <- Statements.persist(session, key, snapshot)
-      statement = boundStatement.setConsistencyLevel(writeConsistency.getOrElse(boundStatement.getConsistencyLevel))
+      statement = writeConsistency.map(boundStatement.setConsistencyLevel).getOrElse(boundStatement)
       _ <- session.execute(statement).first.void
     } yield ()
 
   def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] =
     for {
       boundStatement <- Statements.get(session, key)
-      statement = boundStatement.setConsistencyLevel(readConsistency.getOrElse(boundStatement.getConsistencyLevel))
+      statement = readConsistency.map(boundStatement.setConsistencyLevel).getOrElse(boundStatement)
       row <- session.execute(statement).first
       snapshot <- row.map(row => decode(row)).sequence
     } yield snapshot
 
   def delete(key: KafkaKey): F[Unit] = for {
     boundStatement <- Statements.delete(session, key)
-    statement = boundStatement.setConsistencyLevel(writeConsistency.getOrElse(boundStatement.getConsistencyLevel))
+    statement = writeConsistency.map(boundStatement.setConsistencyLevel).getOrElse(boundStatement)
     _ <- session.execute(statement).first.void
   } yield ()
 
