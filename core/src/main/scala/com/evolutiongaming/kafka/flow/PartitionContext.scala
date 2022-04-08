@@ -3,11 +3,11 @@ package com.evolutiongaming.kafka.flow
 import cats.Applicative
 import cats.effect.Resource
 import cats.effect.Sync
-import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.skafka.Offset
 import com.olegpy.meow.effects._
+import cats.effect.Ref
 
 /** Partition specific metainformation inside of topic */
 trait PartitionContext[F[_]] {

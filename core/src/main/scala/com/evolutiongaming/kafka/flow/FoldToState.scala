@@ -3,11 +3,11 @@ package com.evolutiongaming.kafka.flow
 import cats.Monad
 import cats.data.NonEmptyList
 import cats.effect.Sync
-import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import cats.mtl.MonadState
 import com.olegpy.meow.effects._
 import persistence.Persistence
+import cats.effect.Ref
 
 /** Applies records to a state stored inside and informs the listeners about the changes */
 trait FoldToState[F[_], E] {

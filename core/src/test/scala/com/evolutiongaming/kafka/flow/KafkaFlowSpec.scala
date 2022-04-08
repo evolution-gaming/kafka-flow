@@ -1,8 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
-import cats.effect.concurrent.Ref
-import cats.effect.{Resource, SyncIO, Timer}
+import cats.effect.{Resource, SyncIO}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.TimerHelper._
 import com.evolutiongaming.catshelper.LogOf
@@ -21,6 +20,7 @@ import munit.FunSuite
 
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
+import cats.effect.{ Ref, Temporal }
 
 class KafkaFlowSpec extends FunSuite {
   import KafkaFlowSpec._
@@ -224,7 +224,7 @@ object KafkaFlowSpec {
           state update (_ + Action.RetryOnError(error, decision))
         }
       }
-      implicit val timer = Timer.empty[F]
+      implicit val timer = Temporal.empty[F]
       Retry(strategy, onError)
     }
 

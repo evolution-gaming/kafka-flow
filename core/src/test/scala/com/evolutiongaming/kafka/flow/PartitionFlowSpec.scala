@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.{Clock, ContextShift, IO, Resource}
-import cats.effect.concurrent.Ref
+import cats.effect.{Clock, IO, Resource}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
@@ -22,6 +21,7 @@ import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
+import cats.effect.Ref
 
 class PartitionFlowSpec extends FunSuite {
 
