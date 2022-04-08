@@ -26,7 +26,7 @@ import java.time.ZoneOffset
 
 class CassandraKeys[F[_]: Monad: Fail: Clock](
   session: CassandraSession[F],
-  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
 ) extends KeyDatabase[F, KafkaKey] {
 
   def persist(key: KafkaKey): F[Unit] =
@@ -91,7 +91,7 @@ object CassandraKeys {
   def withSchema[F[_]: MonadThrow: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
   ): F[KeyDatabase[F, KafkaKey]] = {
     implicit val fail = Fail.lift
     KeySchema(session, sync).create as new CassandraKeys(session, consistencyOverrides)

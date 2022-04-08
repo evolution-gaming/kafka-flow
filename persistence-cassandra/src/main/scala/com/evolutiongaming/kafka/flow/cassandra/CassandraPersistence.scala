@@ -22,7 +22,7 @@ object CassandraPersistence {
   def withSchemaF[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
   )(implicit
     fromBytes: FromBytes[F, S],
     toBytes: ToBytes[F, S]
@@ -47,7 +47,7 @@ object CassandraPersistence {
   def withSchema[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
   )(implicit
     fromBytes: FromBytes[Try, S],
     toBytes: ToBytes[Try, S]

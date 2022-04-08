@@ -32,7 +32,7 @@ import scodec.bits.ByteVector
 
 class CassandraJournals[F[_]: MonadThrow: Clock](
   session: CassandraSession[F],
-  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
 ) extends JournalDatabase[F, KafkaKey, ConsRecord] {
 
   def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
@@ -70,7 +70,7 @@ object CassandraJournals {
   def withSchema[F[_]: MonadThrow: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
   ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =
     JournalSchema(session, sync).create as new CassandraJournals(session, consistencyOverrides)
 

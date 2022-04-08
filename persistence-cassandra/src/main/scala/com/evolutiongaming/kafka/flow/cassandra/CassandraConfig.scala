@@ -8,7 +8,7 @@ final case class CassandraConfig(
   schema: CassandraConfig.Schema = CassandraConfig.Schema.default,
   retries: Int = 100,
   client: scassandra.CassandraConfig,
-  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
 )
 
 object CassandraConfig {

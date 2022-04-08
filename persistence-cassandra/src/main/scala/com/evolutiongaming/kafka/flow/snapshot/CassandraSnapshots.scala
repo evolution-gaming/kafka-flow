@@ -23,7 +23,7 @@ import scodec.bits.ByteVector
 
 class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
   session: CassandraSession[F],
-  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
@@ -56,7 +56,7 @@ object CassandraSnapshots {
   def withSchema[F[_]: MonadThrow: Clock, T](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.default
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
   )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
     SnapshotSchema(session, sync).create as new CassandraSnapshots(session, consistencyOverrides)
 

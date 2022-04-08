@@ -10,7 +10,7 @@ final case class ConsistencyOverrides(
 )
 
 object ConsistencyOverrides {
-  val default: ConsistencyOverrides = ConsistencyOverrides()
+  val none: ConsistencyOverrides = ConsistencyOverrides()
 
   implicit val configReader: ConfigReader[ConsistencyOverrides] = deriveReader
 }
