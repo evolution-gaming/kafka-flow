@@ -9,12 +9,15 @@
 
 https://evolution-gaming.github.io/kafka-flow
 
+## Changelog
+https://evolution-gaming.github.io/kafka-flow/docs/changelog
+
 ## Setup
 
 ```scala
 addSbtPlugin("com.evolution" % "sbt-artifactory-plugin" % "0.0.2")
 
-lazy val version = "0.4.28"
+lazy val version = "0.4.31"
 
 libraryDependencies ++= Seq(
   "com.evolutiongaming" %% "kafka-flow" % version,

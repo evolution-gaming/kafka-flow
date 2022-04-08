@@ -12,8 +12,12 @@ trait SnapshotsOf[F[_], K, S] {
 object SnapshotsOf {
 
   def memory[F[_]: Sync: Log, K, S]: F[SnapshotsOf[F, K, S]] =
-    SnapshotDatabase.memory[F, K, S] map { database => key =>
-      Snapshots.of(key, database)
+    SnapshotDatabase.memory[F, K, S] map { database =>
+      backedBy(database)
     }
+
+  def backedBy[F[_]: Sync: Log, K, S](db: SnapshotDatabase[F, K, S]): SnapshotsOf[F, K, S] = { key =>
+    Snapshots.of(key, db)
+  }
 
 }

@@ -1,19 +1,20 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.Blocker
-import cats.effect.IO
-import cats.effect.Resource
+import cats.effect.{Blocker, IO, Resource}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.StartKafka
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
 import com.evolutiongaming.skafka.consumer.ConsumerConfig
 import com.evolutiongaming.smetrics.CollectorRegistry
-import scala.concurrent.ExecutionContext
-import scala.util.Try
-import scribe.Level
-import scribe.Logger
+import scribe.{Level, Logger}
 import weaver._
 
+import scala.concurrent.ExecutionContext
+import scala.util.Try
+
+// TODO: this class is a copy of core/src/it/scala/com/evolutiongaming/kafka/flow/SharedResources.scala
+// - can/should we re-use single class?
+// - should we be running int tests (which have dependency on kafka broker) on a single instance of kafka broker?
 object SharedResources extends GlobalResource {
 
   implicit object ConsumerModuleTag extends ResourceTag[KafkaModule[IO]] {
@@ -33,13 +34,21 @@ object SharedResources extends GlobalResource {
 
     val start = IO {
       // set root logging to WARN level to avoid spamming the logs
-      Logger.root.clearHandlers().clearModifiers()
-      .withHandler(minimumLevel = Some(Level.Warn)).replace()
+      Logger.root
+        .clearHandlers()
+        .clearModifiers()
+        .withHandler(minimumLevel = Some(Level.Warn))
+        .replace()
       Logger("com.evolutiongaming.kafka.flow")
-      .withHandler(minimumLevel = Some(Level.Debug)).replace()
+        .withHandler(minimumLevel = Some(Level.Debug))
+        .replace()
 
       // proceed starting Kafka
-      StartKafka()
+      StartKafka(
+        overrides = Map(
+          _root_.kafka.server.KafkaConfig.NumPartitionsProp -> "2"
+        )
+      )
     }
     for {
       _ <- Resource.make(start) { shutdown => IO(shutdown()) }

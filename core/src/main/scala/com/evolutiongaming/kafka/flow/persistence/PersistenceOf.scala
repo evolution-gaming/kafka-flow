@@ -19,7 +19,7 @@ trait PersistenceOf[F[_], K, S, A] {
     *
     * @param key key for which the values are stored into database,
     * @param fold recovery function to use if the state is restored from journal,
-    * @param timerstamp service to register persistence events to.
+    * @param timestamps service to register persistence events to.
     */
   def apply(
     key: K,
@@ -58,7 +58,7 @@ object PersistenceOf {
     snapshotsOf: SnapshotsOf[F, K, S]
   ): Resource[F, PersistenceOf[F, K, S, A]] = {
     val log = LogOf[F].apply(PersistenceOf.getClass)
-    Resource.liftF(log) map { implicit log => (key, fold, timestamps) =>
+    Resource.eval(log) map { implicit log => (key, fold, timestamps) =>
       implicit val _timestamps = timestamps
       for {
         journals <- journalsOf(key)

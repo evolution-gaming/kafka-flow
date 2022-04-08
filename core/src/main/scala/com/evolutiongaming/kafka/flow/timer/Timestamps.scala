@@ -10,7 +10,7 @@ import com.olegpy.meow.effects._
 
 /** Contains timestamp related to a specific key.
   *
-  * I.e. when the key was persistted, processed etc.
+  * I.e. when the key was persisted, processed etc.
   */
 trait Timestamps[F[_]] extends ReadTimestamps[F] with WriteTimestamps[F]
 trait ReadTimestamps[F[_]] {
@@ -57,7 +57,7 @@ object Timestamps {
     }
 
   def resource[F[_]: Sync](createdAt: Timestamp): Resource[F, Timestamps[F]] =
-    Resource.liftF(of(createdAt))
+    Resource.eval(of(createdAt))
 
   /** Creates a timestamp storage for a key */
   def apply[F[_]: Functor](

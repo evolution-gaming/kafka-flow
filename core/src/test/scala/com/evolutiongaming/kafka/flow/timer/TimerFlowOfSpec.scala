@@ -368,6 +368,87 @@ class TimerFlowOfSpec extends FunSuite {
 
   }
 
+  test("persistPeriodically fails on persist errors when ignorePersistErrors = false") {
+
+    val f = new ConstFixture
+
+    val testErr = new Exception("Test error")
+    val flushBuffersErr: FlushBuffers[F] = new FlushBuffers[F] {
+      def flush: F[Unit] = StateT.liftF(testErr.raiseError[SyncIO, Unit])
+    }
+
+    // Given("flow persists with failure every minute")
+    val context = Context(timestamps = TimestampState(
+      f.timestamp.copy(clock = Instant.parse("2020-03-01T00:00:00.000Z"))
+    ))
+    val flowOf = TimerFlowOf.persistPeriodically[F](1.minute, ignorePersistErrors = false)
+    val flow = flowOf(keyContext, flushBuffersErr, timerContext)
+
+    // When("timers trigger called")
+    val program = flow use { flow =>
+      for {
+        _ <- timerContext.set(f.timestamp.copy(
+          offset = Offset.unsafe(101),
+          clock = Instant.parse("2020-03-01T00:01:00.000Z")
+        ))
+        _ <- timerContext.trigger(flow)
+        _ <- timerContext.set(f.timestamp.copy(
+          offset = Offset.unsafe(102),
+          clock = Instant.parse("2020-03-01T00:02:00.000Z")
+        ))
+        _ <- timerContext.trigger(flow)
+      } yield ()
+    }
+    val result: Either[Throwable, Context] = program.runS(context).attempt.unsafeRunSync()
+
+    // Then("timer flow fails with an error")
+    result match {
+      case Left(err) => assertEquals(err.getMessage, testErr.getMessage)
+      case Right(_)  => fail("Timer flow should have failed with persist error")
+    }
+
+  }
+
+  test("persistPeriodically handles persist errors when ignorePersistErrors = true") {
+
+    val f = new ConstFixture
+
+    val flushBuffersErr: FlushBuffers[F] = new FlushBuffers[F] {
+      def flush: F[Unit] = StateT.liftF(new Exception("Test error").raiseError[SyncIO, Unit])
+    }
+
+    // Given("flow persists with failure every minute")
+    val context = Context(timestamps = TimestampState(
+      f.timestamp.copy(clock = Instant.parse("2020-03-01T00:00:00.000Z"))
+    ))
+    val flowOf = TimerFlowOf.persistPeriodically[F](1.minute, ignorePersistErrors = true)
+    val flow = flowOf(keyContext, flushBuffersErr, timerContext)
+
+    // When("timers trigger called")
+    val program = flow use { flow =>
+      for {
+        _ <- timerContext.set(f.timestamp.copy(
+          offset = Offset.unsafe(101),
+          clock = Instant.parse("2020-03-01T00:01:00.000Z")
+        ))
+        _ <- timerContext.trigger(flow)
+        _ <- timerContext.set(f.timestamp.copy(
+          offset = Offset.unsafe(102),
+          clock = Instant.parse("2020-03-01T00:02:00.000Z")
+        ))
+        _ <- timerContext.trigger(flow)
+      } yield ()
+    }
+    val result = program.runS(context).unsafeRunSync()
+
+    // Then("flush and remove never happen")
+    assertEquals(result.flushed, 0)
+    assertEquals(result.removed, 0)
+    // And("the offset of the last successful persist will be held")
+    assertEquals(result.holding, Some(Offset.unsafe(100)))
+
+  }
+
 }
 object TimerFlowSpec {
 

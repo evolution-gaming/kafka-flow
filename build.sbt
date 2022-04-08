@@ -8,8 +8,8 @@ lazy val commonSettings = Seq(
   organizationHomepage := Some(url("http://evolutiongaming.com")),
   publishTo := Some(Resolver.evolutionReleases),
   scalaVersion := crossScalaVersions.value.head,
-  crossScalaVersions := Seq("2.13.5", "2.12.11"),
-  coverageScalacPluginVersion := "1.4.2",
+  crossScalaVersions := Seq("2.13.5", "2.12.14"),
+  coverageScalacPluginVersion := "1.4.8",
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   releaseCrossBuild := true,
   testFrameworks += new TestFramework("munit.Framework"),
@@ -17,6 +17,9 @@ lazy val commonSettings = Seq(
   resolvers ++= Seq(
     Resolver.bintrayRepo("evolutiongaming", "maven"),
     Resolver.sonatypeRepo("public")
+  ),
+  libraryDependencySchemes ++= Seq(
+    "org.scala-lang.modules" %% "scala-java8-compat" % "always"
   ),
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.0" cross CrossVersion.full)
 )
@@ -49,7 +52,7 @@ lazy val core = (project in file("core"))
       scribe % IntegrationTest,
       skafka,
       sstream,
-      weaver % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
@@ -74,14 +77,15 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
       KafkaJournal.cassandra,
       cassandraLauncher % IntegrationTest exclude ("ch.qos.logback", "logback-classic"),
       scribe % IntegrationTest,
-      weaver % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
-    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect")
+    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
+    IntegrationTest / fork := true
   )
 
 lazy val `persistence-kafka` = (project in file("persistence-kafka"))
-  .dependsOn(core)
+  .dependsOn(core, metrics)
   .configs(IntegrationTest)
   .settings(commonSettings)
   .settings(
@@ -89,10 +93,13 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
     libraryDependencies ++= Seq(
       Monocle.core,
       Monocle.`macro`,
-      weaver % IntegrationTest,
+      kafkaLauncher % IntegrationTest,
+      scribe % IntegrationTest,
+      weaver % IntegrationTest
     ),
     Defaults.itSettings,
-    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect")
+    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
+    IntegrationTest / fork := true
   )
 
 lazy val docs = (project in file("kafka-flow-docs"))

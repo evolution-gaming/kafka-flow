@@ -35,7 +35,7 @@ object KeyStateOf {
 
   /** Does not recover keys until record with such key is encountered.
     *
-    * This version only requires `TimerFlowOf` and uses default `RecordFlow`
+    * This version only requires `TimerFlowOf` and uses default `KeyFlow`
     * which reads the state from the generic persistence folds it using
     * default `FoldToState`.
     */
@@ -54,7 +54,7 @@ object KeyStateOf {
 
   /** Does not recover keys until record with such key is encountered.
     *
-    * This version only requires `TimerFlowOf` and uses default `RecordFlow`
+    * This version only requires `TimerFlowOf` and uses default `KeyFlow`
     * which reads the state from the generic persistence folds it using
     * default `FoldToState`.
     */
@@ -78,10 +78,10 @@ object KeyStateOf {
       )
 
       for {
-        timers <- Resource.liftF(timersOf(kafkaKey, createdAt))
-        persistence <- Resource.liftF(persistenceOf(kafkaKey, fold, timers))
+        timers <- Resource.eval(timersOf(kafkaKey, createdAt))
+        persistence <- Resource.eval(persistenceOf(kafkaKey, fold, timers))
         timerFlow <- timerFlowOf(context, persistence, timers)
-        keyFlow <- Resource.liftF(KeyFlow.of(fold, tick, persistence, timerFlow))
+        keyFlow <- Resource.eval(KeyFlow.of(fold, tick, persistence, timerFlow))
       } yield KeyState(keyFlow, timers)
 
     }
@@ -184,8 +184,8 @@ object KeyStateOf {
         key = key
       )
       for {
-        timers <- Resource.liftF(timersOf(kafkaKey, createdAt))
-        persistence <- Resource.liftF(persistenceOf(kafkaKey, recover, timers))
+        timers <- Resource.eval(timersOf(kafkaKey, createdAt))
+        persistence <- Resource.eval(persistenceOf(kafkaKey, recover, timers))
         keyFlow <- keyFlowOf(context, persistence, timers)
       } yield KeyState(keyFlow, timers)
     }
