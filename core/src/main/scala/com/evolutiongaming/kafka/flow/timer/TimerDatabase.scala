@@ -3,12 +3,12 @@ package com.evolutiongaming.kafka.flow.timer
 import cats.Applicative
 import cats.Monad
 import cats.effect.Sync
-import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import cats.mtl.MonadState
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
+import cats.effect.Ref
 
 trait TimerDatabase[F[_], K, T] {
 

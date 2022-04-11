@@ -1,6 +1,5 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.concurrent.Ref
 import cats.effect.laws.util.TestContext
 import cats.effect.{IO, Resource}
 import com.evolutiongaming.catshelper.LogOf
@@ -17,6 +16,7 @@ import scodec.bits.ByteVector
 
 import java.nio.charset.StandardCharsets
 import scala.concurrent.duration._
+import cats.effect.Ref
 
 class AdditionalPersistSpec extends FunSuite {
   import AdditionalPersistSpec.TestFixture

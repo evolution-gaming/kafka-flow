@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.{Concurrent, Resource, Timer}
+import cats.effect.{Concurrent, Resource}
 import cats.syntax.all._
 import cats.{Eval, Foldable, Monad, Parallel}
 import com.evolutiongaming.catshelper.LogOf
@@ -13,6 +13,7 @@ import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.sstream.{FoldWhile, Stream}
 import monocle.macros.GenLens
 import scodec.bits.ByteVector
+import cats.effect.Temporal
 
 package object kafkapersistence {
 
@@ -45,7 +46,7 @@ package object kafkapersistence {
     * @param metrics enhances framework with metrics
     * @param filter optional function to pre-filter incoming events before they are processed by `fold`
     */
-  def kafkaEagerRecovery[F[_]: Concurrent: Timer: Parallel: LogOf, S](
+  def kafkaEagerRecovery[F[_]: Concurrent: Temporal: Parallel: LogOf, S](
     kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
     applicationId: String,
     groupId: String,
@@ -100,7 +101,7 @@ package object kafkapersistence {
     *                            persisting. That part of functionality in `KeyFlowExtras` will work only if you pass
     *                            a functional (non-empty) implementation here
     */
-  def kafkaEagerRecovery[F[_]: Concurrent: Timer: Parallel: LogOf, S](
+  def kafkaEagerRecovery[F[_]: Concurrent: Temporal: Parallel: LogOf, S](
                                                                        kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
                                                                        applicationId: String,
                                                                        groupId: String,

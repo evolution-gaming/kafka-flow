@@ -4,13 +4,13 @@ import cats.Applicative
 import cats.Monad
 import cats.data.NonEmptyList
 import cats.effect.Sync
-import cats.effect.concurrent.Ref
 import cats.mtl.MonadState
 import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.kafka.flow.timer.ReadTimestamps
 import com.olegpy.meow.effects._
 import timer.TimerFlow
+import cats.effect.Ref
 
 trait KeyFlow[F[_], E] extends TimerFlow[F] {
   def apply(records: NonEmptyList[E]): F[Unit]
