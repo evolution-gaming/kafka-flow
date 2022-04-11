@@ -40,6 +40,7 @@ lazy val core = (project in file("core"))
     libraryDependencies ++= Seq(
       Cats.core,
       Cats.effect,
+      Cats.effectLaws % Test,
       KafkaJournal.journal,
       KafkaJournal.persistence,
       MeowMtl.effects,
