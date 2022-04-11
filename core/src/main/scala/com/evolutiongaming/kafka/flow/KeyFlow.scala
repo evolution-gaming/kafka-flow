@@ -29,11 +29,11 @@ object KeyFlow {
   }
 
   def of[F[_]: Sync: KeyContext, S, A](
-    fold: ContextFold[F, S, A],
-    tick: TickOption[F, S],
-    persistence: Persistence[F, S, A],
-    additionalPersist: AdditionalStatePersist[F, A],
-    timer: TimerFlow[F]
+                                        fold: EnhancedFold[F, S, A],
+                                        tick: TickOption[F, S],
+                                        persistence: Persistence[F, S, A],
+                                        additionalPersist: AdditionalStatePersist[F, A],
+                                        timer: TimerFlow[F]
   ): F[KeyFlow[F, A]] = Ref.of(none[S]) flatMap { storage =>
     of(storage.stateInstance, fold, tick, persistence, additionalPersist, timer)
   }
@@ -46,15 +46,15 @@ object KeyFlow {
     persistence: Persistence[F, S, A],
     timer: TimerFlow[F]
   ): F[KeyFlow[F, A]] =
-    of(storage, ContextFold.fromFold(fold), tick, persistence, AdditionalStatePersist.empty[F, A], timer)
+    of(storage, EnhancedFold.fromFold(fold), tick, persistence, AdditionalStatePersist.empty[F, A], timer)
 
   def of[F[_]: Monad: KeyContext, S, A](
-    storage: MonadState[F, Option[S]],
-    fold: ContextFold[F, S, A],
-    tick: TickOption[F, S],
-    persistence: Persistence[F, S, A],
-    additionalPersist: AdditionalStatePersist[F, A],
-    timer: TimerFlow[F]
+                                         storage: MonadState[F, Option[S]],
+                                         fold: EnhancedFold[F, S, A],
+                                         tick: TickOption[F, S],
+                                         persistence: Persistence[F, S, A],
+                                         additionalPersist: AdditionalStatePersist[F, A],
+                                         timer: TimerFlow[F]
   ): F[KeyFlow[F, A]] =
     for {
       state <- persistence.read(KeyContext[F].log)

@@ -28,7 +28,7 @@ trait FlowMetrics[F[_]] {
   implicit def timerDatabaseMetrics: MetricsK[TimerDatabase[F, KafkaKey, *]]
   implicit def persistenceModuleMetrics: MetricsK[PersistenceModule[F, *]]
   implicit def foldOptionMetrics: MetricsK[FoldOption[F, *, ConsRecord]]
-  implicit def contextFoldMetrics: MetricsK[ContextFold[F, *, ConsRecord]]
+  implicit def enhancedFoldMetrics: MetricsK[EnhancedFold[F, *, ConsRecord]]
   implicit def keyStateOfMetrics: Metrics[KeyStateOf[F]]
   implicit def partitionFlowOfMetrics: Metrics[PartitionFlowOf[F]]
   implicit def topicFlowOfMetrics: Metrics[TopicFlowOf[F]]
@@ -61,7 +61,7 @@ object FlowMetrics {
     def timerDatabaseMetrics = timerDatabase
     def persistenceModuleMetrics = persistenceModule
     def foldOptionMetrics = foldMetrics.foldOptionMetrics
-    def contextFoldMetrics = foldMetrics.contextFoldMetrics
+    def enhancedFoldMetrics = foldMetrics.enhancedFoldMetrics
     def keyStateOfMetrics = keyStateOf
     def partitionFlowOfMetrics = partitionFlowOf
     def topicFlowOfMetrics = topicFlowOf
@@ -74,7 +74,7 @@ object FlowMetrics {
     def timerDatabaseMetrics = MetricsK.empty[TimerDatabase[F, KafkaKey, *]]
     def persistenceModuleMetrics = MetricsK.empty[PersistenceModule[F, *]]
     def foldOptionMetrics = MetricsK.empty[FoldOption[F, *, ConsRecord]]
-    def contextFoldMetrics = MetricsK.empty[ContextFold[F, *, ConsRecord]]
+    def enhancedFoldMetrics = MetricsK.empty[EnhancedFold[F, *, ConsRecord]]
     def keyStateOfMetrics = Metrics.empty
     def partitionFlowOfMetrics = Metrics.empty
     def topicFlowOfMetrics = Metrics.empty

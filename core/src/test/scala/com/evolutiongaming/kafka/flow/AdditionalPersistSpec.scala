@@ -22,21 +22,21 @@ class AdditionalPersistSpec extends FunSuite {
   import AdditionalPersistSpec.TestFixture
 
   test("persist state both on request and periodically when regular persist succeeds") {
-    val fold: ContextFold[IO, String, ConsRecord] = ContextFold.of[IO, String, ConsRecord] { (context, _, record) =>
+    val fold: EnhancedFold[IO, String, ConsRecord] = EnhancedFold.of[IO, String, ConsRecord] { (extras, _, record) =>
       val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
       val key = record.key.get.value
 
       for {
         _ <- key match {
-          case "key1" if value == "value2" || value == "value8"  => context.requestAdditionalPersist
-          case "key2" if value == "value4" || value == "value10" => context.requestAdditionalPersist
+          case "key1" if value == "value2" || value == "value8"  => extras.requestAdditionalPersist
+          case "key2" if value == "value4" || value == "value10" => extras.requestAdditionalPersist
           case _                                                 => IO.unit
         }
       } yield Some(value)
     }
 
     val fixture = new TestFixture {
-      override val contextFold: ContextFold[IO, String, ConsRecord] = fold
+      override val enhancedFold: EnhancedFold[IO, String, ConsRecord] = fold
     }
 
     implicit val timer = fixture.timer
@@ -112,20 +112,20 @@ class AdditionalPersistSpec extends FunSuite {
   }
 
   test("persist state both on request and periodically when persisting results in error") {
-    val fold: ContextFold[IO, String, ConsRecord] = ContextFold.of[IO, String, ConsRecord] { (context, _, record) =>
+    val fold: EnhancedFold[IO, String, ConsRecord] = EnhancedFold.of[IO, String, ConsRecord] { (extras, _, record) =>
       val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
       val key = record.key.get.value
 
       for {
         _ <- key match {
-          case "key1" if value == "value7" => context.requestAdditionalPersist
+          case "key1" if value == "value7" => extras.requestAdditionalPersist
           case _                           => IO.unit
         }
       } yield Some(value)
     }
 
     val fixture = new TestFixture {
-      override val contextFold: ContextFold[IO, String, ConsRecord] = fold
+      override val enhancedFold: EnhancedFold[IO, String, ConsRecord] = fold
       override val ignorePersistFailures: Boolean = true
 
       override def snapshotDatabase: SnapshotDatabase[IO, KafkaKey, String] =
@@ -242,15 +242,15 @@ object AdditionalPersistSpec {
 
     def ignorePersistFailures: Boolean = false
 
-    def contextFold: ContextFold[IO, String, ConsRecord] = ContextFold.of[IO, String, ConsRecord] {
-      (context, _, record) =>
+    def enhancedFold: EnhancedFold[IO, String, ConsRecord] = EnhancedFold.of[IO, String, ConsRecord] {
+      (extras, _, record) =>
         val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
         val key = record.key.get.value
 
         for {
           _ <- key match {
-            case "key1" if value == "value2" || value == "value8"  => context.requestAdditionalPersist
-            case "key2" if value == "value4" || value == "value10" => context.requestAdditionalPersist
+            case "key1" if value == "value2" || value == "value8"  => extras.requestAdditionalPersist
+            case "key2" if value == "value4" || value == "value10" => extras.requestAdditionalPersist
             case _                                                 => IO.unit
           }
         } yield Some(value)
@@ -289,7 +289,7 @@ object AdditionalPersistSpec {
                 persistEvery = 1.minute,
                 ignorePersistErrors = ignorePersistFailures
               ),
-              fold = contextFold,
+              fold = enhancedFold,
               tick = TickOption.id[IO, String]
             ),
             additionalPersistOf = AdditionalStatePersistOf.of[IO, String](cooldown = 20.seconds)

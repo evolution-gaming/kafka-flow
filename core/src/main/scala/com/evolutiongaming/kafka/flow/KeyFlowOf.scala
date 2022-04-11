@@ -18,8 +18,8 @@ trait KeyFlowOf[F[_], S, A] {
 }
 object KeyFlowOf {
 
-  /** Construct `KeyFlow` from the premade components. This version doesn't have a notion of `ContextFold` thus
-    * it can't use any additional functionality of `FoldContext`.
+  /** Construct `KeyFlow` from the premade components. This version doesn't have a notion of `EnhancedFold` thus
+    * it can't use any additional functionality of `KeyFlowExtras`.
     *
     * @param timerFlowOf storage / factory of timers flows, usually configures
     * how often the timer ticks etc.
@@ -30,10 +30,10 @@ object KeyFlowOf {
     timerFlowOf: TimerFlowOf[F],
     fold: FoldOption[F, S, A],
     tick: TickOption[F, S]
-  ): KeyFlowOf[F, S, A] = apply(timerFlowOf, ContextFold.fromFold(fold), tick)
+  ): KeyFlowOf[F, S, A] = apply(timerFlowOf, EnhancedFold.fromFold(fold), tick)
 
-  /** Construct `KeyFlow` from the premade components. This version accepts `ContextFold` which can use an additional
-    * functionality provided by `FoldContext`
+  /** Construct `KeyFlow` from the premade components. This version accepts `EnhancedFold` which can use an additional
+    * functionality provided by `KeyFlowExtras`
     *
     * @param timerFlowOf storage / factory of timers flows, usually configures
     * how often the timer ticks etc.
@@ -41,9 +41,9 @@ object KeyFlowOf {
     * @param tick defines what to do when the timer ticks
     */
   def apply[F[_]: Sync, K, S, A](
-    timerFlowOf: TimerFlowOf[F],
-    fold: ContextFold[F, S, A],
-    tick: TickOption[F, S]
+                                  timerFlowOf: TimerFlowOf[F],
+                                  fold: EnhancedFold[F, S, A],
+                                  tick: TickOption[F, S]
   ): KeyFlowOf[F, S, A] = { (context, persistence, timers, additionalPersist) =>
     implicit val _context = context
     timerFlowOf(context, persistence, timers) evalMap { timerFlow =>

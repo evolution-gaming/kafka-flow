@@ -67,12 +67,12 @@ object FoldMetrics {
               FoldOption(foldMetrics.withMetrics(fold.value))
           }
 
-          val contextFoldMetrics: MetricsK[ContextFold[F, *, ConsRecord]] =
-            new MetricsK[ContextFold[F, *, ConsRecord]] {
-              def withMetrics[A](fold: ContextFold[F, A, ConsRecord]): ContextFold[F, A, ConsRecord] =
-                ContextFold.of { (foldContext, s, record) =>
+          val enhancedFoldMetrics: MetricsK[EnhancedFold[F, *, ConsRecord]] =
+            new MetricsK[EnhancedFold[F, *, ConsRecord]] {
+              def withMetrics[A](fold: EnhancedFold[F, A, ConsRecord]): EnhancedFold[F, A, ConsRecord] =
+                EnhancedFold.of { (extras, s, record) =>
                   val topicPartition = record.topicPartition
-                  fold.apply(foldContext, s, record).measureDuration { duration =>
+                  fold.apply(extras, s, record).measureDuration { duration =>
                     foldSummary
                       .labels(topicPartition.topic, topicPartition.partition.show)
                       .observe(duration.toNanos.nanosToSeconds)
@@ -87,5 +87,5 @@ object FoldMetrics {
 trait FoldMetrics[F[_]] {
   def foldMetrics: MetricsK[Fold[F, *, ConsRecord]]
   def foldOptionMetrics: MetricsK[FoldOption[F, *, ConsRecord]]
-  def contextFoldMetrics: MetricsK[ContextFold[F, *, ConsRecord]]
+  def enhancedFoldMetrics: MetricsK[EnhancedFold[F, *, ConsRecord]]
 }

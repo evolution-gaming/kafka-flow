@@ -63,7 +63,7 @@ package object kafkapersistence {
       groupId = groupId,
       timersOf = timersOf,
       timerFlowOf = timerFlowOf,
-      fold = ContextFold.fromFold(fold),
+      fold = EnhancedFold.fromFold(fold),
       tick = tick,
       partitionFlowConfig = partitionFlowConfig,
       metrics = metrics,
@@ -82,7 +82,7 @@ package object kafkapersistence {
     *
     * For a complete example of usage you can refer to the integration test `StatefulProcessingWithKafkaSpec`.
     *
-    * This version has a notion of a contextual fold which has access to some additional framework APIs.
+    * This version has a notion of an enhanced fold which has access to some additional framework APIs.
     *
     * @param kafkaPersistenceModuleOf a factory of `KafkaPersistenceModule` that defines how keys and snapshots are
     *                                 recovered and persisted to a Kafka compact topic
@@ -90,28 +90,28 @@ package object kafkapersistence {
     * @param groupId group id for your application
     * @param timersOf factory of timers
     * @param timerFlowOf a factory of `TimerFlow` that defines how keys and snapshots are persisted when timers are triggered
-    * @param fold defines how to change the state of a key on incoming records. It has access to `FoldContext`
-    *             that allows some using some additional framework APIs
+    * @param fold defines how to change the state of a key on incoming records. It has access to `KeyFlowExtras`
+    *             that allows using some additional framework APIs
     * @param tick defines how to change the state of a key on a timer basis
     * @param partitionFlowConfig additional configuration of committing and timer triggering
     * @param metrics enhances framework with metrics
     * @param filter optional function to pre-filter incoming events before they are processed by `fold`
     * @param additionalPersistOf a factory of `AdditionalStatePersist` that can either enable or disable additional state
-    *                            persisting. That part of functionality in `FoldContext` will work only if you pass
+    *                            persisting. That part of functionality in `KeyFlowExtras` will work only if you pass
     *                            a functional (non-empty) implementation here
     */
   def kafkaEagerRecovery[F[_]: Concurrent: Timer: Parallel: LogOf, S](
-    kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
-    applicationId: String,
-    groupId: String,
-    timersOf: TimersOf[F, KafkaKey],
-    timerFlowOf: TimerFlowOf[F],
-    fold: ContextFold[F, S, ConsRecord],
-    tick: TickOption[F, S],
-    partitionFlowConfig: PartitionFlowConfig,
-    metrics: FlowMetrics[F],
-    filter: Option[FilterRecord[F]],
-    additionalPersistOf: AdditionalStatePersistOf[F, S]
+                                                                       kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
+                                                                       applicationId: String,
+                                                                       groupId: String,
+                                                                       timersOf: TimersOf[F, KafkaKey],
+                                                                       timerFlowOf: TimerFlowOf[F],
+                                                                       fold: EnhancedFold[F, S, ConsRecord],
+                                                                       tick: TickOption[F, S],
+                                                                       partitionFlowConfig: PartitionFlowConfig,
+                                                                       metrics: FlowMetrics[F],
+                                                                       filter: Option[FilterRecord[F]],
+                                                                       additionalPersistOf: AdditionalStatePersistOf[F, S]
   ): PartitionFlowOf[F] =
     new PartitionFlowOf[F] {
       override def apply(

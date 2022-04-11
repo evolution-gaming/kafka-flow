@@ -30,7 +30,7 @@ object FoldToState {
     storage: MonadState[F, Option[S]],
     fold: FoldOption[F, S, E],
     persistence: Persistence[F, S, E]
-  ): FoldToState[F, E] = apply(storage, ContextFold.fromFold(fold), persistence, AdditionalStatePersist.empty[F, E])
+  ): FoldToState[F, E] = apply(storage, EnhancedFold.fromFold(fold), persistence, AdditionalStatePersist.empty[F, E])
 
   /** Uses `fold` to apply the records to a state stored inside of `storage`.
     *
@@ -39,18 +39,18 @@ object FoldToState {
     * is finished.
     */
   def apply[F[_]: Monad: KeyContext, S, E](
-    storage: MonadState[F, Option[S]],
-    fold: ContextFold[F, S, E],
-    persistence: Persistence[F, S, E],
-    additionalPersist: AdditionalStatePersist[F, E]
+                                            storage: MonadState[F, Option[S]],
+                                            fold: EnhancedFold[F, S, E],
+                                            persistence: Persistence[F, S, E],
+                                            additionalPersist: AdditionalStatePersist[F, E]
   ): FoldToState[F, E] = new FoldToState[F, E] {
-    private val foldContext = FoldContext.of(additionalPersist.request)
+    private val keyFlowExtras = KeyFlowExtras.of(additionalPersist.request)
 
     def apply(records: NonEmptyList[E]): F[Unit] = {
       for {
         state <- storage.get
         state <- records.foldLeftM(state) { (state, record) =>
-          fold(foldContext, state, record) flatTap { state =>
+          fold(keyFlowExtras, state, record) flatTap { state =>
             for {
               _ <- persistence.appendEvent(record)
               _ <- state.traverse_ { state =>

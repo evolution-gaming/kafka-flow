@@ -38,6 +38,14 @@ object AdditionalStatePersist {
     override def persistIfNeeded(event: E): F[Unit] = Applicative[F].unit
   }
 
+  /** Creates an instance of `AdditionalStatePersist` that allows additional persisting with the configurable cooldown.
+    * After persisting is done successfully, it "holds" the next offset after the one of a given record (effectively
+    * marking it as "allowed" to be committed for that specific key).
+    *
+    * @param persistence key-specific persistence layer
+    * @param keyContext key-specific offset information
+    * @param cooldown allowed cooldown between two persisting of a key
+    */
   def of[F[_]: Sync: Clock, S](
     persistence: Persistence[F, S, ConsRecord],
     keyContext: KeyContext[F],
@@ -49,17 +57,7 @@ object AdditionalStatePersist {
     } yield of(persistence, keyContext, cooldown, requestedRef, lastPersistedRef)
   }
 
-  /** Creates an instance of `AdditionalStatePersist` that allows additional persisting with the configurable cooldown.
-    * After persisting is done successfully, it "holds" the next offset after the one of a given record (effectively
-    * marking it as "allowed" to be committed for that specific key).
-    *
-    * @param persistence key-specific persistence layer
-    * @param keyContext key-specific offset information
-    * @param cooldown allowed cooldown between two persisting of a key
-    * @param requestedRef tracks user requests to persist the state
-    * @param lastPersistedRef tracks the timestamp of a last persisting
-    */
-  def of[F[_]: BracketThrow: Clock, S](
+  private[flow] def of[F[_]: BracketThrow: Clock, S](
     persistence: Persistence[F, S, ConsRecord],
     keyContext: KeyContext[F],
     cooldown: FiniteDuration,
