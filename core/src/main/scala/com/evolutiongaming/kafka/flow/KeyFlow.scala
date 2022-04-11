@@ -29,7 +29,7 @@ object KeyFlow {
   }
 
   def of[F[_]: Sync: KeyContext, S, A](
-    fold: FoldOption[F, S, A],
+    fold: ContextFold[F, S, A],
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
     additionalPersist: AdditionalStatePersist[F, A],
@@ -45,11 +45,12 @@ object KeyFlow {
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
     timer: TimerFlow[F]
-  ): F[KeyFlow[F, A]] = of(storage, fold, tick, persistence, AdditionalStatePersist.empty[F, A], timer)
+  ): F[KeyFlow[F, A]] =
+    of(storage, ContextFold.fromFold(fold), tick, persistence, AdditionalStatePersist.empty[F, A], timer)
 
   def of[F[_]: Monad: KeyContext, S, A](
     storage: MonadState[F, Option[S]],
-    fold: FoldOption[F, S, A],
+    fold: ContextFold[F, S, A],
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
     additionalPersist: AdditionalStatePersist[F, A],

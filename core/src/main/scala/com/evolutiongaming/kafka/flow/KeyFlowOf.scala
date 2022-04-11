@@ -47,8 +47,7 @@ object KeyFlowOf {
   ): KeyFlowOf[F, S, A] = { (context, persistence, timers, additionalPersist) =>
     implicit val _context = context
     timerFlowOf(context, persistence, timers) evalMap { timerFlow =>
-      val foldContext = FoldContext.of(additionalPersist.request)
-      KeyFlow.of(fold(foldContext), tick, persistence, additionalPersist, timerFlow)
+      KeyFlow.of(fold, tick, persistence, additionalPersist, timerFlow)
     }
   }
 

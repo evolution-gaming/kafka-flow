@@ -177,6 +177,10 @@ object KeyStateOf {
     *
     * This version allows one to construct a custom `KeyFlowOf`
     * for snapshot persistence.
+    *
+    * Note that this version doesn't enable "additional persisting" functionality even if you pass `KeyFlowOf`
+    * that was constructed using `ContextFold`. In this case, please use another version that expects `AdditionalStatePersistOf`
+    * as an argument.
     */
   def eagerRecovery[F[_]: Sync, S](
     applicationId: String,
