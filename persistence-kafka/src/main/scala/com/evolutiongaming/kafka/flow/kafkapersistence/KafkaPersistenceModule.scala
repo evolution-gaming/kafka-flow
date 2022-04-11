@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
+import cats.effect.concurrent.Ref
 import cats.effect.{Concurrent, Resource}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
@@ -17,7 +18,6 @@ import com.evolutiongaming.skafka.{FromBytes, ToBytes, TopicPartition}
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
 import scodec.bits.ByteVector
-import cats.effect.Ref
 
 /** A module, necessary to create a Kafka snapshot persistence.
   */

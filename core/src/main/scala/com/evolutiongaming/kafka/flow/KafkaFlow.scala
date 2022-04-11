@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.effect.Concurrent
 import cats.effect.Resource
+import cats.effect.Timer
 import cats.effect.implicits._
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.BracketThrowable
@@ -14,7 +15,6 @@ import com.evolutiongaming.retry.Strategy
 import com.evolutiongaming.sstream.Stream
 import kafka.Consumer
 import scala.concurrent.duration._
-import cats.effect.Temporal
 
 object KafkaFlow {
 
@@ -29,7 +29,7 @@ object KafkaFlow {
     * WARNING: Do not forget to `flatMap` returned `F[Unit]` or the
     * potential errors may be lost.
     */
-  def retryOnError[F[_]: Concurrent: Temporal: LogOf](
+  def retryOnError[F[_]: Concurrent: Timer: LogOf](
     consumer: Resource[F, Consumer[F]],
     flowOf: ConsumerFlowOf[F],
   ): Resource[F, F[Unit]] = {

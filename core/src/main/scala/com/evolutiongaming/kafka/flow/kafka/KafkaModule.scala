@@ -1,8 +1,11 @@
 package com.evolutiongaming.kafka.flow.kafka
 
+import cats.effect.Blocker
 import cats.effect.Clock
 import cats.effect.ConcurrentEffect
+import cats.effect.ContextShift
 import cats.effect.Resource
+import cats.effect.Timer
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.FromTry
 import com.evolutiongaming.catshelper.LogOf
@@ -21,7 +24,6 @@ import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerMetrics, Pro
 import com.evolutiongaming.smetrics.CollectorRegistry
 import com.evolutiongaming.smetrics.MeasureDuration
 import scodec.bits.ByteVector
-import cats.effect.Temporal
 
 trait KafkaModule[F[_]] {
 
@@ -33,10 +35,12 @@ trait KafkaModule[F[_]] {
 }
 object KafkaModule {
 
-  def of[F[_]: ConcurrentEffect: ContextShift: FromTry: ToTry: ToFuture: Temporal: LogOf](
+  def of[F[_]: ConcurrentEffect: ContextShift: FromTry: ToTry: ToFuture: Timer: LogOf](
     applicationId: String,
     config: ConsumerConfig,
-    registry: CollectorRegistry[F]): Resource[F, KafkaModule[F]] = {
+    registry: CollectorRegistry[F],
+    blocker: Blocker
+  ): Resource[F, KafkaModule[F]] = {
     implicit val measureDuration = MeasureDuration.fromClock[F](Clock[F])
     for {
       producerMetrics      <- ProducerMetrics.of(registry)
