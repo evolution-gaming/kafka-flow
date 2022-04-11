@@ -18,6 +18,7 @@ object Dependencies {
     private val version = "2.6.1"
     val core   = "org.typelevel" %% "cats-core"   % version
     val effect = "org.typelevel" %% "cats-effect" % "2.5.4"
+    val effectLaws = "org.typelevel" %% "cats-effect-laws" % "2.5.4"
   }
 
   object KafkaJournal {
