@@ -2,13 +2,13 @@ package com.evolutiongaming.kafka.flow.key
 
 import cats.{Applicative, Monad}
 import cats.effect.Sync
-import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import cats.mtl.MonadState
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
+import cats.effect.Ref
 
 trait KeyDatabase[F[_], K] {
 
