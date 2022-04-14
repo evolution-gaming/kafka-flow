@@ -3,13 +3,13 @@ package com.evolutiongaming.kafka.flow.timer
 import cats.Applicative
 import cats.Monad
 import cats.effect.Sync
+import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import cats.mtl.MonadState
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.skafka.Offset
 import com.olegpy.meow.effects._
 import java.time.Instant
-import cats.effect.Ref
 
 /** Contains the scheduled, optionally persistent, timers for the key. */
 trait Timers[F[_]] extends RegisterTimers[F] with TriggerTimers[F] with TimerWriter[F]

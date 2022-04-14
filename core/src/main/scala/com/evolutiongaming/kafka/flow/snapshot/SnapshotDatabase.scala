@@ -2,11 +2,11 @@ package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.{Applicative, Functor}
 import cats.effect.Sync
+import cats.effect.concurrent.Ref
 import cats.mtl.MonadState
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.olegpy.meow.effects._
-import cats.effect.Ref
 
 trait SnapshotDatabase[F[_], K, S] extends SnapshotReadDatabase[F, K, S] with SnapshotWriteDatabase[F, K, S]
 

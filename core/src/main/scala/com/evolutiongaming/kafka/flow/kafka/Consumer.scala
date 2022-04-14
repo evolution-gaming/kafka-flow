@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow.kafka
 
 import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
 import cats.effect.Sync
+import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka.consumer.{Consumer => KafkaConsumer, _}
@@ -11,7 +12,6 @@ import scodec.bits.ByteVector
 import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Success, Try}
-import cats.effect.Ref
 
 /** Simplfied version of skafka `Consumer` with less methods.
   *

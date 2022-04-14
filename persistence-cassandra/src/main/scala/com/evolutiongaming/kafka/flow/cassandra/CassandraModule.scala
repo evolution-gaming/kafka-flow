@@ -3,6 +3,7 @@ package com.evolutiongaming.kafka.flow.cassandra
 import cats.effect.Concurrent
 import cats.effect.Resource
 import cats.effect.Sync
+import cats.effect.Timer
 import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.AutoCreate
 import com.evolutiongaming.cassandra.sync.CassandraSync
@@ -16,7 +17,6 @@ import com.evolutiongaming.scassandra.util.FromGFuture
 import com.google.common.util.concurrent.ListenableFuture
 
 import scala.concurrent.ExecutionContextExecutor
-import cats.effect.Temporal
 
 trait CassandraModule[F[_]] {
   def session: SafeSession[F]
@@ -41,7 +41,7 @@ object CassandraModule {
     * `ExecutionContextExecutor` rather than `ContextShift` because we need it
     * to convert `ListenableFuture` to `F[_]`.
     */
-  def of[F[_]: Concurrent: Temporal: LogOf](
+  def of[F[_]: Concurrent: Timer: LogOf](
     config: CassandraConfig
   )(implicit executor: ExecutionContextExecutor): Resource[F, CassandraModule[F]] = {
     for {
