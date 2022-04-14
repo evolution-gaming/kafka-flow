@@ -10,9 +10,9 @@ import com.evolutiongaming.kafka.flow.journal.CassandraJournals
 import com.evolutiongaming.kafka.flow.key.CassandraKeys
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
 import com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots
-import com.evolutiongaming.kafka.journal.FromBytes
-import com.evolutiongaming.kafka.journal.ToBytes
+import com.evolutiongaming.kafka.journal.{FromBytes, ToBytes}
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
+
 import scala.util.Try
 
 trait CassandraPersistence[F[_], S] extends PersistenceModule[F, S]
@@ -21,14 +21,15 @@ object CassandraPersistence {
   /** Creates schema in Cassandra if not there yet */
   def withSchemaF[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
-    sync: CassandraSync[F]
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
   )(implicit
     fromBytes: FromBytes[F, S],
     toBytes: ToBytes[F, S]
   ): F[PersistenceModule[F, S]] = for {
-    _keys      <- CassandraKeys.withSchema(session, sync)
-    _journals  <- CassandraJournals.withSchema(session, sync)
-    _snapshots <- CassandraSnapshots.withSchema[F, S](session, sync)
+    _keys <- CassandraKeys.withSchema(session, sync, consistencyOverrides)
+    _journals <- CassandraJournals.withSchema(session, sync, consistencyOverrides)
+    _snapshots <- CassandraSnapshots.withSchema[F, S](session, sync, consistencyOverrides)
   } yield new CassandraPersistence[F, S] {
     def keys = _keys
     def journals = _journals
@@ -39,10 +40,14 @@ object CassandraPersistence {
     *
     * This method uses the same `JsonCodec[Try]` as `JournalParser` does to
     * simplify defining the basic application.
+    * if @consistencyConfig is present then applies
+    * ConsistencyConfig.Read for all read queries and
+    * ConsistencyConfig.Write for all the mutations
     */
   def withSchema[F[_]: MonadThrow: Clock, S](
     session: CassandraSession[F],
-    sync: CassandraSync[F]
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
   )(implicit
     fromBytes: FromBytes[Try, S],
     toBytes: ToBytes[Try, S]
@@ -50,7 +55,7 @@ object CassandraPersistence {
     val fromTry = FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
     implicit val _fromBytes = fromBytes mapK fromTry
     implicit val _toBytes = toBytes mapK fromTry
-    withSchemaF(session, sync)
+    withSchemaF(session, sync, consistencyOverrides)
   }
 
   /** Deletes all data in Cassandra */
@@ -59,7 +64,7 @@ object CassandraPersistence {
     sync: CassandraSync[F]
   ): F[Unit] =
     CassandraKeys.truncate(session, sync) *>
-    CassandraJournals.truncate(session, sync) *>
-    CassandraSnapshots.truncate(session, sync)
+      CassandraJournals.truncate(session, sync) *>
+      CassandraSnapshots.truncate(session, sync)
 
 }
