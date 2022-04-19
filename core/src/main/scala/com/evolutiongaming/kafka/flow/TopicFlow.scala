@@ -45,7 +45,7 @@ object TopicFlow {
     safeguard(
       for {
         cache <- Cache.loading[F, Partition, PartitionFlow[F]]
-        pendingCommits <- Resource.eval(Ref.of(Map.empty[TopicPartition, OffsetAndMetadata]))
+        pendingCommits <- Resource.eval(Ref.of[F, Map[TopicPartition, OffsetAndMetadata]](Map.empty))
         flow <- LogResource[F](getClass, topic) flatMap { implicit log =>
           of(consumer, topic, partitionFlowOf, cache, pendingCommits)
         }
@@ -154,7 +154,7 @@ object TopicFlow {
     // coz it simply won't be executed, as execution chain would be cancelled
     val r =
       for {
-        closed <- Ref.of(false)
+        closed <- Ref.of[F, Boolean](false)
         semaphore <- Semaphore(1)
         xx <- a.allocated
         (topicFlow, release) = xx
