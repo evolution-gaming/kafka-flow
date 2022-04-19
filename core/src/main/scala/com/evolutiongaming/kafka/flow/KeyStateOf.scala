@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.Applicative
 import cats.effect.Resource
 import cats.effect.Sync
 import cats.syntax.all._
@@ -154,7 +155,7 @@ object KeyStateOf {
     * This version allows one to construct a custom `KeyFlowOf`
     * for snapshot persistence.
     */
-  def eagerRecovery[F[_]: Sync, S](
+  def eagerRecovery[F[_]: Applicative, S](
     applicationId: String,
     groupId: String,
     keysOf: KeysOf[F, KafkaKey],
@@ -182,7 +183,7 @@ object KeyStateOf {
     * that was constructed using `EnhancedFold`. In this case, please use another version that expects `AdditionalStatePersistOf`
     * as an argument.
     */
-  def eagerRecovery[F[_]: Sync, S](
+  def eagerRecovery[F[_]: Applicative, S](
     applicationId: String,
     groupId: String,
     keysOf: KeysOf[F, KafkaKey],
@@ -205,7 +206,7 @@ object KeyStateOf {
     * This version allows one to construct a custom `KeyFlowOf`
     * for generic persistence.
     */
-  def eagerRecovery[F[_]: Sync, S](
+  def eagerRecovery[F[_], S](
     applicationId: String,
     groupId: String,
     keysOf: KeysOf[F, KafkaKey],

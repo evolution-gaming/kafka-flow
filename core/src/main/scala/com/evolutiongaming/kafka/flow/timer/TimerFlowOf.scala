@@ -1,14 +1,12 @@
 package com.evolutiongaming.kafka.flow.timer
 
-import cats.Applicative
-import cats.Monad
-import cats.MonadThrow
-import cats.effect.ExitCase.Canceled
-import cats.effect.ExitCase.Completed
+import cats.{Applicative, Monad, MonadThrow}
 import cats.effect.Resource
+import cats.effect.kernel.Resource.ExitCase
 import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.KeyContext
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
+
 import scala.concurrent.duration._
 
 trait TimerFlowOf[F[_]] {
@@ -146,6 +144,7 @@ object TimerFlowOf {
 
     val cancel = context.holding flatMap { holding =>
       Applicative[F].whenA(holding.isDefined) {
+        println(s"flush on revoke, holding offset: $holding")
         context.log.info(s"flush on revoke, holding offset: $holding") *>
         persistence.flush *>
         context.remove
@@ -153,8 +152,12 @@ object TimerFlowOf {
     }
 
     Resource.makeCase(TimerFlow.empty.pure) {
-      case (_, Completed) => cancel
-      case (_, Canceled) => cancel
+      case (_, ExitCase.Succeeded) =>
+        println("Succeeded")
+        cancel
+      case (_, ExitCase.Canceled) =>
+        println("Canceled")
+        cancel
       // there is no point to try flushing if it failed with an error
       // the state might not be consistend and storage not accessible
       // plus this is a concurrent operation, and we do not want anything

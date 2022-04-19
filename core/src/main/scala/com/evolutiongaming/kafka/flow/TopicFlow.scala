@@ -2,19 +2,16 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Parallel
 import cats.data.NonEmptySet
-import cats.effect.concurrent.{Ref, Semaphore}
-import cats.effect.{Concurrent, Resource}
+import cats.effect.std.Semaphore
 import cats.effect.syntax.all._
+import cats.effect.{Concurrent, Ref, Resource}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.DataHelper._
-import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.journal.ConsRecords
-import com.evolutiongaming.kafka.journal.PartitionOffset
-import com.evolutiongaming.scache.Cache
-import com.evolutiongaming.scache.Releasable
-import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, Partition, Topic, TopicPartition}
-import kafka.Consumer
+import com.evolutiongaming.catshelper.{Log, LogOf, Runtime}
+import com.evolutiongaming.kafka.flow.kafka.Consumer
+import com.evolutiongaming.kafka.journal.{ConsRecords, PartitionOffset}
+import com.evolutiongaming.scache.{Cache, Releasable}
+import com.evolutiongaming.skafka._
 
 import scala.collection.immutable.SortedSet
 
@@ -40,7 +37,7 @@ trait TopicFlow[F[_]] {
 }
 object TopicFlow {
 
-  def of[F[_]: Concurrent: Parallel: LogOf](
+  def of[F[_]: Concurrent: Runtime: Parallel: LogOf](
     consumer: Consumer[F],
     topic: Topic,
     partitionFlowOf: PartitionFlowOf[F]
@@ -163,13 +160,13 @@ object TopicFlow {
         (topicFlow, release) = xx
         safeTopicFlow = new TopicFlow[F] {
           def apply(records: ConsRecords): F[Unit] =
-            semaphore.withPermit { closed.get.ifM(().pure[F], topicFlow.apply(records)) }.uncancelable
+            semaphore.permit.use { _ => closed.get.ifM(().pure[F], topicFlow.apply(records)) }.uncancelable
           def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] =
-            semaphore.withPermit { closed.get.ifM(().pure[F], topicFlow.add(partitions)) }.uncancelable
+            semaphore.permit.use { _ => closed.get.ifM(().pure[F], topicFlow.add(partitions)) }.uncancelable
           def remove(partitions: NonEmptySet[Partition]): F[Unit] =
-            semaphore.withPermit { closed.get.ifM(().pure[F], topicFlow.remove(partitions)) }.uncancelable
+            semaphore.permit.use { _ => closed.get.ifM(().pure[F], topicFlow.remove(partitions)) }.uncancelable
         }
-        safeRelease = semaphore.withPermit { closed.set(true) *> release }.uncancelable
+        safeRelease = semaphore.permit.use { _ => closed.set(true) *> release }.uncancelable
       } yield (safeTopicFlow, safeRelease)
     Resource(r.uncancelable)
   }

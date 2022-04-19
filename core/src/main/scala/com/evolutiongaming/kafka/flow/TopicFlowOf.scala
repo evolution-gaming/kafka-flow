@@ -1,11 +1,10 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Parallel
-import cats.effect.Concurrent
-import cats.effect.Resource
-import com.evolutiongaming.catshelper.LogOf
+import cats.effect.{Concurrent, Resource}
+import com.evolutiongaming.catshelper.{LogOf, Runtime}
+import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.skafka.Topic
-import kafka.Consumer
 
 trait TopicFlowOf[F[_]] {
 
@@ -14,7 +13,7 @@ trait TopicFlowOf[F[_]] {
 }
 object TopicFlowOf {
 
-  def apply[F[_]: Concurrent: Parallel: LogOf](
+  def apply[F[_]: Concurrent: Runtime: Parallel: LogOf](
     partitionFlowOf: PartitionFlowOf[F]
   ): TopicFlowOf[F] = { (consumer, topic) =>
     TopicFlow.of(consumer, topic, partitionFlowOf)

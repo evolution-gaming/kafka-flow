@@ -1,6 +1,5 @@
 package com.evolutiongaming.kafka.flow.metrics
 
-import cats.Applicative
 import cats.effect.Resource
 import com.evolutiongaming.smetrics.CollectorRegistry
 
@@ -30,7 +29,7 @@ trait MetricsOf[F[_], A] {
     * The signature makes it easier to pass metrics as implicit value.
     * I.e. run it as `metrics.transform { implicit metrics => b => ... }.
     */
-  def transform[B](f: Metrics[A] => B => B)(implicit F: Applicative[F]): MetricsOf[F, B] = { registry =>
+  def transform[B](f: Metrics[A] => B => B): MetricsOf[F, B] = { registry =>
     self(registry) map { metrics => b => f(metrics)(b) }
   }
 

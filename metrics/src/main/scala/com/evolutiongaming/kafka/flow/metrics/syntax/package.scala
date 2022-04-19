@@ -1,13 +1,11 @@
 package com.evolutiongaming.kafka.flow.metrics
 
-import cats.Applicative
-import cats.FlatMap
-import cats.Monad
+import cats.{FlatMap, Monad}
 import cats.effect.Resource
 import cats.syntax.all._
-import com.evolutiongaming.smetrics.CollectorRegistry
-import com.evolutiongaming.smetrics.MeasureDuration
+import com.evolutiongaming.smetrics.{CollectorRegistry, MeasureDuration}
 import com.evolutiongaming.sstream.Stream
+
 import scala.concurrent.duration.FiniteDuration
 
 package object syntax {
@@ -17,7 +15,7 @@ package object syntax {
       metrics.withMetrics(a)
   }
   implicit class MetricsOfOps[F[_], A](a: A)(implicit metricsOf: MetricsOf[F, A]) {
-    def withCollectorRegistry(registry: CollectorRegistry[F])(implicit F: Applicative[F]): Resource[F, A] =
+    def withCollectorRegistry(registry: CollectorRegistry[F]): Resource[F, A] =
       metricsOf(registry) map { implicit metrics =>
         a.withMetrics
       }
@@ -27,7 +25,7 @@ package object syntax {
       metrics.withMetrics(fa)
   }
   implicit class MetricsKOfOps[F[_], G[_], A](ga: G[A])(implicit metricsOf: MetricsKOf[F, G]) {
-    def withCollectorRegistry(registry: CollectorRegistry[F])(implicit F: Applicative[F]): Resource[F, G[A]] =
+    def withCollectorRegistry(registry: CollectorRegistry[F]): Resource[F, G[A]] =
       metricsOf(registry) map { implicit metrics =>
         ga.withMetricsK
       }

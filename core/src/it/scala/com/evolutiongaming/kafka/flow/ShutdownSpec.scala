@@ -4,8 +4,8 @@ import ShutdownSpec._
 import cats.data.NonEmptySet
 import cats.effect.IO
 import cats.effect.Resource
-import cats.effect.concurrent.Deferred
-import cats.effect.concurrent.Ref
+import cats.effect.Deferred
+import cats.effect.Ref
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.journal.ConsRecords
@@ -16,7 +16,6 @@ import com.evolutiongaming.skafka.Partition
 import com.evolutiongaming.skafka.producer.ProducerConfig
 import com.evolutiongaming.skafka.producer.ProducerRecord
 import com.evolutiongaming.sstream.Stream
-import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import weaver.GlobalRead
 
@@ -83,7 +82,6 @@ object ShutdownSpec {
   def topicFlowOf(state: Ref[IO, Set[Partition]]): TopicFlowOf[IO] =
     (_, _) => Resource.pure[IO, TopicFlow[IO]] {
       new TopicFlow[IO] {
-        implicit val timer = IO.timer(ExecutionContext.global)
         def apply(records: ConsRecords) = IO.unit
         def add(partitionsAndOffsets: NonEmptySet[(Partition, Offset)]) = {
           val partitions = partitionsAndOffsets map (_._1)

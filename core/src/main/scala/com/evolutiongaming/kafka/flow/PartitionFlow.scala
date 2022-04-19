@@ -1,12 +1,11 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
-import cats.effect.concurrent.Ref
-import cats.effect.{Clock, Concurrent, Resource}
+import cats.effect._
 import cats.syntax.all._
 import cats.{Applicative, Parallel}
 import com.evolutiongaming.catshelper.ClockHelper._
-import com.evolutiongaming.catshelper.{Log, LogOf}
+import com.evolutiongaming.catshelper.{Log, LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.kafka.OffsetToCommit
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -30,7 +29,7 @@ object PartitionFlow {
 
   final case class PartitionKey[F[_]](state: KeyState[F, ConsRecord], context: KeyContext[F]) {
     def flow: KeyFlow[F, ConsRecord] = state.flow
-    def timers: TimerContext[F]      = state.timers
+    def timers: TimerContext[F] = state.timers
   }
 
   trait FilterRecord[F[_]] {
@@ -48,7 +47,7 @@ object PartitionFlow {
       record => f(record).pure[F]
   }
 
-  def resource[F[_]: Concurrent: Parallel: PartitionContext: Clock: LogOf, S](
+  def resource[F[_]: Concurrent: Runtime: Parallel: PartitionContext: Clock: LogOf](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
@@ -61,7 +60,7 @@ object PartitionFlow {
       }
     }
 
-  def of[F[_]: Concurrent: Parallel: PartitionContext: Clock: Log, S](
+  def of[F[_]: MonadCancelThrow: Ref.Make: Parallel: PartitionContext: Clock: Log](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
@@ -88,7 +87,7 @@ object PartitionFlow {
   } yield flow
 
   // TODO: put most `Ref` variables into one state class?
-  def of[F[_]: Concurrent: Parallel: PartitionContext: Clock: Log, S](
+  def of[F[_]: MonadCancelThrow: Ref.Make: Parallel: PartitionContext: Clock: Log](
     topicPartition: TopicPartition,
     keyStateOf: KeyStateOf[F],
     committedOffset: Ref[F, Offset],
@@ -209,13 +208,11 @@ object PartitionFlow {
       // we move forward if minimum offset became larger or it is empty,
       // i.e. if we dealt with all the states, and there is nothing holding
       // us from moving forward
-      moveForward <- committedOffset modifyMaybe { committedOffset =>
-        if (allowedOffset > committedOffset) {
-          (allowedOffset, allowedOffset.value - committedOffset.value).some
-        } else {
-          None
-        }
-      }
+      committedOffsetValue <- committedOffset.get
+      moveForward <-
+        if (allowedOffset > committedOffsetValue) {
+          committedOffset.set(allowedOffset).as((allowedOffset.value - committedOffsetValue.value).some)
+        } else none[Long].pure[F]
       offsetToCommit <- moveForward traverse { moveForward =>
         Log[F].info(s"offset: $allowedOffset (+$moveForward)") as allowedOffset
       }

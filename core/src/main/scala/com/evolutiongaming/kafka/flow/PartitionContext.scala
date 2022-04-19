@@ -1,16 +1,15 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Applicative
-import cats.effect.Resource
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
+import cats.effect.{Ref, Resource, Sync}
 import cats.syntax.all._
+import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.skafka.Offset
-import com.olegpy.meow.effects._
 
 /** Partition specific metainformation inside of topic */
 trait PartitionContext[F[_]] {
+
   /** Request a commit to partition */
   def scheduleCommit(offset: Offset): F[Unit]
 }
@@ -22,7 +21,7 @@ object PartitionContext {
     def scheduleCommit(offset: Offset) = ().pure[F]
   }
 
-  def of[F[_]: Sync: Log](removeFromCache: F[Unit]): F[KeyContext[F]] =
+  def of[F[_]: Ref.Make: Monad: Log](removeFromCache: F[Unit]): F[KeyContext[F]] =
     Ref.of[F, Option[Offset]](None) map { storage =>
       KeyContext(storage.stateInstance, removeFromCache)
     }

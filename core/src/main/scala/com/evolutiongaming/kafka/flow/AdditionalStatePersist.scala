@@ -1,16 +1,14 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
-import cats.effect.concurrent.Ref
 import cats.effect.syntax.all._
-import cats.effect.{Bracket, BracketThrow, Clock, Sync}
+import cats.effect.{Clock, MonadCancel, MonadCancelThrow, Ref}
 import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.kafka.OffsetToCommit
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.kafka.journal.ConsRecord
 
 import java.time.Instant
-import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.FiniteDuration
 
 /** Internal API to handle user requests for additional persisting of a key's state.
@@ -46,7 +44,7 @@ object AdditionalStatePersist {
     * @param keyContext key-specific offset information
     * @param cooldown allowed cooldown between two persisting of a key
     */
-  def of[F[_]: Sync: Clock, S](
+  def of[F[_]: MonadCancelThrow: Ref.Make: Clock, S](
     persistence: Persistence[F, S, ConsRecord],
     keyContext: KeyContext[F],
     cooldown: FiniteDuration
@@ -57,7 +55,7 @@ object AdditionalStatePersist {
     } yield of(persistence, keyContext, cooldown, requestedRef, lastPersistedRef)
   }
 
-  private[flow] def of[F[_]: BracketThrow: Clock, S](
+  private[flow] def of[F[_]: MonadCancelThrow: Clock, S](
     persistence: Persistence[F, S, ConsRecord],
     keyContext: KeyContext[F],
     cooldown: FiniteDuration,
@@ -65,7 +63,7 @@ object AdditionalStatePersist {
     lastPersistedRef: Ref[F, Option[Instant]]
   ): AdditionalStatePersist[F, ConsRecord] =
     new AdditionalStatePersist[F, ConsRecord] {
-      private val F = Bracket[F, Throwable]
+      private val F = MonadCancel[F, Throwable]
       private val cooldownMs = cooldown.toMillis
 
       override def request: F[Unit] =
@@ -76,7 +74,7 @@ object AdditionalStatePersist {
           requested <- requestedRef.get
           _ <- F.whenA(requested) {
             (for {
-              now <- Clock[F].realTime(TimeUnit.MILLISECONDS)
+              now <- Clock[F].realTime.map(_.toMillis)
               lastPersisted <- lastPersistedRef.get
               _ <- F.whenA(lastPersisted.forall(ts => now - ts.toEpochMilli > cooldownMs)) {
                 for {

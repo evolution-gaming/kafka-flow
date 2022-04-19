@@ -1,10 +1,9 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.Resource
-import cats.effect.Sync
-import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
-import persistence.Persistence
-import timer.TimerContext
+import cats.Monad
+import cats.effect.{Ref, Resource}
+import com.evolutiongaming.kafka.flow.persistence.Persistence
+import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf}
 
 trait KeyFlowOf[F[_], S, A] {
 
@@ -26,7 +25,7 @@ object KeyFlowOf {
     * @param fold defines how to change the state on incoming records.
     * @param tick defines what to do when the timer ticks.
     */
-  def apply[F[_]: Sync, K, S, A](
+  def apply[F[_]: Monad: Ref.Make, S, A](
     timerFlowOf: TimerFlowOf[F],
     fold: FoldOption[F, S, A],
     tick: TickOption[F, S]
@@ -40,10 +39,10 @@ object KeyFlowOf {
     * @param fold defines how to change the state on incoming records
     * @param tick defines what to do when the timer ticks
     */
-  def apply[F[_]: Sync, K, S, A](
-                                  timerFlowOf: TimerFlowOf[F],
-                                  fold: EnhancedFold[F, S, A],
-                                  tick: TickOption[F, S]
+  def apply[F[_]: Monad: Ref.Make, S, A](
+    timerFlowOf: TimerFlowOf[F],
+    fold: EnhancedFold[F, S, A],
+    tick: TickOption[F, S]
   ): KeyFlowOf[F, S, A] = { (context, persistence, timers, additionalPersist) =>
     implicit val _context = context
     timerFlowOf(context, persistence, timers) evalMap { timerFlow =>

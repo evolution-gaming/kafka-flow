@@ -1,12 +1,11 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
-import cats.{Applicative, Functor}
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
-import cats.mtl.MonadState
+import cats.effect.{Ref, Sync}
+import cats.mtl.Stateful
 import cats.syntax.all._
+import cats.{Applicative, Functor}
 import com.evolutiongaming.catshelper.LogOf
-import com.olegpy.meow.effects._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 
 trait SnapshotDatabase[F[_], K, S] extends SnapshotReadDatabase[F, K, S] with SnapshotWriteDatabase[F, K, S]
 
@@ -41,7 +40,7 @@ object SnapshotDatabase {
     * The data will survive destruction of specific `Snapshots` instance,
     * but will not survive destruction of specific `SnapshotDatabase` instance.
     */
-  def memory[F[_]: Functor, K, S](storage: MonadState[F, Map[K, S]]): SnapshotDatabase[F, K, S] =
+  def memory[F[_]: Functor, K, S](storage: Stateful[F, Map[K, S]]): SnapshotDatabase[F, K, S] =
     new SnapshotDatabase[F, K, S] {
 
       def persist(key: K, snapshot: S) =

@@ -2,12 +2,11 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Monad
 import cats.data.NonEmptyList
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
+import cats.effect.{Ref, Sync}
+import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.mtl.MonadState
-import com.olegpy.meow.effects._
-import persistence.Persistence
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import com.evolutiongaming.kafka.flow.persistence.Persistence
 
 /** Applies records to a state stored inside and informs the listeners about the changes */
 trait FoldToState[F[_], E] {
@@ -22,12 +21,12 @@ object FoldToState {
     initialState: Option[S],
     fold: FoldOption[F, S, E],
     persistence: Persistence[F, S, E]
-  ): F[FoldToState[F, E]] = Ref.of(initialState) map { storage =>
+  ): F[FoldToState[F, E]] = Ref.of[F, Option[S]](initialState) map { storage =>
     FoldToState(storage.stateInstance, fold, persistence)
   }
 
   def apply[F[_]: Monad: KeyContext, S, E](
-    storage: MonadState[F, Option[S]],
+    storage: Stateful[F, Option[S]],
     fold: FoldOption[F, S, E],
     persistence: Persistence[F, S, E]
   ): FoldToState[F, E] = apply(storage, EnhancedFold.fromFold(fold), persistence, AdditionalStatePersist.empty[F, E])
@@ -39,10 +38,10 @@ object FoldToState {
     * is finished.
     */
   def apply[F[_]: Monad: KeyContext, S, E](
-                                            storage: MonadState[F, Option[S]],
-                                            fold: EnhancedFold[F, S, E],
-                                            persistence: Persistence[F, S, E],
-                                            additionalPersist: AdditionalStatePersist[F, E]
+    storage: Stateful[F, Option[S]],
+    fold: EnhancedFold[F, S, E],
+    persistence: Persistence[F, S, E],
+    additionalPersist: AdditionalStatePersist[F, E]
   ): FoldToState[F, E] = new FoldToState[F, E] {
     private val keyFlowExtras = KeyFlowExtras.of(additionalPersist.request)
 
