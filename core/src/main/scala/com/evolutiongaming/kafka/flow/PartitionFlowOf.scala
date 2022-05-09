@@ -1,11 +1,10 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Parallel
-import cats.effect.{Concurrent, Resource}
+import cats.effect.{Concurrent, Resource, Timer}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
-import cats.effect.Temporal
 
 trait PartitionFlowOf[F[_]] {
 
@@ -26,7 +25,7 @@ object PartitionFlowOf {
     *               It doesn't affect committing consumer offsets, thus, even if all records in a batch are skipped,
     *               new offsets will still be committed if necessary
     */
-  def apply[F[_]: Concurrent: Temporal: Parallel: LogOf, S](
+  def apply[F[_]: Concurrent: Timer: Parallel: LogOf, S](
     keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig = PartitionFlowConfig(),
     filter: Option[FilterRecord[F]] = None

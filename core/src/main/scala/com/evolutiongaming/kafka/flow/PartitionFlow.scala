@@ -1,6 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
+import cats.effect.concurrent.Ref
 import cats.effect.{Clock, Concurrent, Resource}
 import cats.syntax.all._
 import cats.{Applicative, Parallel}
@@ -13,7 +14,6 @@ import com.evolutiongaming.scache.{Cache, Releasable}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 
 import java.time.Instant
-import cats.effect.Ref
 
 trait PartitionFlow[F[_]] {
 

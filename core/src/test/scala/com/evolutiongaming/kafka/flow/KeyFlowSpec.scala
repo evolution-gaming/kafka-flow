@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
 import cats.effect.SyncIO
+import cats.effect.concurrent.Ref
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
@@ -19,7 +20,6 @@ import munit.FunSuite
 import scodec.bits.ByteVector
 
 import KeyFlowSpec._
-import cats.effect.Ref
 
 class KeyFlowSpec extends FunSuite {
 
