@@ -53,7 +53,7 @@ available for each of the classes are further discussed in the respective sectio
 
 For sake of simplicity, all the examples assume the following is in the scope.
 Saying that, the library is written and prepared for, so called, Tagless Final
-stype of programming. One does not have to use `IO` directly. Actually, the
+style of programming. One does not have to use `IO` directly. Actually, the
 main "dog food" application is written in Tagless Final style.
 ```scala mdoc:silent
 import cats.effect.IO
@@ -101,7 +101,7 @@ def kafkaFlow = KafkaFlow.retryOnError(
 ```
 
 The consumer parameter is a thin wrapper over `Consumer` coming from `skafka`
-meant to faciliate the simpler unit tests will less methods to stub. The recommended
+meant to facilitate the simpler unit tests will less methods to stub. The recommended
 way, currently, to create such a `Consumer` is to use `consumerOf` method from
 `KafkaModule` helper, which will configure `Consumer` properly and also proivde
 a `KafkaHealthCheck` which could be used for application-wide health check.
