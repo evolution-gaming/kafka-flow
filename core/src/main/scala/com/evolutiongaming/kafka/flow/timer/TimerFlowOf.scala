@@ -123,7 +123,7 @@ object TimerFlowOf {
                   // and offsets committed (or just the last committed offset if no state has ever been persisted before).
                   // Thus, when calculating the next offset to commit in `PartitionFlow#offsetToCommit` it will take
                   // the minimal one (previous) and won't commit any offsets
-                  context.log.error("Failed to persist state, the error is ignored and offsets won't be committed", err)
+                  context.log.info(s"Failed to persist state, the error is ignored and offsets won't be committed, error: $err")
                 case Left(err) =>
                   err.raiseError[F, Unit]
                 case Right(_) =>
