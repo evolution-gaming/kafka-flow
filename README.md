@@ -12,12 +12,16 @@ https://evolution-gaming.github.io/kafka-flow
 ## Changelog
 https://evolution-gaming.github.io/kafka-flow/docs/changelog
 
+## cats-effect compatibility
+Starting from version `1.0.0` the library uses cats-effect 3. 
+For versions based on cats-effect 2 please check the latest one in `0.x.x` series 
+
 ## Setup
 
 ```scala
 addSbtPlugin("com.evolution" % "sbt-artifactory-plugin" % "0.0.2")
 
-lazy val version = "0.4.31"
+lazy val version = "1.0.0"
 
 libraryDependencies ++= Seq(
   "com.evolutiongaming" %% "kafka-flow" % version,

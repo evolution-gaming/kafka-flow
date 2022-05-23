@@ -144,7 +144,6 @@ object TimerFlowOf {
 
     val cancel = context.holding flatMap { holding =>
       Applicative[F].whenA(holding.isDefined) {
-        println(s"flush on revoke, holding offset: $holding")
         context.log.info(s"flush on revoke, holding offset: $holding") *>
         persistence.flush *>
         context.remove
@@ -153,10 +152,8 @@ object TimerFlowOf {
 
     Resource.makeCase(TimerFlow.empty.pure) {
       case (_, ExitCase.Succeeded) =>
-        println("Succeeded")
         cancel
       case (_, ExitCase.Canceled) =>
-        println("Canceled")
         cancel
       // there is no point to try flushing if it failed with an error
       // the state might not be consistend and storage not accessible
