@@ -39,11 +39,11 @@ lazy val core = (project in file("core"))
     name := "kafka-flow",
     libraryDependencies ++= Seq(
       Cats.core,
+      Cats.mtl,
       Cats.effect,
-      Cats.effectLaws % Test,
+      Cats.effectTestkit % Test,
       KafkaJournal.journal,
       KafkaJournal.persistence,
-      MeowMtl.effects,
       Monocle.`macro` % Test,
       Monocle.core % Test,
       catsHelper,

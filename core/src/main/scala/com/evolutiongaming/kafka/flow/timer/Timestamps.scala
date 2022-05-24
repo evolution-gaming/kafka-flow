@@ -1,12 +1,10 @@
 package com.evolutiongaming.kafka.flow.timer
 
-import cats.Functor
-import cats.effect.Resource
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
+import cats.{Functor, Monad}
+import cats.effect.{Ref, Resource, Sync}
+import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.mtl.MonadState
-import com.olegpy.meow.effects._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 
 /** Contains timestamp related to a specific key.
   *
@@ -51,7 +49,7 @@ object Timestamps {
     *
     * @param createdAt Current timestamp at the time the key was encountered.
     */
-  def of[F[_]: Sync](createdAt: Timestamp): F[Timestamps[F]] =
+  def of[F[_]: Monad: Ref.Make](createdAt: Timestamp): F[Timestamps[F]] =
     Ref.of(TimestampState(createdAt)) map { storage =>
       Timestamps(storage.stateInstance)
     }
@@ -61,7 +59,7 @@ object Timestamps {
 
   /** Creates a timestamp storage for a key */
   def apply[F[_]: Functor](
-    storage: MonadState[F, TimestampState],
+    storage: Stateful[F, TimestampState]
   ): Timestamps[F] = new Timestamps[F] {
 
     def current = storage.get map (_.current)

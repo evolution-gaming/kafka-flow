@@ -1,6 +1,5 @@
 package com.evolutiongaming.kafka.flow.metrics
 
-import cats.Applicative
 import cats.effect.Resource
 import cats.~>
 import com.evolutiongaming.smetrics.CollectorRegistry
@@ -36,7 +35,7 @@ trait MetricsKOf[F[_], G[_]] { self =>
     *
     * Useful to create metrics for factory classes.
     */
-  def transform[H[_]](f: MetricsK[G] => H ~> H)(implicit F: Applicative[F]): MetricsKOf[F, H] = { registry =>
+  def transform[H[_]](f: MetricsK[G] => H ~> H): MetricsKOf[F, H] = { registry =>
     self(registry) map { metrics =>
       new MetricsK[H] {
         def withMetrics[A](ha: H[A]) = f(metrics)(ha)

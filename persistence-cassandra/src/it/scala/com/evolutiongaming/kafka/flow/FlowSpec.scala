@@ -3,7 +3,8 @@ package com.evolutiongaming.kafka.flow
 import cats.data.NonEmptyList
 import cats.effect.IO
 import cats.effect.Resource
-import cats.effect.concurrent.Ref
+import cats.effect.Ref
+import cats.effect.unsafe.IORuntime
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.CassandraPersistence
 import com.evolutiongaming.kafka.flow.kafka.Consumer
@@ -16,6 +17,7 @@ import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import com.evolutiongaming.skafka.consumer.WithSize
+
 import scala.concurrent.duration._
 import weaver.GlobalRead
 
@@ -78,6 +80,6 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
 
   }
 
-  implicit val log: LogOf[IO] = LogOf.slf4j.unsafeRunSync()
+  implicit val log: LogOf[IO] = LogOf.slf4j.unsafeRunSync()(IORuntime.global)
 
 }

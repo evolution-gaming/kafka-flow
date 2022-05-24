@@ -1,15 +1,14 @@
 package com.evolutiongaming.kafka.flow.journal
 
 import cats.data.State
+import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.mtl.MonadState
-import cats.mtl.implicits._
+import com.evolutiongaming.kafka.flow.journal.JournalDatabaseSpec._
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.skafka.Offset
 import munit.FunSuite
-import scala.collection.immutable.SortedMap
 
-import JournalDatabaseSpec._
+import scala.collection.immutable.SortedMap
 
 class JournalDatabaseSpec extends FunSuite {
 
@@ -97,7 +96,7 @@ object JournalDatabaseSpec {
   type Context = Map[K, SortedMap[Offset, E]]
 
   class ConstFixture {
-    val database = MonadState[F, Context]
+    val database = Stateful[F, Context]
   }
 
   implicit val withOffset: ToOffset[(Int, String)] = { case (offset, _) =>
