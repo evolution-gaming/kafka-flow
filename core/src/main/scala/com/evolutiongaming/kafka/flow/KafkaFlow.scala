@@ -11,7 +11,6 @@ import com.evolutiongaming.random.Random
 import com.evolutiongaming.retry.{OnError, Retry, Sleep, Strategy}
 import com.evolutiongaming.sstream.Stream
 
-import scala.concurrent.CancellationException
 import scala.concurrent.duration._
 
 object KafkaFlow {
