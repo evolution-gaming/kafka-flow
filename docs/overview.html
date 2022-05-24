@@ -96,16 +96,12 @@ available for each of the classes are further discussed in the respective sectio
 Saying that, the library is written and prepared for, so called, Tagless Final
 stype of programming. One does not have to use <code>IO</code> directly. Actually, the
 main &quot;dog food&quot; application is written in Tagless Final style.</p>
-<pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> cats.effect.<span class="hljs-type">IO</span>
-<span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">BracketThrowable</span>
+<pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> cats.effect.{<span class="hljs-type">IO</span>, <span class="hljs-type">MonadCancelThrow</span>}
 <span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">Log</span>
 <span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">LogOf</span>
 <span class="hljs-keyword">import</span> com.evolutiongaming.smetrics.<span class="hljs-type">MeasureDuration</span>
-<span class="hljs-keyword">import</span> scala.concurrent.<span class="hljs-type">ExecutionContext</span>
 
-<span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> contextShift = <span class="hljs-type">IO</span>.contextShift(<span class="hljs-type">ExecutionContext</span>.global)
-<span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> timer = <span class="hljs-type">IO</span>.timer(<span class="hljs-type">ExecutionContext</span>.global)
-<span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> bracketThrowable = <span class="hljs-type">BracketThrowable</span>[<span class="hljs-type">IO</span>]
+<span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> <span class="hljs-type">MT</span> = <span class="hljs-type">MonadCancelThrow</span>[<span class="hljs-type">IO</span>]
 <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> measureDuration = <span class="hljs-type">MeasureDuration</span>.empty[<span class="hljs-type">IO</span>]
 <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> logOf = <span class="hljs-type">LogOf</span>.empty[<span class="hljs-type">IO</span>]
 <span class="hljs-keyword">implicit</span> <span class="hljs-keyword">val</span> log = <span class="hljs-type">Log</span>.empty[<span class="hljs-type">IO</span>]
