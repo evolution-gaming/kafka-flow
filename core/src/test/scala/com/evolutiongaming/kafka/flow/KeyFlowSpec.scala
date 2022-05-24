@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
 import cats.effect.SyncIO
-import cats.effect.concurrent.Ref
+import cats.effect.Ref
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.kafka.ToOffset

@@ -4,33 +4,30 @@ object Dependencies {
 
   val munit  = "org.scalameta"       %% "munit"            % "0.7.22"
   val scribe = "com.outr"            %% "scribe-slf4j"     % "3.5.0"
-  val weaver = "com.disneystreaming" %% "weaver-cats"      % "0.6.0-M6"
+  val weaver = "com.disneystreaming" %% "weaver-cats"      % "0.7.11"
 
   val cassandraLauncher = "com.evolutiongaming" %% "cassandra-launcher" % "0.0.4"
-  val catsHelper        = "com.evolutiongaming" %% "cats-helper"        % "2.2.2"
-  val kafkaLauncher     = "com.evolutiongaming" %% "kafka-launcher"     % "0.0.10"
-  val scache            = "com.evolutiongaming" %% "scache"             % "3.2.0"
-  val skafka            = "com.evolutiongaming" %% "skafka"             % "11.0.0"
-  val smetrics          = "com.evolutiongaming" %% "smetrics"           % "0.2.0"
-  val sstream           = "com.evolutiongaming" %% "sstream"            % "0.2.1"
+  val catsHelper        = "com.evolutiongaming" %% "cats-helper"        % "3.0.3"
+  val kafkaLauncher     = "com.evolutiongaming" %% "kafka-launcher"     % "0.0.11"
+  val scache            = "com.evolutiongaming" %% "scache"             % "4.0.0"
+  val skafka            = "com.evolutiongaming" %% "skafka"             % "12.1.3"
+  val smetrics          = "com.evolutiongaming" %% "smetrics"           % "1.0.1"
+  val sstream           = "com.evolutiongaming" %% "sstream"            % "1.0.1"
 
   object Cats {
-    private val version = "2.4.2"
+    private val version = "2.7.0"
+    private val effectVersion = "3.3.7"
     val core   = "org.typelevel" %% "cats-core"   % version
-    val effect = "org.typelevel" %% "cats-effect" % "2.3.3"
+    val mtl   = "org.typelevel"  %% "cats-mtl"   % "1.2.1"
+    val effect = "org.typelevel" %% "cats-effect" % effectVersion
+    val effectTestkit = "org.typelevel" %% "cats-effect-testkit" % effectVersion
   }
 
   object KafkaJournal {
-    private val version = "0.0.152"
+    private val version = "1.0.2"
     val journal     = "com.evolutiongaming" %% "kafka-journal"                    % version
     val cassandra   = "com.evolutiongaming" %% "kafka-journal-eventual-cassandra" % version
     val persistence = "com.evolutiongaming" %% "kafka-journal-persistence"        % version
-  }
-
-  object MeowMtl {
-    private val version = "0.4.1"
-    val core    = "com.olegpy" %% "meow-mtl-core"    % version
-    val effects = "com.olegpy" %% "meow-mtl-effects" % version
   }
 
   object Monocle {

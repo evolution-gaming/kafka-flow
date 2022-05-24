@@ -1,14 +1,14 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.Blocker
 import cats.effect.IO
 import cats.effect.Resource
+import cats.effect.unsafe.IORuntime
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.StartKafka
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
 import com.evolutiongaming.skafka.consumer.ConsumerConfig
 import com.evolutiongaming.smetrics.CollectorRegistry
-import scala.concurrent.ExecutionContext
+
 import scala.util.Try
 import scribe.Level
 import scribe.Logger
@@ -24,9 +24,7 @@ object SharedResources extends GlobalResource {
 
   def sharedResources(store: GlobalWrite): Resource[IO, Unit] = {
 
-    implicit val executor = ExecutionContext.global
-    implicit val contextShift = IO.contextShift(executor)
-    implicit val timer = IO.timer(executor)
+    implicit val ioRuntime = IORuntime.global
 
     // we use default config here, because we will launch Kafka locally
     val config = ConsumerConfig()
@@ -43,9 +41,8 @@ object SharedResources extends GlobalResource {
     }
     for {
       _ <- Resource.make(start) { shutdown => IO(shutdown()) }
-      blocker <- Blocker[IO]
-      kafka <- Resource.liftF(LogOf.slf4j[IO]) flatMap { implicit logOf =>
-        KafkaModule.of[IO]("SharedResources", config, CollectorRegistry.empty, blocker)
+      kafka <- Resource.eval(LogOf.slf4j[IO]) flatMap { implicit logOf =>
+        KafkaModule.of[IO]("SharedResources", config, CollectorRegistry.empty)
       }
       _ <- store.putR(kafka)
     } yield ()

@@ -3,7 +3,8 @@ package com.evolutiongaming.kafka.flow
 import cats.data.NonEmptyList
 import cats.effect.IO
 import cats.effect.Resource
-import cats.effect.concurrent.Ref
+import cats.effect.Ref
+import cats.effect.unsafe.IORuntime
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.CassandraPersistence
 import com.evolutiongaming.kafka.flow.kafka.Consumer
@@ -16,6 +17,7 @@ import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import com.evolutiongaming.skafka.consumer.WithSize
+
 import scala.concurrent.duration._
 import weaver.GlobalRead
 
@@ -24,11 +26,11 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
   test("flow fails when Cassandra insert fails") { cassandra =>
 
     val flow = for {
-      failAfter <- Resource.liftF(Ref.of(10000))
+      failAfter <- Resource.eval(Ref.of(10000))
       session = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
-      storage <- Resource.liftF(CassandraPersistence.withSchema[IO, String](session, cassandra.sync))
-      timersOf <- Resource.liftF(TimersOf.memory[IO, KafkaKey])
-      keysOf <- Resource.liftF(storage.keys.keysOf)
+      storage <- Resource.eval(CassandraPersistence.withSchema[IO, String](session, cassandra.sync))
+      timersOf <- Resource.eval(TimersOf.memory[IO, KafkaKey])
+      keysOf <- Resource.eval(storage.keys.keysOf)
       persistenceOf <- storage.restoreEvents
       keyStateOf = KeyStateOf.eagerRecovery(
         applicationId = "FlowSpec",
@@ -64,7 +66,7 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
      join <- {
         implicit val retry = Retry.empty[IO]
         KafkaFlow.resource(
-          consumer = Resource.liftF(consumer),
+          consumer = Resource.eval(consumer),
           flowOf = ConsumerFlowOf(topic = "", flowOf = topicFlowOf)
         )
       }
@@ -78,6 +80,6 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
 
   }
 
-  implicit val log: LogOf[IO] = LogOf.slf4j.unsafeRunSync()
+  implicit val log: LogOf[IO] = LogOf.slf4j.unsafeRunSync()(IORuntime.global)
 
 }

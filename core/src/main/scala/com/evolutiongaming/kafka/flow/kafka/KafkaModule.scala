@@ -1,28 +1,14 @@
 package com.evolutiongaming.kafka.flow.kafka
 
-import cats.effect.Blocker
-import cats.effect.Clock
-import cats.effect.ConcurrentEffect
-import cats.effect.ContextShift
-import cats.effect.Resource
-import cats.effect.Timer
+import cats.effect.{Async, Clock, Resource}
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.FromTry
-import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.catshelper.ToFuture
-import com.evolutiongaming.catshelper.ToTry
+import com.evolutiongaming.catshelper.{FromTry, LogOf, ToFuture, ToTry}
 import com.evolutiongaming.kafka.flow.LogResource
-import com.evolutiongaming.kafka.journal.KafkaConfig
-import com.evolutiongaming.kafka.journal.KafkaHealthCheck
-import com.evolutiongaming.kafka.journal.RandomIdOf
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
-import com.evolutiongaming.kafka.journal.{KafkaConsumerOf => JournalConsumerOf}
-import com.evolutiongaming.kafka.journal.{KafkaProducerOf => JournalProducerOf}
-import com.evolutiongaming.skafka.consumer.AutoOffsetReset
-import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerMetrics, ConsumerOf => RawConsumerOf}
+import com.evolutiongaming.kafka.journal.{KafkaConfig, KafkaHealthCheck, RandomIdOf, KafkaConsumerOf => JournalConsumerOf, KafkaProducerOf => JournalProducerOf}
+import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerMetrics, ConsumerOf => RawConsumerOf}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerMetrics, ProducerOf => RawProducerOf}
-import com.evolutiongaming.smetrics.CollectorRegistry
-import com.evolutiongaming.smetrics.MeasureDuration
+import com.evolutiongaming.smetrics.{CollectorRegistry, MeasureDuration}
 import scodec.bits.ByteVector
 
 trait KafkaModule[F[_]] {
@@ -35,18 +21,17 @@ trait KafkaModule[F[_]] {
 }
 object KafkaModule {
 
-  def of[F[_]: ConcurrentEffect: ContextShift: FromTry: ToTry: ToFuture: Timer: LogOf](
+  def of[F[_]: Async: FromTry: ToTry: ToFuture: LogOf](
     applicationId: String,
     config: ConsumerConfig,
-    registry: CollectorRegistry[F],
-    blocker: Blocker
+    registry: CollectorRegistry[F]
   ): Resource[F, KafkaModule[F]] = {
     implicit val measureDuration = MeasureDuration.fromClock[F](Clock[F])
     for {
       producerMetrics      <- ProducerMetrics.of(registry)
       consumerMetrics      <- ConsumerMetrics.of(registry)
-      _producerOf            = RawProducerOf[F](blocker.blockingContext, producerMetrics(applicationId).some)
-      _consumerOf            = RawConsumerOf[F](blocker.blockingContext, consumerMetrics(applicationId).some)
+      _producerOf            = RawProducerOf.apply1[F](producerMetrics(applicationId).some)
+      _consumerOf            = RawConsumerOf.apply1[F](consumerMetrics(applicationId).some)
       _healthCheck          <- {
         implicit val randomIdOf = RandomIdOf.uuid[F]
         implicit val journalProducerOf = JournalProducerOf[F](_producerOf)
@@ -64,7 +49,7 @@ object KafkaModule {
 
       def consumerOf = { groupId: String =>
         LogResource[F](KafkaModule.getClass, s"Consumer($groupId)") *>
-        _consumerOf[String, ByteVector](
+          _consumerOf[String, ByteVector](
           config.copy(
             groupId = groupId.some,
             autoCommit = false,

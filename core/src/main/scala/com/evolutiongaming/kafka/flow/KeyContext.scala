@@ -1,15 +1,12 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Applicative
-import cats.Monad
-import cats.effect.Resource
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
-import cats.mtl.MonadState
+import cats.effect.{Ref, Resource}
+import cats.mtl.Stateful
 import cats.syntax.all._
+import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.skafka.Offset
-import com.olegpy.meow.effects._
 
 /** Key specific metainformation inside of parititon.
   *
@@ -33,13 +30,13 @@ object KeyContext {
     def remove = ().pure[F]
   }
 
-  def of[F[_]: Sync: Log](removeFromCache: F[Unit]): F[KeyContext[F]] =
+  def of[F[_]: Ref.Make: Monad: Log](removeFromCache: F[Unit]): F[KeyContext[F]] =
     Ref.of[F, Option[Offset]](None) map { storage =>
       KeyContext(storage.stateInstance, removeFromCache)
     }
 
   def apply[F[_]: Monad: Log](
-    storage: MonadState[F, Option[Offset]],
+    storage: Stateful[F, Option[Offset]],
     removeFromCache: F[Unit]
   ): KeyContext[F] = new KeyContext[F] {
     def holding = storage.get
@@ -48,12 +45,12 @@ object KeyContext {
     def log = Log[F]
   }
 
-  def resource[F[_]: Sync](
+  def resource[F[_]: Ref.Make: Monad](
     removeFromCache: F[Unit],
     log: Log[F]
   ): Resource[F, KeyContext[F]] = {
     implicit val _log = log
-    Resource.liftF(of(removeFromCache))
+    Resource.eval(of(removeFromCache))
   }
 
 }

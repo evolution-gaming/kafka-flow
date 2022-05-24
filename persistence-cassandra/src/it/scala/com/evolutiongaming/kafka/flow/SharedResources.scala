@@ -25,8 +25,6 @@ object SharedResources extends GlobalResource {
   def sharedResources(store: GlobalWrite): Resource[IO, Unit] = {
 
     implicit val executor = ExecutionContext.global
-    implicit val contextShift = IO.contextShift(executor)
-    implicit val timer = IO.timer(executor)
     implicit val log = LogOf.empty[IO]
 
     // we use default config here, because we will launch Cassandra locally

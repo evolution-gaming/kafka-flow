@@ -1,47 +1,56 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Applicative
-import cats.Monad
 import cats.data.NonEmptyList
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
-import cats.mtl.MonadState
+import cats.effect.{Ref, Sync}
+import cats.mtl.Stateful
 import cats.syntax.all._
+import cats.{Applicative, Monad}
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.kafka.flow.persistence.Persistence
-import com.evolutiongaming.kafka.flow.timer.ReadTimestamps
-import com.olegpy.meow.effects._
-import timer.TimerFlow
+import com.evolutiongaming.kafka.flow.timer.{ReadTimestamps, TimerFlow}
 
-trait KeyFlow[F[_], E] extends RecordFlow[F, E] with TimerFlow[F]
+trait KeyFlow[F[_], E] extends TimerFlow[F] {
+  def apply(records: NonEmptyList[E]): F[Unit]
+}
 
 object KeyFlow {
 
-  /** Create buffered flow from RecordFlow and TimerFlow */
-  @deprecated("Use KeyFlow.of with fold parameter instead of RecordFlow.of", "0.1.0")
-  def apply[F[_], E](
-    recordFlow: RecordFlow[F, E],
-    timerFlow: TimerFlow[F]
-  ): KeyFlow[F, E] = new KeyFlow[F, E] {
-    def apply(records: NonEmptyList[E]) = recordFlow(records)
-    def onTimer = timerFlow.onTimer
-  }
-
   /** Create flow which persists snapshots, events and restores state if needed */
-  def of[F[_]: Sync: KeyContext, S, A](
+  def of[F[_]: Monad: Ref.Make: KeyContext, S, A](
     fold: FoldOption[F, S, A],
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
     timer: TimerFlow[F]
-  ): F[KeyFlow[F, A]] = Ref.of(none[S]) flatMap { storage =>
+  ): F[KeyFlow[F, A]] = Ref.of[F, Option[S]](none[S]) flatMap { storage =>
     of(storage.stateInstance, fold, tick, persistence, timer)
+  }
+
+  def of[F[_]: Monad: Ref.Make: KeyContext, S, A](
+    fold: EnhancedFold[F, S, A],
+    tick: TickOption[F, S],
+    persistence: Persistence[F, S, A],
+    additionalPersist: AdditionalStatePersist[F, A],
+    timer: TimerFlow[F]
+  ): F[KeyFlow[F, A]] = Ref.of[F, Option[S]](none[S]) flatMap { storage =>
+    of(storage.stateInstance, fold, tick, persistence, additionalPersist, timer)
   }
 
   /** Create flow which persists snapshots, events and restores state if needed */
   def of[F[_]: Monad: KeyContext, S, A](
-    storage: MonadState[F, Option[S]],
+    storage: Stateful[F, Option[S]],
     fold: FoldOption[F, S, A],
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
+    timer: TimerFlow[F]
+  ): F[KeyFlow[F, A]] =
+    of(storage, EnhancedFold.fromFold(fold), tick, persistence, AdditionalStatePersist.empty[F, A], timer)
+
+  def of[F[_]: Monad: KeyContext, S, A](
+    storage: Stateful[F, Option[S]],
+    fold: EnhancedFold[F, S, A],
+    tick: TickOption[F, S],
+    persistence: Persistence[F, S, A],
+    additionalPersist: AdditionalStatePersist[F, A],
     timer: TimerFlow[F]
   ): F[KeyFlow[F, A]] =
     for {
@@ -51,13 +60,12 @@ object KeyFlow {
       // by fold or tick to run the state, because in this
       // case we may flush the key which was already removed
       timerCancelled = storage inspect (_.isEmpty)
-      foldToState = FoldToState(storage, fold, persistence)
+      foldToState = FoldToState(storage, fold, persistence, additionalPersist)
       tickToState = TickToState(storage, tick, persistence)
     } yield new KeyFlow[F, A] {
-      def apply(records: NonEmptyList[A]) = foldToState(records)
-      def onTimer = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
+      def apply(records: NonEmptyList[A]): F[Unit] = foldToState(records)
+      def onTimer: F[Unit] = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
-
 
   /** Does not save anything to the database */
   def transient[F[_]: Sync: KeyContext: ReadTimestamps, K, S, A](
@@ -68,7 +76,7 @@ object KeyFlow {
     for {
       startedAt <- ReadTimestamps[F].current
       _ <- KeyContext[F].hold(startedAt.offset)
-      storage <- Ref.of(none[S])
+      storage <- Ref.of[F, Option[S]](none[S])
       // we should not run any timers if there was decision
       // by fold or tick to run the state, because in this
       // case we may flush the key which was already removed
@@ -80,7 +88,7 @@ object KeyFlow {
       def onTimer = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
 
-  def empty[F[_]: Applicative, A]: RecordFlow[F, A] = new KeyFlow[F, A] {
+  def empty[F[_]: Applicative, A]: KeyFlow[F, A] = new KeyFlow[F, A] {
     def apply(records: NonEmptyList[A]) = ().pure[F]
     def onTimer = ().pure[F]
   }

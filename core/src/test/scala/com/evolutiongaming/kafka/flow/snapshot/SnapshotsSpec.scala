@@ -1,8 +1,7 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.data.State
-import cats.mtl.MonadState
-import cats.mtl.implicits._
+import cats.mtl.Stateful
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.MonadStateHelper._
@@ -142,8 +141,8 @@ object SnapshotsSpec {
   )
 
   class ConstFixture {
-    val database = MonadState[F, Context] focus GenLens[Context](_.database)
-    val buffer = MonadState[F, Context] focus GenLens[Context](_.buffer)
+    val database = Stateful[F, Context] focus GenLens[Context](_.database)
+    val buffer = Stateful[F, Context] focus GenLens[Context](_.buffer)
   }
 
   implicit val log: Log[F] = Log.empty[F]
@@ -154,7 +153,7 @@ object SnapshotsSpec {
     def persistsCounted: Int
   }
 
-  def countingSnapshotDb(storage: MonadState[F, Map[K, S]]): SnapshotDatabaseWithPersistCount = {
+  def countingSnapshotDb(storage: Stateful[F, Map[K, S]]): SnapshotDatabaseWithPersistCount = {
     new SnapshotDatabaseWithPersistCount {
       val db = SnapshotDatabase.memory(storage)
       var persistCounter = 0

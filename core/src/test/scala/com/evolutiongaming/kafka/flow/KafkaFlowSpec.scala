@@ -1,21 +1,15 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.Applicative
 import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
-import cats.effect.concurrent.Ref
-import cats.effect.{Resource, SyncIO, Timer}
+import cats.effect.{Ref, Resource, SyncIO}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.catshelper.TimerHelper._
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecord, ConsRecords}
-import com.evolutiongaming.retry.{OnError, Retry, Strategy}
+import com.evolutiongaming.retry.{OnError, Retry, Sleep, Strategy}
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{
-  ConsumerRecord,
-  ConsumerRecords,
-  RebalanceListener => SRebalanceListener,
-  WithSize
-}
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, WithSize, RebalanceListener1 => SRebalanceListener}
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 
@@ -143,6 +137,13 @@ object KafkaFlowSpec {
 
   type F[A] = SyncIO[A]
 
+  implicit val syncIoSleep = new Sleep[SyncIO] {
+    override def sleep(time: FiniteDuration): SyncIO[Unit] = SyncIO(Thread.sleep(time.toMillis))
+    override def applicative: Applicative[SyncIO] = implicitly
+    override def monotonic: SyncIO[FiniteDuration] = SyncIO.monotonic
+    override def realTime: SyncIO[FiniteDuration] = SyncIO.realTime
+  }
+
   class ConstFixture(val state: Ref[F, State]) {
 
     def kafkaFlow: Stream[F, ConsRecords] = KafkaFlow.stream(
@@ -176,6 +177,8 @@ object KafkaFlowSpec {
 
       val consumer: Consumer[F] = new Consumer[F] {
 
+        private val noopConsumer = new Consumer.NoopRebalanceConsumer
+
         def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]) =
           state update (_ + Action.Subscribe(topics)(listener))
 
@@ -193,15 +196,14 @@ object KafkaFlowSpec {
         def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) =
           state update (_ + Action.Commit(offsets))
 
-        def position(partition: TopicPartition) =
-          Offset.min.pure[F]
-
         def revoke(partitions: NonEmptySet[Partition]) =
           state.get flatMap { state =>
             val revoke = state.actions collectFirst { case action: Action.Subscribe =>
-              action.listener.onPartitionsRevoked(
-                partitions concatMap { partition => action.topics.map { topic => TopicPartition(topic, partition) } }
-              )
+              action.listener
+                .onPartitionsRevoked(
+                  partitions concatMap { partition => action.topics.map { topic => TopicPartition(topic, partition) } }
+                )
+                .toF(noopConsumer)
             }
             revoke.sequence_
           }
@@ -223,7 +225,6 @@ object KafkaFlowSpec {
           state update (_ + Action.RetryOnError(error, decision))
         }
       }
-      implicit val timer = Timer.empty[F]
       Retry(strategy, onError)
     }
 

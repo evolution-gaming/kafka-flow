@@ -1,15 +1,15 @@
 package com.evolutiongaming.kafka.flow.journal
 
-import cats.{Applicative, Monad}
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
-import cats.mtl.MonadState
+import cats.effect.{Ref, Sync}
+import cats.mtl.Stateful
 import cats.syntax.all._
+import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.sstream.Stream
-import com.olegpy.meow.effects._
+
 import scala.collection.immutable.SortedMap
 
 trait JournalDatabase[F[_], K, R] {
@@ -36,7 +36,7 @@ object JournalDatabase {
     * The data will survive destruction of specific `Journals` instance,
     * but will not survive destruction of specific `JournalDatabase` instance.
     */
-  def memory[F[_]: Sync, K, E](implicit E: ToOffset[E]): F[JournalDatabase[F, K, E]] =
+  def memory[F[_]: Monad: Ref.Make, K, E](implicit E: ToOffset[E]): F[JournalDatabase[F, K, E]] =
     Ref.of[F, Map[K, SortedMap[Offset, E]]](Map.empty) map { storage =>
       memory(storage.stateInstance)
     }
@@ -47,7 +47,7 @@ object JournalDatabase {
     * but will not survive destruction of specific `JournalDatabase` instance.
     */
   def memory[F[_]: Monad, K, E](
-    storage: MonadState[F, Map[K, SortedMap[Offset, E]]]
+    storage: Stateful[F, Map[K, SortedMap[Offset, E]]]
   )(implicit E: ToOffset[E]): JournalDatabase[F, K, E] =
     new JournalDatabase[F, K, E] {
 

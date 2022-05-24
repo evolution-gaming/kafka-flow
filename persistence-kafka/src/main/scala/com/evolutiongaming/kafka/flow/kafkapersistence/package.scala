@@ -1,11 +1,12 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.{Concurrent, Resource, Timer}
+import cats.effect.{Clock, Concurrent, Resource}
 import cats.syntax.all._
 import cats.{Eval, Foldable, Monad, Parallel}
-import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
-import com.evolutiongaming.kafka.flow.timer.TimersOf
+import com.evolutiongaming.catshelper.{LogOf, Runtime}
+import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
+import com.evolutiongaming.kafka.flow.metrics.syntax._
+import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.consumer.ConsumerConfig
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
@@ -21,48 +22,128 @@ package object kafkapersistence {
     def empty: BytesByKey = Map.empty
   }
 
-  implicit class PartitionFlowOfCompanionOps(val self: PartitionFlowOf.type) extends AnyVal {
+  /** Create a PartitionFlowOf with a snapshot-based persistence and recovery from a Kafka
+    * [[https://kafka.apache.org/documentation/#compaction compacted topic]].
+    * State is restored eagerly on partition assignment by reading the content of a snapshot topic to the end
+    * without committing offsets.
+    *
+    * Note that the snapshot topic should have the same number of partitions as the input topic since state recovery
+    * will be performed based on a number of the assigned partition of the input topic (state for partition N of input
+    * topic will be restored from the Nth partition of a snapshot topic).
+    *
+    * For a complete example of usage you can refer to the integration test `StatefulProcessingWithKafkaSpec`.
+    *
+    * @param kafkaPersistenceModuleOf a factory of `KafkaPersistenceModule` that defines how keys and snapshots are
+    *                                 recovered and persisted to a Kafka compact topic
+    * @param applicationId the identifier (name) of your application
+    * @param groupId group id for your application
+    * @param timersOf factory of timers
+    * @param timerFlowOf a factory of `TimerFlow` that defines how keys and snapshots are persisted when timers are triggered
+    * @param fold defines how to change the state of a key on incoming records
+    * @param tick defines how to change the state of a key on a timer basis
+    * @param partitionFlowConfig additional configuration of committing and timer triggering
+    * @param metrics enhances framework with metrics
+    * @param filter optional function to pre-filter incoming events before they are processed by `fold`
+    */
+  def kafkaEagerRecovery[F[_]: Concurrent: Parallel: LogOf: Clock: Runtime, S](
+    kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
+    applicationId: String,
+    groupId: String,
+    timersOf: TimersOf[F, KafkaKey],
+    timerFlowOf: TimerFlowOf[F],
+    fold: FoldOption[F, S, ConsRecord],
+    tick: TickOption[F, S],
+    partitionFlowConfig: PartitionFlowConfig,
+    metrics: FlowMetrics[F] = FlowMetrics.empty[F],
+    filter: Option[FilterRecord[F]] = None
+  ): PartitionFlowOf[F] =
+    kafkaEagerRecovery(
+      kafkaPersistenceModuleOf = kafkaPersistenceModuleOf,
+      applicationId = applicationId,
+      groupId = groupId,
+      timersOf = timersOf,
+      timerFlowOf = timerFlowOf,
+      fold = EnhancedFold.fromFold(fold),
+      tick = tick,
+      partitionFlowConfig = partitionFlowConfig,
+      metrics = metrics,
+      filter = filter,
+      additionalPersistOf = AdditionalStatePersistOf.empty[F, S]
+    )
 
-    /**
-      * Creates PartitionFlowOf which on partition assignment reads respective partition of "snapshot" (usually compacted)
-      * topic and eagerly recovers all the state from it.
-      */
-    def eagerRecoveryKafkaPersistence[F[_]: Concurrent: Timer: Parallel: LogOf, S, A](
-      applicationId: String,
-      groupId: String,
-      kafkaPersistenceOf: KafkaPersistence[F, KafkaKey, S],
-      timersOf: TimersOf[F, KafkaKey],
-      timerFlowOf: TimerFlowOf[F],
-      fold: FoldOption[F, S, ConsRecord],
-      tick: TickOption[F, S],
-    ): PartitionFlowOf[F] =
-      new PartitionFlowOf[F] {
-        override def apply(
-          topicPartition: TopicPartition,
-          assignedAt: Offset,
-          context: PartitionContext[F]
-        ): Resource[F, PartitionFlow[F]] = {
-          for {
-            persistence <- Resource.liftF(
-              kafkaPersistenceOf.ofPartition(topicPartition.partition)
-            )
-            keyStateOf = KeyStateOf.eagerRecovery[F, S](
+  /** Create a PartitionFlowOf with a snapshot-based persistence and recovery from a Kafka
+    * [[https://kafka.apache.org/documentation/#compaction compacted topic]].
+    * State is restored eagerly on partition assignment by reading the content of a snapshot topic to the end
+    * without committing offsets.
+    *
+    * Note that the snapshot topic should have the same number of partitions as the input topic since state recovery
+    * will be performed based on a number of the assigned partition of the input topic (state for partition N of input
+    * topic will be restored from the Nth partition of a snapshot topic).
+    *
+    * For a complete example of usage you can refer to the integration test `StatefulProcessingWithKafkaSpec`.
+    *
+    * This version has a notion of an enhanced fold which has access to some additional framework APIs.
+    *
+    * @param kafkaPersistenceModuleOf a factory of `KafkaPersistenceModule` that defines how keys and snapshots are
+    *                                 recovered and persisted to a Kafka compact topic
+    * @param applicationId the identifier (name) of your application
+    * @param groupId group id for your application
+    * @param timersOf factory of timers
+    * @param timerFlowOf a factory of `TimerFlow` that defines how keys and snapshots are persisted when timers are triggered
+    * @param fold defines how to change the state of a key on incoming records. It has access to `KeyFlowExtras`
+    *             that allows using some additional framework APIs
+    * @param tick defines how to change the state of a key on a timer basis
+    * @param partitionFlowConfig additional configuration of committing and timer triggering
+    * @param metrics enhances framework with metrics
+    * @param filter optional function to pre-filter incoming events before they are processed by `fold`
+    * @param additionalPersistOf a factory of `AdditionalStatePersist` that can either enable or disable additional state
+    *                            persisting. That part of functionality in `KeyFlowExtras` will work only if you pass
+    *                            a functional (non-empty) implementation here
+    */
+  def kafkaEagerRecovery[F[_]: Concurrent: Parallel: LogOf: Clock: Runtime, S](
+    kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
+    applicationId: String,
+    groupId: String,
+    timersOf: TimersOf[F, KafkaKey],
+    timerFlowOf: TimerFlowOf[F],
+    fold: EnhancedFold[F, S, ConsRecord],
+    tick: TickOption[F, S],
+    partitionFlowConfig: PartitionFlowConfig,
+    metrics: FlowMetrics[F],
+    filter: Option[FilterRecord[F]],
+    additionalPersistOf: AdditionalStatePersistOf[F, S]
+  ): PartitionFlowOf[F] =
+    new PartitionFlowOf[F] {
+      override def apply(
+        topicPartition: TopicPartition,
+        assignedAt: Offset,
+        context: PartitionContext[F]
+      ): Resource[F, PartitionFlow[F]] = {
+        for {
+          // TODO: per-partition persistence module with 'String -> ByteVector' cache or global persistence module with 'KafkaKey -> ByteVector' cache?
+          // Latter would require initialization of PartitionFlowOf as a Resource
+          kafkaPersistenceModule <- kafkaPersistenceModuleOf.make(topicPartition.partition)
+          partitionFlowOf = PartitionFlowOf.apply[F](
+            keyStateOf = KeyStateOf.eagerRecovery(
               applicationId = applicationId,
               groupId = groupId,
-              keysOf = persistence.keysOf,
+              keysOf = kafkaPersistenceModule.keysOf,
               timersOf = timersOf,
-              persistenceOf = persistence.snapshots,
-              timerFlowOf = timerFlowOf,
-              fold = fold,
-              tick = tick
-            )
-            partitionFlowOf = self(keyStateOf)
-            partitionFlow <- partitionFlowOf(topicPartition, assignedAt, context)
-            _ <- Resource.liftF(persistence.onRecoveryFinished)
-          } yield partitionFlow
-        }
+              persistenceOf = kafkaPersistenceModule.persistenceOf,
+              keyFlowOf = KeyFlowOf(
+                timerFlowOf = timerFlowOf,
+                fold = fold,
+                tick = tick
+              ),
+              additionalPersistOf = additionalPersistOf
+            ) withMetrics metrics.keyStateOfMetrics,
+            config = partitionFlowConfig,
+            filter = filter
+          )
+          partitionFlow <- partitionFlowOf(topicPartition, assignedAt, context)
+        } yield partitionFlow
       }
-  }
+    }
 
   private[kafkapersistence] implicit class ConsumerConfigCompanionOps(
     val self: ConsumerConfig.type

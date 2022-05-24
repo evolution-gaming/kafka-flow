@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.Applicative
 import cats.effect.Resource
 import cats.effect.Sync
 import cats.syntax.all._
@@ -35,7 +36,7 @@ object KeyStateOf {
 
   /** Does not recover keys until record with such key is encountered.
     *
-    * This version only requires `TimerFlowOf` and uses default `RecordFlow`
+    * This version only requires `TimerFlowOf` and uses default `KeyFlow`
     * which reads the state from the generic persistence folds it using
     * default `FoldToState`.
     */
@@ -45,16 +46,20 @@ object KeyStateOf {
     timersOf: TimersOf[F, KafkaKey],
     persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
     timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, ConsRecord],
+    fold: FoldOption[F, S, ConsRecord]
   ): KeyStateOf[F] = lazyRecovery(
-    applicationId, groupId,
-    timersOf, persistenceOf, timerFlowOf,
-    fold, TickOption.id
+    applicationId = applicationId,
+    groupId = groupId,
+    timersOf = timersOf,
+    persistenceOf = persistenceOf,
+    timerFlowOf = timerFlowOf,
+    fold = fold,
+    tick = TickOption.id[F, S]
   )
 
   /** Does not recover keys until record with such key is encountered.
     *
-    * This version only requires `TimerFlowOf` and uses default `RecordFlow`
+    * This version only requires `TimerFlowOf` and uses default `KeyFlow`
     * which reads the state from the generic persistence folds it using
     * default `FoldToState`.
     */
@@ -78,10 +83,10 @@ object KeyStateOf {
       )
 
       for {
-        timers <- Resource.liftF(timersOf(kafkaKey, createdAt))
-        persistence <- Resource.liftF(persistenceOf(kafkaKey, fold, timers))
+        timers <- Resource.eval(timersOf(kafkaKey, createdAt))
+        persistence <- Resource.eval(persistenceOf(kafkaKey, fold, timers))
         timerFlow <- timerFlowOf(context, persistence, timers)
-        keyFlow <- Resource.liftF(KeyFlow.of(fold, tick, persistence, timerFlow))
+        keyFlow <- Resource.eval(KeyFlow.of(fold, tick, persistence, timerFlow))
       } yield KeyState(keyFlow, timers)
 
     }
@@ -93,11 +98,11 @@ object KeyStateOf {
 
   /** Recovers keys as soon as partition is assigned.
     *
-    * This version only requires `TimerFlowOf` and uses default `Keyflow`
+    * This version only requires `TimerFlowOf` and uses default `KeyFlow`
     * which reads the state from the generic persistence and folds it using
     * default `FoldToState`.
     *
-    * It also uses default implementaion of `Tick` which does nothing and
+    * It also uses default implementation of `Tick` which does nothing and
     * does not touch the state.
     */
   def eagerRecovery[F[_]: Sync, S](
@@ -109,9 +114,14 @@ object KeyStateOf {
     timerFlowOf: TimerFlowOf[F],
     fold: FoldOption[F, S, ConsRecord]
   ): KeyStateOf[F] = eagerRecovery(
-    applicationId, groupId,
-    keysOf, timersOf, persistenceOf, timerFlowOf,
-    fold, TickOption.id
+    applicationId = applicationId,
+    groupId = groupId,
+    keysOf = keysOf,
+    timersOf = timersOf,
+    persistenceOf = persistenceOf,
+    timerFlowOf = timerFlowOf,
+    fold = fold,
+    tick = TickOption.id[F, S]
   )
 
   /** Recovers keys as soon as partition is assigned.
@@ -135,6 +145,7 @@ object KeyStateOf {
     keysOf = keysOf,
     timersOf = timersOf,
     persistenceOf = persistenceOf,
+    additionalPersistOf = AdditionalStatePersistOf.empty[F, S],
     keyFlowOf = KeyFlowOf(timerFlowOf, fold, tick),
     recover = fold
   )
@@ -144,7 +155,35 @@ object KeyStateOf {
     * This version allows one to construct a custom `KeyFlowOf`
     * for snapshot persistence.
     */
-  def eagerRecovery[F[_]: Sync, S](
+  def eagerRecovery[F[_]: Applicative, S](
+    applicationId: String,
+    groupId: String,
+    keysOf: KeysOf[F, KafkaKey],
+    timersOf: TimersOf[F, KafkaKey],
+    persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord],
+    keyFlowOf: KeyFlowOf[F, S, ConsRecord],
+    additionalPersistOf: AdditionalStatePersistOf[F, S]
+  ): KeyStateOf[F] = eagerRecovery(
+    applicationId = applicationId,
+    groupId = groupId,
+    keysOf = keysOf,
+    timersOf = timersOf,
+    persistenceOf = persistenceOf,
+    additionalPersistOf = additionalPersistOf,
+    keyFlowOf = keyFlowOf,
+    recover = FoldOption.empty[F, S, ConsRecord]
+  )
+
+  /** Recovers keys as soon as partition is assigned.
+    *
+    * This version allows one to construct a custom `KeyFlowOf`
+    * for snapshot persistence.
+    *
+    * Note that this version doesn't enable "additional persisting" functionality even if you pass `KeyFlowOf`
+    * that was constructed using `EnhancedFold`. In this case, please use another version that expects `AdditionalStatePersistOf`
+    * as an argument.
+    */
+  def eagerRecovery[F[_]: Applicative, S](
     applicationId: String,
     groupId: String,
     keysOf: KeysOf[F, KafkaKey],
@@ -157,6 +196,7 @@ object KeyStateOf {
     keysOf = keysOf,
     timersOf = timersOf,
     persistenceOf = persistenceOf,
+    additionalPersistOf = AdditionalStatePersistOf.empty[F, S],
     keyFlowOf = keyFlowOf,
     recover = FoldOption.empty[F, S, ConsRecord]
   )
@@ -166,12 +206,13 @@ object KeyStateOf {
     * This version allows one to construct a custom `KeyFlowOf`
     * for generic persistence.
     */
-  def eagerRecovery[F[_]: Sync, S](
+  def eagerRecovery[F[_], S](
     applicationId: String,
     groupId: String,
     keysOf: KeysOf[F, KafkaKey],
     timersOf: TimersOf[F, KafkaKey],
     persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
+    additionalPersistOf: AdditionalStatePersistOf[F, S],
     keyFlowOf: KeyFlowOf[F, S, ConsRecord],
     recover: FoldOption[F, S, ConsRecord]
   ): KeyStateOf[F] = new KeyStateOf[F] {
@@ -184,9 +225,10 @@ object KeyStateOf {
         key = key
       )
       for {
-        timers <- Resource.liftF(timersOf(kafkaKey, createdAt))
-        persistence <- Resource.liftF(persistenceOf(kafkaKey, recover, timers))
-        keyFlow <- keyFlowOf(context, persistence, timers)
+        timers <- Resource.eval(timersOf(kafkaKey, createdAt))
+        persistence <- Resource.eval(persistenceOf(kafkaKey, recover, timers))
+        additionalPersist <- Resource.eval(additionalPersistOf(persistence, context))
+        keyFlow <- keyFlowOf(context, persistence, timers, additionalPersist)
       } yield KeyState(keyFlow, timers)
     }
 

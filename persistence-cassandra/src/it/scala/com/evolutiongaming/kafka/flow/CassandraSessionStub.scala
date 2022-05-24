@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.MonadThrow
-import cats.effect.concurrent.Ref
+import cats.effect.Ref
 import cats.syntax.all._
 import com.datastax.driver.core.Statement
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
