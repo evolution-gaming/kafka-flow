@@ -1,13 +1,11 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
-import cats.Applicative
-import cats.Monad
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
+import cats.{Applicative, Monad}
+import cats.effect.{Ref, Sync}
+import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.mtl.MonadState
 import com.evolutiongaming.catshelper.Log
-import com.olegpy.meow.effects._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 
 trait Snapshots[F[_], S] extends SnapshotReader[F, S] with SnapshotWriter[F, S]
 
@@ -54,7 +52,7 @@ object Snapshots {
   private[flow] def apply[F[_]: Monad: Log, K, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
-    buffer: MonadState[F, Option[Snapshot[S]]]
+    buffer: Stateful[F, Option[Snapshot[S]]]
   ): Snapshots[F, S] = new Snapshots[F, S] {
 
     def read = database.get(key)

@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
 import cats.effect.{Concurrent, Resource}
-import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.FlowMetrics
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf}
@@ -24,7 +24,7 @@ object KafkaPersistenceModuleOf {
     * @param snapshotTopic snapshot topic name (should be configured as a 'compacted' topic)
     * @param metrics instance of `FlowMetrics` for [[KafkaPersistenceModule]]
     */
-  def caching[F[_]: LogOf: Concurrent: FromBytes[*[_], String]: ToBytes[*[_], S], S: FromBytes[F, *]](
+  def caching[F[_]: LogOf: Concurrent: Runtime: FromBytes[*[_], String]: ToBytes[*[_], S], S: FromBytes[F, *]](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
     consumerConfig: ConsumerConfig,

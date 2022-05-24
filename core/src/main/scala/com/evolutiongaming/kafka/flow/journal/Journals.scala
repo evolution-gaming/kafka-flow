@@ -1,14 +1,12 @@
 package com.evolutiongaming.kafka.flow.journal
 
-import cats.Applicative
-import cats.Monad
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
+import cats.{Applicative, Monad}
+import cats.effect.Ref
+import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.mtl.MonadState
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.sstream.Stream
-import com.olegpy.meow.effects._
 
 trait Journals[F[_], E] extends JournalReader[F, E] with JournalWriter[F, E]
 
@@ -43,7 +41,7 @@ trait JournalWriter[F[_], E] {
 object Journals {
 
   /** Creates a buffer for a given database */
-  private[journal] def of[F[_]: Sync: Log, K, E](
+  private[journal] def of[F[_]: Monad: Ref.Make: Log, K, E](
     key: K, database: JournalDatabase[F, K, E]
   ): F[Journals[F, E]] =
     Ref.of[F, List[E]](List.empty) map { buffer =>
@@ -53,7 +51,7 @@ object Journals {
   private[journal] def apply[F[_]: Monad: Log, K, E](
     key: K,
     database: JournalDatabase[F, K, E],
-    buffer: MonadState[F, List[E]],
+    buffer: Stateful[F, List[E]],
   ): Journals[F, E] = new Journals[F, E] {
 
     def read = database.get(key)

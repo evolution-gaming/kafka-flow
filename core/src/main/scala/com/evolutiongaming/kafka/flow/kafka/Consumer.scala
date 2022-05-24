@@ -1,12 +1,12 @@
 package com.evolutiongaming.kafka.flow.kafka
 
+import cats.MonadThrow
 import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
-import cats.effect.Sync
-import cats.effect.concurrent.Ref
+import cats.effect.Ref
 import cats.syntax.all._
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka.consumer.{Consumer => KafkaConsumer, _}
-import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, PartitionInfo, Topic, TopicPartition}
+import com.evolutiongaming.skafka._
 import scodec.bits.ByteVector
 
 import java.time.Instant
@@ -45,7 +45,7 @@ object Consumer {
   }
 
   /** Does not call Kafka, returns specified records on every poll */
-  def repeat[F[_]: Sync](
+  def repeat[F[_]: MonadThrow: Ref.Make](
     records: ConsRecords
   ): F[Consumer[F]] = Ref.of(Set.empty[RebalanceListener1[F]]) map { listeners =>
     new Consumer[F] {

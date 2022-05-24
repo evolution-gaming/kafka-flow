@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.key
 
-import cats.effect.concurrent.Ref
+import cats.effect.Ref
 import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.CassandraSessionStub
 import com.evolutiongaming.kafka.flow.CassandraSpec

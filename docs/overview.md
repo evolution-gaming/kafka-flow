@@ -56,16 +56,12 @@ Saying that, the library is written and prepared for, so called, Tagless Final
 stype of programming. One does not have to use `IO` directly. Actually, the
 main "dog food" application is written in Tagless Final style.
 ```scala mdoc:silent
-import cats.effect.IO
-import com.evolutiongaming.catshelper.BracketThrowable
+import cats.effect.{IO, MonadCancelThrow}
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.smetrics.MeasureDuration
-import scala.concurrent.ExecutionContext
 
-implicit val contextShift = IO.contextShift(ExecutionContext.global)
-implicit val timer = IO.timer(ExecutionContext.global)
-implicit val bracketThrowable = BracketThrowable[IO]
+implicit val MT = MonadCancelThrow[IO]
 implicit val measureDuration = MeasureDuration.empty[IO]
 implicit val logOf = LogOf.empty[IO]
 implicit val log = Log.empty[IO]

@@ -1,11 +1,12 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.{Clock, ContextShift, IO, Resource}
-import cats.effect.concurrent.Ref
+import cats.effect.unsafe.IORuntime
+import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.PartitionFlowSpec._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.kafka.flow.journal.JournalsOf
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.key.KeysOf
@@ -13,17 +14,17 @@ import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.skafka.consumer.WithSize
+import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.sstream.Stream
-import com.olegpy.meow.effects._
 import munit.FunSuite
 import scodec.bits.ByteVector
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
 class PartitionFlowSpec extends FunSuite {
+
+  implicit val ioRuntime = IORuntime.global
 
   test("PartitionFlow does not require commit if no flows finished") {
 
@@ -267,10 +268,6 @@ class PartitionFlowSpec extends FunSuite {
 object PartitionFlowSpec {
 
   class ConstFixture(waitForN: Int) {
-
-    implicit val contextShift: ContextShift[IO] =
-      IO.contextShift(ExecutionContext.global)
-
     implicit val logOf: LogOf[IO] = LogOf.empty
     implicit val log: Log[IO] = Log.empty
 
@@ -283,10 +280,11 @@ object PartitionFlowSpec {
 
     type State = (Offset, Int)
 
-    val keysOf = KeysOf.memory[IO, String].unsafeRunSync()
-    val journalsOf = JournalsOf.memory[IO, String, ConsRecord].unsafeRunSync()
-    val snapshotsOf = SnapshotsOf.memory[IO, String, State].unsafeRunSync()
-    val (persistenceOf, _) = PersistenceOf.restoreEvents(keysOf, journalsOf, snapshotsOf).allocated.unsafeRunSync()
+    val keysOf = KeysOf.memory[IO, String].unsafeRunSync()(IORuntime.global)
+    val journalsOf = JournalsOf.memory[IO, String, ConsRecord].unsafeRunSync()(IORuntime.global)
+    val snapshotsOf = SnapshotsOf.memory[IO, String, State].unsafeRunSync()(IORuntime.global)
+    val (persistenceOf, _) =
+      PersistenceOf.restoreEvents(keysOf, journalsOf, snapshotsOf).allocated.unsafeRunSync()(IORuntime.global)
 
     def fold: FoldOption[IO, State, ConsRecord] =
       FoldOption.of { (state, record) =>
@@ -333,7 +331,6 @@ object PartitionFlowSpec {
         }
         def all(topicPartition: TopicPartition): Stream[IO, String] = Stream.empty
       }
-      implicit val clock = Clock.create[IO]
       PartitionFlow.resource(
         TopicPartition.empty,
         Offset.unsafe(100),

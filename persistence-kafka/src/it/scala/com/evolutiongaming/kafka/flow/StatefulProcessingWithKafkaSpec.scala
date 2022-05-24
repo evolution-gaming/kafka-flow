@@ -1,9 +1,10 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.concurrent.{Deferred, Ref}
-import cats.effect.{Blocker, IO, Resource}
+import cats.effect.unsafe.IORuntime
+import cats.effect.{Deferred, Ref}
+import cats.effect.{IO, Resource}
 import cats.syntax.all._
-import cats.{Applicative, Functor, Monad}
+import cats.{Functor, Monad}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec._
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
@@ -39,6 +40,7 @@ import scala.concurrent.duration._
 
  */
 class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaSpecc {
+  implicit val ioRuntime = IORuntime.global
   implicit val logOf: LogOf[IO] = LogOf.slf4j.unsafeRunSync()
   implicit val log: Log[IO] = logOf(this.getClass).unsafeRunSync()
 
@@ -84,23 +86,21 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
    * - and resources release when warm up is done (read compact kafka topic, fold by key, convert to case classes using FromBytes, release=throw away loaded bytes Map[Key, Bytes])
    * - oh actually it's not a Resource.release, as we're using the state store within scope of the Resource
    */
-  private def kafkaPersistenceModuleOf: Resource[IO, KafkaPersistenceModuleOf[IO, State]] = {
+  private val kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[IO, State] = {
     import Boilerplate._
 
     val stateTopic = "state-topic-StatefulProcessingWithKafkaSpec"
 
-    Blocker[IO].map { blocker =>
-      KafkaPersistenceModuleOf.caching[IO, State](
-        consumerOf = ConsumerOf[IO](blocker.blockingContext),
-        producerOf = ProducerOf.apply1[IO](blocker.blockingContext),
-        consumerConfig = ConsumerConfig(
-          autoCommit = false,
-          autoOffsetReset = AutoOffsetReset.Earliest
-        ),
-        producerConfig = ProducerConfig.Default,
-        snapshotTopic = stateTopic
-      )
-    }
+    KafkaPersistenceModuleOf.caching[IO, State](
+      consumerOf = ConsumerOf.apply1[IO](),
+      producerOf = ProducerOf.apply1[IO](),
+      consumerConfig = ConsumerConfig(
+        autoCommit = false,
+        autoOffsetReset = AutoOffsetReset.Earliest
+      ),
+      producerConfig = ProducerConfig.Default,
+      snapshotTopic = stateTopic
+    )
   }
 
   test("stateful processing using in-memory persistence") { kafka =>
@@ -113,9 +113,7 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
   test("stateful processing using kafka persistence") { kafka =>
     // using unique input topic name per test as weaver is running tests in parallel
     val inputTopic = "kafka-persistence-test"
-    val persistenceModuleOf = kafkaPersistenceModuleOf.allocated.unsafeRunSync()._1
-    //val persistence = kafkaPersistence.allocated.unsafeRunSync()._1
-    comboTestCase(kafka, persistenceModuleOf, inputTopic)
+    comboTestCase(kafka, kafkaPersistenceModuleOf, inputTopic)
   }
 
   private def comboTestCase(
@@ -278,7 +276,7 @@ object StatefulProcessingWithKafkaSpec {
   object Boilerplate {
     implicit val jsonCodec: JsonCodec[IO] = JsonCodec.default[IO]
 
-    implicit def fromWrites[F[_]: Applicative, A](implicit
+    implicit def fromWrites[F[_], A](implicit
       writes: OWrites[A],
       encode: JsonCodec.Encode[F]
     ): com.evolutiongaming.kafka.journal.ToBytes[F, A] = com.evolutiongaming.kafka.journal.ToBytes.fromWrites

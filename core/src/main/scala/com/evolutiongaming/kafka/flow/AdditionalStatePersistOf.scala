@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
-import cats.effect.{Clock, Sync}
+import cats.effect.{Clock, MonadCancelThrow, Ref}
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.kafka.journal.ConsRecord
 
@@ -28,7 +28,7 @@ object AdditionalStatePersistOf {
       ): F[AdditionalStatePersist[F, ConsRecord]] = Applicative[F].pure(AdditionalStatePersist.empty[F, ConsRecord])
     }
 
-  def of[F[_]: Sync: Clock, S](cooldown: FiniteDuration): AdditionalStatePersistOf[F, S] = {
+  def of[F[_]: MonadCancelThrow: Ref.Make: Clock, S](cooldown: FiniteDuration): AdditionalStatePersistOf[F, S] = {
     new AdditionalStatePersistOf[F, S] {
       def apply(
         persistence: Persistence[F, S, ConsRecord],

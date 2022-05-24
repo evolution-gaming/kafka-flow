@@ -1,9 +1,9 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.{Concurrent, Resource, Timer}
+import cats.effect.{Clock, Concurrent, Resource}
 import cats.syntax.all._
 import cats.{Eval, Foldable, Monad, Parallel}
-import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
@@ -45,7 +45,7 @@ package object kafkapersistence {
     * @param metrics enhances framework with metrics
     * @param filter optional function to pre-filter incoming events before they are processed by `fold`
     */
-  def kafkaEagerRecovery[F[_]: Concurrent: Timer: Parallel: LogOf, S](
+  def kafkaEagerRecovery[F[_]: Concurrent: Parallel: LogOf: Clock: Runtime, S](
     kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
     applicationId: String,
     groupId: String,
@@ -100,18 +100,18 @@ package object kafkapersistence {
     *                            persisting. That part of functionality in `KeyFlowExtras` will work only if you pass
     *                            a functional (non-empty) implementation here
     */
-  def kafkaEagerRecovery[F[_]: Concurrent: Timer: Parallel: LogOf, S](
-                                                                       kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
-                                                                       applicationId: String,
-                                                                       groupId: String,
-                                                                       timersOf: TimersOf[F, KafkaKey],
-                                                                       timerFlowOf: TimerFlowOf[F],
-                                                                       fold: EnhancedFold[F, S, ConsRecord],
-                                                                       tick: TickOption[F, S],
-                                                                       partitionFlowConfig: PartitionFlowConfig,
-                                                                       metrics: FlowMetrics[F],
-                                                                       filter: Option[FilterRecord[F]],
-                                                                       additionalPersistOf: AdditionalStatePersistOf[F, S]
+  def kafkaEagerRecovery[F[_]: Concurrent: Parallel: LogOf: Clock: Runtime, S](
+    kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
+    applicationId: String,
+    groupId: String,
+    timersOf: TimersOf[F, KafkaKey],
+    timerFlowOf: TimerFlowOf[F],
+    fold: EnhancedFold[F, S, ConsRecord],
+    tick: TickOption[F, S],
+    partitionFlowConfig: PartitionFlowConfig,
+    metrics: FlowMetrics[F],
+    filter: Option[FilterRecord[F]],
+    additionalPersistOf: AdditionalStatePersistOf[F, S]
   ): PartitionFlowOf[F] =
     new PartitionFlowOf[F] {
       override def apply(
@@ -123,7 +123,7 @@ package object kafkapersistence {
           // TODO: per-partition persistence module with 'String -> ByteVector' cache or global persistence module with 'KafkaKey -> ByteVector' cache?
           // Latter would require initialization of PartitionFlowOf as a Resource
           kafkaPersistenceModule <- kafkaPersistenceModuleOf.make(topicPartition.partition)
-          partitionFlowOf = PartitionFlowOf.apply[F, S](
+          partitionFlowOf = PartitionFlowOf.apply[F](
             keyStateOf = KeyStateOf.eagerRecovery(
               applicationId = applicationId,
               groupId = groupId,

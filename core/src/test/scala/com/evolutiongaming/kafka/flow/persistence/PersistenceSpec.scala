@@ -1,19 +1,17 @@
 package com.evolutiongaming.kafka.flow.persistence
 
 import cats.data.State
-import cats.syntax.all._
 import cats.mtl._
-import cats.mtl.implicits._
+import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.MonadStateHelper._
-import com.evolutiongaming.kafka.flow.timer.Timestamp
-import com.evolutiongaming.kafka.flow.timer.Timestamps
+import com.evolutiongaming.kafka.flow.persistence.PersistenceSpec._
+import com.evolutiongaming.kafka.flow.timer.{Timestamp, Timestamps}
 import com.evolutiongaming.kafka.flow.timer.Timestamps.TimestampState
 import com.evolutiongaming.skafka.Offset
-import java.time.Instant
 import monocle.macros.GenLens
 import munit.FunSuite
 
-import PersistenceSpec._
+import java.time.Instant
 
 class PersistenceSpec extends FunSuite {
 
@@ -118,7 +116,7 @@ object PersistenceSpec {
     )
 
     implicit val timestamps: Timestamps[F] = Timestamps(
-      MonadState[F, Context] focus GenLens[Context](_.timestamps)
+      Stateful[F, Context] focus GenLens[Context](_.timestamps)
     )
 
     val persistence: Persistence[F, Int, String] = Persistence(

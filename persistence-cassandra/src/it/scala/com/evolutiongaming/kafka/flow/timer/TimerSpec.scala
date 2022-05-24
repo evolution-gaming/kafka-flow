@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.timer
 
-import cats.effect.concurrent.Ref
+import cats.effect.Ref
 import com.evolutiongaming.kafka.flow.CassandraSessionStub
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey

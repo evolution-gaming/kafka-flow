@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.effect.IO
-import cats.effect.concurrent.Ref
+import cats.effect.Ref
 import com.evolutiongaming.kafka.flow.CassandraSessionStub
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.kafka.flow.KafkaKey
