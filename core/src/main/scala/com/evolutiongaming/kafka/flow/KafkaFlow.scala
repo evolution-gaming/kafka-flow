@@ -83,7 +83,7 @@ object KafkaFlow {
     stream(consumer, flowOf).drain.background.map(_.flatMap {
       case Outcome.Succeeded(fa) => fa
       case Outcome.Errored(e)    => e.raiseError[F, Unit]
-      case Outcome.Canceled()    => new CancellationException().raiseError[F, Unit]
+      case Outcome.Canceled()    => Concurrent[F].canceled
     })
 
 }
