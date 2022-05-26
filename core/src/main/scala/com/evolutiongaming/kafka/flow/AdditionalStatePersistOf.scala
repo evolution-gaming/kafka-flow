@@ -16,7 +16,7 @@ trait AdditionalStatePersistOf[F[_], S] {
   def apply(
     persistence: Persistence[F, S, ConsRecord],
     keyContext: KeyContext[F]
-  ): F[AdditionalStatePersist[F, ConsRecord]]
+  ): F[AdditionalStatePersist[F, S, ConsRecord]]
 }
 
 object AdditionalStatePersistOf {
@@ -25,7 +25,7 @@ object AdditionalStatePersistOf {
       override def apply(
         persistence: Persistence[F, S, ConsRecord],
         keyContext: KeyContext[F]
-      ): F[AdditionalStatePersist[F, ConsRecord]] = Applicative[F].pure(AdditionalStatePersist.empty[F, ConsRecord])
+      ): F[AdditionalStatePersist[F, S, ConsRecord]] = Applicative[F].pure(AdditionalStatePersist.empty[F, S, ConsRecord])
     }
 
   def of[F[_]: Sync: Clock, S](cooldown: FiniteDuration): AdditionalStatePersistOf[F, S] = {
@@ -33,7 +33,7 @@ object AdditionalStatePersistOf {
       def apply(
         persistence: Persistence[F, S, ConsRecord],
         keyContext: KeyContext[F]
-      ): F[AdditionalStatePersist[F, ConsRecord]] = {
+      ): F[AdditionalStatePersist[F, S, ConsRecord]] = {
         AdditionalStatePersist.of(persistence, keyContext, cooldown)
       }
     }

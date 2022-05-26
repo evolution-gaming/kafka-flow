@@ -16,7 +16,7 @@ import scala.concurrent.duration.FiniteDuration
 /** Internal API to handle user requests for additional persisting of a key's state.
   * One instance of this class is created per each key
   */
-trait AdditionalStatePersist[F[_], E] {
+trait AdditionalStatePersist[F[_], S, E] {
 
   /** Requests to persist a current state of the key. Calling this function doesn't guarantee that the state will be
     * persisted immediately; it's actually persisted only when `persistIfNeeded` is called after that
@@ -29,13 +29,13 @@ trait AdditionalStatePersist[F[_], E] {
     *
     * @param event currently processed record
     */
-  def persistIfNeeded(event: E): F[Unit]
+  def persistIfNeeded(event: E, state: S): F[Unit]
 }
 
 object AdditionalStatePersist {
-  def empty[F[_]: Applicative, E]: AdditionalStatePersist[F, E] = new AdditionalStatePersist[F, E] {
+  def empty[F[_]: Applicative, S, E]: AdditionalStatePersist[F, S, E] = new AdditionalStatePersist[F, S, E] {
     override def request: F[Unit] = Applicative[F].unit
-    override def persistIfNeeded(event: E): F[Unit] = Applicative[F].unit
+    override def persistIfNeeded(event: E, state: S): F[Unit] = Applicative[F].unit
   }
 
   /** Creates an instance of `AdditionalStatePersist` that allows additional persisting with the configurable cooldown.
@@ -50,7 +50,7 @@ object AdditionalStatePersist {
     persistence: Persistence[F, S, ConsRecord],
     keyContext: KeyContext[F],
     cooldown: FiniteDuration
-  ): F[AdditionalStatePersist[F, ConsRecord]] = {
+  ): F[AdditionalStatePersist[F, S, ConsRecord]] = {
     for {
       requestedRef <- Ref.of(false)
       lastPersistedRef <- Ref.of(none[Instant])
@@ -63,15 +63,17 @@ object AdditionalStatePersist {
     cooldown: FiniteDuration,
     requestedRef: Ref[F, Boolean],
     lastPersistedRef: Ref[F, Option[Instant]]
-  ): AdditionalStatePersist[F, ConsRecord] =
-    new AdditionalStatePersist[F, ConsRecord] {
+  ): AdditionalStatePersist[F, S, ConsRecord] =
+    new AdditionalStatePersist[F, S, ConsRecord] {
       private val F = Bracket[F, Throwable]
       private val cooldownMs = cooldown.toMillis
+      // TODO: make configurable, now it's too much code to rewrite at once
+      private val charsToPrint = 1024
 
       override def request: F[Unit] =
         requestedRef.set(true) >> keyContext.log.info("Additional persisting requested")
 
-      override def persistIfNeeded(record: ConsRecord): F[Unit] = {
+      override def persistIfNeeded(record: ConsRecord, state: S): F[Unit] = {
         for {
           requested <- requestedRef.get
           _ <- F.whenA(requested) {
@@ -80,7 +82,13 @@ object AdditionalStatePersist {
               lastPersisted <- lastPersistedRef.get
               _ <- F.whenA(lastPersisted.forall(ts => now - ts.toEpochMilli > cooldownMs)) {
                 for {
-                  _ <- persistence.flush.onError { case e => keyContext.log.error("Additional persisting failed", e) }
+                  _ <- persistence.flush.onError { case e =>
+                    val trimmedState = state.toString.take(charsToPrint)
+                    keyContext.log.error(
+                      s"Additional persisting failed, error: $e, first $charsToPrint chars of state: $trimmedState",
+                      e
+                    )
+                  }
                   _ <- OffsetToCommit[F](record.offset).flatMap(keyContext.hold)
                   _ <- lastPersistedRef.set(Instant.ofEpochMilli(now).some)
                   _ <- keyContext.log.info("Additional persisting success")
