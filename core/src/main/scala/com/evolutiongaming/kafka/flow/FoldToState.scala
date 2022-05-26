@@ -29,7 +29,7 @@ object FoldToState {
     storage: Stateful[F, Option[S]],
     fold: FoldOption[F, S, E],
     persistence: Persistence[F, S, E]
-  ): FoldToState[F, E] = apply(storage, EnhancedFold.fromFold(fold), persistence, AdditionalStatePersist.empty[F, E])
+  ): FoldToState[F, E] = apply(storage, EnhancedFold.fromFold(fold), persistence, AdditionalStatePersist.empty[F, S, E])
 
   /** Uses `fold` to apply the records to a state stored inside of `storage`.
     *
@@ -41,7 +41,7 @@ object FoldToState {
     storage: Stateful[F, Option[S]],
     fold: EnhancedFold[F, S, E],
     persistence: Persistence[F, S, E],
-    additionalPersist: AdditionalStatePersist[F, E]
+    additionalPersist: AdditionalStatePersist[F, S, E]
   ): FoldToState[F, E] = new FoldToState[F, E] {
     private val keyFlowExtras = KeyFlowExtras.of(additionalPersist.request)
 
@@ -53,7 +53,7 @@ object FoldToState {
             for {
               _ <- persistence.appendEvent(record)
               _ <- state.traverse_ { state =>
-                persistence.replaceState(state) >> additionalPersist.persistIfNeeded(record)
+                persistence.replaceState(state) >> additionalPersist.persistIfNeeded(record, state)
               }
             } yield ()
           }
