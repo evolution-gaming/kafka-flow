@@ -11,7 +11,7 @@ trait KeyFlowOf[F[_], S, A] {
     context: KeyContext[F],
     persistence: Persistence[F, S, A],
     timers: TimerContext[F],
-    additionalPersist: AdditionalStatePersist[F, A]
+    additionalPersist: AdditionalStatePersist[F, S, A]
   ): Resource[F, KeyFlow[F, A]]
 
 }
