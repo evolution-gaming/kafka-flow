@@ -12,7 +12,7 @@ trait KeyFlowOf[F[_], S, A] {
     context: KeyContext[F],
     persistence: Persistence[F, S, A],
     timers: TimerContext[F],
-    additionalPersist: AdditionalStatePersist[F, A]
+    additionalPersist: AdditionalStatePersist[F, S, A]
   ): Resource[F, KeyFlow[F, A]]
 
 }
@@ -41,9 +41,9 @@ object KeyFlowOf {
     * @param tick defines what to do when the timer ticks
     */
   def apply[F[_]: Sync, K, S, A](
-                                  timerFlowOf: TimerFlowOf[F],
-                                  fold: EnhancedFold[F, S, A],
-                                  tick: TickOption[F, S]
+    timerFlowOf: TimerFlowOf[F],
+    fold: EnhancedFold[F, S, A],
+    tick: TickOption[F, S]
   ): KeyFlowOf[F, S, A] = { (context, persistence, timers, additionalPersist) =>
     implicit val _context = context
     timerFlowOf(context, persistence, timers) evalMap { timerFlow =>
