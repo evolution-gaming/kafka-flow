@@ -26,26 +26,27 @@ import java.time.ZoneOffset
 
 class CassandraKeys[F[_]: Monad: Fail: Clock](
   session: CassandraSession[F],
-  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
+  segments: Segments
 ) extends KeyDatabase[F, KafkaKey] {
 
   def persist(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- Statements.persist(session, key)
+      boundStatement <- Statements.persist(session, key, segments)
       statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _ <- session.execute(statement).first.void
     } yield ()
 
   def delete(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- Statements.delete(session, key)
+      boundStatement <- Statements.delete(session, key, segments)
       statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _ <- session.execute(statement).first.void
     } yield ()
 
   def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, KafkaKey] =
     for {
-      segment <- Stream.from[F, List, Int]((0 until Segments.default.value).toList)
+      segment <- Stream.from[F, List, Int]((0 until segments.value).toList)
       segment <- Stream.lift(SegmentNr.of[F](segment.toLong))
       key <- all(applicationId, groupId, segment, topicPartition)
     } yield key
@@ -87,14 +88,29 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
 }
 object CassandraKeys {
 
-  /** Creates schema in Cassandra if not there yet */
+  private val DefaultSegments = Segments.unsafe(10000)
+
+  /** Creates schema in Cassandra if not there yet.
+    * Uses a default number of segments (10000).
+    */
+  @deprecated("Use the alternative with an explicit passing of segments number", since = "0.6.6")
   def withSchema[F[_]: MonadThrow: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
   ): F[KeyDatabase[F, KafkaKey]] = {
+    withSchema(session, sync, consistencyOverrides, DefaultSegments)
+  }
+
+  /** Creates schema in Cassandra if not there yet */
+  def withSchema[F[_]: MonadThrow: Clock](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides,
+    segments: Segments
+  ): F[KeyDatabase[F, KafkaKey]] = {
     implicit val fail = Fail.lift
-    KeySchema(session, sync).create as new CassandraKeys(session, consistencyOverrides)
+    KeySchema(session, sync).create as new CassandraKeys(session, consistencyOverrides, segments)
   }
 
   def truncate[F[_]: Monad](
@@ -172,7 +188,11 @@ object CassandraKeys {
             .encode("partition", topicPartition.partition.value)
         )
 
-    def persist[F[_]: Monad: Clock](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    def persist[F[_]: Monad: Clock](
+      session: CassandraSession[F],
+      key: KafkaKey,
+      segments: Segments
+    ): F[BoundStatement] =
       for {
         preparedStatement <- session.prepare(
           """ UPDATE
@@ -197,7 +217,7 @@ object CassandraKeys {
           .bind()
           .encode("application_id", key.applicationId)
           .encode("group_id", key.groupId)
-          .encode("segment", SegmentNr(key.key.hashCode, Segments.default))
+          .encode("segment", SegmentNr(key.key.hashCode, segments))
           .encode("topic", key.topicPartition.topic)
           .encode("partition", key.topicPartition.partition)
           .encode("key", key.key)
@@ -206,7 +226,7 @@ object CassandraKeys {
           .encode("metadata", "")
       }
 
-    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, segments: Segments): F[BoundStatement] =
       session
         .prepare(
           """ DELETE FROM
@@ -224,7 +244,7 @@ object CassandraKeys {
           _.bind()
             .encode("application_id", key.applicationId)
             .encode("group_id", key.groupId)
-            .encode("segment", SegmentNr(key.key.hashCode, Segments.default))
+            .encode("segment", SegmentNr(key.key.hashCode, segments))
             .encode("topic", key.topicPartition.topic)
             .encode("partition", key.topicPartition.partition)
             .encode("key", key.key)
