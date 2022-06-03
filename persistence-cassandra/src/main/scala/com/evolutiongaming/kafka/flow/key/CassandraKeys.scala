@@ -88,7 +88,7 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
 }
 object CassandraKeys {
 
-  private val DefaultSegments = Segments.unsafe(10000)
+  val DefaultSegments = Segments.unsafe(10000)
 
   /** Creates schema in Cassandra if not there yet.
     * Uses a default number of segments (10000).
