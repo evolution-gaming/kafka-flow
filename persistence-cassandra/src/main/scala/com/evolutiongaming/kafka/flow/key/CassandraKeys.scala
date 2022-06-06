@@ -35,16 +35,19 @@ import java.time.{LocalDate, ZoneOffset}
   */
 class CassandraKeys[F[_]: Monad: Fail: Clock](
   session: CassandraSession[F],
-  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
+  consistencyOverrides: ConsistencyOverrides,
   segments: Segments
 ) extends KeyDatabase[F, KafkaKey] {
 
+  def this(session: CassandraSession[F], segments: Segments) =
+    this(session, consistencyOverrides = ConsistencyOverrides.none, segments)
+
   /** Uses a default number of Segments (10000).
-    * Consider using the main constructor with an explicit Segments argument as this one will be removed in future releases.
+    * Consider using one of the main constructors with an explicit Segments argument as this one will be removed in future releases.
     */
-  @deprecated("Use the main constructor with an explicit Segments argument", since = "0.6.6")
-  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none) =
-    this(session, consistencyOverrides, CassandraKeys.DefaultSegments)
+  @deprecated("Use one of constructors with an explicit Segments argument", since = "0.6.6")
+  def this(session: CassandraSession[F]) =
+    this(session, consistencyOverrides = ConsistencyOverrides.none, CassandraKeys.DefaultSegments)
 
   def persist(key: KafkaKey): F[Unit] =
     for {
