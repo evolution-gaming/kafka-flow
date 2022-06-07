@@ -6,8 +6,9 @@ import cats.effect.Resource
 import cats.effect.Ref
 import cats.effect.unsafe.IORuntime
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.cassandra.CassandraPersistence
+import com.evolutiongaming.kafka.flow.cassandra.{CassandraPersistence, ConsistencyOverrides}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
+import com.evolutiongaming.kafka.flow.key.CassandraKeys
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
 import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
 import com.evolutiongaming.kafka.flow.timer.TimersOf
@@ -24,11 +25,13 @@ import weaver.GlobalRead
 class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
 
   test("flow fails when Cassandra insert fails") { cassandra =>
-
     val flow = for {
       failAfter <- Resource.eval(Ref.of(10000))
       session = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
-      storage <- Resource.eval(CassandraPersistence.withSchema[IO, String](session, cassandra.sync))
+      storage <- Resource.eval(
+        CassandraPersistence
+          .withSchema[IO, String](session, cassandra.sync, ConsistencyOverrides.none, CassandraKeys.DefaultSegments)
+      )
       timersOf <- Resource.eval(TimersOf.memory[IO, KafkaKey])
       keysOf <- Resource.eval(storage.keys.keysOf)
       persistenceOf <- storage.restoreEvents
@@ -53,17 +56,19 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
           commitOnRevoke = true
         )
       )
-     topicFlowOf = TopicFlowOf(partitionFlowOf)
-     records = NonEmptyList.of(ConsRecord(
-       topicPartition = TopicPartition.empty,
-       offset = Offset.min,
-       timestampAndType = None,
-       key = Some(WithSize("key"))
-     ))
-     consumer = Consumer.repeat {
-       ConsumerRecords(Map(TopicPartition.empty -> records))
-     }
-     join <- {
+      topicFlowOf = TopicFlowOf(partitionFlowOf)
+      records = NonEmptyList.of(
+        ConsRecord(
+          topicPartition = TopicPartition.empty,
+          offset = Offset.min,
+          timestampAndType = None,
+          key = Some(WithSize("key"))
+        )
+      )
+      consumer = Consumer.repeat {
+        ConsumerRecords(Map(TopicPartition.empty -> records))
+      }
+      join <- {
         implicit val retry = Retry.empty[IO]
         KafkaFlow.resource(
           consumer = Resource.eval(consumer),
