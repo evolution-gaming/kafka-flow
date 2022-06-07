@@ -31,7 +31,7 @@ import java.time.{LocalDate, ZoneOffset}
   * @param session Cassandra session
   * @param consistencyOverrides allows overriding read and write query consistency separately
   * @param segments a number of segments
-  * @see See [[com.evolutiongaming.kafka.flow.key.KeySchema]] for a schema description
+  * @see See `com.evolutiongaming.kafka.flow.key.KeySchema` for a schema description
   */
 class CassandraKeys[F[_]: Monad: Fail: Clock](
   session: CassandraSession[F],
