@@ -5,8 +5,9 @@ import cats.effect.IO
 import cats.effect.Resource
 import cats.effect.concurrent.Ref
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.cassandra.CassandraPersistence
+import com.evolutiongaming.kafka.flow.cassandra.{CassandraPersistence, ConsistencyOverrides}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
+import com.evolutiongaming.kafka.flow.key.CassandraKeys
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
 import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
 import com.evolutiongaming.kafka.flow.timer.TimersOf
@@ -16,6 +17,7 @@ import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import com.evolutiongaming.skafka.consumer.WithSize
+
 import scala.concurrent.duration._
 import weaver.GlobalRead
 
@@ -26,7 +28,8 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
     val flow = for {
       failAfter <- Resource.eval(Ref.of(10000))
       session = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
-      storage <- Resource.eval(CassandraPersistence.withSchema[IO, String](session, cassandra.sync))
+      storage <-
+        Resource.eval(CassandraPersistence.withSchema[IO, String](session, cassandra.sync, ConsistencyOverrides.none, CassandraKeys.DefaultSegments))
       timersOf <- Resource.eval(TimersOf.memory[IO, KafkaKey])
       keysOf <- Resource.eval(storage.keys.keysOf)
       persistenceOf <- storage.restoreEvents
