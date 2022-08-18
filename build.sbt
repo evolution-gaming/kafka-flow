@@ -9,7 +9,6 @@ lazy val commonSettings = Seq(
   publishTo := Some(Resolver.evolutionReleases),
   scalaVersion := crossScalaVersions.value.head,
   crossScalaVersions := Seq("2.13.5", "2.12.16"),
-  coverageScalacPluginVersion := "1.4.8",
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   releaseCrossBuild := true,
   testFrameworks += new TestFramework("munit.Framework"),
