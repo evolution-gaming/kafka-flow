@@ -94,7 +94,7 @@ collector registry variant will fail if initialized twice. The specific metrics
 available for each of the classes are further discussed in the respective sections.</p>
 <p>For sake of simplicity, all the examples assume the following is in the scope.
 Saying that, the library is written and prepared for, so called, Tagless Final
-stype of programming. One does not have to use <code>IO</code> directly. Actually, the
+style of programming. One does not have to use <code>IO</code> directly. Actually, the
 main &quot;dog food&quot; application is written in Tagless Final style.</p>
 <pre><code class="hljs css language-scala"><span class="hljs-keyword">import</span> cats.effect.{<span class="hljs-type">IO</span>, <span class="hljs-type">MonadCancelThrow</span>}
 <span class="hljs-keyword">import</span> com.evolutiongaming.catshelper.<span class="hljs-type">Log</span>
@@ -130,7 +130,7 @@ correct error handling in case the underlying stream fails.</p>
 )
 </code></pre>
 <p>The consumer parameter is a thin wrapper over <code>Consumer</code> coming from <code>skafka</code>
-meant to faciliate the simpler unit tests will less methods to stub. The recommended
+meant to facilitate the simpler unit tests will less methods to stub. The recommended
 way, currently, to create such a <code>Consumer</code> is to use <code>consumerOf</code> method from
 <code>KafkaModule</code> helper, which will configure <code>Consumer</code> properly and also proivde
 a <code>KafkaHealthCheck</code> which could be used for application-wide health check.</p>
