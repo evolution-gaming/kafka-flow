@@ -3,12 +3,12 @@ import sbt._
 object Dependencies {
 
   val munit = "org.scalameta" %% "munit" % "0.7.29"
-  val scribe = "com.outr" %% "scribe-slf4j" % "3.10.1"
+  val scribe = "com.outr" %% "scribe-slf4j" % "3.5.0"
   val weaver = "com.disneystreaming" %% "weaver-cats" % "0.7.14"
 
   val cassandraLauncher = "com.evolutiongaming" %% "cassandra-launcher" % "0.0.4"
   val catsHelper = "com.evolutiongaming" %% "cats-helper" % "3.1.0"
-  val kafkaLauncher = "com.evolutiongaming" %% "kafka-launcher" % "0.0.11"
+  val kafkaLauncher = "com.evolutiongaming" %% "kafka-launcher" % "0.0.12"
   val scache = "com.evolutiongaming" %% "scache" % "4.0.0"
   val skafka = "com.evolutiongaming" %% "skafka" % "12.2.2"
   val smetrics = "com.evolutiongaming" %% "smetrics" % "1.0.4"
