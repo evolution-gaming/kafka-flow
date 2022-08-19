@@ -54,7 +54,10 @@ object KafkaModule {
         val commonConfig = config.common.copy(clientId = config.common.clientId.map(id => s"$id-HealthCheck"))
         val healthCheck = KafkaHealthCheck.of[F](
           config = KafkaHealthCheck.Config.default,
-          kafkaConfig = KafkaConfig(ProducerConfig(common = commonConfig), config.copy(common = commonConfig))
+          kafkaConfig = KafkaConfig(
+            ProducerConfig(common = commonConfig, saslSupport = config.saslSupport, sslSupport = config.sslSupport),
+            config.copy(common = commonConfig)
+          )
         )
         LogResource[F](KafkaModule.getClass, "KafkaHealthCheck") *> healthCheck
       }
