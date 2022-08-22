@@ -8,7 +8,7 @@ object Dependencies {
 
   val cassandraLauncher = "com.evolutiongaming" %% "cassandra-launcher" % "0.0.4"
   val catsHelper        = "com.evolutiongaming" %% "cats-helper"        % "2.7.0"
-  val kafkaLauncher     = "com.evolutiongaming" %% "kafka-launcher"     % "0.0.11"
+  val kafkaLauncher     = "com.evolutiongaming" %% "kafka-launcher"     % "0.0.12"
   val scache            = "com.evolutiongaming" %% "scache"             % "3.2.0"
   val skafka            = "com.evolutiongaming" %% "skafka"             % "11.12.0"
   val smetrics          = "com.evolutiongaming" %% "smetrics"           % "0.3.4"
