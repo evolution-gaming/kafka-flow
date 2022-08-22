@@ -58,7 +58,8 @@
 file.</p>
 <pre><code class="hljs css language-scala">addSbtPlugin(<span class="hljs-string">"com.evolution"</span> % <span class="hljs-string">"sbt-artifactory-plugin"</span> % <span class="hljs-string">"0.0.2"</span>)
 
-<span class="hljs-keyword">lazy</span> <span class="hljs-keyword">val</span> version = <span class="hljs-string">"0.4.29"</span>
+<span class="hljs-keyword">lazy</span> <span class="hljs-keyword">val</span> version = <span class="hljs-string">"1.0.4"</span> <span class="hljs-comment">// For cats-effect 3 - compatible version</span>
+<span class="hljs-comment">// lazy val version = "0.6.7" // For cats-effect 2 - compatible version</span>
 
 libraryDependencies ++= <span class="hljs-type">Seq</span>(
   <span class="hljs-string">"com.evolutiongaming"</span> %% <span class="hljs-string">"kafka-flow"</span> % version,
