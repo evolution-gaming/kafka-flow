@@ -21,7 +21,8 @@ For versions based on cats-effect 2 please check the latest one in `0.x.x` serie
 ```scala
 addSbtPlugin("com.evolution" % "sbt-artifactory-plugin" % "0.0.2")
 
-lazy val version = "1.0.0"
+lazy val version = "1.0.4" // For cats-effect 3 - compatible version
+// lazy val version = "0.6.7" // For cats-effect 2 - compatible version
 
 libraryDependencies ++= Seq(
   "com.evolutiongaming" %% "kafka-flow" % version,
