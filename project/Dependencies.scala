@@ -8,9 +8,9 @@ object Dependencies {
 
   val cassandraLauncher = "com.evolutiongaming" %% "cassandra-launcher" % "0.0.4"
   val catsHelper = "com.evolutiongaming" %% "cats-helper" % "3.1.0"
-  val kafkaLauncher = "com.evolutiongaming" %% "kafka-launcher" % "0.0.11"
+  val kafkaLauncher = "com.evolutiongaming" %% "kafka-launcher" % "0.0.12"
   val scache = "com.evolutiongaming" %% "scache" % "4.0.0"
-  val skafka = "com.evolutiongaming" %% "skafka" % "12.1.3"
+  val skafka = "com.evolutiongaming" %% "skafka" % "14.0.0"
   val smetrics = "com.evolutiongaming" %% "smetrics" % "1.0.4"
   val sstream = "com.evolutiongaming" %% "sstream" % "1.0.1"
 
@@ -24,7 +24,7 @@ object Dependencies {
   }
 
   object KafkaJournal {
-    private val version = "1.0.2"
+    private val version = "1.0.7"
     val journal = "com.evolutiongaming" %% "kafka-journal" % version
     val cassandra = "com.evolutiongaming" %% "kafka-journal-eventual-cassandra" % version
     val persistence = "com.evolutiongaming" %% "kafka-journal-persistence" % version
