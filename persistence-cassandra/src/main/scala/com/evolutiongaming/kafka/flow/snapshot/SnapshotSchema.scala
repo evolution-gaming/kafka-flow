@@ -35,7 +35,7 @@ private[snapshot] object SnapshotSchema {
       ).first.void
     }
     def truncate = synchronize("SnapshotSchema") {
-      session.execute("TRUNCATE snapshots").first.void
+      session.execute("TRUNCATE snapshots_v2").first.void
     }
   }
 
