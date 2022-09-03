@@ -7,7 +7,7 @@ object Dependencies {
   val weaver = "com.disneystreaming" %% "weaver-cats" % "0.7.11"
 
   val cassandraLauncher = "com.evolutiongaming" %% "cassandra-launcher" % "0.0.4"
-  val catsHelper = "com.evolutiongaming" %% "cats-helper" % "3.1.0"
+  val catsHelper = "com.evolutiongaming" %% "cats-helper" % "3.1.1"
   val kafkaLauncher = "com.evolutiongaming" %% "kafka-launcher" % "0.0.12"
   val scache = "com.evolutiongaming" %% "scache" % "4.0.0"
   val skafka = "com.evolutiongaming" %% "skafka" % "14.0.0"
