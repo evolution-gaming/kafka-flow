@@ -56,7 +56,7 @@ object PartitionFlow {
     filter: Option[FilterRecord[F]] = None
   ): Resource[F, PartitionFlow[F]] =
     LogResource[F](getClass, topicPartition.toString) flatMap { implicit log =>
-      Cache.loading[F, String, PartitionKey[F]] flatMap { cache =>
+      Cache.loading1[F, String, PartitionKey[F]] flatMap { cache =>
         of(topicPartition, assignedAt, keyStateOf, cache, config, filter)
       }
     }

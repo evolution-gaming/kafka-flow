@@ -1,17 +1,14 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.data.NonEmptyList
-import cats.data.State
-import cats.mtl.MonadState
-import cats.mtl.implicits._
+import cats.data.{NonEmptyList, State}
+import cats.mtl.Stateful
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.kafka.flow.MonadStateHelper._
+import com.evolutiongaming.kafka.flow.FoldToStateSpec._
+import com.evolutiongaming.kafka.flow.StatefulHelper._
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.skafka.Offset
 import monocle.macros.GenLens
 import munit.FunSuite
-
-import FoldToStateSpec._
 
 class FoldToStateSpec extends FunSuite {
 
@@ -95,8 +92,8 @@ object FoldToStateSpec {
 
   class ConstFixture {
 
-    val storage: MonadState[F, Option[Int]] =
-      MonadState[F, Context] focus GenLens[Context](_.state)
+    val storage: Stateful[F, Option[Int]] =
+      Stateful[F, Context] focus GenLens[Context](_.state)
 
     /** Calculates number of events until `n` events are reached */
     def foldUntil(n: Int): FoldOption[F, Int, String] = FoldOption.of { (state, _) =>

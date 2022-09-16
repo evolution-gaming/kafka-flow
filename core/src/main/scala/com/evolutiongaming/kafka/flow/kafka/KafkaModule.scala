@@ -46,7 +46,7 @@ object KafkaModule {
       producerMetrics      <- ProducerMetrics.of(registry)
       consumerMetrics      <- ConsumerMetrics.of(registry)
       _producerOf            = RawProducerOf.apply1[F](blocker.blockingContext, producerMetrics(applicationId).some)
-      _consumerOf            = RawConsumerOf[F](blocker.blockingContext, consumerMetrics(applicationId).some)
+      _consumerOf            = RawConsumerOf.apply1[F](blocker.blockingContext, consumerMetrics(applicationId).some)
       _healthCheck          <- {
         implicit val randomIdOf = RandomIdOf.uuid[F]
         implicit val journalProducerOf = JournalProducerOf[F](_producerOf)

@@ -91,7 +91,7 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
 
     Blocker[IO].map { blocker =>
       KafkaPersistenceModuleOf.caching[IO, State](
-        consumerOf = ConsumerOf[IO](blocker.blockingContext),
+        consumerOf = ConsumerOf.apply1[IO](blocker.blockingContext),
         producerOf = ProducerOf.apply1[IO](blocker.blockingContext),
         consumerConfig = ConsumerConfig(
           autoCommit = false,

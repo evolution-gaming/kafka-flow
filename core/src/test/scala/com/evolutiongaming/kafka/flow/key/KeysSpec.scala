@@ -1,12 +1,10 @@
 package com.evolutiongaming.kafka.flow.key
 
 import cats.data.State
-import cats.mtl.MonadState
-import cats.mtl.implicits._
+import cats.mtl.Stateful
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.kafka.flow.key.KeysSpec._
 import munit.FunSuite
-
-import KeysSpec._
 
 class KeysSpec extends FunSuite {
 
@@ -71,7 +69,7 @@ object KeysSpec {
   type F[T] = State[Set[String], T]
 
   class ConstFixture {
-    val database = MonadState[F, Set[String]]
+    val database = Stateful[F, Set[String]]
   }
 
   implicit val log: Log[F] = Log.empty[F]

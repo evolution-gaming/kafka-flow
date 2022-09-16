@@ -1,11 +1,10 @@
 package com.evolutiongaming.kafka.flow.timer
 
-import cats.Applicative
-import cats.Monad
+import cats.{Applicative, Monad}
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
+import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.mtl.MonadState
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.sstream.Stream
 import com.olegpy.meow.effects._
@@ -36,7 +35,7 @@ object TimerDatabase {
     * but will not survive destruction of specific `TimerDatabase` instance.
     */
   def memory[F[_]: Monad, K, T](
-    storage: MonadState[F, Map[K, Set[T]]]
+    storage: Stateful[F, Map[K, Set[T]]]
   ): TimerDatabase[F, K, T] = new TimerDatabase[F, K, T] {
 
     def persist(key: K, timer: T) = storage modify { storage =>

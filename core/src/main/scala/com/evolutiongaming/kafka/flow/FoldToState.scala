@@ -4,10 +4,10 @@ import cats.Monad
 import cats.data.NonEmptyList
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
+import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.mtl.MonadState
+import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.olegpy.meow.effects._
-import persistence.Persistence
 
 /** Applies records to a state stored inside and informs the listeners about the changes */
 trait FoldToState[F[_], E] {
@@ -27,7 +27,7 @@ object FoldToState {
   }
 
   def apply[F[_]: Monad: KeyContext, S, E](
-    storage: MonadState[F, Option[S]],
+    storage: Stateful[F, Option[S]],
     fold: FoldOption[F, S, E],
     persistence: Persistence[F, S, E]
   ): FoldToState[F, E] = apply(storage, EnhancedFold.fromFold(fold), persistence, AdditionalStatePersist.empty[F, S, E])
@@ -39,7 +39,7 @@ object FoldToState {
     * is finished.
     */
   def apply[F[_]: Monad: KeyContext, S, E](
-    storage: MonadState[F, Option[S]],
+    storage: Stateful[F, Option[S]],
     fold: EnhancedFold[F, S, E],
     persistence: Persistence[F, S, E],
     additionalPersist: AdditionalStatePersist[F, S, E]

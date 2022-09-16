@@ -1,18 +1,17 @@
 package com.evolutiongaming.kafka.flow.journal
 
 import cats.data.State
+import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.mtl.MonadState
-import cats.mtl.implicits._
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.kafka.flow.MonadStateHelper._
+import com.evolutiongaming.kafka.flow.StatefulHelper._
+import com.evolutiongaming.kafka.flow.journal.JournalsSpec._
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.skafka.Offset
 import monocle.macros.GenLens
 import munit.FunSuite
-import scala.collection.immutable.SortedMap
 
-import JournalsSpec._
+import scala.collection.immutable.SortedMap
 
 class JournalsSpec extends FunSuite {
 
@@ -136,8 +135,8 @@ object JournalsSpec {
   )
 
   class ConstFixture {
-    val database = MonadState[F, Context] focus GenLens[Context](_.database)
-    val buffer = MonadState[F, Context] focus GenLens[Context](_.buffer)
+    val database = Stateful[F, Context] focus GenLens[Context](_.database)
+    val buffer = Stateful[F, Context] focus GenLens[Context](_.buffer)
   }
 
   implicit val log: Log[F] = Log.empty[F]
