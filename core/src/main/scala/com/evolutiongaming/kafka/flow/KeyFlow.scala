@@ -1,16 +1,14 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Applicative
-import cats.Monad
+import cats.{Applicative, Monad}
 import cats.data.NonEmptyList
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
-import cats.mtl.MonadState
+import cats.mtl.Stateful
 import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.persistence.Persistence
-import com.evolutiongaming.kafka.flow.timer.ReadTimestamps
+import com.evolutiongaming.kafka.flow.timer.{ReadTimestamps, TimerFlow}
 import com.olegpy.meow.effects._
-import timer.TimerFlow
 
 trait KeyFlow[F[_], E] extends TimerFlow[F] {
   def apply(records: NonEmptyList[E]): F[Unit]
@@ -40,7 +38,7 @@ object KeyFlow {
 
   /** Create flow which persists snapshots, events and restores state if needed */
   def of[F[_]: Monad: KeyContext, S, A](
-    storage: MonadState[F, Option[S]],
+    storage: Stateful[F, Option[S]],
     fold: FoldOption[F, S, A],
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
@@ -49,7 +47,7 @@ object KeyFlow {
     of(storage, EnhancedFold.fromFold(fold), tick, persistence, AdditionalStatePersist.empty[F, S, A], timer)
 
   def of[F[_]: Monad: KeyContext, S, A](
-    storage: MonadState[F, Option[S]],
+    storage: Stateful[F, Option[S]],
     fold: EnhancedFold[F, S, A],
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],

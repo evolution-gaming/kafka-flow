@@ -1,11 +1,9 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Applicative
-import cats.Monad
-import cats.effect.Resource
-import cats.effect.Sync
+import cats.{Applicative, Monad}
+import cats.effect.{Resource, Sync}
 import cats.effect.concurrent.Ref
-import cats.mtl.MonadState
+import cats.mtl.Stateful
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.skafka.Offset
@@ -39,7 +37,7 @@ object KeyContext {
     }
 
   def apply[F[_]: Monad: Log](
-    storage: MonadState[F, Option[Offset]],
+    storage: Stateful[F, Option[Offset]],
     removeFromCache: F[Unit]
   ): KeyContext[F] = new KeyContext[F] {
     def holding = storage.get

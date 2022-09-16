@@ -1,23 +1,22 @@
 package com.evolutiongaming.kafka.flow.timer
 
-import Timers.TimerState
-import Timestamps.TimestampState
 import cats.data.StateT
 import cats.effect.SyncIO
-import cats.mtl.MonadState
-import cats.mtl.implicits._
+import cats.mtl.Stateful
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.KeyContext
-import com.evolutiongaming.kafka.flow.MonadStateHelper._
+import com.evolutiongaming.kafka.flow.StatefulHelper._
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
+import com.evolutiongaming.kafka.flow.timer.TimerFlowSpec._
+import com.evolutiongaming.kafka.flow.timer.Timers.TimerState
+import com.evolutiongaming.kafka.flow.timer.Timestamps.TimestampState
 import com.evolutiongaming.skafka.Offset
-import java.time.Instant
 import monocle.macros.GenLens
 import munit.FunSuite
-import scala.concurrent.duration._
 
-import TimerFlowSpec._
+import java.time.Instant
+import scala.concurrent.duration._
 
 class TimerFlowOfSpec extends FunSuite {
 
@@ -471,7 +470,7 @@ object TimerFlowSpec {
 
   }
 
-  val state: MonadState[F, Context] = implicitly
+  val state: Stateful[F, Context] = implicitly
 
   object Context {
     val lens: GenLens[Context] = GenLens[Context]

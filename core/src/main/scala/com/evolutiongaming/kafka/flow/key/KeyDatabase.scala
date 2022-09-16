@@ -1,10 +1,10 @@
 package com.evolutiongaming.kafka.flow.key
 
-import cats.{Applicative, Monad}
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
+import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.mtl.MonadState
+import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
@@ -33,7 +33,7 @@ object KeyDatabase {
     }
 
   /** Creates in-memory database implementation */
-  def memory[F[_]: Monad, K](storage: MonadState[F, Set[K]]): KeyDatabase[F, K] =
+  def memory[F[_]: Monad, K](storage: Stateful[F, Set[K]]): KeyDatabase[F, K] =
     new KeyDatabase[F, K] {
 
       def persist(key: K) =

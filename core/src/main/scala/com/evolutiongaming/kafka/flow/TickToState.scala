@@ -3,10 +3,10 @@ package com.evolutiongaming.kafka.flow
 import cats.Monad
 import cats.effect.Sync
 import cats.effect.concurrent.Ref
+import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.mtl.MonadState
+import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.olegpy.meow.effects._
-import persistence.Persistence
 
 /** Calls the stateful routine stored inside */
 trait TickToState[F[_]] {
@@ -32,7 +32,7 @@ object TickToState {
     * is finished.
     */
   def apply[F[_]: Monad: KeyContext, S](
-    storage: MonadState[F, Option[S]],
+    storage: Stateful[F, Option[S]],
     tick: TickOption[F, S],
     persistence: Persistence[F, S, _],
   ): TickToState[F] = new TickToState[F] {

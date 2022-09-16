@@ -1,17 +1,12 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
-import cats.effect.Concurrent
-import cats.effect.Resource
-import cats.effect.Sync
-import cats.effect.Timer
+import cats.Parallel
+import cats.effect.{Concurrent, Resource, Sync, Timer}
 import cats.syntax.all._
-import com.evolutiongaming.cassandra.sync.AutoCreate
-import com.evolutiongaming.cassandra.sync.CassandraSync
-import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.cassandra.sync.{AutoCreate, CassandraSync}
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.LogResource
-import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraHealthCheck
-import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession => SafeSession}
+import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraHealthCheck, CassandraSession => SafeSession}
 import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.evolutiongaming.scassandra.util.FromGFuture
 import com.google.common.util.concurrent.ListenableFuture
@@ -41,7 +36,7 @@ object CassandraModule {
     * `ExecutionContextExecutor` rather than `ContextShift` because we need it
     * to convert `ListenableFuture` to `F[_]`.
     */
-  def of[F[_]: Concurrent: Timer: LogOf](
+  def of[F[_]: Concurrent: Parallel: Timer: LogOf](
     config: CassandraConfig
   )(implicit executor: ExecutionContextExecutor): Resource[F, CassandraModule[F]] = {
     for {
