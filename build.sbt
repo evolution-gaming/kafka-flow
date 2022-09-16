@@ -9,7 +9,6 @@ lazy val commonSettings = Seq(
   publishTo := Some(Resolver.evolutionReleases),
   scalaVersion := crossScalaVersions.value.head,
   crossScalaVersions := Seq("2.13.5", "2.12.14"),
-  coverageScalacPluginVersion := "1.4.8",
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   releaseCrossBuild := true,
   testFrameworks += new TestFramework("munit.Framework"),
@@ -21,7 +20,7 @@ lazy val commonSettings = Seq(
   libraryDependencySchemes ++= Seq(
     "org.scala-lang.modules" %% "scala-java8-compat" % "always"
   ),
-  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.0" cross CrossVersion.full)
+  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.2" cross CrossVersion.full)
 )
 
 lazy val root = (project in file("."))
