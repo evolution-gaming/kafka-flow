@@ -150,7 +150,6 @@ class EntityRegistryTest extends FunSuite {
         // Check that key2 is unchanged
         value4 <- registry.get(key2)
         _ <- IO.delay(assertEquals(value4, Some(0)))
-        _ = println(registry)
       } yield ()
     }
 
