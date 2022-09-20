@@ -7,6 +7,7 @@ import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.journal.ConsRecord

@@ -1,26 +1,22 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
-import cats.effect.SyncIO
-import cats.effect.Ref
+import cats.effect.{Ref, SyncIO}
+import cats.effect.syntax.resource._
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.kafka.flow.KeyFlowSpec._
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.persistence.Persistence
-import com.evolutiongaming.kafka.flow.timer.TimerContext
-import com.evolutiongaming.kafka.flow.timer.TimerFlow
-import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
-import com.evolutiongaming.kafka.flow.timer.Timestamp
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
+import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlow, TimerFlowOf, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.TopicPartition
+import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.skafka.consumer.WithSize
-import java.time.Instant
 import munit.FunSuite
 import scodec.bits.ByteVector
-import cats.effect.syntax.resource._
 
-import KeyFlowSpec._
+import java.time.Instant
 
 class KeyFlowSpec extends FunSuite {
 

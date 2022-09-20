@@ -3,6 +3,7 @@ package com.evolutiongaming.kafka.flow
 import cats.Monad
 import cats.effect.{Ref, Resource}
 import com.evolutiongaming.kafka.flow.persistence.Persistence
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf}
 
 trait KeyFlowOf[F[_], S, A] {

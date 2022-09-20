@@ -6,6 +6,7 @@ import cats.{Eval, Foldable, Monad, Parallel}
 import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.metrics.syntax._
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.consumer.ConsumerConfig

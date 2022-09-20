@@ -1,18 +1,15 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
-import cats.effect.Resource
-import cats.effect.Sync
+import cats.effect.{Resource, Sync}
 import cats.syntax.all._
+import com.evolutiongaming.kafka.flow.key.KeysOf
+import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
+import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
-import key.KeysOf
-import persistence.PersistenceOf
-import persistence.SnapshotPersistenceOf
-import timer.TimerFlowOf
-import timer.TimersOf
-import timer.Timestamp
 
 trait KeyStateOf[F[_]] { self =>
 

@@ -11,6 +11,7 @@ import com.evolutiongaming.kafka.flow.journal.JournalsOf
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord

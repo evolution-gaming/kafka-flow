@@ -9,6 +9,7 @@ import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.{CassandraPersistence, ConsistencyOverrides}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.flow.key.CassandraKeys
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
 import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
 import com.evolutiongaming.kafka.flow.timer.TimersOf
