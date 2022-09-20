@@ -251,7 +251,8 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
           commitOffsetsInterval = 0.seconds
         ),
         tick = TickOption.id[IO, State],
-        filter = none
+        filter = none,
+        registry = EntityRegistry.empty[IO, KafkaKey, State]
       )
     } yield TopicFlowOf(partitionFlowOf)
   }

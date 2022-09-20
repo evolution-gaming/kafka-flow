@@ -47,7 +47,8 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
           flushOnRevoke = true
         ),
         fold = FoldOption.empty[IO, KafkaSnapshot[String], ConsRecord],
-        tick = TickOption.id[IO, KafkaSnapshot[String]]
+        tick = TickOption.id[IO, KafkaSnapshot[String]],
+        registry = EntityRegistry.empty[IO, KafkaKey, KafkaSnapshot[String]]
       )
       partitionFlowOf = PartitionFlowOf(
         keyStateOf = keyStateOf,

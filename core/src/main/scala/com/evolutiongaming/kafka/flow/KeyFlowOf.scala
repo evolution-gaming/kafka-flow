@@ -8,10 +8,12 @@ import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf}
 trait KeyFlowOf[F[_], S, A] {
 
   def apply(
+    key: KafkaKey,
     context: KeyContext[F],
     persistence: Persistence[F, S, A],
     timers: TimerContext[F],
-    additionalPersist: AdditionalStatePersist[F, S, A]
+    additionalPersist: AdditionalStatePersist[F, S, A],
+    registry: EntityRegistry[F, KafkaKey, S]
   ): Resource[F, KeyFlow[F, A]]
 
 }
@@ -43,10 +45,10 @@ object KeyFlowOf {
     timerFlowOf: TimerFlowOf[F],
     fold: EnhancedFold[F, S, A],
     tick: TickOption[F, S]
-  ): KeyFlowOf[F, S, A] = { (context, persistence, timers, additionalPersist) =>
+  ): KeyFlowOf[F, S, A] = { (key, context, persistence, timers, additionalPersist, registry) =>
     implicit val _context = context
-    timerFlowOf(context, persistence, timers) evalMap { timerFlow =>
-      KeyFlow.of(fold, tick, persistence, additionalPersist, timerFlow)
+    timerFlowOf(context, persistence, timers) flatMap { timerFlow =>
+      KeyFlow.of(key, fold, tick, persistence, additionalPersist, timerFlow, registry)
     }
   }
 

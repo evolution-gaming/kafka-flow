@@ -295,9 +295,10 @@ object AdditionalPersistSpec {
                 ignorePersistErrors = ignorePersistFailures
               ),
               fold = enhancedFold,
-              tick = TickOption.id[IO, String]
+              tick = TickOption.id[IO, String],
             ),
-            additionalPersistOf = AdditionalStatePersistOf.of[IO, String](cooldown = 20.seconds)
+            additionalPersistOf = AdditionalStatePersistOf.of[IO, String](cooldown = 20.seconds),
+            registry = EntityRegistry.empty[IO, KafkaKey, String]
           ),
           config = PartitionFlowConfig(commitOffsetsInterval = 1.minute)
         )
