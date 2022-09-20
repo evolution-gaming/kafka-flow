@@ -2,10 +2,10 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Monad
 import cats.data.NonEmptyList
-//import cats.effect.{Ref, Sync}
+import cats.effect.{Ref, Sync}
 import cats.mtl.Stateful
 import cats.syntax.all._
-//import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 
 /** Applies records to a state stored inside and informs the listeners about the changes */
@@ -17,13 +17,13 @@ trait FoldToState[F[_], E] {
 
 object FoldToState {
 
-//  def of[F[_]: Sync: KeyContext, S, E](
-//    initialState: Option[S],
-//    fold: FoldOption[F, S, E],
-//    persistence: Persistence[F, S, E]
-//  ): F[FoldToState[F, E]] = Ref.of[F, Option[S]](initialState) map { storage =>
-//    FoldToState(storage.stateInstance, fold, persistence)
-//  }
+  def of[F[_]: Sync: KeyContext, S, E](
+    initialState: Option[S],
+    fold: FoldOption[F, S, E],
+    persistence: Persistence[F, S, E]
+  ): F[FoldToState[F, E]] = Ref.of[F, Option[S]](initialState) map { storage =>
+    FoldToState(storage.stateInstance, fold, persistence)
+  }
 
   def apply[F[_]: Monad: KeyContext, S, E](
     storage: Stateful[F, Option[S]],
