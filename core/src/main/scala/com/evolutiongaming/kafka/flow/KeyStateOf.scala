@@ -37,25 +37,6 @@ object KeyStateOf {
     * which reads the state from the generic persistence folds it using
     * default `FoldToState`.
     */
-  @deprecated("Use version with EntityRegistry", since = "1.2.0")
-  def lazyRecovery[F[_]: Sync, S](
-    applicationId: String,
-    groupId: String,
-    timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
-    timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, ConsRecord]
-  ): KeyStateOf[F] = lazyRecovery(
-    applicationId = applicationId,
-    groupId = groupId,
-    timersOf = timersOf,
-    persistenceOf = persistenceOf,
-    timerFlowOf = timerFlowOf,
-    fold = fold,
-    tick = TickOption.id[F, S],
-    registry = EntityRegistry.empty[F, KafkaKey, S]
-  )
-
   def lazyRecovery[F[_]: Sync, S](
     applicationId: String,
     groupId: String,
@@ -81,26 +62,6 @@ object KeyStateOf {
     * which reads the state from the generic persistence folds it using
     * default `FoldToState`.
     */
-  @deprecated("Use version with EntityRegistry", since = "1.2.0")
-  def lazyRecovery[F[_]: Sync, S](
-    applicationId: String,
-    groupId: String,
-    timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
-    timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, ConsRecord],
-    tick: TickOption[F, S]
-  ): KeyStateOf[F] = lazyRecovery(
-    applicationId = applicationId,
-    groupId = groupId,
-    timersOf = timersOf,
-    persistenceOf = persistenceOf,
-    timerFlowOf = timerFlowOf,
-    fold = fold,
-    tick = tick,
-    registry = EntityRegistry.empty[F, KafkaKey, S]
-  )
-
   def lazyRecovery[F[_]: Sync, S](
     applicationId: String,
     groupId: String,
@@ -143,26 +104,6 @@ object KeyStateOf {
     * It also uses default implementation of `Tick` which does nothing and
     * does not touch the state.
     */
-  @deprecated("Use version with EntityRegistry", since = "1.2.0")
-  def eagerRecovery[F[_]: Sync, S](
-    applicationId: String,
-    groupId: String,
-    keysOf: KeysOf[F, KafkaKey],
-    timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
-    timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, ConsRecord]
-  ): KeyStateOf[F] = eagerRecovery(
-    applicationId = applicationId,
-    groupId = groupId,
-    keysOf = keysOf,
-    timersOf = timersOf,
-    persistenceOf = persistenceOf,
-    timerFlowOf = timerFlowOf,
-    fold = fold,
-    tick = TickOption.id[F, S]
-  )
-
   def eagerRecovery[F[_]: Sync, S](
     applicationId: String,
     groupId: String,
@@ -190,28 +131,6 @@ object KeyStateOf {
     * which reads the state from the generic persistence and folds it using
     * default `FoldToState`.
     */
-  @deprecated("Use version with EntityRegistry", since = "1.2.0")
-  def eagerRecovery[F[_]: Sync, S](
-    applicationId: String,
-    groupId: String,
-    keysOf: KeysOf[F, KafkaKey],
-    timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
-    timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, ConsRecord],
-    tick: TickOption[F, S]
-  ): KeyStateOf[F] = eagerRecovery(
-    applicationId = applicationId,
-    groupId = groupId,
-    keysOf = keysOf,
-    timersOf = timersOf,
-    persistenceOf = persistenceOf,
-    additionalPersistOf = AdditionalStatePersistOf.empty[F, S],
-    keyFlowOf = KeyFlowOf(timerFlowOf, fold, tick),
-    recover = fold,
-    registry = EntityRegistry.empty[F, KafkaKey, S]
-  )
-
   def eagerRecovery[F[_]: Sync, S](
     applicationId: String,
     groupId: String,
@@ -239,27 +158,6 @@ object KeyStateOf {
     * This version allows one to construct a custom `KeyFlowOf`
     * for snapshot persistence.
     */
-  @deprecated("Use version with EntityRegistry", since = "1.2.0")
-  def eagerRecovery[F[_]: Applicative, S](
-    applicationId: String,
-    groupId: String,
-    keysOf: KeysOf[F, KafkaKey],
-    timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord],
-    keyFlowOf: KeyFlowOf[F, S, ConsRecord],
-    additionalPersistOf: AdditionalStatePersistOf[F, S]
-  ): KeyStateOf[F] = eagerRecovery(
-    applicationId = applicationId,
-    groupId = groupId,
-    keysOf = keysOf,
-    timersOf = timersOf,
-    persistenceOf = persistenceOf,
-    additionalPersistOf = additionalPersistOf,
-    keyFlowOf = keyFlowOf,
-    recover = FoldOption.empty[F, S, ConsRecord],
-    registry = EntityRegistry.empty[F, KafkaKey, S]
-  )
-
   def eagerRecovery[F[_]: Applicative, S](
     applicationId: String,
     groupId: String,
@@ -290,26 +188,6 @@ object KeyStateOf {
     * that was constructed using `EnhancedFold`. In this case, please use another version that expects `AdditionalStatePersistOf`
     * as an argument.
     */
-  @deprecated("Use version with EntityRegistry", since = "1.2.0")
-  def eagerRecovery[F[_]: Applicative, S](
-    applicationId: String,
-    groupId: String,
-    keysOf: KeysOf[F, KafkaKey],
-    timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord],
-    keyFlowOf: KeyFlowOf[F, S, ConsRecord]
-  ): KeyStateOf[F] = eagerRecovery(
-    applicationId = applicationId,
-    groupId = groupId,
-    keysOf = keysOf,
-    timersOf = timersOf,
-    persistenceOf = persistenceOf,
-    additionalPersistOf = AdditionalStatePersistOf.empty[F, S],
-    keyFlowOf = keyFlowOf,
-    recover = FoldOption.empty[F, S, ConsRecord],
-    registry = EntityRegistry.empty[F, KafkaKey, S]
-  )
-
   def eagerRecovery[F[_]: Applicative, S](
     applicationId: String,
     groupId: String,
