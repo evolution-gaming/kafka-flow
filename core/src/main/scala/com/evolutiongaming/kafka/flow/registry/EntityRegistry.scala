@@ -5,11 +5,12 @@ import cats.effect.kernel.Ref
 import cats.syntax.all._
 import cats.{Applicative, Monad}
 
-/** Observability API to allow inspecting a current state of in-memory entities externally (from HTTP handler, for example).
+/** Observability API allowing to inspect current state of in-memory entities externally (from HTTP handler, for example).
   * When passed to the library, it's used to register an association between entity key and the function
-  * to obtain its current state. When the entity is evicted from memory, this association is also removed.
+  * to obtain its current state when the state is initialized for the first time.
+  * When the entity is evicted from memory, this association is also removed.
   *
-  * There are three pre-defined implementation currently provided:
+  * There are three pre-defined implementations currently provided:
   *   - `EntityRegistry.empty` for no-op implementation
   *   - `EntityRegistry.const` for immutable constant data
   *   - `EntityRegistry.memory`, fully functional in-memory registry
@@ -18,7 +19,7 @@ import cats.{Applicative, Monad}
   */
 trait EntityRegistry[F[_], K, S] {
 
-  /** Registers an association between an entity's key and the function to obtain a current state of it.
+  /** Registers an association between an entity's key and the function to obtain current state of it.
     * This is used internally by the library and shouldn't be called by the library users.
     * @param key entity key
     * @param state computation (effectively function) to obtain the current value of the entity
@@ -26,7 +27,7 @@ trait EntityRegistry[F[_], K, S] {
     */
   def register(key: K, state: F[Option[S]]): Resource[F, Unit]
 
-  /** Returns the current state of the entity by key (or None if there's no such entity or it has empty state)
+  /** Returns current state of the entity by key (or None if there's no such entity or it has empty state)
     * @param key entity key
     * @return `Some` when the entity is present and has non-empty state, None otherwise
     */
