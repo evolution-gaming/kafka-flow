@@ -4,22 +4,20 @@ import cats.data.NonEmptyList
 import cats.effect.SyncIO
 import cats.effect.concurrent.Ref
 import cats.syntax.all._
+import com.evolutiongaming.catshelper.CatsHelper._
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.kafka.flow.KeyFlowSpec._
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.persistence.Persistence
-import com.evolutiongaming.kafka.flow.timer.TimerContext
-import com.evolutiongaming.kafka.flow.timer.TimerFlow
-import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
-import com.evolutiongaming.kafka.flow.timer.Timestamp
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
+import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlow, TimerFlowOf, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.WithSize
-import java.time.Instant
+import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import munit.FunSuite
 import scodec.bits.ByteVector
 
-import KeyFlowSpec._
+import java.time.Instant
 
 class KeyFlowSpec extends FunSuite {
 
@@ -46,13 +44,16 @@ class KeyFlowSpec extends FunSuite {
       def read = SyncIO.pure(Some((Offset.min, 0)))
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
+    val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
+    val keyFlow = timerFlowOf(context, persistence, timers).flatMap(tf =>
+      KeyFlow.of(key, f.fold, f.tick, persistence, tf, f.registry)
+    )
 
-    val program = timerFlowOf(context, persistence, timers) use { timerFlow =>
+    val program = keyFlow use { flow =>
       for {
-        flow <- KeyFlow.of(f.fold, f.tick, persistence, timerFlow)
         // When("3 messages are sent to a flow")
         _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-        _ <- flow(f.records("key", 1, List("event1", "event2", "event3")))
+        _ <- flow(f.records(key.key, 1, List("event1", "event2", "event3")))
         // And("time comes to flush them")
         _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1000000)))
         _ <- timers.trigger(flow)
@@ -85,19 +86,22 @@ class KeyFlowSpec extends FunSuite {
       Offset.unsafe(1) -> 7
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
+    implicit val context = new KeyContext[SyncIO] {
+      def holding = none[Offset].pure[SyncIO]
+      def hold(offset: Offset) = SyncIO.unit
+      def remove = removeCalled.set(true)
+      def log = Log.empty
+    }
+    val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
+    val keyFlow = timerFlowOf(context, persistence, timers).flatMap(tf =>
+      KeyFlow.of(key, fold, f.tick, persistence, tf, f.registry)
+    )
 
-    val program = timerFlowOf(context, persistence, timers) use { timerFlow =>
-      implicit val context = new KeyContext[SyncIO] {
-        def holding = none[Offset].pure[SyncIO]
-        def hold(offset: Offset) = SyncIO.unit
-        def remove = removeCalled.set(true)
-        def log = Log.empty
-      }
+    val program = keyFlow use { flow =>
       for {
-        flow <- KeyFlow.of(fold, f.tick, persistence, timerFlow)
         // When("a message is sent to a flow")
         _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-        _ <- flow(f.records("key", 1, List("event1")))
+        _ <- flow(f.records(key.key, 1, List("event1")))
         _ <- timers.trigger(flow)
         deleteCalled <- deleteCalled.get
         removeCalled <- removeCalled.get
@@ -132,18 +136,23 @@ class KeyFlowSpec extends FunSuite {
     val fold = FoldOption.empty[SyncIO, State, ConsRecord]
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 
-    val program = timerFlowOf(context, persistence, timers) use { timerFlow =>
-      implicit val context = new KeyContext[SyncIO] {
-        def holding = none[Offset].pure[SyncIO]
-        def hold(offset: Offset) = SyncIO.unit
-        def remove = removeCalled.set(true)
-        def log = Log.empty
-      }
+    implicit val context = new KeyContext[SyncIO] {
+      def holding = none[Offset].pure[SyncIO]
+      def hold(offset: Offset) = SyncIO.unit
+      def remove = removeCalled.set(true)
+      def log = Log.empty
+    }
+
+    val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
+    val keyFlow = timerFlowOf(context, persistence, timers).flatMap(tf =>
+      KeyFlow.of(key, fold, f.tick, persistence, tf, f.registry)
+    )
+
+    val program = keyFlow.use { flow =>
       for {
-        flow <- KeyFlow.of(fold, f.tick, persistence, timerFlow)
         // When("a message is sent to a flow")
         _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-        _ <- flow(f.records("key", 1, List("event1")))
+        _ <- flow(f.records(key.key, 1, List("event1")))
         _ <- timers.trigger(flow)
         deleteCalled <- deleteCalled.get
         removeCalled <- removeCalled.get
@@ -184,12 +193,16 @@ class KeyFlowSpec extends FunSuite {
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 
-    val program = timerFlowOf(context, persistence, timers) use { timerFlow =>
+    val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
+    val keyFlow = timerFlowOf(context, persistence, timers).flatMap(tf =>
+      KeyFlow.of(key, f.fold, f.tick, persistence, tf, f.registry)
+    )
+
+    val program = keyFlow.use { flow =>
       for {
-        flow <- KeyFlow.of(f.fold, f.tick, persistence, timerFlow)
         // When("3 messages are sent to a flow")
         _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-        _ <- flow(f.records("key", 2, List("event2", "event3", "event4")))
+        _ <- flow(f.records(key.key, 2, List("event2", "event3", "event4")))
         _ <- timers.trigger(flow)
         // And("time comes to flush them")
         _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1000000)))
@@ -210,22 +223,26 @@ class KeyFlowSpec extends FunSuite {
     val f = new ConstFixture
     implicit val timers = f.timers
 
+    val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
+
     val flow = for {
-      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-      flow <- KeyFlow.transient(f.fold, f.tick, TimerFlow.empty[SyncIO])
+      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1))).toResource
+      flow <- KeyFlow.transient(key, f.fold, f.tick, TimerFlow.empty[SyncIO], f.registry)
       // Given("a message is sent to a flow")
-      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-      _ <- flow(f.records("key", 1, List("event1")))
-      _ <- timers.trigger(flow)
+      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1))).toResource
+      _ <- flow(f.records(key.key, 1, List("event1"))).toResource
+      _ <- timers.trigger(flow).toResource
       // When("flush attempt happend")
-      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(100002)))
-      _ <- timers.trigger(flow)
-      holding <- context.holding
+      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(100002))).toResource
+      _ <- timers.trigger(flow).toResource
+      holding <- context.holding.toResource
       // Then("flow does not say it is okay to remove the flow")
-      _ <- SyncIO { assertEquals(holding, Some(Offset.unsafe(1))) }
+      _ <- SyncIO {
+        assertEquals(holding, Some(Offset.unsafe(1)))
+      }.toResource
     } yield flow
 
-    flow.unsafeRunSync()
+    flow.use(_ => SyncIO.unit).unsafeRunSync()
   }
 
 }
@@ -238,7 +255,7 @@ object KeyFlowSpec {
     val timestamp: Timestamp = Timestamp(
       offset = Offset.unsafe(100),
       watermark = Some(Instant.parse("2020-03-01T00:00:00.000Z")),
-      clock = Instant.parse("2020-03-02T00:00:00.000Z"),
+      clock = Instant.parse("2020-03-02T00:00:00.000Z")
     )
 
     def fold: FoldOption[SyncIO, State, ConsRecord] =
@@ -271,6 +288,7 @@ object KeyFlowSpec {
     val timers: TimerContext[SyncIO] =
       TimerContext.memory[SyncIO, String]("key", timestamp).unsafeRunSync()
 
+    val registry: EntityRegistry[SyncIO, KafkaKey, State] = EntityRegistry.empty
   }
 
   implicit val log: Log[SyncIO] = Log.empty

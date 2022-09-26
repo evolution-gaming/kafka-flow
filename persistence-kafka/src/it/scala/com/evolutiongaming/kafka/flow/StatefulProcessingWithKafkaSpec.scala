@@ -10,6 +10,7 @@ import com.evolutiongaming.kafka.flow.kafka.KafkaModule
 import com.evolutiongaming.kafka.flow.kafkapersistence.{KafkaPersistenceModule, KafkaPersistenceModuleOf, kafkaEagerRecovery}
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.journal.{ConsRecord, FromJsResult, JsonCodec}
@@ -253,7 +254,8 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
           commitOffsetsInterval = 0.seconds
         ),
         tick = TickOption.id[IO, State],
-        filter = none
+        filter = none,
+        registry = EntityRegistry.empty[IO, KafkaKey, State]
       )
     } yield TopicFlowOf(partitionFlowOf)
   }
