@@ -8,7 +8,7 @@ import cats.{Applicative, Monad}
 /** Observability API allowing to inspect current state of in-memory entities externally (from HTTP handler, for example).
   * When passed to the library, it's used to register an association between entity key and the function
   * to obtain its current state when the state is initialized for the first time.
-  * When the entity is evicted from memory, this association is also removed.
+  * When the entity is removed from the in-memory cache, this association is also supposed to be removed.
   *
   * There are three pre-defined implementations currently provided:
   *   - `EntityRegistry.empty` for no-op implementation
@@ -23,7 +23,7 @@ trait EntityRegistry[F[_], K, S] {
     * This is used internally by the library and shouldn't be called by the library users.
     * @param key entity key
     * @param state computation (effectively function) to obtain the current value of the entity
-    * @return
+    * @return `Resource` which acquisition registers the entity and releasing removes it from the registry
     */
   def register(key: K, state: F[Option[S]]): Resource[F, Unit]
 
