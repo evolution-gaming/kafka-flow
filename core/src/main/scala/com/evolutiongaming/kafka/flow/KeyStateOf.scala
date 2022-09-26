@@ -63,7 +63,7 @@ object KeyStateOf {
     persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
     timerFlowOf: TimerFlowOf[F],
     fold: FoldOption[F, S, ConsRecord],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = lazyRecovery(
     applicationId = applicationId,
     groupId = groupId,
@@ -109,7 +109,7 @@ object KeyStateOf {
     timerFlowOf: TimerFlowOf[F],
     fold: FoldOption[F, S, ConsRecord],
     tick: TickOption[F, S],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = new KeyStateOf[F] {
 
     def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[F]) = {
@@ -171,7 +171,7 @@ object KeyStateOf {
     persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
     timerFlowOf: TimerFlowOf[F],
     fold: FoldOption[F, S, ConsRecord],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
     applicationId = applicationId,
     groupId = groupId,
@@ -221,7 +221,7 @@ object KeyStateOf {
     timerFlowOf: TimerFlowOf[F],
     fold: FoldOption[F, S, ConsRecord],
     tick: TickOption[F, S],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
     applicationId = applicationId,
     groupId = groupId,
@@ -268,7 +268,7 @@ object KeyStateOf {
     persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord],
     keyFlowOf: KeyFlowOf[F, S, ConsRecord],
     additionalPersistOf: AdditionalStatePersistOf[F, S],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
     applicationId = applicationId,
     groupId = groupId,
@@ -317,7 +317,7 @@ object KeyStateOf {
     timersOf: TimersOf[F, KafkaKey],
     persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord],
     keyFlowOf: KeyFlowOf[F, S, ConsRecord],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
     applicationId = applicationId,
     groupId = groupId,
@@ -344,7 +344,7 @@ object KeyStateOf {
     additionalPersistOf: AdditionalStatePersistOf[F, S],
     keyFlowOf: KeyFlowOf[F, S, ConsRecord],
     recover: FoldOption[F, S, ConsRecord],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = new KeyStateOf[F] {
 
     def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[F]) = {

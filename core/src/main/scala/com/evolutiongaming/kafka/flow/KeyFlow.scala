@@ -25,7 +25,7 @@ object KeyFlow {
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
     timer: TimerFlow[F],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): Resource[F, KeyFlow[F, A]] = Ref.of[F, Option[S]](none[S]).toResource flatMap { storage =>
     of(key, storage.stateInstance, fold, tick, persistence, timer, registry)
   }
@@ -37,7 +37,7 @@ object KeyFlow {
     persistence: Persistence[F, S, A],
     additionalPersist: AdditionalStatePersist[F, S, A],
     timer: TimerFlow[F],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): Resource[F, KeyFlow[F, A]] = Ref.of[F, Option[S]](none[S]).toResource flatMap { storage =>
     of(key, storage.stateInstance, fold, tick, persistence, additionalPersist, timer, registry)
   }
@@ -50,7 +50,7 @@ object KeyFlow {
     tick: TickOption[F, S],
     persistence: Persistence[F, S, A],
     timer: TimerFlow[F],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): Resource[F, KeyFlow[F, A]] =
     of(key, storage, EnhancedFold.fromFold(fold), tick, persistence, AdditionalStatePersist.empty[F, S, A], timer, registry)
 
@@ -62,7 +62,7 @@ object KeyFlow {
     persistence: Persistence[F, S, A],
     additionalPersist: AdditionalStatePersist[F, S, A],
     timer: TimerFlow[F],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): Resource[F, KeyFlow[F, A]] =
     for {
       state <- persistence.read(KeyContext[F].log).toResource
@@ -85,7 +85,7 @@ object KeyFlow {
     fold: FoldOption[F, S, A],
     tick: TickOption[F, S],
     timer: TimerFlow[F],
-    registry: EntityRegistry[F, KafkaKey, S]
+    registry: EntityRegistry[F, KafkaKey, S],
   ): Resource[F, KeyFlow[F, A]] =
     for {
       startedAt <- ReadTimestamps[F].current.toResource
