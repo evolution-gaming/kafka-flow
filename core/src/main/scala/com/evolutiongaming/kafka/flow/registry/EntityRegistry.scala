@@ -3,7 +3,8 @@ package com.evolutiongaming.kafka.flow.registry
 import cats.effect.Resource
 import cats.effect.kernel.Ref
 import cats.syntax.all._
-import cats.{Applicative, Monad}
+import cats.{Applicative, Hash, Monad}
+import com.evolutiongaming.catshelper.{Partitions, Runtime}
 
 /** Observability API allowing to inspect current state of in-memory entities externally (from HTTP handler, for example).
   * When passed to the library, it's used to register an association between entity key and the function
@@ -40,12 +41,24 @@ trait EntityRegistry[F[_], K, S] {
 }
 
 object EntityRegistry {
-  def empty[F[_], K, S](implicit F: Applicative[F]): EntityRegistry[F, K, S] = new EmptyEntityRegistry[F, K, S]()
+  def empty[F[_]: Applicative, K, S]: EntityRegistry[F, K, S] = new EmptyEntityRegistry[F, K, S]()
 
-  def memory[F[_], K, S](implicit F: Monad[F], R: Ref.Make[F]): F[EntityRegistry[F, K, S]] =
-    R.refOf(Map.empty[K, F[Option[S]]]).map(ref => new InMemoryEntityRegistry[F, K, S](ref))
+  /** Calculates the number of partitions based on the number of CPU cores */
+  def memory[F[_]: Monad: Ref.Make: Runtime, K: Hash, S]: F[EntityRegistry[F, K, S]] = {
+    for {
+      cores <- Runtime[F].availableCores
+      registry <- memory[F, K, S](cores + 2)
+    } yield registry
+  }
 
-  def const[F[_], K, S](values: Map[K, S])(implicit F: Applicative[F]): EntityRegistry[F, K, S] =
+  def memory[F[_]: Monad: Ref.Make, K: Hash, S](
+    nrOfPartitions: Int
+  ): F[EntityRegistry[F, K, S]] = {
+    val makeRef = Ref[F].of(Map.empty[K, F[Option[S]]])
+    Partitions.of(nrOfPartitions, _ => makeRef).map(partitions => new InMemoryEntityRegistry[F, K, S](partitions))
+  }
+
+  def const[F[_]: Applicative, K, S](values: Map[K, S]): EntityRegistry[F, K, S] =
     new ConstEntityRegistry[F, K, S](values)
 
   /** No-op registry, always returning None and an empty map on `get` and no-op on `register` */
@@ -63,25 +76,37 @@ object EntityRegistry {
     override def getAll: F[Map[K, S]] = F.pure(values)
   }
 
-  /** Mutable registry that keeps the state in a `Ref` */
-  final class InMemoryEntityRegistry[F[_], K, S](ref: Ref[F, Map[K, F[Option[S]]]])(implicit F: Monad[F])
-      extends EntityRegistry[F, K, S] {
+  /** Mutable registry that keeps the state in a number of `Ref`s distributed over multiple in-memory partitions */
+  final class InMemoryEntityRegistry[F[_], K, S](partitions: Partitions[K, Ref[F, Map[K, F[Option[S]]]]])(implicit
+    F: Monad[F]
+  ) extends EntityRegistry[F, K, S] {
     override def register(key: K, state: F[Option[S]]): Resource[F, Unit] = {
-      Resource.make(ref.update(map => map + (key -> state)))(_ => ref.update(map => map - key))
+      Resource.make(partitions.get(key).update(map => map + (key -> state)))(_ =>
+        partitions.get(key).update(map => map - key)
+      )
     }
 
     override def get(key: K): F[Option[S]] =
-      ref.get.flatMap(m =>
-        m.get(key) match {
-          case Some(f) => f
-          case None    => F.pure(None)
-        }
-      )
+      partitions
+        .get(key)
+        .get
+        .flatMap(map =>
+          map.get(key) match {
+            case Some(f) => f
+            case None    => F.pure(None)
+          }
+        )
 
-    override def getAll: F[Map[K, S]] = ref.get.flatMap { map =>
-      map.toList
-        .traverseFilter { case (key, readValue) => readValue.map(maybeValue => maybeValue.map(v => key -> v)) }
-        .map(_.toMap)
+    override def getAll: F[Map[K, S]] = {
+      partitions.values.foldLeftM(Map.empty[K, S]) { case (acc, ref) =>
+        ref.get
+          .flatMap { map =>
+            map.toList
+              .traverseFilter { case (key, readValue) => readValue.map(maybeValue => maybeValue.map(v => key -> v)) }
+              .map(_.toMap)
+          }
+          .map(map => map ++ acc)
+      }
     }
   }
 }
