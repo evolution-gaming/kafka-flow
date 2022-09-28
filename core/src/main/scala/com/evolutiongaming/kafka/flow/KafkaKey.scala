@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.kernel.Hash
 import com.evolutiongaming.skafka.TopicPartition
 
 final case class KafkaKey(
@@ -8,3 +9,7 @@ final case class KafkaKey(
   topicPartition: TopicPartition,
   key: String
 )
+
+object KafkaKey {
+  implicit val hash: Hash[KafkaKey] = Hash.fromUniversalHashCode
+}
