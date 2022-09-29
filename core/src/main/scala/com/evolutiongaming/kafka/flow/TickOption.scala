@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Applicative
-import cats.Functor
+import cats.{Applicative, Functor}
 
 case class TickOption[F[_], S](value: Tick[F, Option[S]]) {
 
@@ -42,8 +41,5 @@ object TickOption {
 
   /** Does nothing to the state */
   def id[F[_]: Applicative, S]: TickOption[F, S] = TickOption(Tick.id)
-
-  @deprecated("Use `id` instead", "0.2.4")
-  def unit[F[_]: Applicative, S]: TickOption[F, S] = TickOption(Tick.id)
 
 }

@@ -1,8 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Applicative
+import cats.{Applicative, Functor}
 import cats.syntax.all._
-import cats.Functor
 
 case class Tick[F[_], S](run: S => F[S]) {
 
@@ -34,8 +33,5 @@ object Tick {
 
   /** Does nothing to the state */
   def id[F[_]: Applicative, S]: Tick[F, S] = Tick[F, S](_.pure[F])
-
-  @deprecated("Use `id` instead", "0.2.4")
-  def unit[F[_]: Applicative, S]: Tick[F, S] = Tick[F, S](_.pure[F])
 
 }

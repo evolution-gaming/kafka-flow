@@ -1,35 +1,34 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
-import cats.effect.IO
-import cats.effect.Resource
+import cats.effect.{IO, Resource}
 import cats.effect.concurrent.Ref
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.{CassandraPersistence, ConsistencyOverrides}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.flow.key.CassandraKeys
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
-import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
-import com.evolutiongaming.kafka.flow.timer.TimersOf
+import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.retry.Retry
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.TopicPartition
-import com.evolutiongaming.skafka.consumer.ConsumerRecords
-import com.evolutiongaming.skafka.consumer.WithSize
+import com.evolutiongaming.skafka.{Offset, TopicPartition}
+import com.evolutiongaming.skafka.consumer.{ConsumerRecords, WithSize}
+import weaver.GlobalRead
 
 import scala.concurrent.duration._
-import weaver.GlobalRead
 
 class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
 
   test("flow fails when Cassandra insert fails") { cassandra =>
-
     val flow = for {
       failAfter <- Resource.eval(Ref.of(10000))
       session = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
       storage <-
-        Resource.eval(CassandraPersistence.withSchema[IO, String](session, cassandra.sync, ConsistencyOverrides.none, CassandraKeys.DefaultSegments))
+        Resource.eval(
+          CassandraPersistence
+            .withSchema[IO, String](session, cassandra.sync, ConsistencyOverrides.none, CassandraKeys.DefaultSegments)
+        )
       timersOf <- Resource.eval(TimersOf.memory[IO, KafkaKey])
       keysOf <- Resource.eval(storage.keys.keysOf)
       persistenceOf <- storage.restoreEvents
@@ -45,7 +44,8 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
           flushOnRevoke = true
         ),
         fold = FoldOption.empty[IO, KafkaSnapshot[String], ConsRecord],
-        tick = TickOption.id[IO, KafkaSnapshot[String]]
+        tick = TickOption.id[IO, KafkaSnapshot[String]],
+        registry = EntityRegistry.empty[IO, KafkaKey, KafkaSnapshot[String]]
       )
       partitionFlowOf = PartitionFlowOf(
         keyStateOf = keyStateOf,
@@ -54,17 +54,19 @@ class FlowSpec(val globalRead: GlobalRead) extends CassandraSpec {
           commitOnRevoke = true
         )
       )
-     topicFlowOf = TopicFlowOf(partitionFlowOf)
-     records = NonEmptyList.of(ConsRecord(
-       topicPartition = TopicPartition.empty,
-       offset = Offset.min,
-       timestampAndType = None,
-       key = Some(WithSize("key"))
-     ))
-     consumer = Consumer.repeat {
-       ConsumerRecords(Map(TopicPartition.empty -> records))
-     }
-     join <- {
+      topicFlowOf = TopicFlowOf(partitionFlowOf)
+      records = NonEmptyList.of(
+        ConsRecord(
+          topicPartition = TopicPartition.empty,
+          offset = Offset.min,
+          timestampAndType = None,
+          key = Some(WithSize("key"))
+        )
+      )
+      consumer = Consumer.repeat {
+        ConsumerRecords(Map(TopicPartition.empty -> records))
+      }
+      join <- {
         implicit val retry = Retry.empty[IO]
         KafkaFlow.resource(
           consumer = Resource.eval(consumer),
