@@ -7,6 +7,7 @@ import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -295,9 +296,10 @@ object AdditionalPersistSpec {
                 ignorePersistErrors = ignorePersistFailures
               ),
               fold = enhancedFold,
-              tick = TickOption.id[IO, String]
+              tick = TickOption.id[IO, String],
             ),
-            additionalPersistOf = AdditionalStatePersistOf.of[IO, String](cooldown = 20.seconds)
+            additionalPersistOf = AdditionalStatePersistOf.of[IO, String](cooldown = 20.seconds),
+            registry = EntityRegistry.empty[IO, KafkaKey, String]
           ),
           config = PartitionFlowConfig(commitOffsetsInterval = 1.minute)
         )

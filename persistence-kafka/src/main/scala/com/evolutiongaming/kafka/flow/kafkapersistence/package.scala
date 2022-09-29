@@ -6,6 +6,7 @@ import cats.{Eval, Foldable, Monad, Parallel}
 import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.metrics.syntax._
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.consumer.ConsumerConfig
@@ -55,7 +56,8 @@ package object kafkapersistence {
     tick: TickOption[F, S],
     partitionFlowConfig: PartitionFlowConfig,
     metrics: FlowMetrics[F] = FlowMetrics.empty[F],
-    filter: Option[FilterRecord[F]] = None
+    filter: Option[FilterRecord[F]] = None,
+    registry: EntityRegistry[F, KafkaKey, S]
   ): PartitionFlowOf[F] =
     kafkaEagerRecovery(
       kafkaPersistenceModuleOf = kafkaPersistenceModuleOf,
@@ -68,7 +70,8 @@ package object kafkapersistence {
       partitionFlowConfig = partitionFlowConfig,
       metrics = metrics,
       filter = filter,
-      additionalPersistOf = AdditionalStatePersistOf.empty[F, S]
+      additionalPersistOf = AdditionalStatePersistOf.empty[F, S],
+      registry = registry
     )
 
   /** Create a PartitionFlowOf with a snapshot-based persistence and recovery from a Kafka
@@ -111,7 +114,8 @@ package object kafkapersistence {
     partitionFlowConfig: PartitionFlowConfig,
     metrics: FlowMetrics[F],
     filter: Option[FilterRecord[F]],
-    additionalPersistOf: AdditionalStatePersistOf[F, S]
+    additionalPersistOf: AdditionalStatePersistOf[F, S],
+    registry: EntityRegistry[F, KafkaKey, S]
   ): PartitionFlowOf[F] =
     new PartitionFlowOf[F] {
       override def apply(
@@ -135,7 +139,8 @@ package object kafkapersistence {
                 fold = fold,
                 tick = tick
               ),
-              additionalPersistOf = additionalPersistOf
+              additionalPersistOf = additionalPersistOf,
+              registry = registry
             ) withMetrics metrics.keyStateOfMetrics,
             config = partitionFlowConfig,
             filter = filter
