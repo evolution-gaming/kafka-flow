@@ -62,14 +62,14 @@ object EntityRegistry {
     new ConstEntityRegistry[F, K, S](values)
 
   /** No-op registry, always returning None and an empty map on `get` and no-op on `register` */
-  final class EmptyEntityRegistry[F[_], K, S](implicit F: Applicative[F]) extends EntityRegistry[F, K, S] {
+  private final class EmptyEntityRegistry[F[_], K, S](implicit F: Applicative[F]) extends EntityRegistry[F, K, S] {
     override def register(key: K, state: F[Option[S]]): Resource[F, Unit] = Resource.pure(())
     override def get(key: K): F[Option[S]] = F.pure(none[S])
     override def getAll: F[Map[K, S]] = F.pure(Map.empty)
   }
 
   /** Immutable registry with a no-op `register` method. `get` and `getAll` query the passed map */
-  final class ConstEntityRegistry[F[_], K, S](values: Map[K, S])(implicit F: Applicative[F])
+  private final class ConstEntityRegistry[F[_], K, S](values: Map[K, S])(implicit F: Applicative[F])
       extends EntityRegistry[F, K, S] {
     override def register(key: K, state: F[Option[S]]): Resource[F, Unit] = Resource.pure(())
     override def get(key: K): F[Option[S]] = F.pure(values.get(key))
@@ -77,7 +77,7 @@ object EntityRegistry {
   }
 
   /** Mutable registry that keeps the state in a number of `Ref`s distributed over multiple in-memory partitions */
-  final class InMemoryEntityRegistry[F[_], K, S](partitions: Partitions[K, Ref[F, Map[K, F[Option[S]]]]])(implicit
+  private final class InMemoryEntityRegistry[F[_], K, S](partitions: Partitions[K, Ref[F, Map[K, F[Option[S]]]]])(implicit
     F: Monad[F]
   ) extends EntityRegistry[F, K, S] {
     override def register(key: K, state: F[Option[S]]): Resource[F, Unit] = {
