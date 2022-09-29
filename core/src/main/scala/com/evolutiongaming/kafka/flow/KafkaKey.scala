@@ -11,5 +11,5 @@ final case class KafkaKey(
 )
 
 object KafkaKey {
-  implicit val hash: Hash[KafkaKey] = Hash.fromUniversalHashCode
+  implicit val hashKafkaKey: Hash[KafkaKey] = Hash.fromUniversalHashCode
 }
