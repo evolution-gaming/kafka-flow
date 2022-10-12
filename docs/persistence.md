@@ -75,4 +75,5 @@ for {
 To support smooth transition from raw state to using compression, the library implementation of `Compressor` tries
 to detect if the byte array it tries to decompress starts with an opening curly bracket(`{`). In this case it makes
 an assumption that you keep the state in JSON and the particular byte array is in a raw format (without compression) 
-and doesn't attempt to decompress the byte array, returning it as-is.
+and doesn't attempt to decompress the byte array, returning it as-is.  
+Please note that it's going to work **only** if the application's state was encoded as JSON before!
