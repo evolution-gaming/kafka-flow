@@ -6,7 +6,7 @@ import scodec.Attempt
 import scodec.bits.ByteVector
 import scodec.codecs._
 
-object HeaderAndPayload {
+private[compression] object HeaderAndPayload {
 
   private val codec = variableSizeBytes(int32, bytes) ~ bytes
 

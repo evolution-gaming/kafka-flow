@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow.persistence.compression
 
 import cats.syntax.all._
 import cats.{Applicative, MonadThrow}
+import com.evolutiongaming.skafka.{FromBytes, ToBytes}
 import scodec.bits.ByteVector
 
 import java.nio.charset.StandardCharsets
@@ -19,11 +20,8 @@ object Compressor {
   private val uncompressedJsonStartBytes = ByteVector.view("{".getBytes(StandardCharsets.UTF_8))
 
   def empty[F[_]: Applicative]: Compressor[F] = new Compressor[F] {
-
     def to(payload: ByteVector): F[ByteVector] = payload.pure[F]
-
     def from(bytes: ByteVector): F[ByteVector] = bytes.pure[F]
-
   }
 
   /** Implements compression using L4Z algorithm.
@@ -58,7 +56,7 @@ object Compressor {
     */
   def of[F[_]: MonadThrow](
     compressionThreshold: Int = 10000
-  )(implicit headerConverter: HeaderCodec[F]): F[Compressor[F]] =
+  )(implicit headerToBytes: ToBytes[F, Header], headerFromBytes: FromBytes[F, Header]): F[Compressor[F]] =
     for {
       compression <- Compression.lz4()
     } yield {
@@ -66,16 +64,15 @@ object Compressor {
 
         def to(payload: ByteVector): F[ByteVector] = {
           for {
-            result <- {
+            result <-
               if (payload.length >= compressionThreshold) {
                 compression.compress(payload).map((true, _))
               } else {
                 (false, payload).pure[F]
               }
-            }
             (compressed, compressedBytes) = result
-            headerBytes <- headerConverter.toBytes(header = Header(compressed = compressed))
-            bytes <- HeaderAndPayload.toBytes[F](headerBytes, compressedBytes)
+            headerBytes <- headerToBytes.apply(Header(compressed = compressed), topic = "")
+            bytes <- HeaderAndPayload.toBytes[F](ByteVector.view(headerBytes), compressedBytes)
           } yield bytes
         }
 
@@ -86,8 +83,7 @@ object Compressor {
             for {
               result <- HeaderAndPayload.fromBytes(bytes)
               (headerBytes, payload) = result
-              headerOpt <- headerConverter.fromBytes(headerBytes)
-              header = headerOpt.getOrElse(Header(compressed = false))
+              header <- headerFromBytes.apply(headerBytes.toArray, topic = "")
               bytes <-
                 if (header.compressed) {
                   compression.decompress(payload)
