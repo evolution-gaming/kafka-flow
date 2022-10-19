@@ -17,6 +17,10 @@
         "title": "Overview",
         "sidebar_label": "Overview"
       },
+      "persistence": {
+        "title": "Persistence",
+        "sidebar_label": "Persistence"
+      },
       "setup": {
         "title": "Setup",
         "sidebar_label": "Setup"
