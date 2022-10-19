@@ -35,7 +35,4 @@ object Tick {
   /** Does nothing to the state */
   def id[F[_]: Applicative, S]: Tick[F, S] = Tick[F, S](_.pure[F])
 
-  @deprecated("Use `id` instead", "0.2.4")
-  def unit[F[_]: Applicative, S]: Tick[F, S] = Tick[F, S](_.pure[F])
-
 }

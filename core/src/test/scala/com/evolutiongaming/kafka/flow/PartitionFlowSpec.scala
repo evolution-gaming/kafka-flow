@@ -11,6 +11,7 @@ import com.evolutiongaming.kafka.flow.journal.JournalsOf
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -322,11 +323,12 @@ object PartitionFlowSpec {
         ): Resource[IO, KeyState[IO, ConsRecord]] = {
           implicit val _context = context
           val fold0 = fold
+          val kafkaKey = KafkaKey("test", "test", topicPartition, key)
           for {
             timers <- Resource.eval(TimerContext.memory[IO, String](key, createdAt))
             persistence <- Resource.eval(persistenceOf(key, fold0, timers))
             timerFlow <- timerFlowOf(context, persistence, timers)
-            keyFlow <- Resource.eval(KeyFlow.of(fold0, TickOption.id[IO, State], persistence, timerFlow))
+            keyFlow <- KeyFlow.of(kafkaKey, fold0, TickOption.id[IO, State], persistence, timerFlow, EntityRegistry.empty[IO, KafkaKey, State])
           } yield KeyState(keyFlow, timers)
         }
         def all(topicPartition: TopicPartition): Stream[IO, String] = Stream.empty
