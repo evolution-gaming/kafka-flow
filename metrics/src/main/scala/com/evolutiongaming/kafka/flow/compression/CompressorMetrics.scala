@@ -31,14 +31,14 @@ object CompressorMetrics {
 
   def compressorMetricsOf[F[_]: Monad](registry: CollectorRegistry[F]): Resource[F, CompressorMetricsOf[F]] = {
     val rawBytesSummary = registry.summary(
-      name = "compressor_raw_bytes_total",
+      name = "kafka_flow_compressor_raw_bytes_total",
       help = "Payload size in bytes before compression",
       quantiles = Quantiles(Quantile(value = 0.9, error = 0.05), Quantile(value = 0.99, error = 0.005)),
       labels = LabelNames("component")
     )
 
     val compressedSummary = registry.summary(
-      name = "compressor_compressed_bytes_total",
+      name = "kafka_flow_compressor_compressed_bytes_total",
       help = "Payload size in bytes after compression",
       quantiles = Quantiles(Quantile(value = 0.9, error = 0.05), Quantile(value = 0.99, error = 0.005)),
       labels = LabelNames("component")
