@@ -177,7 +177,7 @@ object ReadState {
     def read = {
       val recover = journals.read.foldLeftM(Option.empty[S]) { (state, event) =>
         Log[F].info(s"Restoring: $event") *>
-        fold(state, event)
+        fold.run(state, event)
       }
       recover.last map (_.flatten)
     }

@@ -15,13 +15,13 @@ class FoldToStateSpec extends FunSuite {
   test("persistence and fold get called correctly") {
 
     val f = new ConstFixture
-    val foldToState = FoldToState(f.storage, f.foldUntil(100), f.persistence)
+    val foldToState = FoldToState.of(f.storage, f.foldUntil(100), f.persistence)
 
     // Given("empty database")
     val context = Context()
 
     // When("several events are sent")
-    val program = foldToState(NonEmptyList.of("event1", "event2", "event3"))
+    val program = foldToState.run(NonEmptyList.of("event1", "event2", "event3"))
     val result = program.runS(context).value
 
     // Then("no removals are called")
@@ -38,13 +38,13 @@ class FoldToStateSpec extends FunSuite {
   test("delete is called if all messages are processed") {
 
     val f = new ConstFixture
-    val foldToState = FoldToState(f.storage, f.foldUntil(3), f.persistence)
+    val foldToState = FoldToState.of(f.storage, f.foldUntil(3), f.persistence)
 
     // Given("empty database")
     val context = Context()
 
     // When("several events are sent")
-    val program = foldToState(NonEmptyList.of("event1", "event2", "event3"))
+    val program = foldToState.run(NonEmptyList.of("event1", "event2", "event3"))
     val result = program.runS(context).value
 
     // Then("removal get called")
@@ -58,13 +58,13 @@ class FoldToStateSpec extends FunSuite {
   test("delete is not called if it happens in the middle of the batch") {
 
     val f = new ConstFixture
-    val foldToState = FoldToState(f.storage, f.foldUntil(3), f.persistence)
+    val foldToState = FoldToState.of(f.storage, f.foldUntil(3), f.persistence)
 
     // Given("empty database")
     val context = Context()
 
     // When("several events are sent")
-    val program = foldToState(NonEmptyList.of("event1", "event2", "event3", "event4", "event5"))
+    val program = foldToState.run(NonEmptyList.of("event1", "event2", "event3", "event4", "event5"))
     val result = program.runS(context).value
 
     // Then("removal does not get called")

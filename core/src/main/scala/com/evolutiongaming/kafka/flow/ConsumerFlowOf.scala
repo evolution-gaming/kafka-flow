@@ -9,10 +9,12 @@ import kafka.Consumer
 
 /** Factory which creates `ConsumerFlow` instances */
 trait ConsumerFlowOf[F[_]] {
+  @deprecated("Use 'make'", since = "2.2.0")
+  def apply(consumer: Consumer[F]): Resource[F, ConsumerFlow[F]] = make(consumer)
 
-  def apply(consumer: Consumer[F]): Resource[F, ConsumerFlow[F]]
-
+  def make(consumer: Consumer[F]): Resource[F, ConsumerFlow[F]]
 }
+
 object ConsumerFlowOf {
 
   /** Constructs a consumer flow for specific topic.
@@ -24,9 +26,7 @@ object ConsumerFlowOf {
     topic: Topic,
     flowOf: TopicFlowOf[F],
     config: ConsumerFlowConfig = ConsumerFlowConfig()
-  ): ConsumerFlowOf[F] = { consumer =>
-    ConsumerFlow.of(consumer, topic, flowOf, config)
-  }
+  ): ConsumerFlowOf[F] = apply(topics = NonEmptySet.one(topic), flowOf = flowOf, config = config)
 
   /** Constructs a consumer flow for specific topics.
     *
@@ -35,8 +35,8 @@ object ConsumerFlowOf {
     */
   def apply[F[_]: MonadThrow: LogOf](
     topics: NonEmptySet[Topic],
-    flowOf: TopicFlowOf[F],
-  ): ConsumerFlowOf[F] = ConsumerFlowOf(topics, flowOf, ConsumerFlowConfig())
+    flowOf: TopicFlowOf[F]
+  ): ConsumerFlowOf[F] = apply(topics = topics, flowOf = flowOf, config = ConsumerFlowConfig())
 
   /** Constructs a consumer flow for specific topics.
     *
@@ -47,8 +47,9 @@ object ConsumerFlowOf {
     topics: NonEmptySet[Topic],
     flowOf: TopicFlowOf[F],
     config: ConsumerFlowConfig
-  ): ConsumerFlowOf[F] = { consumer =>
-    ConsumerFlow.of(consumer, topics, flowOf, config)
+  ): ConsumerFlowOf[F] = new ConsumerFlowOf[F] {
+    override def make(consumer: Consumer[F]): Resource[F, ConsumerFlow[F]] =
+      ConsumerFlow.of(consumer, topics, flowOf, config)
   }
 
 }

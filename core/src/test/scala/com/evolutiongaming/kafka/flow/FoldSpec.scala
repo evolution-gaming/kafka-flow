@@ -13,10 +13,10 @@ class FoldSpec extends FunSuite {
     val multiplyAndSubtract = multiply *> subtract
 
     // (0 - 10) * 10 = -100
-    assert(subtractAndMultiply(0, 10) == -100)
+    assert(subtractAndMultiply.run(0, 10) == -100)
 
     // 0 * 10 - 10 = -10
-    assert(multiplyAndSubtract(0, 10) == -10)
+    assert(multiplyAndSubtract.run(0, 10) == -10)
   }
 
   test("Fold#handleErrorWith keeps the state from the first fold if used early") {
@@ -33,10 +33,10 @@ class FoldSpec extends FunSuite {
     val recoverLate = addAndFail handleErrorWith[String] { (s, _) => Right(s) }
 
     // 1 + 2 = 3
-    assertEquals(recoverEarly(1, 2), Right(3))
+    assertEquals(recoverEarly.run(1, 2), Right(3))
 
     // 1 = 1
-    assertEquals(recoverLate(1, 2), Right(1))
+    assertEquals(recoverLate.run(1, 2), Right(1))
 
   }
 

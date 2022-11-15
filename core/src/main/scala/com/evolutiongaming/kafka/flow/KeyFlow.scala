@@ -71,11 +71,11 @@ object KeyFlow {
       // by fold or tick to run the state, because in this
       // case we may flush the key which was already removed
       timerCancelled = storage inspect (_.isEmpty)
-      foldToState = FoldToState(storage, fold, persistence, additionalPersist)
+      foldToState = FoldToState.of(storage, fold, persistence, additionalPersist)
       tickToState = TickToState(storage, tick, persistence)
       _ <- registry.register(key, storage.get)
     } yield new KeyFlow[F, A] {
-      def apply(records: NonEmptyList[A]): F[Unit] = foldToState(records)
+      def apply(records: NonEmptyList[A]): F[Unit] = foldToState.run(records)
       def onTimer: F[Unit] = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
 
@@ -95,11 +95,11 @@ object KeyFlow {
       // by fold or tick to run the state, because in this
       // case we may flush the key which was already removed
       timerCancelled = storage.get map (_.isEmpty)
-      foldToState = FoldToState(storage.stateInstance, fold, Persistence.empty[F, S, A])
+      foldToState = FoldToState.of(storage.stateInstance, fold, Persistence.empty[F, S, A])
       tickToState = TickToState(storage.stateInstance, tick, Persistence.empty[F, S, A])
       _ <- registry.register(key, storage.get)
     } yield new KeyFlow[F, A] {
-      def apply(records: NonEmptyList[A]) = foldToState(records)
+      def apply(records: NonEmptyList[A]) = foldToState.run(records)
       def onTimer = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
 

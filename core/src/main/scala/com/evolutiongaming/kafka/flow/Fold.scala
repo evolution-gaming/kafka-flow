@@ -15,6 +15,7 @@ import cats.syntax.all._
 final case class Fold[F[_], S, A](run: (S, A) => F[S]) {
 
   /** Alias for `run` */
+  @deprecated("Use 'run'", since = "2.2.0")
   def apply(s: S, a: A): F[S] = run(s, a)
 
   /** Transforms the input `A` of the `Fold` to something else.

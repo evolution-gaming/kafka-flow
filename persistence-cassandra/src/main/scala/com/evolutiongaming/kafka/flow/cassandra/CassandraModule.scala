@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
+import cats.Parallel
 import cats.effect.{Async, Resource, Sync}
 import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.{AutoCreate, CassandraSync}
@@ -35,7 +36,7 @@ object CassandraModule {
     * `ExecutionContextExecutor` rather than `ContextShift` because we need it
     * to convert `ListenableFuture` to `F[_]`.
     */
-  def of[F[_]: Async: LogOf](
+  def of[F[_]: Async: LogOf: Parallel](
     config: CassandraConfig
   )(implicit executor: ExecutionContextExecutor): Resource[F, CassandraModule[F]] = {
     for {

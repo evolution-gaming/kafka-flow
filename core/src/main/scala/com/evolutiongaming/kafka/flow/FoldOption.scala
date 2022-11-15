@@ -7,10 +7,13 @@ import cats.Monad
 import cats.syntax.all._
 
 /** Convenience methods for using `Fold` with optional state */
-final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
+final case class FoldOption[F[_], S, A](fold: Fold[F, Option[S], A]) {
 
   /** Alias for `run` */
-  def apply(s: Option[S], a: A): F[Option[S]] = value(s, a)
+  @deprecated("Use 'run'", since = "2.2.0")
+  def apply(s: Option[S], a: A): F[Option[S]] = run(s, a)
+
+  def run(s: Option[S], a: A): F[Option[S]] = fold.run(s, a)
 
   /** Transforms the input `A` of the `Fold` to something else.
     *
@@ -19,14 +22,14 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     * binary representation.
     */
   def contramap[B](f: B => A): FoldOption[F, S, B] =
-    FoldOption(value contramap f)
+    FoldOption(fold contramap f)
 
   /** Transforms the input `A` of the `Fold` to something else.
     *
     * Same as `contramap`, but allows to have an effect when calculating new input.
     */
   def contramapM[B](f: B => F[A])(implicit F: Monad[F]): FoldOption[F, S, B] =
-    FoldOption(value contramapM f)
+    FoldOption(fold contramapM f)
 
   /** Transforms the state `S` of the `Fold` to something else.
     *
@@ -39,7 +42,7 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     */
   def transformState[T](f: T => S)(g: (S, A) => T)(implicit F: Functor[F]): FoldOption[F, T, A] =
     FoldOption {
-      value.transformState[Option[T]](_ map f) { (s, a) =>
+      fold.transformState[Option[T]](_ map f) { (s, a) =>
         s map (g(_, a))
       }
     }
@@ -53,7 +56,7 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     */
   def transformStateM[T](f: T => F[S])(g: (S, A) => F[T])(implicit F: Monad[F]): FoldOption[F, T, A] =
     FoldOption {
-      value.transformStateM[Option[T]](_ traverse f) { (s, a) =>
+      fold.transformStateM[Option[T]](_ traverse f) { (s, a) =>
         s traverse (g(_, a))
       }
     }
@@ -73,8 +76,8 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     */
   def flatMap[T](f: S => FoldOption[F, S, A])(implicit F: Monad[F]): FoldOption[F, S, A] =
     FoldOption {
-      value flatMap { s =>
-        (s map f getOrElse FoldOption.empty[F, S, A]).value
+      fold flatMap { s =>
+        (s map f getOrElse FoldOption.empty[F, S, A]).fold
       }
     }
 
@@ -95,7 +98,7 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     */
   def filter(f: (S, A) => Boolean)(implicit F: Applicative[F]): FoldOption[F, S, A] =
     FoldOption {
-      value filter { (s, a) =>
+      fold filter { (s, a) =>
         s map (f(_, a)) getOrElse true
       }
     }
@@ -106,14 +109,14 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     */
   def filterM(f: (S, A) => F[Boolean])(implicit F: Monad[F]): FoldOption[F, S, A] =
     FoldOption {
-      value filterM { (s, a) =>
+      fold filterM { (s, a) =>
         s map (f(_, a)) getOrElse true.pure[F]
       }
     }
 
   /** Filters and transforms incoming `B` elements. */
   def contraCollect[B](f: PartialFunction[B, A])(implicit F: Applicative[F]): FoldOption[F, S, B] =
-    FoldOption(value contraCollect f)
+    FoldOption(fold contraCollect f)
 
   /** Allows to gracefully handle the errror happening during flow.
     *
@@ -121,7 +124,7 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     */
   def handleErrorWith[E](f: (S, E) => F[S])(implicit F: ApplicativeError[F, E]): FoldOption[F, S, A] =
     FoldOption {
-      value handleErrorWith[E] { (s, e) =>
+      fold handleErrorWith[E] { (s, e) =>
         s traverse (f(_, e))
       }
     }

@@ -13,29 +13,38 @@ import scala.concurrent.duration.FiniteDuration
   * @see [[com.evolutiongaming.kafka.flow.KeyStateOf]] for usage during recovery of a key
   */
 trait AdditionalStatePersistOf[F[_], S] {
+  @deprecated("Use 'make'", since = "2.2.0")
   def apply(
+    persistence: Persistence[F, S, ConsRecord],
+    keyContext: KeyContext[F]
+  ): F[AdditionalStatePersist[F, S, ConsRecord]] = make(persistence, keyContext)
+
+  def make(
     persistence: Persistence[F, S, ConsRecord],
     keyContext: KeyContext[F]
   ): F[AdditionalStatePersist[F, S, ConsRecord]]
 }
 
 object AdditionalStatePersistOf {
-  def empty[F[_]: Applicative, S]: AdditionalStatePersistOf[F, S] =
-    new AdditionalStatePersistOf[F, S] {
-      override def apply(
-        persistence: Persistence[F, S, ConsRecord],
-        keyContext: KeyContext[F]
-      ): F[AdditionalStatePersist[F, S, ConsRecord]] = Applicative[F].pure(AdditionalStatePersist.empty[F, S, ConsRecord])
-    }
+  def empty[F[_]: Applicative, S]: AdditionalStatePersistOf[F, S] = new Empty[F, S]()
 
-  def of[F[_]: MonadCancelThrow: Ref.Make: Clock, S](cooldown: FiniteDuration): AdditionalStatePersistOf[F, S] = {
-    new AdditionalStatePersistOf[F, S] {
-      def apply(
-        persistence: Persistence[F, S, ConsRecord],
-        keyContext: KeyContext[F]
-      ): F[AdditionalStatePersist[F, S, ConsRecord]] = {
-        AdditionalStatePersist.of(persistence, keyContext, cooldown)
-      }
-    }
+  def of[F[_]: MonadCancelThrow: Ref.Make: Clock, S](cooldown: FiniteDuration): AdditionalStatePersistOf[F, S] =
+    new WithCooldown[F, S](cooldown)
+
+  private final class Empty[F[_], S](implicit F: Applicative[F]) extends AdditionalStatePersistOf[F, S] {
+    override def make(
+      persistence: Persistence[F, S, ConsRecord],
+      keyContext: KeyContext[F]
+    ): F[AdditionalStatePersist[F, S, ConsRecord]] =
+      F.pure(AdditionalStatePersist.empty[F, S, ConsRecord])
+  }
+
+  private final class WithCooldown[F[_]: MonadCancelThrow: Ref.Make: Clock, S](cooldown: FiniteDuration)
+      extends AdditionalStatePersistOf[F, S] {
+    override def make(
+      persistence: Persistence[F, S, ConsRecord],
+      keyContext: KeyContext[F]
+    ): F[AdditionalStatePersist[F, S, ConsRecord]] =
+      AdditionalStatePersist.of(persistence, keyContext, cooldown)
   }
 }

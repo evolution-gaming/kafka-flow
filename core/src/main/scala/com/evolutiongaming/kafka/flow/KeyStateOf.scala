@@ -235,7 +235,7 @@ object KeyStateOf {
       for {
         timers <- Resource.eval(timersOf(kafkaKey, createdAt))
         persistence <- Resource.eval(persistenceOf(kafkaKey, recover, timers))
-        additionalPersist <- Resource.eval(additionalPersistOf(persistence, context))
+        additionalPersist <- Resource.eval(additionalPersistOf.make(persistence, context))
         keyFlow <- keyFlowOf(kafkaKey, context, persistence, timers, additionalPersist, registry)
       } yield KeyState(keyFlow, timers)
     }

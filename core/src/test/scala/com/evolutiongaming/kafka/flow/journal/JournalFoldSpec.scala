@@ -36,7 +36,7 @@ class JournalFoldSpec extends FunSuite {
       fold <- f.fold
       record <- f.record(Offset.unsafe(1), SeqNr.unsafe(100))
       state0 = None
-      state1 <- fold(state0, record)
+      state1 <- fold.run(state0, record)
     } yield state1
 
     assertEquals(
@@ -52,7 +52,7 @@ class JournalFoldSpec extends FunSuite {
       fold <- f.fold
       record <- f.record(Offset.unsafe(2), SeqNr.unsafe(101))
       state0 = Some(KafkaSnapshot(offset = Offset.unsafe(1), value = SeqNr.unsafe(100)))
-      state1 <- fold(state0, record)
+      state1 <- fold.run(state0, record)
     } yield state1
 
     assertEquals(
@@ -69,7 +69,7 @@ class JournalFoldSpec extends FunSuite {
       fold <- f.fold
       record <- record
       state0 = None
-      state1 <- fold(state0, record)
+      state1 <- fold.run(state0, record)
     } yield state1
 
     assertEquals(
@@ -81,7 +81,7 @@ class JournalFoldSpec extends FunSuite {
       fold <- f.fold
       record <- record
       state1 <- state1
-      state2 <- fold(state1, record)
+      state2 <- fold.run(state1, record)
     } yield state2
 
     assertEquals(obtained = state2, expected = state1)
@@ -94,7 +94,7 @@ class JournalFoldSpec extends FunSuite {
       fold <- f.fold
       record0 <- f.record(Offset.unsafe(1), SeqNr.unsafe(100))
       state0 = None
-      state1 <- fold(state0, record0)
+      state1 <- fold.run(state0, record0)
     } yield state1
 
     assertEquals(
@@ -106,7 +106,7 @@ class JournalFoldSpec extends FunSuite {
       fold <- f.fold
       record1 <- f.record(Offset.unsafe(2), SeqNr.unsafe(100))
       state1 <- state1
-      state2 <- fold(state1, record1)
+      state2 <- fold.run(state1, record1)
     } yield state2
 
     assertEquals(obtained = state2, expected = state1)

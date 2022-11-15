@@ -15,13 +15,15 @@ import cats.{Applicative, ApplicativeError, Monad}
   * @tparam E incoming event
   */
 trait EnhancedFold[F[_], S, E] {
+  @deprecated("Use 'run'", since = "2.2.0")
+  def apply(extras: KeyFlowExtras[F], s: Option[S], e: E): F[Option[S]] = run(extras, s, e)
 
-  def apply(extras: KeyFlowExtras[F], s: Option[S], e: E): F[Option[S]]
+  def run(extras: KeyFlowExtras[F], state: Option[S], event: E): F[Option[S]]
 
   final def flatMap(f: S => EnhancedFold[F, S, E])(implicit F: Monad[F]): EnhancedFold[F, S, E] =
     (extras, state0, event) => {
-      apply(extras, state0, event).flatMap {
-        case s @ Some(state1) => f(state1).apply(extras, s, event)
+      run(extras, state0, event).flatMap {
+        case s @ Some(state1) => f(state1).run(extras, s, event)
         case None             => F.pure(None)
       }
     }
@@ -29,31 +31,39 @@ trait EnhancedFold[F[_], S, E] {
   final def filter(f: (S, E) => Boolean)(implicit F: Applicative[F]): EnhancedFold[F, S, E] =
     (extras, state0, event) =>
       state0 match {
-        case Some(state) => if (f(state, event)) apply(extras, state0, event) else F.pure(state0)
-        case None        => apply(extras, state0, event)
+        case Some(state) => if (f(state, event)) run(extras, state0, event) else F.pure(state0)
+        case None        => run(extras, state0, event)
       }
 
   final def filterM(f: (S, E) => F[Boolean])(implicit F: Monad[F]): EnhancedFold[F, S, E] =
     (extras, state0, event) =>
       state0 match {
-        case Some(state) => F.ifM(f(state, event))(ifTrue = apply(extras, state0, event), ifFalse = F.pure(state0))
-        case None        => apply(extras, state0, event)
+        case Some(state) => F.ifM(f(state, event))(ifTrue = run(extras, state0, event), ifFalse = F.pure(state0))
+        case None        => run(extras, state0, event)
       }
 
   final def handleErrorWith[E1](f: (S, E1) => F[S])(implicit F: ApplicativeError[F, E1]): EnhancedFold[F, S, E] =
-    (extras, state0, event) => apply(extras, state0, event).handleErrorWith(e => state0.traverse(state => f(state, e)))
+    (extras, state0, event) => run(extras, state0, event).handleErrorWith(e => state0.traverse(state => f(state, e)))
 
 }
 
 object EnhancedFold {
 
-  def empty[F[_], S, E](implicit F: Applicative[F]): EnhancedFold[F, S, E] = (_, _, _) => F.pure(None)
+  def empty[F[_], S, E](implicit F: Applicative[F]): EnhancedFold[F, S, E] = new EmptyFold[F, S, E]()
 
   /** Creates an instance of `EnhancedFold` from a function; similar to `FoldOption.of` */
   def of[F[_], S, E](f: (KeyFlowExtras[F], Option[S], E) => F[Option[S]]): EnhancedFold[F, S, E] =
-    (extras, state, event) => f(extras, state, event)
+    new FunctionFold[F, S, E](f)
 
   /** Convenience method to transform a non-enhanced `FoldOption` into an enhanced one */
-  def fromFold[F[_], S, E](fold: FoldOption[F, S, E]): EnhancedFold[F, S, E] =
-    EnhancedFold.of((_, s, e) => fold(s, e))
+  def fromFold[F[_], S, E](fold: FoldOption[F, S, E]): EnhancedFold[F, S, E] = of((_, s, e) => fold.run(s, e))
+
+  private final class EmptyFold[F[_], S, E](implicit F: Applicative[F]) extends EnhancedFold[F, S, E] {
+    override def run(extras: KeyFlowExtras[F], state: Option[S], event: E): F[Option[S]] = F.pure(None)
+  }
+
+  private final class FunctionFold[F[_], S, E](f: (KeyFlowExtras[F], Option[S], E) => F[Option[S]])
+      extends EnhancedFold[F, S, E] {
+    override def run(extras: KeyFlowExtras[F], state: Option[S], event: E): F[Option[S]] = f(extras, state, event)
+  }
 }

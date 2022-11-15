@@ -13,7 +13,7 @@ class SnapshotFoldSpec extends FunSuite {
 
   test("SnapshotFold updates KafkaSnapshot when there is no state") {
     val f = new ConstFixture
-    val state = f.fold(
+    val state = f.fold.run(
       s = None,
       a = ConsRecord(TopicPartition.empty, Offset.unsafe(1), None)
     )
@@ -22,7 +22,7 @@ class SnapshotFoldSpec extends FunSuite {
 
   test("SnapshotFold updates KafkaSnapshot when there is an existing state") {
     val f = new ConstFixture
-    val state = f.fold(
+    val state = f.fold.run(
       s = Some(KafkaSnapshot(offset = Offset.unsafe(1), value = 100)),
       a = ConsRecord(TopicPartition.empty, Offset.unsafe(2), None)
     )
@@ -31,11 +31,11 @@ class SnapshotFoldSpec extends FunSuite {
 
   test("SnapshotFold ignores duplicate update") {
     val f = new ConstFixture
-    val state1 = f.fold(
+    val state1 = f.fold.run(
       s = None,
       a = ConsRecord(TopicPartition.empty, Offset.unsafe(1), None)
     )
-    val state2 = f.fold(
+    val state2 = f.fold.run(
       s = state1,
       a = ConsRecord(TopicPartition.empty, Offset.unsafe(1), None)
     )

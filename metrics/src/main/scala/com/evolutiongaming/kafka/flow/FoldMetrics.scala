@@ -37,7 +37,7 @@ object FoldMetrics {
     foldMetricsKOf[F] transform [FoldOption[F, *, ConsRecord]] { implicit metrics =>
       new FunctionK[FoldOption[F, *, ConsRecord], FoldOption[F, *, ConsRecord]] {
         def apply[S](fold: FoldOption[F, S, ConsRecord]) =
-          FoldOption(metrics.withMetrics(fold.value))
+          FoldOption(metrics.withMetrics(fold.fold))
       }
     }
 
@@ -64,7 +64,7 @@ object FoldMetrics {
 
           val foldOptionMetrics: MetricsK[FoldOption[F, *, ConsRecord]] = new MetricsK[FoldOption[F, *, ConsRecord]] {
             def withMetrics[A](fold: FoldOption[F, A, ConsRecord]): FoldOption[F, A, ConsRecord] =
-              FoldOption(foldMetrics.withMetrics(fold.value))
+              FoldOption(foldMetrics.withMetrics(fold.fold))
           }
 
           val enhancedFoldMetrics: MetricsK[EnhancedFold[F, *, ConsRecord]] =
@@ -72,7 +72,7 @@ object FoldMetrics {
               def withMetrics[A](fold: EnhancedFold[F, A, ConsRecord]): EnhancedFold[F, A, ConsRecord] =
                 EnhancedFold.of { (extras, s, record) =>
                   val topicPartition = record.topicPartition
-                  fold.apply(extras, s, record).measureDuration { duration =>
+                  fold.run(extras, s, record).measureDuration { duration =>
                     foldSummary
                       .labels(topicPartition.topic, topicPartition.partition.show)
                       .observe(duration.toNanos.nanosToSeconds)

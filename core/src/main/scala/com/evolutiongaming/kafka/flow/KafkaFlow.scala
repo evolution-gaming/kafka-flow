@@ -64,7 +64,7 @@ object KafkaFlow {
     for {
       _ <- Stream.around(Retry[F].toFunctionK)
       consumer <- Stream.fromResource(consumer)
-      flow <- Stream.fromResource(flowOf(consumer))
+      flow <- Stream.fromResource(flowOf.make(consumer))
       records <- flow.stream
     } yield records
 

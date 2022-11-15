@@ -11,7 +11,10 @@ import com.evolutiongaming.kafka.flow.persistence.Persistence
 /** Applies records to a state stored inside and informs the listeners about the changes */
 trait FoldToState[F[_], E] {
 
-  def apply(records: NonEmptyList[E]): F[Unit]
+  @deprecated("Use 'run'", since = "2.2.0")
+  def apply(records: NonEmptyList[E]): F[Unit] = run(records)
+
+  def run(records: NonEmptyList[E]): F[Unit]
 
 }
 
@@ -22,14 +25,14 @@ object FoldToState {
     fold: FoldOption[F, S, E],
     persistence: Persistence[F, S, E]
   ): F[FoldToState[F, E]] = Ref.of[F, Option[S]](initialState) map { storage =>
-    FoldToState(storage.stateInstance, fold, persistence)
+    of(storage.stateInstance, fold, persistence)
   }
 
-  def apply[F[_]: Monad: KeyContext, S, E](
+  def of[F[_]: Monad: KeyContext, S, E](
     storage: Stateful[F, Option[S]],
     fold: FoldOption[F, S, E],
     persistence: Persistence[F, S, E]
-  ): FoldToState[F, E] = apply(storage, EnhancedFold.fromFold(fold), persistence, AdditionalStatePersist.empty[F, S, E])
+  ): FoldToState[F, E] = of(storage, EnhancedFold.fromFold(fold), persistence, AdditionalStatePersist.empty[F, S, E])
 
   /** Uses `fold` to apply the records to a state stored inside of `storage`.
     *
@@ -37,7 +40,7 @@ object FoldToState {
     * sends it to persistence, or removes the key if the flow processing
     * is finished.
     */
-  def apply[F[_]: Monad: KeyContext, S, E](
+  def of[F[_]: Monad: KeyContext, S, E](
     storage: Stateful[F, Option[S]],
     fold: EnhancedFold[F, S, E],
     persistence: Persistence[F, S, E],
@@ -45,11 +48,11 @@ object FoldToState {
   ): FoldToState[F, E] = new FoldToState[F, E] {
     private val keyFlowExtras = KeyFlowExtras.of(additionalPersist.request)
 
-    def apply(records: NonEmptyList[E]): F[Unit] = {
+    def run(records: NonEmptyList[E]): F[Unit] = {
       for {
         state <- storage.get
         state <- records.foldLeftM(state) { (state, record) =>
-          fold(keyFlowExtras, state, record) flatTap { state =>
+          fold.run(keyFlowExtras, state, record) flatTap { state =>
             for {
               _ <- persistence.appendEvent(record)
               _ <- state.traverse_ { state =>
