@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
+import cats.Parallel
 import cats.effect.{Concurrent, Ref, Resource}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf, Runtime}
@@ -56,7 +57,7 @@ object KafkaPersistenceModule {
     * @see com.evolutiongaming.kafka.flow.KeyStateOf.eagerRecovery for implementation details of constructing com.evolutiongaming.kafka.flow.KeyState for a specific key
     * @see com.evolutiongaming.kafka.flow.KeyFlow.of for implementation details of state recovery for a specific key
     */
-  def caching[F[_]: LogOf: Concurrent: Runtime: FromBytes[*[_], String]: ToBytes[*[_], S], S: FromBytes[F, *]](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime: FromBytes[*[_], String]: ToBytes[*[_], S], S: FromBytes[F, *]](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
     consumerConfig: ConsumerConfig,
@@ -122,7 +123,7 @@ object KafkaPersistenceModule {
     }
 
     for {
-      partitionDataCache <- Cache.loading[F, String, ByteVector]
+      partitionDataCache <- Cache.loading1[F, String, ByteVector]
       producer <- producerOf.apply(
         producerConfig.copy(common = producerConfig.common.copy(clientId = s"$snapshotTopicPartition-producer".some))
       )
