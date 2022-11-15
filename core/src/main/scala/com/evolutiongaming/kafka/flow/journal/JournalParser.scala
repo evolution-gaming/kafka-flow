@@ -78,7 +78,7 @@ object JournalParser {
     def toPayloads(record: ConsRecord) =
       toAppend(record) flatMap { append =>
         append.toList flatTraverse { append =>
-          parsePayload(PayloadAndType(append)) map (_.events.toList)
+          parsePayload(PayloadAndType(append.payload, append.header.payloadType)) map (_.events.toList)
         }
       }
 
