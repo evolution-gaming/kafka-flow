@@ -28,6 +28,45 @@ trait KafkaPersistenceModule[F[_], S] {
 
 object KafkaPersistenceModule {
 
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+    consumerOf: ConsumerOf[F],
+    producer: Producer[F],
+    consumerConfig: ConsumerConfig,
+    snapshotTopicPartition: TopicPartition
+  )(implicit
+    fromBytesKey: FromBytes[F, String],
+    fromBytesState: FromBytes[F, S],
+    toBytesState: ToBytes[F, S]
+  ): Resource[F, KafkaPersistenceModule[F, S]] =
+    caching(consumerOf, producer, consumerConfig, snapshotTopicPartition, FlowMetrics.empty[F])
+
+  @deprecated("Use `caching` with passing a Producer to avoid per-partition Producer creation", since = "2.2.0")
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+    consumerOf: ConsumerOf[F],
+    producerOf: ProducerOf[F],
+    consumerConfig: ConsumerConfig,
+    producerConfig: ProducerConfig,
+    snapshotTopicPartition: TopicPartition,
+    metrics: FlowMetrics[F] = FlowMetrics.empty[F]
+  )(implicit
+    fromBytesKey: FromBytes[F, String],
+    fromBytesState: FromBytes[F, S],
+    toBytesState: ToBytes[F, S]
+  ): Resource[F, KafkaPersistenceModule[F, S]] = {
+    for {
+      producer <- producerOf.apply(
+        producerConfig.copy(common = producerConfig.common.copy(clientId = s"$snapshotTopicPartition-producer".some))
+      )
+      persistenceModule <- caching[F, S](
+        consumerOf = consumerOf,
+        producer = producer,
+        consumerConfig = consumerConfig,
+        snapshotTopicPartition = snapshotTopicPartition,
+        metrics = metrics
+      )
+    } yield persistenceModule
+  }
+
   /** Creates an instance of [[KafkaPersistenceModule]] for state recovery from a specific partition of a snapshot
     * Kafka 'compacted' ([[https://kafka.apache.org/documentation/#compaction official documentation]]) topic.
     * The exposed `keysOf` and `persistenceOf` implementations will perform cached reading of all the snapshot data
@@ -46,24 +85,25 @@ object KafkaPersistenceModule {
     * Removing a value for a specific key from a cache is safe at that point since state recovery is performed only once -
     * either during initialization when a partition is assigned (and there is a snapshot for a key) or when the journal record is first seen (no snapshot for a key previously).
     *
-    * @param consumerOf Kafka consumer factory to create snapshot reading consumers
-    * @param producerOf Kafka producer factory to create producers for saving snapshots
-    * @param consumerConfig Kafka consumer config for snapshot reading consumers
-    * @param producerConfig Kafka producer config for snapshot writing producers
+    * @param consumerOf             Kafka consumer factory to create snapshot reading consumers
+    * @param producer               Kafka producer for saving snapshots
+    * @param consumerConfig         Kafka consumer config for snapshot reading consumers
     * @param snapshotTopicPartition snapshot topic-partition to read/write snapshots
-    * @param metrics instance of `FlowMetrics` to customize metrics of internally created snapshot database
-    *
+    * @param metrics                instance of `FlowMetrics` to customize metrics of internally created snapshot database
     * @see com.evolutiongaming.kafka.flow.PartitionFlow.of for implementations details of keys fetching and state recovery for a partition
     * @see com.evolutiongaming.kafka.flow.KeyStateOf.eagerRecovery for implementation details of constructing com.evolutiongaming.kafka.flow.KeyState for a specific key
     * @see com.evolutiongaming.kafka.flow.KeyFlow.of for implementation details of state recovery for a specific key
     */
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime: FromBytes[*[_], String]: ToBytes[*[_], S], S: FromBytes[F, *]](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
-    producerOf: ProducerOf[F],
+    producer: Producer[F],
     consumerConfig: ConsumerConfig,
-    producerConfig: ProducerConfig,
     snapshotTopicPartition: TopicPartition,
-    metrics: FlowMetrics[F] = FlowMetrics.empty[F]
+    metrics: FlowMetrics[F]
+  )(implicit
+    fromBytesKey: FromBytes[F, String],
+    fromBytesState: FromBytes[F, S],
+    toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     implicit val fromTry: FromTry[F] = FromTry.lift
 
@@ -80,6 +120,7 @@ object KafkaPersistenceModule {
         new KeysOf[F, KafkaKey] {
           def apply(key: KafkaKey): Keys[F] =
             Keys.empty[F]
+
           def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, KafkaKey] = {
             Stream.fromF {
               readPartitionData
@@ -124,13 +165,11 @@ object KafkaPersistenceModule {
 
     for {
       partitionDataCache <- Cache.loading1[F, String, ByteVector]
-      producer <- producerOf.apply(
-        producerConfig.copy(common = producerConfig.common.copy(clientId = s"$snapshotTopicPartition-producer".some))
-      )
       keysOf_ <- Resource.eval(makeKeysOf(partitionDataCache))
       persistence_ <- Resource.eval(makeSnapshotPersistenceOf(keysOf_, partitionDataCache, producer))
     } yield new KafkaPersistenceModule[F, S] {
       override def keysOf: KeysOf[F, KafkaKey] = keysOf_
+
       override def persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord] = persistence_
     }
   }
