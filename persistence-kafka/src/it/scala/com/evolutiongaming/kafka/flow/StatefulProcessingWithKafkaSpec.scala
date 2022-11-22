@@ -7,7 +7,11 @@ import cats.{Applicative, Functor, Monad}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec._
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
-import com.evolutiongaming.kafka.flow.kafkapersistence.{KafkaPersistenceModule, KafkaPersistenceModuleOf, kafkaEagerRecovery}
+import com.evolutiongaming.kafka.flow.kafkapersistence.{
+  KafkaPersistenceModule,
+  KafkaPersistenceModuleOf,
+  kafkaEagerRecovery
+}
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -90,18 +94,18 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
 
     val stateTopic = "state-topic-StatefulProcessingWithKafkaSpec"
 
-    Blocker[IO].map { blocker =>
-      KafkaPersistenceModuleOf.caching[IO, State](
-        consumerOf = ConsumerOf.apply1[IO](blocker.blockingContext),
-        producerOf = ProducerOf.apply1[IO](blocker.blockingContext),
-        consumerConfig = ConsumerConfig(
-          autoCommit = false,
-          autoOffsetReset = AutoOffsetReset.Earliest
-        ),
-        producerConfig = ProducerConfig.Default,
-        snapshotTopic = stateTopic
-      )
-    }
+    for {
+      blocker <- Blocker[IO]
+      producer <- ProducerOf.apply1[IO](blocker.blockingContext).apply(ProducerConfig.Default)
+    } yield KafkaPersistenceModuleOf.caching[IO, State](
+      consumerOf = ConsumerOf.apply1[IO](blocker.blockingContext),
+      producer = producer,
+      consumerConfig = ConsumerConfig(
+        autoCommit = false,
+        autoOffsetReset = AutoOffsetReset.Earliest
+      ),
+      snapshotTopic = stateTopic
+    )
   }
 
   test("stateful processing using in-memory persistence") { kafka =>
