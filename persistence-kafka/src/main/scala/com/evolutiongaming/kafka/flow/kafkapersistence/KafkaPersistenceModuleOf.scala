@@ -27,7 +27,7 @@ object KafkaPersistenceModuleOf {
   ): KafkaPersistenceModuleOf[F, S] = caching(consumerOf, producer, consumerConfig, snapshotTopic, FlowMetrics.empty[F])
 
   /** Create a [[KafkaPersistenceModuleOf]] factory instance which will then produce a caching implementation of [[KafkaPersistenceModule]]
-    * for an assigned partition. See [[KafkaPersistenceModule.caching]] documentation for further details.
+    * for an assigned partition. See `KafkaPersistenceModule.caching` documentation for further details.
     * Needed mostly as a convenient helper to provide a part of necessary parameters beforehand and pass this factory around.
     * @param consumerOf factory of consumers
     * @param producer snapshot producer
