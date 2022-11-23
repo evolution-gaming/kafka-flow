@@ -7,7 +7,11 @@ import cats.{Functor, Monad}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec._
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
-import com.evolutiongaming.kafka.flow.kafkapersistence.{KafkaPersistenceModule, KafkaPersistenceModuleOf, kafkaEagerRecovery}
+import com.evolutiongaming.kafka.flow.kafkapersistence.{
+  KafkaPersistenceModule,
+  KafkaPersistenceModuleOf,
+  kafkaEagerRecovery
+}
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -86,21 +90,22 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
    * - and resources release when warm up is done (read compact kafka topic, fold by key, convert to case classes using FromBytes, release=throw away loaded bytes Map[Key, Bytes])
    * - oh actually it's not a Resource.release, as we're using the state store within scope of the Resource
    */
-  private val kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[IO, State] = {
+  private val kafkaPersistenceModuleOf: Resource[IO, KafkaPersistenceModuleOf[IO, State]] = {
     import Boilerplate._
 
     val stateTopic = "state-topic-StatefulProcessingWithKafkaSpec"
 
-    KafkaPersistenceModuleOf.caching[IO, State](
-      consumerOf = ConsumerOf.apply1[IO](),
-      producerOf = ProducerOf.apply1[IO](),
-      consumerConfig = ConsumerConfig(
-        autoCommit = false,
-        autoOffsetReset = AutoOffsetReset.Earliest
-      ),
-      producerConfig = ProducerConfig.Default,
-      snapshotTopic = stateTopic
-    )
+    ProducerOf.apply1[IO]().apply(ProducerConfig.Default).map { producer =>
+      KafkaPersistenceModuleOf.caching[IO, State](
+        consumerOf = ConsumerOf.apply1[IO](),
+        producer = producer,
+        consumerConfig = ConsumerConfig(
+          autoCommit = false,
+          autoOffsetReset = AutoOffsetReset.Earliest
+        ),
+        snapshotTopic = stateTopic
+      )
+    }
   }
 
   test("stateful processing using in-memory persistence") { kafka =>
@@ -113,7 +118,9 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
   test("stateful processing using kafka persistence") { kafka =>
     // using unique input topic name per test as weaver is running tests in parallel
     val inputTopic = "kafka-persistence-test"
-    comboTestCase(kafka, kafkaPersistenceModuleOf, inputTopic)
+    kafkaPersistenceModuleOf.use { module =>
+      comboTestCase(kafka, module, inputTopic)
+    }
   }
 
   private def comboTestCase(
