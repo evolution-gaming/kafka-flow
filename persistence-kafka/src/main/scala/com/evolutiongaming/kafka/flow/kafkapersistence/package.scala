@@ -9,10 +9,8 @@ import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.skafka.consumer.ConsumerConfig
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.sstream.{FoldWhile, Stream}
-import monocle.macros.GenLens
 import scodec.bits.ByteVector
 
 package object kafkapersistence {
@@ -149,16 +147,6 @@ package object kafkapersistence {
         } yield partitionFlow
       }
     }
-
-  private[kafkapersistence] implicit class ConsumerConfigCompanionOps(
-    val self: ConsumerConfig.type
-  ) extends AnyVal {
-    @inline def clientId = ConsumerConfigCompanionOps.clientId
-  }
-
-  private[kafkapersistence] object ConsumerConfigCompanionOps {
-    val clientId = GenLens[ConsumerConfig](_.common.clientId)
-  }
 
   private[kafkapersistence] implicit class StreamCompanionOps(
     val self: Stream.type
