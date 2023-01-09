@@ -11,7 +11,6 @@ import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.evolutiongaming.scassandra.util.FromGFuture
 import com.google.common.util.concurrent.ListenableFuture
 
-import scala.concurrent.ExecutionContextExecutor
 
 trait CassandraModule[F[_]] {
   def session: SafeSession[F]
@@ -38,7 +37,7 @@ object CassandraModule {
     */
   def of[F[_]: Async: Parallel: LogOf](
     config: CassandraConfig
-  )(implicit executor: ExecutionContextExecutor): Resource[F, CassandraModule[F]] = {
+  ): Resource[F, CassandraModule[F]] = {
     for {
       log <- Resource.eval(log[F])
       // this is required to log all Cassandra errors before popping them up,
@@ -46,7 +45,7 @@ object CassandraModule {
       // while kafka-flow is accessing Cassandra in bracket/resource release
       // routine
       fromGFuture = new FromGFuture[F] {
-        val self = FromGFuture.lift[F]
+        val self = FromGFuture.lift1[F]
         def apply[A](future: => ListenableFuture[A]) = {
           self(future) onError { case e =>
             log.error("Cassandra request failed", e)

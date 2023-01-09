@@ -8,7 +8,6 @@ import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.CassandraConfig
 import com.evolutiongaming.kafka.flow.cassandra.CassandraModule
 import com.evolutiongaming.scassandra.{CassandraConfig => SCassandraConfig}
-import scala.concurrent.ExecutionContext
 import scala.util.Try
 import scribe.Level
 import scribe.Logger
@@ -24,7 +23,6 @@ object SharedResources extends GlobalResource {
 
   def sharedResources(store: GlobalWrite): Resource[IO, Unit] = {
 
-    implicit val executor = ExecutionContext.global
     implicit val log = LogOf.empty[IO]
 
     // we use default config here, because we will launch Cassandra locally

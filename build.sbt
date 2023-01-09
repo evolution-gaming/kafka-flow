@@ -95,7 +95,8 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
       Monocle.`macro`,
       kafkaLauncher % IntegrationTest,
       scribe % IntegrationTest,
-      weaver % IntegrationTest
+      weaver % IntegrationTest,
+      catsHelperLogback % IntegrationTest,
     ),
     Defaults.itSettings,
     IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
