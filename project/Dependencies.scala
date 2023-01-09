@@ -6,13 +6,14 @@ object Dependencies {
   val scribe = "com.outr"            %% "scribe-slf4j"     % "3.5.0"
   val weaver = "com.disneystreaming" %% "weaver-cats"      % "0.6.15"
 
-  val cassandraLauncher = "com.evolutiongaming" %% "cassandra-launcher" % "0.0.4"
-  val catsHelper        = "com.evolutiongaming" %% "cats-helper"        % "2.7.7"
-  val kafkaLauncher     = "com.evolutiongaming" %% "kafka-launcher"     % "0.0.12"
-  val scache            = "com.evolutiongaming" %% "scache"             % "3.4.1"
-  val skafka            = "com.evolutiongaming" %% "skafka"             % "11.13.2"
-  val smetrics          = "com.evolutiongaming" %% "smetrics"           % "0.3.6"
-  val sstream           = "com.evolutiongaming" %% "sstream"            % "0.2.1"
+  val cassandraLauncher = "com.evolutiongaming" %% "cassandra-launcher"   % "0.0.4"
+  val catsHelper        = "com.evolutiongaming" %% "cats-helper"          % "2.10.0"
+  val catsHelperLogback = "com.evolutiongaming" %% "cats-helper-logback"  % "2.10.0"
+  val kafkaLauncher     = "com.evolutiongaming" %% "kafka-launcher"       % "0.0.12"
+  val scache            = "com.evolutiongaming" %% "scache"               % "3.6.0"
+  val skafka            = "com.evolutiongaming" %% "skafka"               % "11.13.2"
+  val smetrics          = "com.evolutiongaming" %% "smetrics"             % "0.3.7"
+  val sstream           = "com.evolutiongaming" %% "sstream"              % "0.2.1"
 
   object Cats {
     private val version = "2.8.0"
@@ -22,7 +23,7 @@ object Dependencies {
   }
 
   object KafkaJournal {
-    private val version = "0.0.187"
+    private val version = "0.0.188"
     val journal     = "com.evolutiongaming" %% "kafka-journal"                    % version
     val cassandra   = "com.evolutiongaming" %% "kafka-journal-eventual-cassandra" % version
     val persistence = "com.evolutiongaming" %% "kafka-journal-persistence"        % version

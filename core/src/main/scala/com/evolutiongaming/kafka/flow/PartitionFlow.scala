@@ -10,7 +10,7 @@ import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.OffsetToCommit
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.scache.{Cache, Releasable}
+import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 
 import java.time.Instant
@@ -101,16 +101,14 @@ object PartitionFlow {
   ): Resource[F, PartitionFlow[F]] = {
 
     def stateOf(createdAt: Timestamp, key: String): F[PartitionKey[F]] =
-      cache.getOrUpdateReleasable(key) {
-        Releasable.of {
-          for {
-            context <- KeyContext.resource[F](
-              removeFromCache = cache.remove(key).flatten.void,
-              log = Log[F].prefixed(key)
-            )
-            keyState <- keyStateOf(topicPartition, key, createdAt, context)
-          } yield PartitionKey(keyState, context)
-        }
+      cache.getOrUpdateResource(key) {
+        for {
+          context <- KeyContext.resource[F](
+            removeFromCache = cache.remove(key).flatten.void,
+            log = Log[F].prefixed(key)
+          )
+          keyState <- keyStateOf(topicPartition, key, createdAt, context)
+        } yield PartitionKey(keyState, context)
       }
 
     val init = for {
