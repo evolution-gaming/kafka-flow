@@ -10,7 +10,7 @@ import com.evolutiongaming.catshelper.DataHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecords, PartitionOffset}
-import com.evolutiongaming.scache.{Cache, Releasable}
+import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.skafka._
 
 import scala.collection.immutable.SortedSet
@@ -115,8 +115,8 @@ object TopicFlow {
               pendingCommits + (TopicPartition(topic, partition) -> OffsetAndMetadata(offset))
             }
           }
-          cache.getOrUpdateReleasable(partition) {
-            Releasable.of(partitionFlowOf(TopicPartition(topic, partition), offset, context))
+          cache.getOrUpdateResource(partition) {
+            partitionFlowOf(TopicPartition(topic, partition), offset, context)
           }
         }
       }
