@@ -12,7 +12,6 @@ import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.kafka.journal.PartitionOffset
 import com.evolutiongaming.scache.Cache
-import com.evolutiongaming.scache.Releasable
 import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, Partition, Topic, TopicPartition}
 import kafka.Consumer
 
@@ -118,8 +117,8 @@ object TopicFlow {
               pendingCommits + (TopicPartition(topic, partition) -> OffsetAndMetadata(offset))
             }
           }
-          cache.getOrUpdateReleasable(partition) {
-            Releasable.of(partitionFlowOf(TopicPartition(topic, partition), offset, context))
+          cache.getOrUpdateResource(partition) {
+            partitionFlowOf(TopicPartition(topic, partition), offset, context)
           }
         }
       }
