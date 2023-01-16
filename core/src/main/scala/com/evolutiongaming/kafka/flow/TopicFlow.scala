@@ -12,6 +12,7 @@ import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecords, PartitionOffset}
 import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.consumer.ConsumerRecords
 
 import scala.collection.immutable.SortedSet
 
@@ -78,8 +79,12 @@ object TopicFlow {
     val acquire = new TopicFlow[F] {
 
       def apply(records: ConsRecords) = {
+
         for {
           partitions <- cache.values
+          _ <- Log[F].debug(
+            s"got ConsRecords: ${ConsumerRecords.summaryShow.show(records)}; cached partitions: ${partitions.keys}"
+          )
           _ <- partitions.toList parTraverse { case (partition, flow) =>
             for {
               flow <- flow
