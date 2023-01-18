@@ -101,12 +101,15 @@ object PartitionFlow {
 
     def stateOf(createdAt: Timestamp, key: String): F[PartitionKey[F]] =
       cache.getOrUpdateResource(key) {
+        val keyLog = Log[F].prefixed(key)
         for {
+          _ <- Resource.eval(keyLog.debug("not found in cache"))
           context <- KeyContext.resource[F](
             removeFromCache = cache.remove(key).flatten.void,
-            log = Log[F].prefixed(key)
+            log = keyLog
           )
           keyState <- keyStateOf(topicPartition, key, createdAt, context)
+          _ <- Resource.eval(keyLog.debug("computed KeyState"))
         } yield PartitionKey(keyState, context)
       }
 
@@ -132,6 +135,8 @@ object PartitionFlow {
     } yield ()
 
     def processRecords(records: NonEmptyList[ConsRecord]) = for {
+      _ <- Log[F].debug(s"processing ${records.size} records from partition ${topicPartition.partition}")
+
       clock <- Clock[F].instant
       keys = records groupBy (_.key map (_.value)) collect {
         // we deliberately ignore records without a key to simplify the code
@@ -172,6 +177,8 @@ object PartitionFlow {
           offset = maximumOffset
         )
       )
+
+      _ <- Log[F].debug(s"finished processing records from partition ${topicPartition.partition}")
     } yield ()
 
     def triggerTimers = for {
