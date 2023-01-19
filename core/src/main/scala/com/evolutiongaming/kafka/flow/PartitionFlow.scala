@@ -198,6 +198,8 @@ object PartitionFlow {
     } yield ()
 
     def offsetToCommit: F[Option[Offset]] = for {
+      _ <- Log[F].debug("computing offset to commit")
+
       // find minimum offset if any
       states <- cache.values
       stateOffsets <- states.values.toList.traverse { state =>
@@ -239,6 +241,9 @@ object PartitionFlow {
         clock <- Clock[F].instant
         commitOffsetsAt <- commitOffsetsAt.get
         offsetToCommit <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
+
+        _ <- Log[F].debug(s"offset to commit: ${offsetToCommit.show}")
+
         _ <- offsetToCommit traverse_ PartitionContext[F].scheduleCommit
 
         _ <- Log[F].debug("done with commits")
