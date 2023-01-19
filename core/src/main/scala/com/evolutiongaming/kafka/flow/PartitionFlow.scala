@@ -101,15 +101,12 @@ object PartitionFlow {
 
     def stateOf(createdAt: Timestamp, key: String): F[PartitionKey[F]] =
       cache.getOrUpdateResource(key) {
-        val keyLog = Log[F].prefixed(key)
         for {
-          _ <- Resource.eval(keyLog.debug("not found in cache"))
           context <- KeyContext.resource[F](
             removeFromCache = cache.remove(key).flatten.void,
-            log = keyLog
+            log = Log[F].prefixed(key)
           )
           keyState <- keyStateOf(topicPartition, key, createdAt, context)
-          _ <- Resource.eval(keyLog.debug("computed KeyState"))
         } yield PartitionKey(keyState, context)
       }
 
@@ -135,7 +132,7 @@ object PartitionFlow {
     } yield ()
 
     def processRecords(records: NonEmptyList[ConsRecord]) = for {
-      _ <- Log[F].debug(s"processing ${records.size} records from partition ${topicPartition.partition}")
+      _ <- Log[F].debug(s"processing ${records.size} records")
 
       clock <- Clock[F].instant
       keys = records groupBy (_.key map (_.value)) collect {
@@ -178,10 +175,12 @@ object PartitionFlow {
         )
       )
 
-      _ <- Log[F].debug(s"finished processing records from partition ${topicPartition.partition}")
+      _ <- Log[F].debug(s"finished processing records")
     } yield ()
 
     def triggerTimers = for {
+      _ <- Log[F].debug("triggering timers")
+
       clock <- Clock[F].instant
       timestamp <- timestamp updateAndGet (_.copy(clock = clock))
       states <- cache.values
@@ -194,6 +193,8 @@ object PartitionFlow {
       _ <- triggerTimersAt update { triggerTimersAt =>
         triggerTimersAt plusMillis config.triggerTimersInterval.toMillis
       }
+
+      _ <- Log[F].debug("done triggering timers")
     } yield ()
 
     def offsetToCommit: F[Option[Offset]] = for {
@@ -240,6 +241,7 @@ object PartitionFlow {
         offsetToCommit <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
         _ <- offsetToCommit traverse_ PartitionContext[F].scheduleCommit
 
+        _ <- Log[F].debug("done with commits")
       } yield ()
     }
 

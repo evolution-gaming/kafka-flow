@@ -93,7 +93,9 @@ object TopicFlow {
               _ <- flow(partitionRecords)
             } yield ()
           }
+          _ <- Log[F].debug("done with partition flows")
           _ <- commitPending("records processing")
+          _ <- Log[F].debug("done with pending commits")
         } yield ()
       }
 
