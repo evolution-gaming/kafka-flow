@@ -84,7 +84,6 @@ object ConsumerFlow {
     def poll(logger: Log[F]) = {
       val flowList = flows.toList // optimization, execute toList once instead of on each `consumer.poll`
       for {
-        _ <- logger.debug(s"consumer.poll(${config.pollTimeout})")
         consumerRecords <- consumer.poll(config.pollTimeout)
         _ <- flowList.traverse { case (topic, flow) =>
           val topicRecords = consumerRecords.values filter { case (partition, _) =>
