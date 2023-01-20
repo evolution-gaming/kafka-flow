@@ -6,7 +6,7 @@ import cats.syntax.all._
 import cats.{Applicative, Parallel}
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf, Runtime}
-import com.evolutiongaming.kafka.flow.kafka.OffsetToCommit
+import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.scache.Cache
@@ -47,26 +47,28 @@ object PartitionFlow {
       record => f(record).pure[F]
   }
 
-  def resource[F[_]: Concurrent: Runtime: Parallel: PartitionContext: Clock: LogOf](
+  def resource[F[_]: Concurrent: Runtime: Parallel: Clock: LogOf](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig,
-    filter: Option[FilterRecord[F]] = None
+    filter: Option[FilterRecord[F]] = None,
+    scheduleCommit: ScheduleCommit[F]
   ): Resource[F, PartitionFlow[F]] =
     LogResource[F](getClass, topicPartition.toString) flatMap { implicit log =>
       Cache.loading1[F, String, PartitionKey[F]] flatMap { cache =>
-        of(topicPartition, assignedAt, keyStateOf, cache, config, filter)
+        of(topicPartition, assignedAt, keyStateOf, cache, config, filter, scheduleCommit)
       }
     }
 
-  def of[F[_]: MonadCancelThrow: Ref.Make: Parallel: PartitionContext: Clock: Log](
+  def of[F[_]: MonadCancelThrow: Ref.Make: Parallel: Clock: Log](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig,
-    filter: Option[FilterRecord[F]] = None
+    filter: Option[FilterRecord[F]] = None,
+    scheduleCommit: ScheduleCommit[F]
   ): Resource[F, PartitionFlow[F]] = for {
     clock <- Resource.eval(Clock[F].instant)
     committedOffset <- Resource.eval(Ref.of(assignedAt))
@@ -82,12 +84,13 @@ object PartitionFlow {
       commitOffsetsAt = commitOffsetsAt,
       cache = cache,
       config = config,
-      filter = filter
+      filter = filter,
+      scheduleCommit = scheduleCommit
     )
   } yield flow
 
   // TODO: put most `Ref` variables into one state class?
-  def of[F[_]: MonadCancelThrow: Ref.Make: Parallel: PartitionContext: Clock: Log](
+  def of[F[_]: MonadCancelThrow: Ref.Make: Parallel: Clock: Log](
     topicPartition: TopicPartition,
     keyStateOf: KeyStateOf[F],
     committedOffset: Ref[F, Offset],
@@ -96,7 +99,8 @@ object PartitionFlow {
     commitOffsetsAt: Ref[F, Instant],
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig,
-    filter: Option[FilterRecord[F]]
+    filter: Option[FilterRecord[F]],
+    scheduleCommit: ScheduleCommit[F]
   ): Resource[F, PartitionFlow[F]] = {
 
     def stateOf(createdAt: Timestamp, key: String): F[PartitionKey[F]] =
@@ -244,17 +248,16 @@ object PartitionFlow {
 
         _ <- Log[F].debug(s"offset to commit: ${offsetToCommit.show}")
 
-        _ <- offsetToCommit traverse_ PartitionContext[F].scheduleCommit
+        _ <- offsetToCommit.traverse_(offset => scheduleCommit.schedule(offset))
 
         _ <- Log[F].debug("done with commits")
       } yield ()
     }
 
     val release: F[Unit] = if (config.commitOnRevoke) {
-      offsetToCommit flatMap { offset =>
-        offset traverse_ { offset =>
-          Log[F].info(s"committing on revoke: $offset") *>
-            PartitionContext[F].scheduleCommit(offset)
+      offsetToCommit.flatMap { offset =>
+        offset.traverse_ { offset =>
+          Log[F].info(s"committing on revoke: $offset") *> scheduleCommit.schedule(offset)
         }
       }
     } else {

@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Monad
 import cats.syntax.all._
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -55,8 +56,8 @@ object PartitionFlowMetrics {
   implicit def partitionFlowOfMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, PartitionFlowOf[F]] =
     partitionFlowMetricsOf[F] transform { implicit metrics => partitionFlowOf =>
       new PartitionFlowOf[F] {
-        def apply(topicPartition: TopicPartition, assignedAt: Offset, context: PartitionContext[F]) =
-          partitionFlowOf(topicPartition, assignedAt, context) map (_.withMetrics)
+        def apply(topicPartition: TopicPartition, assignedAt: Offset, scheduleCommit: ScheduleCommit[F]) =
+          partitionFlowOf(topicPartition, assignedAt, scheduleCommit) map (_.withMetrics)
       }
     }
 
