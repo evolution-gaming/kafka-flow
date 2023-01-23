@@ -202,9 +202,15 @@ object PartitionFlow {
 
       // find minimum offset if any
       states <- cache.values
+
+      _ <- Log[F].debug(s"got ${states.size} states from cache")
+
       stateOffsets <- states.values.toList.traverse { state =>
         state flatMap (_.context.holding)
       }
+
+      _ <- Log[F].debug(s"computed stateOffsets: $stateOffsets")
+
       minimumOffset = stateOffsets.flatten.minimumOption
 
       // maximum offset to commit is the offset of last record
