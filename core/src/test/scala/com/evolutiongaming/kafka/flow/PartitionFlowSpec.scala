@@ -328,7 +328,14 @@ object PartitionFlowSpec {
             timers <- Resource.eval(TimerContext.memory[IO, String](key, createdAt))
             persistence <- Resource.eval(persistenceOf(key, fold0, timers))
             timerFlow <- timerFlowOf(context, persistence, timers)
-            keyFlow <- KeyFlow.of(kafkaKey, fold0, TickOption.id[IO, State], persistence, timerFlow, EntityRegistry.empty[IO, KafkaKey, State])
+            keyFlow <- KeyFlow.of(
+              kafkaKey,
+              fold0,
+              TickOption.id[IO, State],
+              persistence,
+              timerFlow,
+              EntityRegistry.empty[IO, KafkaKey, State]
+            )
           } yield KeyState(keyFlow, timers)
         }
         def all(topicPartition: TopicPartition): Stream[IO, String] = Stream.empty

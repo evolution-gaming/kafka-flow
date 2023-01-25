@@ -22,6 +22,7 @@ private[flow] trait PendingCommits[F[_]] {
 }
 
 private[flow] object PendingCommits {
+
   /** An in-memory implementation, using [[cats.effect.Ref]] as a storage */
   private final class FromRef[F[_]](pendingCommits: Ref[F, Map[TopicPartition, OffsetAndMetadata]])
       extends PendingCommits[F] {

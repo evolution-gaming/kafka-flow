@@ -81,7 +81,6 @@ class EntityRegistryTest extends FunSuite {
 
   test("in-memory registry should register new keys") {
     val program = resource.use { case (partitionFlow, registry) =>
-
       for {
         // register key1
         _ <- partitionFlow.apply(List(makeRecord(key1.key, 1)))

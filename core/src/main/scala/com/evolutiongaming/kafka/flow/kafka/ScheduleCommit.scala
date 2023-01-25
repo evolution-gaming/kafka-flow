@@ -9,6 +9,7 @@ trait ScheduleCommit[F[_]] {
   /** Request ("schedule") an offset to be committed for a partition during the next commit attempt */
   def schedule(offset: Offset): F[Unit]
 }
+
 object ScheduleCommit {
 
   def empty[F[_]: Applicative]: ScheduleCommit[F] = new Empty[F]
