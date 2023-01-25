@@ -1,77 +1,47 @@
 package com.evolutiongaming.kafka.flow.key
 
-import cats.data.State
-import cats.mtl.Stateful
+import cats.effect._
+import cats.effect.kernel.Ref
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.kafka.flow.key.KeysSpec._
 import munit.FunSuite
 
 class KeysSpec extends FunSuite {
 
+  implicit val log: Log[IO] = Log.empty[IO]
+
   test("Keys add key to a database on flush") {
+    for {
+      ref <- Ref.of[IO, Set[String]](Set.empty)
+      db = KeyDatabase.memory(ref)
 
-    val f = new ConstFixture
+      keys = Keys("key1", db)
+      _ <- keys.flush
 
-    // Given("empty database")
-    val database = KeyDatabase.memory(f.database)
-    val keys = Keys("key1", database)
-
-    // When("Keys is flushed")
-    val program = keys.flush
-
-    val result = program.runS(Set.empty).value
-
-    // Then("state gets into database")
-    assert(result == Set("key1"))
-
+      state <- ref.get
+    } yield assertEquals(state, Set("key1"))
   }
 
   test("Keys delete a key from a database when requested") {
+    for {
+      ref <- Ref.of[IO, Set[String]](Set("key1"))
+      db = KeyDatabase.memory(ref)
+      snapshots = Keys("key1", db)
 
-    val f = new ConstFixture
+      _ <- snapshots.delete(true)
 
-    // Given("database with contents")
-    val database = KeyDatabase.memory(f.database)
-    val snapshots = Keys("key1", database)
-    val context = Set("key1")
-
-    // When("delete is requested")
-    val program = snapshots.delete(true)
-    val result = program.runS(context).value
-
-    // Then("key is deleted")
-    assert(result.isEmpty)
-
+      state <- ref.get
+    } yield assert(state.isEmpty)
   }
 
   test("Keys do not delete a key from a database when not requested") {
+    for {
+      ref <- Ref.of[IO, Set[String]](Set("key1"))
+      db = KeyDatabase.memory(ref)
+      snapshots = Keys("key1", db)
 
-    val f = new ConstFixture
+      _ <- snapshots.delete(false)
 
-    // Given("database with contents")
-    val database = KeyDatabase.memory(f.database)
-    val snapshots = Keys("key1", database)
-    val context = Set("key1")
-
-    // When("delete is requested")
-    val program = snapshots.delete(false)
-    val result = program.runS(context).value
-
-    // Then("key is not deleted")
-    assert(result.nonEmpty)
-
+      state <- ref.get
+    } yield assertEquals(state, Set("key1"))
   }
-
-}
-
-object KeysSpec {
-
-  type F[T] = State[Set[String], T]
-
-  class ConstFixture {
-    val database = Stateful[F, Set[String]]
-  }
-
-  implicit val log: Log[F] = Log.empty[F]
-
 }
