@@ -4,6 +4,7 @@ import cats.Parallel
 import cats.effect.{Concurrent, Resource, Timer}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 
 trait PartitionFlowOf[F[_]] {
@@ -12,7 +13,7 @@ trait PartitionFlowOf[F[_]] {
   def apply(
     topicPartition: TopicPartition,
     assignedAt: Offset,
-    context: PartitionContext[F]
+    scheduleCommit: ScheduleCommit[F]
   ): Resource[F, PartitionFlow[F]]
 
 }
@@ -29,8 +30,7 @@ object PartitionFlowOf {
     keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig = PartitionFlowConfig(),
     filter: Option[FilterRecord[F]] = None
-  ): PartitionFlowOf[F] = { (topicPartition, assignedAt, context) =>
-    implicit val _context = context
-    PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config, filter)
+  ): PartitionFlowOf[F] = { (topicPartition, assignedAt, scheduleCommit) =>
+    PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config, filter, scheduleCommit)
   }
 }

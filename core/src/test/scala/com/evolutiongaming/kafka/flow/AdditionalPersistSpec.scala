@@ -4,6 +4,7 @@ import cats.effect.concurrent.Ref
 import cats.effect.laws.util.TestContext
 import cats.effect.{IO, Resource}
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -237,8 +238,8 @@ object AdditionalPersistSpec {
     def snapshotDatabase: SnapshotDatabase[IO, KafkaKey, String] = SnapshotDatabase.memory(snapshots.stateInstance)
 
     val commits = Ref.unsafe[IO, List[Offset]](List.empty)
-    implicit val partitionContext = new PartitionContext[IO] {
-      override def scheduleCommit(offset: Offset): IO[Unit] = commits.update(_ :+ offset)
+    val scheduleCommit = new ScheduleCommit[IO] {
+      override def schedule(offset: Offset): IO[Unit] = commits.update(_ :+ offset)
     }
 
     def ignorePersistFailures: Boolean = false
@@ -296,7 +297,8 @@ object AdditionalPersistSpec {
             additionalPersistOf = AdditionalStatePersistOf.of[IO, String](cooldown = 20.seconds),
             registry = EntityRegistry.empty[IO, KafkaKey, String]
           ),
-          config = PartitionFlowConfig(commitOffsetsInterval = 1.minute)
+          config = PartitionFlowConfig(commitOffsetsInterval = 1.minute),
+          scheduleCommit = scheduleCommit
         )
       } yield partitionFlow
   }
