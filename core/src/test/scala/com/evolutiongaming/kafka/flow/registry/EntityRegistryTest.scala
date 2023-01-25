@@ -5,6 +5,7 @@ import cats.effect.syntax.resource._
 import cats.effect.unsafe.implicits.global
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow._
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
@@ -63,7 +64,7 @@ class EntityRegistryTest extends FunSuite {
     partitionFlow <- partitionFlowOf.apply(
       topicPartition = TopicPartition.empty,
       assignedAt = Offset.min,
-      context = PartitionContext.empty
+      scheduleCommit = ScheduleCommit.empty
     )
   } yield (partitionFlow, registry)
 
@@ -80,7 +81,6 @@ class EntityRegistryTest extends FunSuite {
 
   test("in-memory registry should register new keys") {
     val program = resource.use { case (partitionFlow, registry) =>
-
       for {
         // register key1
         _ <- partitionFlow.apply(List(makeRecord(key1.key, 1)))

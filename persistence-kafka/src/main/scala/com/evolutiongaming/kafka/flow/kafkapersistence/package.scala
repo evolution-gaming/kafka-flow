@@ -5,6 +5,7 @@ import cats.syntax.all._
 import cats.{Eval, Foldable, Monad, Parallel}
 import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
@@ -119,7 +120,7 @@ package object kafkapersistence {
       override def apply(
         topicPartition: TopicPartition,
         assignedAt: Offset,
-        context: PartitionContext[F]
+        scheduleCommit: ScheduleCommit[F]
       ): Resource[F, PartitionFlow[F]] = {
         for {
           // TODO: per-partition persistence module with 'String -> ByteVector' cache or global persistence module with 'KafkaKey -> ByteVector' cache?
@@ -143,7 +144,7 @@ package object kafkapersistence {
             config = partitionFlowConfig,
             filter = filter
           )
-          partitionFlow <- partitionFlowOf(topicPartition, assignedAt, context)
+          partitionFlow <- partitionFlowOf(topicPartition, assignedAt, scheduleCommit)
         } yield partitionFlow
       }
     }
