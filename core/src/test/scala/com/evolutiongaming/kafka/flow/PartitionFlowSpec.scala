@@ -7,7 +7,7 @@ import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.PartitionFlowSpec._
 import com.evolutiongaming.kafka.flow.journal.JournalsOf
-import com.evolutiongaming.kafka.flow.kafka.ToOffset
+import com.evolutiongaming.kafka.flow.kafka.{ScheduleCommit, ToOffset}
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -304,8 +304,8 @@ object PartitionFlowSpec {
       }
 
     val pendingOffset: Ref[IO, Option[Offset]] = Ref.unsafe(None)
-    implicit val partitionContext: PartitionContext[IO] = new PartitionContext[IO] {
-      def scheduleCommit(offset: Offset) = pendingOffset.set(Some(offset))
+    val scheduleCommit: ScheduleCommit[IO] = new ScheduleCommit[IO] {
+      def schedule(offset: Offset) = pendingOffset.set(Some(offset))
     }
 
     def flow: Resource[IO, PartitionFlow[IO]] =
@@ -351,7 +351,8 @@ object PartitionFlowSpec {
           triggerTimersInterval = 0.seconds,
           commitOffsetsInterval = 0.seconds
         ),
-        filter = filter
+        filter = filter,
+        scheduleCommit = scheduleCommit
       )
     }
 

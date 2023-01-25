@@ -4,6 +4,7 @@ import cats.effect.{ContextShift, IO, Timer}
 import com.evolutiongaming.catshelper.CatsHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow._
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
@@ -69,7 +70,7 @@ class EntityRegistryTest extends FunSuite {
     partitionFlow <- partitionFlowOf.apply(
       topicPartition = TopicPartition.empty,
       assignedAt = Offset.min,
-      context = PartitionContext.empty
+      scheduleCommit = ScheduleCommit.empty
     )
   } yield (partitionFlow, registry)
 
