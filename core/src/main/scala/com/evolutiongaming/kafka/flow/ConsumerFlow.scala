@@ -32,7 +32,7 @@ object ConsumerFlow {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: MonadThrow: LogOf](
+  def of[F[_]: MonadThrow: Parallel: LogOf](
     consumer: Consumer[F],
     topic: Topic,
     flowOf: TopicFlowOf[F],
@@ -49,7 +49,7 @@ object ConsumerFlow {
     * Note, that topics specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def of[F[_]: MonadThrow: LogOf](
+  def of[F[_]: MonadThrow: Parallel: LogOf](
     consumer: Consumer[F],
     topics: NonEmptySet[Topic],
     flowOf: TopicFlowOf[F],

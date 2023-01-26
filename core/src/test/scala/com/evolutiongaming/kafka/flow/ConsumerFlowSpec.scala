@@ -1,5 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.arrow.FunctionK
+import cats.{Applicative, Monad, Parallel, ~>}
 import cats.data.{NonEmptyMap, NonEmptySet, StateT}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
@@ -85,6 +87,14 @@ object ConsumerFlowSpec {
   val offset = Offset.unsafe(0)
 
   type F[A] = StateT[Try, Context, A]
+
+  implicit val parallelForStateT = new Parallel[F] {
+    override type F[T] = ConsumerFlowSpec.F[T]
+    override def applicative: Applicative[F] = implicitly
+    override def monad: Monad[F] = implicitly
+    override def sequential: ~>[F, F] = FunctionK.id
+    override def parallel: ~>[F, F] = FunctionK.id
+  }
 
   implicit val logOf: LogOf[F] = LogOf.empty
 

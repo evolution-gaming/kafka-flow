@@ -1,5 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.arrow.FunctionK
+import cats.{Applicative, Monad, Parallel, ~>}
 import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
 import cats.effect.concurrent.Ref
 import cats.effect.{Resource, SyncIO, Timer}
@@ -10,12 +12,7 @@ import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecord, ConsRecords}
 import com.evolutiongaming.retry.{OnError, Retry, Strategy}
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{
-  ConsumerRecord,
-  ConsumerRecords,
-  RebalanceListener1 => SRebalanceListener,
-  WithSize
-}
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, WithSize, RebalanceListener1 => SRebalanceListener}
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 
@@ -142,6 +139,14 @@ object KafkaFlowSpec {
   }
 
   type F[A] = SyncIO[A]
+
+  implicit val parallelForSyncIO = new Parallel[F] {
+    override type F[T] = KafkaFlowSpec.F[T]
+    override def applicative: Applicative[F] = implicitly
+    override def monad: Monad[F] = implicitly
+    override def sequential: ~>[F, F] = FunctionK.id
+    override def parallel: ~>[F, F] = FunctionK.id
+  }
 
   class ConstFixture(val state: Ref[F, State]) {
 
