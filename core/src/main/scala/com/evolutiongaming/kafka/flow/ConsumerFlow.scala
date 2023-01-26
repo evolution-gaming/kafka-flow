@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.MonadThrow
+import cats.{MonadThrow, Parallel}
 import cats.data.NonEmptySet
 import cats.effect.Resource
 import cats.syntax.all._
@@ -69,7 +69,7 @@ object ConsumerFlow {
     * Note, that topic specified by an appropriate parameter should contain a
     * journal in the format of `Kafka Journal` library.
     */
-  def apply[F[_]: MonadThrow: LogOf](
+  def apply[F[_]: MonadThrow: Parallel: LogOf](
     consumer: Consumer[F],
     flows: Map[Topic, TopicFlow[F]],
     config: ConsumerFlowConfig
@@ -84,11 +84,10 @@ object ConsumerFlow {
     def poll = {
       val flowList = flows.toList // optimization, execute toList once instead of on each `consumer.poll`
       consumer.poll(config.pollTimeout) flatTap { consumerRecords =>
-        flowList traverse { case (topic, flow) =>
-          val topicRecords = consumerRecords.values filter { case (partition, _) =>
-            partition.topic == topic
-          }
-          flow(ConsumerRecords(topicRecords))
+        val recordsByTopic = consumerRecords.values.groupBy(_._1.topic)
+        flowList parTraverse { case (topic, flow) =>
+          val recordsByPartition = recordsByTopic.getOrElse(topic, Map.empty)
+          flow(ConsumerRecords(recordsByPartition))
         }
       }
     }
