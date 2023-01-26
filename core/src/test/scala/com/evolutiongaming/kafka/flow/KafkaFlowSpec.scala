@@ -12,7 +12,12 @@ import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecord, ConsRecords}
 import com.evolutiongaming.retry.{OnError, Retry, Strategy}
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, WithSize, RebalanceListener1 => SRebalanceListener}
+import com.evolutiongaming.skafka.consumer.{
+  ConsumerRecord,
+  ConsumerRecords,
+  WithSize,
+  RebalanceListener1 => SRebalanceListener
+}
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 
@@ -140,6 +145,7 @@ object KafkaFlowSpec {
 
   type F[A] = SyncIO[A]
 
+  // TODO rewrite in IO
   implicit val parallelForSyncIO = new Parallel[F] {
     override type F[T] = KafkaFlowSpec.F[T]
     override def applicative: Applicative[F] = implicitly

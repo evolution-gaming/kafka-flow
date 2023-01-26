@@ -88,6 +88,7 @@ object ConsumerFlowSpec {
 
   type F[A] = StateT[Try, Context, A]
 
+  // TODO rewrite in IO
   implicit val parallelForStateT = new Parallel[F] {
     override type F[T] = ConsumerFlowSpec.F[T]
     override def applicative: Applicative[F] = implicitly
