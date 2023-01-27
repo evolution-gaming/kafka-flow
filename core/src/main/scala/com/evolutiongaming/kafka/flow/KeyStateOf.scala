@@ -11,6 +11,9 @@ import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 
+/**
+  * Factory of KeyStates
+  */
 trait KeyStateOf[F[_]] { self =>
 
   /** Creates or restores a state for a single key */

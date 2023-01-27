@@ -6,7 +6,11 @@ import cats.Functor
 import cats.Monad
 import cats.syntax.all._
 
-/** Convenience methods for using `Fold` with optional state */
+/**
+  * @see [[com.evolutiongaming.kafka.flow.EnhancedFold]]
+  *
+  * Convenience methods for using `Fold` with optional state
+  * */
 final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
 
   /** Alias for `run` */

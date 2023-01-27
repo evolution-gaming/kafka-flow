@@ -4,6 +4,9 @@ import cats.effect.Sync
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 
+/**
+  * Factory of TimerContexts
+  */
 trait TimersOf[F[_], K] {
 
   def apply(key: K, createdAt: Timestamp): F[TimerContext[F]]
