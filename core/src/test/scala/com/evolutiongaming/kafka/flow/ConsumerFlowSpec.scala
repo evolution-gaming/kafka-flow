@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.Parallel
 import cats.data.{NonEmptyMap, NonEmptySet, StateT}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
@@ -85,6 +86,9 @@ object ConsumerFlowSpec {
   val offset = Offset.unsafe(0)
 
   type F[A] = StateT[Try, Context, A]
+
+  // TODO rewrite in IO
+  implicit val parallelForStateT: Parallel[F] = Parallel.identity
 
   implicit val logOf: LogOf[F] = LogOf.empty
 
