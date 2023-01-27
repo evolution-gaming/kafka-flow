@@ -26,20 +26,6 @@ trait EnhancedFold[F[_], S, E] {
       }
     }
 
-  final def filter(f: (S, E) => Boolean)(implicit F: Applicative[F]): EnhancedFold[F, S, E] =
-    (extras, state0, event) =>
-      state0 match {
-        case Some(state) => if (f(state, event)) apply(extras, state0, event) else F.pure(state0)
-        case None        => apply(extras, state0, event)
-      }
-
-  final def filterM(f: (S, E) => F[Boolean])(implicit F: Monad[F]): EnhancedFold[F, S, E] =
-    (extras, state0, event) =>
-      state0 match {
-        case Some(state) => F.ifM(f(state, event))(ifTrue = apply(extras, state0, event), ifFalse = F.pure(state0))
-        case None        => apply(extras, state0, event)
-      }
-
   final def handleErrorWith[E1](f: (S, E1) => F[S])(implicit F: ApplicativeError[F, E1]): EnhancedFold[F, S, E] =
     (extras, state0, event) => apply(extras, state0, event).handleErrorWith(e => state0.traverse(state => f(state, e)))
 
