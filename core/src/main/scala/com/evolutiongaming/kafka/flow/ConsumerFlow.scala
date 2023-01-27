@@ -84,10 +84,11 @@ object ConsumerFlow {
     def poll = {
       val flowList = flows.toList // optimization, execute toList once instead of on each `consumer.poll`
       consumer.poll(config.pollTimeout) flatTap { consumerRecords =>
-        val recordsByTopic = consumerRecords.values.groupBy(_._1.topic)
-        flowList parTraverse { case (topic, flow) =>
-          val recordsByPartition = recordsByTopic.getOrElse(topic, Map.empty)
-          flow(ConsumerRecords(recordsByPartition))
+        flowList parFoldMapA { case (topic, flow) =>
+          val topicRecords = consumerRecords.values filter { case (partition, _) =>
+            partition.topic == topic
+          }
+          flow(ConsumerRecords(topicRecords))
         }
       }
     }
