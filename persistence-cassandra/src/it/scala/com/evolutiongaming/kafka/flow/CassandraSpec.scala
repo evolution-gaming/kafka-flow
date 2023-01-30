@@ -1,21 +1,44 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.Resource
-import cats.effect._
-import com.evolutiongaming.kafka.flow.cassandra.CassandraModule
-import com.evolutiongaming.smetrics.MeasureDuration
-import weaver._
-import SharedResources._
+import cats.effect.IO
+import cats.effect.unsafe.IORuntime
+import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.cassandra.{CassandraConfig, CassandraModule}
+import com.evolutiongaming.nel.Nel
+import com.evolutiongaming.scassandra
+import munit.FunSuite
 
-abstract class CassandraSpec extends IOSuite {
+import java.util.concurrent.atomic.AtomicReference
 
-  type Res = CassandraModule[IO]
+abstract class CassandraSpec extends FunSuite {
+  implicit val ioRuntime = IORuntime.global
 
-  implicit val measureDuration: MeasureDuration[IO] = MeasureDuration.empty
+  override def munitFixtures: Seq[Fixture[_]] = List(cassandra)
 
-  def globalRead: GlobalRead
+  val cassandra: Fixture[CassandraModule[IO]] = new Fixture[CassandraModule[IO]]("CassandraModule") {
+    private val moduleRef = new AtomicReference[(CassandraModule[IO], IO[Unit])]()
 
-  def sharedResource: Resource[IO, Res] =
-    globalRead.getOrFailR[Res]()
+    override def apply(): CassandraModule[IO] = moduleRef.get()._1
 
+    override def beforeAll(): Unit = {
+      implicit val logOf = LogOf.slf4j[IO].unsafeRunSync()
+
+      val container = CassandraContainerResource.cassandra.cassandraContainer
+      val result: (CassandraModule[IO], IO[Unit]) =
+        CassandraModule
+          .of[IO](
+            CassandraConfig(client =
+              scassandra.CassandraConfig(contactPoints = Nel(container.getHost), port = container.getFirstMappedPort)
+            )
+          )
+          .allocated
+          .unsafeRunSync()
+
+      moduleRef.set(result)
+    }
+
+    override def afterAll(): Unit = {
+      Option(moduleRef.get()).foreach { case (_, finalizer) => finalizer.unsafeRunSync() }
+    }
+  }
 }
