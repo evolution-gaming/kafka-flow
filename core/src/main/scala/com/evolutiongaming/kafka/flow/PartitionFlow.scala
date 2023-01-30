@@ -2,15 +2,17 @@ package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
 import cats.effect._
+import cats.effect.implicits._
 import cats.syntax.all._
-import cats.{Applicative, Parallel}
+import cats.Applicative
 import com.evolutiongaming.catshelper.ClockHelper._
-import com.evolutiongaming.catshelper.{Log, LogOf, Runtime}
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
+import scala.concurrent.duration._
 
 import java.time.Instant
 
@@ -47,7 +49,7 @@ object PartitionFlow {
       record => f(record).pure[F]
   }
 
-  def resource[F[_]: Concurrent: Runtime: Parallel: Clock: LogOf](
+  def resource[F[_]: Async: LogOf](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
@@ -61,7 +63,7 @@ object PartitionFlow {
       }
     }
 
-  def of[F[_]: MonadCancelThrow: Ref.Make: Parallel: Clock: Log](
+  def of[F[_]: Async: Log](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
@@ -90,7 +92,7 @@ object PartitionFlow {
   } yield flow
 
   // TODO: put most `Ref` variables into one state class?
-  def of[F[_]: MonadCancelThrow: Ref.Make: Parallel: Clock: Log](
+  def of[F[_]: Async: Log](
     topicPartition: TopicPartition,
     keyStateOf: KeyStateOf[F],
     committedOffset: Ref[F, Offset],
@@ -201,6 +203,14 @@ object PartitionFlow {
       _ <- Log[F].debug("done triggering timers")
     } yield ()
 
+    def getOffset(partitionKey: PartitionKey[F]): F[Option[Offset]] = {
+      val context = partitionKey.context
+      context.holding.timeoutTo(
+        1.minute,
+        context.log.error("getting offset with `_.context.holding` timed out").as(none[Offset])
+      )
+    }
+
     def offsetToCommit: F[Option[Offset]] = for {
       _ <- Log[F].debug("computing offset to commit")
 
@@ -210,7 +220,7 @@ object PartitionFlow {
       _ <- Log[F].debug(s"got ${states.size} states from cache")
 
       stateOffsets <- states.values.toList.traverse { state =>
-        state flatMap (_.context.holding)
+        state flatMap getOffset
       }
 
       _ <- Log[F].debug(s"computed stateOffsets: $stateOffsets")
