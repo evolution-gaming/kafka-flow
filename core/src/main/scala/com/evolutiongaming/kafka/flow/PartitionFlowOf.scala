@@ -1,9 +1,8 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Parallel
-import cats.effect.kernel.Clock
-import cats.effect.{Concurrent, Resource}
-import com.evolutiongaming.catshelper.{LogOf, Runtime}
+import cats.effect.kernel.Async
+import cats.effect.Resource
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
@@ -27,7 +26,7 @@ object PartitionFlowOf {
     *               It doesn't affect committing consumer offsets, thus, even if all records in a batch are skipped,
     *               new offsets will still be committed if necessary
     */
-  def apply[F[_]: Concurrent: Runtime: Clock: Parallel: LogOf](
+  def apply[F[_]: Async: LogOf](
     keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig = PartitionFlowConfig(),
     filter: Option[FilterRecord[F]] = None
