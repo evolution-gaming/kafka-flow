@@ -6,7 +6,7 @@ import cats.effect.implicits._
 import cats.syntax.all._
 import cats.Applicative
 import com.evolutiongaming.catshelper.ClockHelper._
-import com.evolutiongaming.catshelper.{Log, LogOf, Runtime}
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -115,7 +115,7 @@ object PartitionFlow {
         } yield PartitionKey(keyState, context)
       }
 
-    val init: F[Int] = for {
+    val init = for {
       clock <- Clock[F].instant
       committedOffset <- committedOffset.get
       timestamp = Timestamp(clock, None, committedOffset)
@@ -134,11 +134,9 @@ object PartitionFlow {
           }
         }
       _ <- Log[F].info(s"partition recovery finished, $count keys recovered")
+    } yield ()
 
-      cores <- Runtime[F].availableCores
-    } yield cores * 4
-
-    def processRecords(records: NonEmptyList[ConsRecord], parallelism: Int) = for {
+    def processRecords(records: NonEmptyList[ConsRecord]) = for {
       _ <- Log[F].debug(s"processing ${records.size} records")
 
       clock <- Clock[F].instant
@@ -149,17 +147,12 @@ object PartitionFlow {
       }
       filteredRecords <- filter
         .map(filter =>
-          keys.toList
-            .parTraverseN(parallelism) { case (key, records) =>
-              records.toList
-                .filterA(filter.apply)
-                .map(filtered => NonEmptyList.fromList(filtered).map(nel => (key, nel)))
-            }
-            .map(_.flatten)
+          keys.toList.parTraverseFilter { case (key, records) =>
+            records.toList.filterA(filter.apply).map(filtered => NonEmptyList.fromList(filtered).map(nel => (key, nel)))
+          }
         )
         .getOrElse(keys.toList.pure[F])
-
-      _ <- filteredRecords.parTraverseN(parallelism) { case (key, records) =>
+      _ <- filteredRecords.parTraverse_ { case (key, records) =>
         val startedAt = Timestamp(
           clock = clock,
           watermark = records.head.timestampAndType map (_.timestamp),
@@ -190,13 +183,13 @@ object PartitionFlow {
       _ <- Log[F].debug(s"finished processing records")
     } yield ()
 
-    def triggerTimers(parallelism: Int) = for {
+    def triggerTimers = for {
       _ <- Log[F].debug("triggering timers")
 
       clock <- Clock[F].instant
       timestamp <- timestamp updateAndGet (_.copy(clock = clock))
       states <- cache.values
-      _ <- states.values.toList.parTraverseN(parallelism) { state =>
+      _ <- states.values.toList.parTraverse_ { state =>
         state flatMap { state =>
           state.timers.set(timestamp) *>
             state.timers.trigger(state.flow)
@@ -248,30 +241,25 @@ object PartitionFlow {
 
     } yield offsetToCommit
 
-    final class PartitionFlowImpl(parallelism: Int) extends PartitionFlow[F] {
+    val acquire: F[PartitionFlow[F]] = init as { records =>
+      for {
+        _ <- NonEmptyList.fromList(records).traverse_(processRecords)
 
-      override def apply(records: List[ConsRecord]): F[Unit] = {
-        for {
-          _ <- NonEmptyList.fromList(records).traverse_(processRecords(_, parallelism))
+        clock <- Clock[F].instant
+        triggerTimersAt <- triggerTimersAt.get
+        _ <- if (clock isAfter triggerTimersAt) triggerTimers else ().pure[F]
 
-          clock <- Clock[F].instant
-          triggerTimersAt <- triggerTimersAt.get
-          _ <- if (clock isAfter triggerTimersAt) triggerTimers(parallelism) else ().pure[F]
+        clock <- Clock[F].instant
+        commitOffsetsAt <- commitOffsetsAt.get
+        offsetToCommit <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
 
-          clock <- Clock[F].instant
-          commitOffsetsAt <- commitOffsetsAt.get
-          offsetToCommit <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
+        _ <- Log[F].debug(s"offset to commit: ${offsetToCommit.show}")
 
-          _ <- Log[F].debug(s"offset to commit: ${offsetToCommit.show}")
+        _ <- offsetToCommit.traverse_(offset => scheduleCommit.schedule(offset))
 
-          _ <- offsetToCommit.traverse_(offset => scheduleCommit.schedule(offset))
-
-          _ <- Log[F].debug("done with commits")
-        } yield ()
-      }
+        _ <- Log[F].debug("done with commits")
+      } yield ()
     }
-
-    val acquire: F[PartitionFlow[F]] = init.map(new PartitionFlowImpl(_))
 
     val release: F[Unit] = if (config.commitOnRevoke) {
       offsetToCommit.flatMap { offset =>
