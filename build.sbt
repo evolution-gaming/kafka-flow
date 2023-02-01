@@ -2,10 +2,10 @@ import Dependencies._
 
 lazy val commonSettings = Seq(
   organization := "com.evolutiongaming",
-  homepage := Some(new URL("http://github.com/evolution-gaming/kafka-flow")),
+  homepage := Some(new URL("https://github.com/evolution-gaming/kafka-flow")),
   startYear := Some(2019),
   organizationName := "Evolution Gaming",
-  organizationHomepage := Some(url("http://evolutiongaming.com")),
+  organizationHomepage := Some(url("https://evolution.com/")),
   publishTo := Some(Resolver.evolutionReleases),
   scalaVersion := crossScalaVersions.value.head,
   crossScalaVersions := Seq("2.13.8", "2.12.16"),
@@ -46,16 +46,14 @@ lazy val core = (project in file("core"))
       Monocle.`macro` % Test,
       Monocle.core % Test,
       catsHelper,
-      kafkaLauncher % IntegrationTest,
-      munit,
       scache,
-      scribe % IntegrationTest,
       skafka,
       sstream,
-      weaver % IntegrationTest
+      Testing.munit,
+      Testing.Testcontainers.kafka % IntegrationTest,
+      Testing.Testcontainers.munit % IntegrationTest
     ),
     Defaults.itSettings,
-    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
     IntegrationTest / fork := true
   )
 
@@ -75,12 +73,10 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
     name := "kafka-flow-persistence-cassandra",
     libraryDependencies ++= Seq(
       KafkaJournal.cassandra,
-      cassandraLauncher % IntegrationTest exclude ("ch.qos.logback", "logback-classic"),
-      scribe % IntegrationTest,
-      weaver % IntegrationTest
+      Testing.Testcontainers.cassandra % IntegrationTest,
+      Testing.Testcontainers.munit % IntegrationTest
     ),
     Defaults.itSettings,
-    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
     IntegrationTest / fork := true
   )
 
@@ -93,13 +89,11 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
     libraryDependencies ++= Seq(
       Monocle.core,
       Monocle.`macro`,
-      kafkaLauncher % IntegrationTest,
-      scribe % IntegrationTest,
-      weaver % IntegrationTest,
       catsHelperLogback % IntegrationTest,
+      Testing.Testcontainers.kafka % IntegrationTest,
+      Testing.Testcontainers.munit % IntegrationTest
     ),
     Defaults.itSettings,
-    IntegrationTest / testFrameworks += new TestFramework("weaver.framework.CatsEffect"),
     IntegrationTest / fork := true
   )
 

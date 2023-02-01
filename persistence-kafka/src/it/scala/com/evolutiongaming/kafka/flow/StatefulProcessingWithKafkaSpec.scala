@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.data.NonEmptyList
 import cats.effect.unsafe.IORuntime
 import cats.effect.{Deferred, IO, Ref, Resource}
 import cats.syntax.all._
@@ -7,11 +8,7 @@ import cats.{Functor, Monad}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec._
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
-import com.evolutiongaming.kafka.flow.kafkapersistence.{
-  KafkaPersistenceModule,
-  KafkaPersistenceModuleOf,
-  kafkaEagerRecovery
-}
+import com.evolutiongaming.kafka.flow.kafkapersistence.{KafkaPersistenceModule, KafkaPersistenceModuleOf, kafkaEagerRecovery}
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -22,11 +19,14 @@ import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf, ProducerRecord, RecordMetadata}
 import com.evolutiongaming.skafka.{Bytes, CommonConfig, Partition}
+import org.apache.kafka.clients.admin.{AdminClient, AdminClientConfig, NewTopic}
 import play.api.libs.json.{Json, OFormat, OWrites, Reads}
 import scodec.bits.ByteVector
-import weaver.{Expectations, GlobalRead}
 
+import java.util.Properties
+import java.util.concurrent.TimeUnit
 import scala.concurrent.duration._
+import scala.jdk.CollectionConverters._
 
 /*
  Using embedded/real kafka:
@@ -43,10 +43,13 @@ import scala.concurrent.duration._
   for building simple stateful processing app with kafka
 
  */
-class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaSpecc {
+class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
   implicit val ioRuntime = IORuntime.global
-  implicit val logOf: LogOf[IO] = LogOf.slf4j.unsafeRunSync()
+  implicit val logOf: LogOf[IO] = LogOf.slf4j[IO].unsafeRunSync()
   implicit val log: Log[IO] = logOf(this.getClass).unsafeRunSync()
+
+  private def producerConfig =
+    ProducerConfig(common = CommonConfig(bootstrapServers = NonEmptyList.one(kafka.container.bootstrapServers)))
 
   trait Persistence {
     def keysOf: KeysOf[IO, KafkaKey]
@@ -90,36 +93,52 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
    * - and resources release when warm up is done (read compact kafka topic, fold by key, convert to case classes using FromBytes, release=throw away loaded bytes Map[Key, Bytes])
    * - oh actually it's not a Resource.release, as we're using the state store within scope of the Resource
    */
-  private val kafkaPersistenceModuleOf: Resource[IO, KafkaPersistenceModuleOf[IO, State]] = {
+  private def kafkaPersistenceModuleOf: Resource[IO, KafkaPersistenceModuleOf[IO, State]] = {
     import Boilerplate._
 
     val stateTopic = "state-topic-StatefulProcessingWithKafkaSpec"
 
-    ProducerOf.apply1[IO]().apply(ProducerConfig.Default).map { producer =>
-      KafkaPersistenceModuleOf.caching[IO, State](
-        consumerOf = ConsumerOf.apply1[IO](),
-        producer = producer,
-        consumerConfig = ConsumerConfig(
-          autoCommit = false,
-          autoOffsetReset = AutoOffsetReset.Earliest
-        ),
-        snapshotTopic = stateTopic
-      )
-    }
+    ProducerOf
+      .apply1[IO]()
+      .apply(producerConfig)
+      .map { producer =>
+        KafkaPersistenceModuleOf.caching[IO, State](
+          consumerOf = ConsumerOf.apply1[IO](),
+          producer = producer,
+          consumerConfig = ConsumerConfig(
+            common = producerConfig.common,
+            autoCommit = false,
+            autoOffsetReset = AutoOffsetReset.Earliest
+          ),
+          snapshotTopic = stateTopic
+        )
+      }
+      .evalTap(_ => createTopic(stateTopic, 2))
   }
 
-  test("stateful processing using in-memory persistence") { kafka =>
+  test("stateful processing using in-memory persistence") {
     // using unique input topic name per test as weaver is running tests in parallel
     val inputTopic = "in-memory-persistence-test"
     val persistenceModuleOf = inMemoryPersistenceModuleOf
-    comboTestCase(kafka, persistenceModuleOf, inputTopic)
+    comboTestCase(kafkaModule(), persistenceModuleOf, inputTopic).unsafeRunSync()
   }
 
-  test("stateful processing using kafka persistence") { kafka =>
+  test("stateful processing using kafka persistence") {
     // using unique input topic name per test as weaver is running tests in parallel
     val inputTopic = "kafka-persistence-test"
-    kafkaPersistenceModuleOf.use { module =>
-      comboTestCase(kafka, module, inputTopic)
+    kafkaPersistenceModuleOf
+      .use(module => comboTestCase(kafkaModule(), module, inputTopic))
+      .unsafeRunSync()
+  }
+
+  private def createTopic(topic: String, partitions: Int) = {
+    val props = new Properties
+    props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.container.bootstrapServers)
+
+    Resource.make(IO.delay(AdminClient.create(props)))(cl => IO(cl.close())).use { client =>
+      IO(client.createTopics(List(new NewTopic(topic, partitions, 1.toShort)).asJava)).map(res =>
+        res.all().get(10, TimeUnit.SECONDS)
+      )
     }
   }
 
@@ -127,11 +146,12 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
     kafka: KafkaModule[IO],
     persistenceModuleOf: KafkaPersistenceModuleOf[IO, State],
     inputTopic: String
-  ) = {
+  ): IO[Unit] = {
     for {
-      tc1 <- testCase(kafka, persistenceModuleOf, inputTopic, Partition.unsafe(0), "key0")
-      tc2 <- testCase(kafka, persistenceModuleOf, inputTopic, Partition.unsafe(1), "key1")
-    } yield tc1 and tc2
+      _ <- createTopic(inputTopic, 2)
+      _ <- testCase(kafka, persistenceModuleOf, inputTopic, Partition.unsafe(0), "key0")
+      _ <- testCase(kafka, persistenceModuleOf, inputTopic, Partition.unsafe(1), "key1")
+    } yield ()
   }
 
   private def testCase(
@@ -140,23 +160,21 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
     inputTopic: String,
     partition: Partition,
     key: String
-  ): IO[Expectations] = {
+  ): IO[Unit] = {
     implicit val retry = Retry.empty[IO]
 
     def produceInput(value: Int): IO[RecordMetadata] = {
-      val producerConfig = ProducerConfig(
-        common = CommonConfig(
-          clientId = Some("StatefulProcessingWithKafkaSpec-producer")
-        )
+      val config = producerConfig.copy(common =
+        producerConfig.common.copy(clientId = Some("StatefulProcessingWithKafkaSpec-producer"))
       )
-      kafka.producerOf(producerConfig) use { producer =>
+      kafka.producerOf(config) use { producer =>
         val record = ProducerRecord[String, String](inputTopic, value.toString.some, key.some, partition.some)
         producer.send(record).flatten
       }
     }
 
     def program: IO[List[Output]] = for {
-      output <- Ref.of(List.empty[Output])
+      output <- Ref.of[IO, List[Output]](List.empty)
       finished <- Deferred[IO, Unit]
       flowOf <- topicFlowOf(persistenceModuleOf, output, finished)
       run = KafkaFlow.resource(
@@ -172,27 +190,27 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
     } yield output
 
     for {
-      _ <- IO.unit
       _ <- produceInput(1)
       _ <- produceInput(2)
       _ <- produceInput(3)
       output <- program
-      test1 = assert.same(
+      _ = assertEquals(
+        output,
         List(
           // 1st run of the program, starting with empty state and no committed offsets
           // so that we read topic from the beginning
           Output(key, None, Input(1)),
           Output(key, State(1).some, Input(2)),
           Output(key, State(2).some, Input(3))
-        ),
-        output
+        )
       )
 
       _ <- produceInput(4)
       _ <- produceInput(5)
       _ <- produceInput(6)
       output <- program
-      test2 = assert.same(
+      _ = assertEquals(
+        output,
         List(
           // 1st run finished and should have persisted State(3) and committed offsets
           // so that we continue from Input(4)
@@ -202,30 +220,29 @@ class StatefulProcessingWithKafkaSpec(val globalRead: GlobalRead) extends KafkaS
           Output(key, State(3).some, Input(4)),
           Output(key, State(4).some, Input(5)),
           Output(key, State(5).some, Input(6))
-        ),
-        output
+        )
       )
 
       _ <- produceInput(0) // Input(0) removes state
       output <- program
-      test3 = assert.same(
+      _ = assertEquals(
+        output,
         List(
           // recovered State(6) from persistence, proving that we can overwrite existing state
           Output(key, State(6).some, Input(0))
-        ),
-        output
+        )
       )
 
       _ <- produceInput(9)
       output <- program
-      test4 = assert.same(
+      _ = assertEquals(
+        output,
         List(
           // 4th run of the program started with empty state, proving that we can remove state from persistence
           Output(key, none, Input(9))
-        ),
-        output
+        )
       )
-    } yield test1 and test2 and test3 and test4
+    } yield ()
   }
 
   def topicFlowOf(
