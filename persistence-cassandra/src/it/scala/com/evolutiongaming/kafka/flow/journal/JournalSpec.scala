@@ -2,22 +2,18 @@ package com.evolutiongaming.kafka.flow.journal
 
 import cats.effect.IO
 import cats.effect.concurrent.Ref
-import com.evolutiongaming.kafka.flow.CassandraSessionStub
-import com.evolutiongaming.kafka.flow.CassandraSpec
-import com.evolutiongaming.kafka.flow.KafkaKey
+import com.evolutiongaming.kafka.flow.{CassandraSessionStub, CassandraSpec, KafkaKey}
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.skafka.consumer.WithSize
+import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import scodec.bits.ByteVector
-import weaver.GlobalRead
 
-class JournalSpec(val globalRead: GlobalRead) extends CassandraSpec {
+class JournalSpec extends CassandraSpec {
 
-  test("queries") { cassandra =>
+  test("queries") {
     val key = KafkaKey("JournalSpec", "integration-tests-1", TopicPartition.empty, "queries")
-    for {
-      journals <- CassandraJournals.withSchema(cassandra.session, cassandra.sync)
+    val test: IO[Unit] = for {
+      journals <- CassandraJournals.withSchema(cassandra().session, cassandra().sync)
       contents <- IO.fromEither(ByteVector.encodeUtf8("record-contents"))
       record = ConsRecord(
         topicPartition = TopicPartition.empty,
@@ -31,22 +27,27 @@ class JournalSpec(val globalRead: GlobalRead) extends CassandraSpec {
       journalAfterPersist <- journals.get(key).toList
       _ <- journals.delete(key)
       journalAfterDelete <- journals.get(key).toList
-    } yield {
-      expect(journalBeforeTest.isEmpty) and
-      expect.same(List(record), journalAfterPersist) and
-      expect(journalAfterDelete.isEmpty)
-    }
+
+      _ = assert(clue(journalBeforeTest.isEmpty))
+      _ = assertEquals(clue(journalAfterPersist), List(record))
+      _ = assert(clue(journalAfterDelete.isEmpty))
+    } yield ()
+
+    test.unsafeRunSync()
   }
 
-  test("failures") { cassandra =>
+  test("failures") {
     val key = KafkaKey("JournalSpec", "integration-tests-1", TopicPartition.empty, "failures")
-    for {
-      failAfter <- Ref.of(100)
-      session    = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
-      journals  <- CassandraJournals.withSchema(session, cassandra.sync)
+    val test: IO[Unit] = for {
+      failAfter <- Ref.of[IO, Int](100)
+      session = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
+      journals <- CassandraJournals.withSchema(session, cassandra().sync)
       _ <- failAfter.set(1)
       records <- journals.get(key).toList.attempt
-    } yield expect(records.isLeft)
+      _ = assert(clue(records.isLeft))
+    } yield ()
+
+    test.unsafeRunSync()
   }
 
 }
