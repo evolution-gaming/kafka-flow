@@ -2,41 +2,41 @@ package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.effect.IO
 import cats.effect.concurrent.Ref
-import com.evolutiongaming.kafka.flow.CassandraSessionStub
-import com.evolutiongaming.kafka.flow.CassandraSpec
-import com.evolutiongaming.kafka.flow.KafkaKey
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.TopicPartition
-import weaver.GlobalRead
+import com.evolutiongaming.kafka.flow.{CassandraSessionStub, CassandraSpec, KafkaKey}
+import com.evolutiongaming.skafka.{Offset, TopicPartition}
 
-class SnapshotSpec(val globalRead: GlobalRead) extends CassandraSpec {
+class SnapshotSpec extends CassandraSpec {
 
-  test("queries") { cassandra =>
+  test("queries") {
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "queries")
     val snapshot = KafkaSnapshot(offset = Offset.min, value = "snapshot-contents")
-    for {
-      snapshots <- CassandraSnapshots.withSchema[IO, String](cassandra.session, cassandra.sync)
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](cassandra().session, cassandra().sync)
       snapshotBeforeTest <- snapshots.get(key)
       _ <- snapshots.persist(key, snapshot)
       snapshotAfterPersist <- snapshots.get(key)
       _ <- snapshots.delete(key)
       snapshotAfterDelete <- snapshots.get(key)
     } yield {
-      expect(snapshotBeforeTest.isEmpty) and
-      expect.same(Some(snapshot), snapshotAfterPersist) and
-      expect(snapshotAfterDelete.isEmpty)
+      assert(clue(snapshotBeforeTest.isEmpty))
+      assertEquals(clue(snapshotAfterPersist), Some(snapshot))
+      assert(clue(snapshotAfterDelete.isEmpty))
     }
+
+    test.unsafeRunSync()
   }
 
-  test("failures") { cassandra =>
+  test("failures") {
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "queries")
-    for {
-      failAfter <- Ref.of(100)
-      session    = CassandraSessionStub.injectFailures(cassandra.session, failAfter)
-      snapshots <- CassandraSnapshots.withSchema[IO, String](session, cassandra.sync)
-      _         <- failAfter.set(1)
+    val test: IO[Unit] = for {
+      failAfter <- Ref.of[IO, Int](100)
+      session = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
+      snapshots <- CassandraSnapshots.withSchema[IO, String](session, cassandra().sync)
+      _ <- failAfter.set(1)
       snapshots <- snapshots.get(key).attempt
-    } yield expect(snapshots.isLeft)
+    } yield assert(clue(snapshots.isLeft))
+
+    test.unsafeRunSync()
   }
 
 }

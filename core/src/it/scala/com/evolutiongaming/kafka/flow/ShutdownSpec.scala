@@ -1,37 +1,31 @@
 package com.evolutiongaming.kafka.flow
 
-import ShutdownSpec._
-import cats.data.NonEmptySet
-import cats.effect.IO
-import cats.effect.Resource
-import cats.effect.concurrent.Deferred
-import cats.effect.concurrent.Ref
+import cats.data.{NonEmptyList, NonEmptySet}
+import cats.effect.concurrent.{Deferred, Ref}
+import cats.effect.{IO, Resource, Timer}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.retry.Retry
-import com.evolutiongaming.skafka.CommonConfig
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.Partition
-import com.evolutiongaming.skafka.producer.ProducerConfig
-import com.evolutiongaming.skafka.producer.ProducerRecord
+import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerRecord, RecordMetadata}
+import com.evolutiongaming.skafka.{CommonConfig, Offset, Partition}
 import com.evolutiongaming.sstream.Stream
-import scala.concurrent.ExecutionContext
+
 import scala.concurrent.duration._
-import weaver.GlobalRead
 
-class ShutdownSpec(val globalRead: GlobalRead) extends KafkaSpec {
+class ShutdownSpec extends ForAllKafkaSuite {
 
-  test("call and complete onPartitionsRevoked after shutdown started") { kafka =>
+  test("call and complete onPartitionsRevoked after shutdown started") {
     implicit val retry = Retry.empty[IO]
 
-    val producerConfig = ProducerConfig(
-      common = CommonConfig(
+    val producerConfig = ProducerConfig(common =
+      CommonConfig(
+        bootstrapServers = NonEmptyList.one(kafka.container.bootstrapServers),
         clientId = Some("ShutdownSpec-producer")
       )
     )
 
-    def send = kafka.producerOf(producerConfig) use { producer =>
+    def send: IO[RecordMetadata] = kafkaModule().producerOf.apply(producerConfig).use { producer =>
       val record = ProducerRecord[String, String]("ShutdownSpec-topic")
       producer.send(record).flatten
     }
@@ -45,7 +39,7 @@ class ShutdownSpec(val globalRead: GlobalRead) extends KafkaSpec {
         _ <- Stream.lift(send)
         // wait for record to be processed
         _ <- KafkaFlow.stream(
-          consumer = kafka.consumerOf("ShutdownSpec-groupId"),
+          consumer = kafkaModule().consumerOf("ShutdownSpec-groupId"),
           flowOf = ConsumerFlowOf[IO](
             topic = "ShutdownSpec-topic",
             flowOf = flowOf
@@ -57,46 +51,46 @@ class ShutdownSpec(val globalRead: GlobalRead) extends KafkaSpec {
       } yield ()
     }
 
-    for {
-      state      <- Ref.of(Set.empty[Partition])
-      finished   <- Deferred[IO, Unit]
+    val test: IO[Unit] = for {
+      state <- Ref.of[IO, Set[Partition]](Set.empty)
+      finished <- Deferred[IO, Unit]
       // start a stream
-      flowOf      = topicFlowOf(state)
-      program    <- program(flowOf, finished).toList.start
+      flowOf = ShutdownSpec.topicFlowOf(state)
+      program <- program(flowOf, finished).toList.start
       // wait for first record to process
-      _          <- finished.get.timeoutTo(10.seconds, program.join)
+      _ <- finished.get.timeoutTo(10.seconds, program.join)
       // validate subscriptions in active flow
       partitions <- state.get
-      test1      = assert.same(Set(Partition.min), partitions)
+      _ = assertEquals(partitions, Set(Partition.min))
       // cancel the program
-      _          <- program.cancel
+      _ <- program.cancel
       // validate subscriptions in cancelled flow
       partitions <- state.get
-      test2      = assert(partitions.isEmpty)
-    } yield test1 and test2
+      _ = assert(partitions.isEmpty, s"Partitions weren't empty: $partitions")
+    } yield ()
 
+    test.unsafeRunSync()
   }
-
 }
 object ShutdownSpec {
 
-  def topicFlowOf(state: Ref[IO, Set[Partition]]): TopicFlowOf[IO] =
-    (_, _) => Resource.pure[IO, TopicFlow[IO]] {
-      new TopicFlow[IO] {
-        implicit val timer = IO.timer(ExecutionContext.global)
-        def apply(records: ConsRecords) = IO.unit
-        def add(partitionsAndOffsets: NonEmptySet[(Partition, Offset)]) = {
-          val partitions = partitionsAndOffsets map (_._1)
-          state update (_ ++ partitions.toList)
-        }
-        def remove(partitions: NonEmptySet[Partition]) =
-          // we wait for a second here to ensure the call is blocking
-          // i.e. if we update state immediately, the test might pass
-          // even if the call is non-blocking
-          IO.sleep(1.second) *> {
-            state update (_ -- partitions.toList)
+  def topicFlowOf(state: Ref[IO, Set[Partition]])(implicit timer: Timer[IO]): TopicFlowOf[IO] =
+    (_, _) =>
+      Resource.pure[IO, TopicFlow[IO]] {
+        new TopicFlow[IO] {
+          def apply(records: ConsRecords) = IO.unit
+          def add(partitionsAndOffsets: NonEmptySet[(Partition, Offset)]) = {
+            val partitions = partitionsAndOffsets map (_._1)
+            state update (_ ++ partitions.toList)
           }
+          def remove(partitions: NonEmptySet[Partition]) =
+            // we wait for a second here to ensure the call is blocking
+            // i.e. if we update state immediately, the test might pass
+            // even if the call is non-blocking
+            IO.sleep(1.second) *> {
+              state update (_ -- partitions.toList)
+            }
+        }
       }
-    }
 
 }
