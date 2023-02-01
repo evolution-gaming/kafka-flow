@@ -12,7 +12,6 @@ import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
-import scala.concurrent.duration._
 
 import java.time.Instant
 
@@ -210,14 +209,6 @@ object PartitionFlow {
       _ <- Log[F].debug("done triggering timers")
     } yield ()
 
-    def getOffset(partitionKey: PartitionKey[F]): F[Option[Offset]] = {
-      val context = partitionKey.context
-      context.holding.timeoutTo(
-        1.minute,
-        context.log.error("getting offset with `_.context.holding` timed out").as(none[Offset])
-      )
-    }
-
     def offsetToCommit: F[Option[Offset]] = for {
       _ <- Log[F].debug("computing offset to commit")
 
@@ -227,7 +218,7 @@ object PartitionFlow {
       _ <- Log[F].debug(s"got ${states.size} states from cache")
 
       stateOffsets <- states.values.toList.traverse { state =>
-        state flatMap getOffset
+        state flatMap (_.context.holding)
       }
 
       _ <- Log[F].debug(s"computed stateOffsets: $stateOffsets")
