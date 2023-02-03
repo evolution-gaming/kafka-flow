@@ -527,12 +527,13 @@ class TimerFlowOfSpec extends FunSuite {
       _ <- f.contextRef.set(context)
       _ <- program
       result <- f.contextRef.get
+      contextHolding <- f.contextHoldingRef.get
     } yield {
       // Then("flush and remove never happen")
       assertEquals(result.flushed, 0)
       assertEquals(result.removed, 0)
       // And("the offset of the last successful persist will be held")
-      assertEquals(result.holding, Some(Offset.unsafe(100)))
+      assertEquals(contextHolding, Some(Offset.unsafe(100)))
     }
 
     testIO.unsafeRunSync()
@@ -567,9 +568,14 @@ object TimerFlowSpec {
     val contextRef: Ref[IO, Context] =
       Ref.unsafe[IO, Context](Context(timestamps = TimestampState(current = timestamp)))
 
+    val contextHoldingRef = Ref.lens(contextRef)(
+      _.holding,
+      (context: Context) => (offset: Option[Offset]) => context.copy(holding = offset)
+    )
+
     implicit val keyContext: KeyContext[IO] =
       KeyContext(
-        storage = contextRef.stateInstance.focus(Context.lens(_.holding)),
+        storage = contextHoldingRef,
         removeFromCache = contextRef.update(ctx => ctx.copy(removed = ctx.removed + 1))
       )
 

@@ -1,11 +1,9 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.effect.{Ref, Resource}
-import cats.mtl.Stateful
 import cats.syntax.all._
 import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.skafka.Offset
 
 /** Key specific metainformation inside of parititon.
@@ -32,11 +30,11 @@ object KeyContext {
 
   def of[F[_]: Ref.Make: Monad: Log](removeFromCache: F[Unit]): F[KeyContext[F]] =
     Ref.of[F, Option[Offset]](None) map { storage =>
-      KeyContext(storage.stateInstance, removeFromCache)
+      KeyContext(storage, removeFromCache)
     }
 
   def apply[F[_]: Monad: Log](
-    storage: Stateful[F, Option[Offset]],
+    storage: Ref[F, Option[Offset]],
     removeFromCache: F[Unit]
   ): KeyContext[F] = new KeyContext[F] {
     def holding = storage.get

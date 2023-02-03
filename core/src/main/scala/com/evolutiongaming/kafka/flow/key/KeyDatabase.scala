@@ -1,11 +1,9 @@
 package com.evolutiongaming.kafka.flow.key
 
 import cats.effect.{Ref, Sync}
-import cats.mtl.Stateful
 import cats.syntax.all._
 import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 
@@ -27,31 +25,31 @@ object KeyDatabase {
 
   /** Creates in-memory database implementation */
   def memory[F[_]: Sync, K]: F[KeyDatabase[F, K]] =
-    Ref.of[F, Set[K]](Set.empty[K]) map { storage =>
-      memory(storage.stateInstance)
-    }
+    Ref.of[F, Set[K]](Set.empty).map(s => memory(s))
 
   /** Creates in-memory database implementation */
-  def memory[F[_]: Monad, K](storage: Stateful[F, Set[K]]): KeyDatabase[F, K] =
-    new KeyDatabase[F, K] {
+  def memory[F[_]: Monad, K](storage: Ref[F, Set[K]]): KeyDatabase[F, K] = new FromMemory(storage)
 
-      def persist(key: K) =
-        storage modify (_ + key)
+  def empty[F[_]: Applicative, K]: KeyDatabase[F, K] = new Empty
 
-      def delete(key: K) =
-        storage modify (_ - key)
+  private final class FromMemory[F[_]: Monad, K](storage: Ref[F, Set[K]]) extends KeyDatabase[F, K] {
 
-      def all(applicationId: String, groupId: String, topicPartition: TopicPartition) =
-        Stream.lift(storage.get) flatMap { keys =>
-          Stream.from(keys.toList)
-        }
+    def persist(key: K) = storage.update(_ + key)
 
-    }
+    def delete(key: K) = storage.update(_ - key)
 
-  def empty[F[_]: Applicative, K]: KeyDatabase[F, K] =
-    new KeyDatabase[F, K] {
-      def persist(key: K) = ().pure
-      def delete(key: K) = ().pure
-      def all(applicationId: String, groupId: String, topicPartition: TopicPartition) = Stream.empty
-    }
+    def all(applicationId: String, groupId: String, topicPartition: TopicPartition) =
+      Stream.lift(storage.get) flatMap { keys =>
+        Stream.from(keys.toList)
+      }
+  }
+
+  private final class Empty[F[_]: Applicative, K] extends KeyDatabase[F, K] {
+
+    def persist(key: K) = ().pure
+
+    def delete(key: K) = ().pure
+
+    def all(applicationId: String, groupId: String, topicPartition: TopicPartition) = Stream.empty
+  }
 }
