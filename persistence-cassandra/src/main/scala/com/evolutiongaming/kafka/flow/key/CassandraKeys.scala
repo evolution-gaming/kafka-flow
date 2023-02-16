@@ -14,7 +14,7 @@ import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession, S
 import com.evolutiongaming.kafka.journal.util.Fail
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.scassandra.syntax._
-import com.evolutiongaming.skafka.{Partition, TopicPartition}
+import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 
 import java.time.{LocalDate, ZoneOffset}
@@ -33,7 +33,7 @@ import java.time.{LocalDate, ZoneOffset}
   * @param segments a number of segments
   * @see See `com.evolutiongaming.kafka.flow.key.KeySchema` for a schema description
   */
-class CassandraKeys[F[_]: Monad: Fail: Clock](
+private class CassandraKeys[F[_]: Monad: Fail: Clock](
   session: CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides,
   segments: Segments
@@ -70,26 +70,7 @@ class CassandraKeys[F[_]: Monad: Fail: Clock](
       key <- all(applicationId, groupId, segment, topicPartition)
     } yield key
 
-  def all(applicationId: String, groupId: String, segment: SegmentNr): Stream[F, KafkaKey] = {
-    val boundStatement = Statements
-      .all(session, applicationId, groupId, segment)
-      .map(_.withConsistencyLevel(consistencyOverrides.read))
-
-    Stream.lift(boundStatement) flatMap session.execute map { row =>
-      KafkaKey(
-        applicationId = applicationId,
-        groupId = groupId,
-        topicPartition = TopicPartition(
-          topic = row.decode[String]("topic"),
-          partition = row.decode[Partition]("partition")
-        ),
-        key = row.decode[String]("key")
-      )
-    }
-
-  }
-
-  def all(
+  private def all(
     applicationId: String,
     groupId: String,
     segment: SegmentNr,
