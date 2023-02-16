@@ -14,21 +14,25 @@ object KeyStateMetrics {
     registry.gauge(
       name = "key_flow_count",
       help = "The number of active key flows",
-      labels = LabelNames()
+      labels = LabelNames("topic")
     ) map { countGauge =>
-      val count = Resource.make(countGauge.inc()) { _ => countGauge.dec() }
-      keyStateOf => new KeyStateOf[F] {
-
-        def apply(
-          topicPartition: TopicPartition,
-          key: String,
-          createdAt: Timestamp,
-          context: KeyContext[F]
-        ) = count *> keyStateOf(topicPartition, key, createdAt, context)
-
-        def all(topicPartition: TopicPartition) =
-          keyStateOf.all(topicPartition)
+      def count(topic: String) = {
+        val count = countGauge.labels(topic)
+        Resource.make(count.inc()) { _ => count.dec() }
       }
+
+      keyStateOf =>
+        new KeyStateOf[F] {
+          def apply(
+            topicPartition: TopicPartition,
+            key: String,
+            createdAt: Timestamp,
+            context: KeyContext[F]
+          ) = count(topicPartition.topic) *> keyStateOf(topicPartition, key, createdAt, context)
+
+          def all(topicPartition: TopicPartition) =
+            keyStateOf.all(topicPartition)
+        }
 
     }
   }
