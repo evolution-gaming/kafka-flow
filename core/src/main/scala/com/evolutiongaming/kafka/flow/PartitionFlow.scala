@@ -5,6 +5,7 @@ import cats.effect._
 import cats.effect.implicits._
 import cats.syntax.all._
 import cats.Applicative
+import cats.kernel.CommutativeMonoid
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
@@ -193,13 +194,17 @@ object PartitionFlow {
 
       clock     <- Clock[F].instant
       timestamp <- timestamp updateAndGet (_.copy(clock = clock))
-      states    <- cache.values
-      _ <- states.values.toList.parTraverse_ { state =>
-        state flatMap { state =>
-          state.timers.set(timestamp) *>
-            state.timers.trigger(state.flow)
+
+      keys <- cache.keys
+      _ <- keys.toVector.parTraverse_ { key =>
+        cache.get(key).flatMap {
+          case None => Async[F].unit
+          case Some(state) =>
+            state.timers.set(timestamp) *>
+              state.timers.trigger(state.flow)
         }
       }
+
       _ <- triggerTimersAt update { triggerTimersAt =>
         triggerTimersAt plusMillis config.triggerTimersInterval.toMillis
       }
@@ -211,17 +216,11 @@ object PartitionFlow {
       _ <- Log[F].debug("computing offset to commit")
 
       // find minimum offset if any
-      states <- cache.values
-
-      _ <- Log[F].debug(s"got ${states.size} states from cache")
-
-      stateOffsets <- states.values.toList.traverse { state =>
-        state flatMap (_.context.holding)
-      }
-
-      _ <- Log[F].debug(s"computed stateOffsets: $stateOffsets")
-
-      minimumOffset = stateOffsets.flatten.minimumOption
+      minimumOffset <- cache.foldMap[Option[Offset]] {
+        case (_, Right(value)) => value.context.holding
+        case (key, Left(_)) =>
+          Log[F].error(s"trying to compute offset to commit but value for key $key is not ready").as(none[Offset])
+      }(pickMinOffset)
 
       // maximum offset to commit is the offset of last record
       timestamp    <- timestamp.get
@@ -280,4 +279,13 @@ object PartitionFlow {
 
   }
 
+  private[this] val pickMinOffset = CommutativeMonoid.instance[Option[Offset]](
+    none[Offset],
+    (x, y) =>
+      (x, y) match {
+        case (Some(x), Some(y)) => Some(x min y)
+        case (x @ Some(_), _)   => x
+        case (_, y)             => y
+      }
+  )
 }
