@@ -50,8 +50,8 @@ object KeyDatabase {
 
   def empty[F[_]: Applicative, K]: KeyDatabase[F, K] =
     new KeyDatabase[F, K] {
-      def persist(key: K) = ().pure
-      def delete(key: K) = ().pure
+      def persist(key: K)                                                             = ().pure
+      def delete(key: K)                                                              = ().pure
       def all(applicationId: String, groupId: String, topicPartition: TopicPartition) = Stream.empty
     }
 }

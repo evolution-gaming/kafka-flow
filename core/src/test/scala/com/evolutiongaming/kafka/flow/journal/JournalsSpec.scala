@@ -25,9 +25,9 @@ class JournalsSpec extends FunSuite {
 
     // When("buffer is filled with events")
     val program =
-      journals.append(100 -> "event1") *>
-      journals.append(101 -> "event2") *>
-      journals.append(102 -> "event3")
+      journals.append(100   -> "event1") *>
+        journals.append(101 -> "event2") *>
+        journals.append(102 -> "event3")
 
     val result = program.runS(Context()).value
 
@@ -47,10 +47,10 @@ class JournalsSpec extends FunSuite {
     // When("buffer is filled with events")
     // And("journals is flushed")
     val program =
-      journals.append(100 -> "event1") *>
-      journals.append(101 -> "event2") *>
-      journals.append(102 -> "event3") *>
-      journals.flush
+      journals.append(100   -> "event1") *>
+        journals.append(101 -> "event2") *>
+        journals.append(102 -> "event3") *>
+        journals.flush
 
     val result = program.runS(Context()).value
 
@@ -82,7 +82,7 @@ class JournalsSpec extends FunSuite {
 
     // When("delete is requested")
     val program = journals.delete(true)
-    val result = program.runS(context).value
+    val result  = program.runS(context).value
 
     // Then("buffer is cleared")
     assert(result.buffer.isEmpty)
@@ -111,7 +111,7 @@ class JournalsSpec extends FunSuite {
 
     // When("delete is requested")
     val program = journals.delete(false)
-    val result = program.runS(context).value
+    val result  = program.runS(context).value
 
     // Then("buffer is cleared")
     assert(result.buffer.isEmpty)
@@ -131,18 +131,19 @@ object JournalsSpec {
 
   case class Context(
     database: Map[K, SortedMap[Offset, E]] = Map.empty,
-    buffer: List[E] = Nil
+    buffer: List[E]                        = Nil
   )
 
   class ConstFixture {
     val database = Stateful[F, Context] focus GenLens[Context](_.database)
-    val buffer = Stateful[F, Context] focus GenLens[Context](_.buffer)
+    val buffer   = Stateful[F, Context] focus GenLens[Context](_.buffer)
   }
 
   implicit val log: Log[F] = Log.empty[F]
 
-  implicit val withOffset: ToOffset[E] = { case (offset, _) =>
-    Offset.unsafe(offset)
+  implicit val withOffset: ToOffset[E] = {
+    case (offset, _) =>
+      Offset.unsafe(offset)
   }
 
 }

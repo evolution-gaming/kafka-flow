@@ -22,6 +22,9 @@ jobs:
       with:
         java-version: openjdk@1.11
 
+    - name: Check formatting
+      run: sbt scalafmtCheckAll
+
     - name: Run tests ${{ matrix.scala }}
       if: success() && matrix.scala == '2.13.8'
       run: sbt ++${{ matrix.scala }} clean coverage test it:test docs/mdoc

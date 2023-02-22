@@ -39,9 +39,9 @@ object ConsumerFlow {
     config: ConsumerFlowConfig
   ): Resource[F, ConsumerFlow[F]] = of(
     consumer = consumer,
-    topics = NonEmptySet.of(topic),
-    flowOf = flowOf,
-    config = config
+    topics   = NonEmptySet.of(topic),
+    flowOf   = flowOf,
+    config   = config
   )
 
   /** Constructs a consumer flow for specific topics.
@@ -85,19 +85,21 @@ object ConsumerFlow {
       val flowList = flows.toList // optimization, execute toList once instead of on each `consumer.poll`
       for {
         consumerRecords <- consumer.poll(config.pollTimeout)
-        _ <- flowList.traverse { case (topic, flow) =>
-          val topicRecords = consumerRecords.values filter { case (partition, _) =>
-            partition.topic == topic
-          }
-          flow(ConsumerRecords(topicRecords))
+        _ <- flowList.traverse {
+          case (topic, flow) =>
+            val topicRecords = consumerRecords.values filter {
+              case (partition, _) =>
+                partition.topic == topic
+            }
+            flow(ConsumerRecords(topicRecords))
         }
         _ <- logger.debug("poll completed")
       } yield consumerRecords
     }
 
     def stream = for {
-      logger <- Stream.lift(log[F])
-      _ <- Stream.lift(subscribe *> logger.debug(s"Subscribed to topics ${flows.keySet}"))
+      logger  <- Stream.lift(log[F])
+      _       <- Stream.lift(subscribe *> logger.debug(s"Subscribed to topics ${flows.keySet}"))
       records <- Stream.repeat(poll(logger))
       // we process empty polls to trigger timers, but do not return them
       if records.values.nonEmpty

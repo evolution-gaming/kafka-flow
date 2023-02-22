@@ -25,7 +25,8 @@ object AdditionalStatePersistOf {
       override def apply(
         persistence: Persistence[F, S, ConsRecord],
         keyContext: KeyContext[F]
-      ): F[AdditionalStatePersist[F, S, ConsRecord]] = Applicative[F].pure(AdditionalStatePersist.empty[F, S, ConsRecord])
+      ): F[AdditionalStatePersist[F, S, ConsRecord]] =
+        Applicative[F].pure(AdditionalStatePersist.empty[F, S, ConsRecord])
     }
 
   def of[F[_]: MonadCancelThrow: Ref.Make: Clock, S](cooldown: FiniteDuration): AdditionalStatePersistOf[F, S] = {

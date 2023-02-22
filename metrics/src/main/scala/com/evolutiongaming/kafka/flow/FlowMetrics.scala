@@ -41,47 +41,47 @@ object FlowMetrics {
   def apply[F[_]](implicit F: FlowMetrics[F]): FlowMetrics[F] = F
 
   def of[F[_]: Monad: MeasureDuration](registry: CollectorRegistry[F]): Resource[F, FlowMetrics[F]] = for {
-    keyDatabase <- keyDatabaseMetricsOf[F].apply(registry)
-    journalDatabase <- journalDatabaseMetricsOf[F].apply(registry)
+    keyDatabase      <- keyDatabaseMetricsOf[F].apply(registry)
+    journalDatabase  <- journalDatabaseMetricsOf[F].apply(registry)
     snapshotDatabase <- snapshotDatabaseMetricsOf[F].apply(registry)
-    timerDatabase <- timerDatabaseMetricsKOf[F].apply(registry)
+    timerDatabase    <- timerDatabaseMetricsKOf[F].apply(registry)
     persistenceModule = new MetricsK[PersistenceModule[F, *]] {
       def withMetrics[S](module: PersistenceModule[F, S]) = new PersistenceModule[F, S] {
-        def keys = keyDatabase.withMetrics(module.keys)
-        def journals = journalDatabase.withMetrics(module.journals)
+        def keys      = keyDatabase.withMetrics(module.keys)
+        def journals  = journalDatabase.withMetrics(module.journals)
         def snapshots = snapshotDatabase.withMetrics(module.snapshots)
       }
     }
-    foldMetrics <- FoldMetrics.of[F](registry)
-    keyStateOf <- keyStateOfMetricsOf[F].apply(registry)
-    partitionFlowOf <- partitionFlowOfMetricsOf[F].apply(registry)
-    topicFlowOf <- topicFlowOfMetricsOf[F].apply(registry)
+    foldMetrics         <- FoldMetrics.of[F](registry)
+    keyStateOf          <- keyStateOfMetricsOf[F].apply(registry)
+    partitionFlowOf     <- partitionFlowOfMetricsOf[F].apply(registry)
+    topicFlowOf         <- topicFlowOfMetricsOf[F].apply(registry)
     compressorMetricsOf <- compressorMetricsOf[F](registry)
   } yield new FlowMetrics[F] {
-    def keyDatabaseMetrics = keyDatabase
-    def journalDatabaseMetrics = journalDatabase
-    def snapshotDatabaseMetrics = snapshotDatabase
-    def timerDatabaseMetrics = timerDatabase
-    def persistenceModuleMetrics = persistenceModule
-    def foldOptionMetrics = foldMetrics.foldOptionMetrics
-    def enhancedFoldMetrics = foldMetrics.enhancedFoldMetrics
-    def keyStateOfMetrics = keyStateOf
-    def partitionFlowOfMetrics = partitionFlowOf
-    def topicFlowOfMetrics = topicFlowOf
+    def keyDatabaseMetrics                                           = keyDatabase
+    def journalDatabaseMetrics                                       = journalDatabase
+    def snapshotDatabaseMetrics                                      = snapshotDatabase
+    def timerDatabaseMetrics                                         = timerDatabase
+    def persistenceModuleMetrics                                     = persistenceModule
+    def foldOptionMetrics                                            = foldMetrics.foldOptionMetrics
+    def enhancedFoldMetrics                                          = foldMetrics.enhancedFoldMetrics
+    def keyStateOfMetrics                                            = keyStateOf
+    def partitionFlowOfMetrics                                       = partitionFlowOf
+    def topicFlowOfMetrics                                           = topicFlowOf
     def compressorMetrics(component: String): Metrics[Compressor[F]] = compressorMetricsOf.make(component)
   }
 
   def empty[F[_]]: FlowMetrics[F] = new FlowMetrics[F] {
-    def keyDatabaseMetrics = Metrics.empty
-    def journalDatabaseMetrics = Metrics.empty
-    def snapshotDatabaseMetrics = MetricsK.empty[SnapshotDatabase[F, KafkaKey, *]]
-    def timerDatabaseMetrics = MetricsK.empty[TimerDatabase[F, KafkaKey, *]]
-    def persistenceModuleMetrics = MetricsK.empty[PersistenceModule[F, *]]
-    def foldOptionMetrics = MetricsK.empty[FoldOption[F, *, ConsRecord]]
-    def enhancedFoldMetrics = MetricsK.empty[EnhancedFold[F, *, ConsRecord]]
-    def keyStateOfMetrics = Metrics.empty
-    def partitionFlowOfMetrics = Metrics.empty
-    def topicFlowOfMetrics = Metrics.empty
+    def keyDatabaseMetrics                                           = Metrics.empty
+    def journalDatabaseMetrics                                       = Metrics.empty
+    def snapshotDatabaseMetrics                                      = MetricsK.empty[SnapshotDatabase[F, KafkaKey, *]]
+    def timerDatabaseMetrics                                         = MetricsK.empty[TimerDatabase[F, KafkaKey, *]]
+    def persistenceModuleMetrics                                     = MetricsK.empty[PersistenceModule[F, *]]
+    def foldOptionMetrics                                            = MetricsK.empty[FoldOption[F, *, ConsRecord]]
+    def enhancedFoldMetrics                                          = MetricsK.empty[EnhancedFold[F, *, ConsRecord]]
+    def keyStateOfMetrics                                            = Metrics.empty
+    def partitionFlowOfMetrics                                       = Metrics.empty
+    def topicFlowOfMetrics                                           = Metrics.empty
     def compressorMetrics(component: String): Metrics[Compressor[F]] = Metrics.empty
   }
 

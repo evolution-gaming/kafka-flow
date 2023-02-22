@@ -12,10 +12,10 @@ private[flow] object CatsEffectMtlInstances {
   }
 
   class RefStateful[F[_], S](ref: Ref[F, S])(implicit F: Monad[F]) extends Stateful[F, S] {
-    val monad: Monad[F] = F
-    def get: F[S] = ref.get
-    def set(s: S): F[Unit] = ref.set(s)
+    val monad: Monad[F]                      = F
+    def get: F[S]                            = ref.get
+    def set(s: S): F[Unit]                   = ref.set(s)
     override def inspect[A](f: S => A): F[A] = ref.get.map(f)
-    override def modify(f: S => S): F[Unit] = ref.update(f)
+    override def modify(f: S => S): F[Unit]  = ref.update(f)
   }
 }

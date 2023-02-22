@@ -12,7 +12,7 @@ class FoldMetricsSpec extends FunSuite {
   type F[T] = Option[T]
 
   test("having MetricsKOf enables withCollectorRegistry syntax") {
-    implicit val measureDuration = MeasureDuration.empty[F]
+    implicit val measureDuration     = MeasureDuration.empty[F]
     val fold: FoldOptionCons[F, Int] = FoldOption.empty[F, Int, ConsRecord]
     fold.withCollectorRegistry(CollectorRegistry.empty[F])
   }

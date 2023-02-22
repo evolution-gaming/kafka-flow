@@ -33,8 +33,8 @@ object KafkaPersistenceModule {
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
     snapshotTopicPartition: TopicPartition
-  )(implicit
-    fromBytesKey: FromBytes[F, String],
+  )(
+    implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] =
@@ -48,8 +48,8 @@ object KafkaPersistenceModule {
     producerConfig: ProducerConfig,
     snapshotTopicPartition: TopicPartition,
     metrics: FlowMetrics[F] = FlowMetrics.empty[F]
-  )(implicit
-    fromBytesKey: FromBytes[F, String],
+  )(
+    implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
@@ -58,11 +58,11 @@ object KafkaPersistenceModule {
         producerConfig.copy(common = producerConfig.common.copy(clientId = s"$snapshotTopicPartition-producer".some))
       )
       persistenceModule <- caching[F, S](
-        consumerOf = consumerOf,
-        producer = producer,
-        consumerConfig = consumerConfig,
+        consumerOf             = consumerOf,
+        producer               = producer,
+        consumerConfig         = consumerConfig,
         snapshotTopicPartition = snapshotTopicPartition,
-        metrics = metrics
+        metrics                = metrics
       )
     } yield persistenceModule
   }
@@ -100,8 +100,8 @@ object KafkaPersistenceModule {
     consumerConfig: ConsumerConfig,
     snapshotTopicPartition: TopicPartition,
     metrics: FlowMetrics[F]
-  )(implicit
-    fromBytesKey: FromBytes[F, String],
+  )(
+    implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
@@ -109,10 +109,10 @@ object KafkaPersistenceModule {
 
     def readPartitionData(implicit log: Log[F]): F[BytesByKey] =
       KafkaPartitionPersistence.readSnapshots[F](
-        consumerOf = consumerOf,
+        consumerOf     = consumerOf,
         consumerConfig = consumerConfig,
-        snapshotTopic = snapshotTopicPartition.topic,
-        partition = snapshotTopicPartition.partition
+        snapshotTopic  = snapshotTopicPartition.topic,
+        partition      = snapshotTopicPartition.partition
       )
 
     def makeKeysOf(cache: Cache[F, String, ByteVector]): F[KeysOf[F, KafkaKey]] = {
@@ -140,7 +140,7 @@ object KafkaPersistenceModule {
     ): F[SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord]] = {
       LogOf[F].apply(classOf[SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord]]).map { implicit log =>
         implicit val producer_ = producer
-        val read = KafkaSnapshotReadDatabase.of[F, S](snapshotTopicPartition.topic, key => cache.remove(key).flatten)
+        val read               = KafkaSnapshotReadDatabase.of[F, S](snapshotTopicPartition.topic, key => cache.remove(key).flatten)
 
         val snapshotsOf = new SnapshotsOf[F, KafkaKey, S] {
           override def apply(key: KafkaKey): F[Snapshots[F, S]] =
@@ -149,7 +149,7 @@ object KafkaPersistenceModule {
             } yield Snapshots(
               key = key,
               database = SnapshotDatabase(
-                read = read,
+                read  = read,
                 write = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition)
               ) withMetricsK metrics.snapshotDatabaseMetrics,
               buffer = buffer
@@ -157,7 +157,7 @@ object KafkaPersistenceModule {
         }
 
         PersistenceOf.snapshotsOnly[F, KafkaKey, S, ConsRecord](
-          keysOf = keysOf,
+          keysOf      = keysOf,
           snapshotsOf = snapshotsOf
         )
       }
@@ -165,8 +165,8 @@ object KafkaPersistenceModule {
 
     for {
       partitionDataCache <- Cache.loading1[F, String, ByteVector]
-      keysOf_ <- Resource.eval(makeKeysOf(partitionDataCache))
-      persistence_ <- Resource.eval(makeSnapshotPersistenceOf(keysOf_, partitionDataCache, producer))
+      keysOf_            <- Resource.eval(makeKeysOf(partitionDataCache))
+      persistence_       <- Resource.eval(makeSnapshotPersistenceOf(keysOf_, partitionDataCache, producer))
     } yield new KafkaPersistenceModule[F, S] {
       override def keysOf: KeysOf[F, KafkaKey] = keysOf_
 

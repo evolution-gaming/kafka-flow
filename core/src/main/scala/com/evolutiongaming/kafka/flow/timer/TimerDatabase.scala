@@ -39,7 +39,7 @@ object TimerDatabase {
 
     def persist(key: K, timer: T) = storage modify { storage =>
       val existingTimers = storage.getOrElse(key, Set.empty[T])
-      val updatedTimers = existingTimers + timer
+      val updatedTimers  = existingTimers + timer
       storage + (key -> updatedTimers)
     }
 
@@ -54,15 +54,16 @@ object TimerDatabase {
 
   def empty[F[_]: Applicative, K, T]: TimerDatabase[F, K, T] = new TimerDatabase[F, K, T] {
     def persist(key: K, timer: T) = ().pure[F]
-    def get(key: K) = Stream.empty
-    def delete(key: K) = ().pure[F]
+    def get(key: K)               = Stream.empty
+    def delete(key: K)            = ().pure[F]
   }
 
   implicit class TimerDatabaseKafkaTimerOps[F[_], K](
     val self: TimerDatabase[F, K, KafkaTimer]
   ) extends AnyVal {
     def timersOf(
-      implicit F: Sync[F], log: Log[F]
+      implicit F: Sync[F],
+      log: Log[F]
     ): TimersOf[F, K] = { (key, createdAt) =>
       Timestamps.of(createdAt) flatMap { implicit timestamps =>
         Timers.of(key, self) map { timers =>

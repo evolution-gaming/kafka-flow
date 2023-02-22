@@ -30,7 +30,7 @@ object PartitionFlow {
 
   final case class PartitionKey[F[_]](state: KeyState[F, ConsRecord], context: KeyContext[F]) {
     def flow: KeyFlow[F, ConsRecord] = state.flow
-    def timers: TimerContext[F] = state.timers
+    def timers: TimerContext[F]      = state.timers
   }
 
   trait FilterRecord[F[_]] {
@@ -71,22 +71,22 @@ object PartitionFlow {
     filter: Option[FilterRecord[F]] = None,
     scheduleCommit: ScheduleCommit[F]
   ): Resource[F, PartitionFlow[F]] = for {
-    clock <- Resource.eval(Clock[F].instant)
+    clock           <- Resource.eval(Clock[F].instant)
     committedOffset <- Resource.eval(Ref.of(assignedAt))
-    timestamp <- Resource.eval(Ref.of(Timestamp(clock, None, assignedAt)))
+    timestamp       <- Resource.eval(Ref.of(Timestamp(clock, None, assignedAt)))
     triggerTimersAt <- Resource.eval(Ref.of(clock))
     commitOffsetsAt <- Resource.eval(Ref.of(clock))
     flow <- of(
-      topicPartition = topicPartition,
-      keyStateOf = keyStateOf,
+      topicPartition  = topicPartition,
+      keyStateOf      = keyStateOf,
       committedOffset = committedOffset,
-      timestamp = timestamp,
+      timestamp       = timestamp,
       triggerTimersAt = triggerTimersAt,
       commitOffsetsAt = commitOffsetsAt,
-      cache = cache,
-      config = config,
-      filter = filter,
-      scheduleCommit = scheduleCommit
+      cache           = cache,
+      config          = config,
+      filter          = filter,
+      scheduleCommit  = scheduleCommit
     )
   } yield flow
 
@@ -109,18 +109,18 @@ object PartitionFlow {
         for {
           context <- KeyContext.resource[F](
             removeFromCache = cache.remove(key).flatten.void,
-            log = Log[F].prefixed(key)
+            log             = Log[F].prefixed(key)
           )
           keyState <- keyStateOf(topicPartition, key, createdAt, context)
         } yield PartitionKey(keyState, context)
       }
 
     val init = for {
-      clock <- Clock[F].instant
+      clock           <- Clock[F].instant
       committedOffset <- committedOffset.get
-      timestamp = Timestamp(clock, None, committedOffset)
-      keys = keyStateOf.all(topicPartition)
-      _ <- Log[F].info("partition recovery started")
+      timestamp        = Timestamp(clock, None, committedOffset)
+      keys             = keyStateOf.all(topicPartition)
+      _               <- Log[F].info("partition recovery started")
       count <-
         if (config.parallelRecovery) {
           keys.toList flatMap { keys =>
@@ -147,36 +147,41 @@ object PartitionFlow {
       }
       filteredRecords <- filter
         .map(filter =>
-          keys.toList.parTraverseFilter { case (key, records) =>
-            records.toList.filterA(filter.apply).map(filtered => NonEmptyList.fromList(filtered).map(nel => (key, nel)))
+          keys.toList.parTraverseFilter {
+            case (key, records) =>
+              records
+                .toList
+                .filterA(filter.apply)
+                .map(filtered => NonEmptyList.fromList(filtered).map(nel => (key, nel)))
           }
         )
         .getOrElse(keys.toList.pure[F])
-      _ <- filteredRecords.parTraverse_ { case (key, records) =>
-        val startedAt = Timestamp(
-          clock = clock,
-          watermark = records.head.timestampAndType map (_.timestamp),
-          offset = records.head.offset
-        )
-        val finishedAt = Timestamp(
-          clock = clock,
-          watermark = records.last.timestampAndType map (_.timestamp),
-          offset = records.last.offset
-        )
-        stateOf(startedAt, key) flatMap { state =>
-          state.timers.set(startedAt) *>
-            state.flow(records) *>
-            state.timers.set(finishedAt) *>
-            state.timers.onProcessed
-        }
+      _ <- filteredRecords.parTraverse_ {
+        case (key, records) =>
+          val startedAt = Timestamp(
+            clock     = clock,
+            watermark = records.head.timestampAndType map (_.timestamp),
+            offset    = records.head.offset
+          )
+          val finishedAt = Timestamp(
+            clock     = clock,
+            watermark = records.last.timestampAndType map (_.timestamp),
+            offset    = records.last.offset
+          )
+          stateOf(startedAt, key) flatMap { state =>
+            state.timers.set(startedAt) *>
+              state.flow(records) *>
+              state.timers.set(finishedAt) *>
+              state.timers.onProcessed
+          }
       }
-      lastRecord = records.last
+      lastRecord     = records.last
       maximumOffset <- OffsetToCommit[F](lastRecord.offset)
       _ <- timestamp.set(
         Timestamp(
-          clock = clock,
+          clock     = clock,
           watermark = lastRecord.timestampAndType map (_.timestamp),
-          offset = maximumOffset
+          offset    = maximumOffset
         )
       )
 
@@ -186,9 +191,9 @@ object PartitionFlow {
     def triggerTimers = for {
       _ <- Log[F].debug("triggering timers")
 
-      clock <- Clock[F].instant
+      clock     <- Clock[F].instant
       timestamp <- timestamp updateAndGet (_.copy(clock = clock))
-      states <- cache.values
+      states    <- cache.values
       _ <- states.values.toList.parTraverse_ { state =>
         state flatMap { state =>
           state.timers.set(timestamp) *>
@@ -219,7 +224,7 @@ object PartitionFlow {
       minimumOffset = stateOffsets.flatten.minimumOption
 
       // maximum offset to commit is the offset of last record
-      timestamp <- timestamp.get
+      timestamp    <- timestamp.get
       maximumOffset = timestamp.offset
 
       allowedOffset = minimumOffset getOrElse maximumOffset
@@ -245,13 +250,13 @@ object PartitionFlow {
       for {
         _ <- NonEmptyList.fromList(records).traverse_(processRecords)
 
-        clock <- Clock[F].instant
+        clock           <- Clock[F].instant
         triggerTimersAt <- triggerTimersAt.get
-        _ <- if (clock isAfter triggerTimersAt) triggerTimers else ().pure[F]
+        _               <- if (clock isAfter triggerTimersAt) triggerTimers else ().pure[F]
 
-        clock <- Clock[F].instant
+        clock           <- Clock[F].instant
         commitOffsetsAt <- commitOffsetsAt.get
-        offsetToCommit <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
+        offsetToCommit  <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
 
         _ <- Log[F].debug(s"offset to commit: ${offsetToCommit.show}")
 

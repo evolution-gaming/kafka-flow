@@ -19,16 +19,16 @@ object PartitionFlowMetrics {
   implicit def partitionFlowMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, PartitionFlow[F]] = { registry =>
     for {
       applySummary <- registry.summary(
-        name = "partition_flow_apply_duration_seconds",
-        help = "Time required to apply a batch coming to partition flow",
+        name      = "partition_flow_apply_duration_seconds",
+        help      = "Time required to apply a batch coming to partition flow",
         quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
-        labels = LabelNames("topic", "partition")
+        labels    = LabelNames("topic", "partition")
       )
       triggerTimersSummary <- registry.summary(
-        name = "partition_flow_triggerTimers_duration_seconds",
-        help = "Time required to apply an empty batch coming to partition flow",
+        name      = "partition_flow_triggerTimers_duration_seconds",
+        help      = "Time required to apply an empty batch coming to partition flow",
         quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
-        labels = LabelNames()
+        labels    = LabelNames()
       )
     } yield { partitionFlow =>
       new PartitionFlow[F] {

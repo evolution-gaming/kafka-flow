@@ -21,7 +21,10 @@ class ExplodingRebalanceConsumer extends RebalanceConsumer {
 
   def beginningOffsets(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, Offset]] = Try(notImplemented)
 
-  def beginningOffsets(partitions: NonEmptySet[TopicPartition], timeout: FiniteDuration): Try[Map[TopicPartition, Offset]] = Try(notImplemented)
+  def beginningOffsets(
+    partitions: NonEmptySet[TopicPartition],
+    timeout: FiniteDuration
+  ): Try[Map[TopicPartition, Offset]] = Try(notImplemented)
 
   def commit(): Try[Unit] = Try(notImplemented)
 
@@ -29,15 +32,23 @@ class ExplodingRebalanceConsumer extends RebalanceConsumer {
 
   def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): Try[Unit] = Try(notImplemented)
 
-  def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata], timeout: FiniteDuration): Try[Unit] = Try(notImplemented)
+  def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata], timeout: FiniteDuration): Try[Unit] = Try(
+    notImplemented
+  )
 
-  def committed(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, OffsetAndMetadata]] = Try(notImplemented)
+  def committed(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, OffsetAndMetadata]] = Try(
+    notImplemented
+  )
 
-  def committed(partitions: NonEmptySet[TopicPartition], timeout: FiniteDuration): Try[Map[TopicPartition, OffsetAndMetadata]] = Try(notImplemented)
+  def committed(
+    partitions: NonEmptySet[TopicPartition],
+    timeout: FiniteDuration
+  ): Try[Map[TopicPartition, OffsetAndMetadata]] = Try(notImplemented)
 
   def endOffsets(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, Offset]] = Try(notImplemented)
 
-  def endOffsets(partitions: NonEmptySet[TopicPartition], timeout: FiniteDuration): Try[Map[TopicPartition, Offset]] = Try(notImplemented)
+  def endOffsets(partitions: NonEmptySet[TopicPartition], timeout: FiniteDuration): Try[Map[TopicPartition, Offset]] =
+    Try(notImplemented)
 
   def groupMetadata(): Try[ConsumerGroupMetadata] = Try(notImplemented)
 
@@ -45,9 +56,14 @@ class ExplodingRebalanceConsumer extends RebalanceConsumer {
 
   def topics(timeout: FiniteDuration): Try[Map[Topic, List[PartitionInfo]]] = Try(notImplemented)
 
-  def offsetsForTimes(timestampsToSearch: NonEmptyMap[TopicPartition, Instant]): Try[Map[TopicPartition, Option[OffsetAndTimestamp]]] = Try(notImplemented)
+  def offsetsForTimes(
+    timestampsToSearch: NonEmptyMap[TopicPartition, Instant]
+  ): Try[Map[TopicPartition, Option[OffsetAndTimestamp]]] = Try(notImplemented)
 
-  def offsetsForTimes(timestampsToSearch: NonEmptyMap[TopicPartition, Instant], timeout: FiniteDuration): Try[Map[TopicPartition, Option[OffsetAndTimestamp]]] = Try(notImplemented)
+  def offsetsForTimes(
+    timestampsToSearch: NonEmptyMap[TopicPartition, Instant],
+    timeout: FiniteDuration
+  ): Try[Map[TopicPartition, Option[OffsetAndTimestamp]]] = Try(notImplemented)
 
   def partitionsFor(topic: Topic): Try[List[PartitionInfo]] = Try(notImplemented)
 

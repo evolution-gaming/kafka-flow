@@ -7,7 +7,13 @@ import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.AutoOffsetReset.Earliest
-import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf, ConsumerRecord, WithSize, Consumer => SkafkaConsumer}
+import com.evolutiongaming.skafka.consumer.{
+  ConsumerConfig,
+  ConsumerOf,
+  ConsumerRecord,
+  WithSize,
+  Consumer => SkafkaConsumer
+}
 import monocle.macros.GenLens
 import scodec.bits.ByteVector
 
@@ -15,7 +21,7 @@ import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
 
 object KafkaPartitionPersistence {
-  private val clientIdLens = GenLens[ConsumerConfig](_.common.clientId)
+  private val clientIdLens        = GenLens[ConsumerConfig](_.common.clientId)
   private val autoOffsetResetLens = GenLens[ConsumerConfig](_.autoOffsetReset)
 
   private case class MissingOffsetError(topicPartition: TopicPartition) extends NoStackTrace
@@ -37,7 +43,8 @@ object KafkaPartitionPersistence {
                 consumer
                   .poll(10.millis) // TODO: make poll timeout configurable
                   .map(
-                    _.values.values
+                    _.values
+                      .values
                       .flatMap(_.toIterable)
                       .foldLeft(acc)(processRecord)
                       .asLeft
@@ -72,7 +79,7 @@ object KafkaPartitionPersistence {
 
         val snapshotPartitionSingleton = data.NonEmptySet.of(snapshotsPartition)
         for {
-          _ <- consumer.assign(snapshotPartitionSingleton)
+          _          <- consumer.assign(snapshotPartitionSingleton)
           endOffsets <- consumer.endOffsets(snapshotPartitionSingleton)
           targetOffset <- BracketThrowable[F].fromOption(
             endOffsets.get(snapshotsPartition),

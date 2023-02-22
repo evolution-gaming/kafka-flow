@@ -80,13 +80,13 @@ class RebalanceListenerSpec extends FunSuite {
 
 object RebalanceListenerSpec {
 
-  val topic1 = "topic-1"
-  val topic2 = "topic-2"
+  val topic1     = "topic-1"
+  val topic2     = "topic-2"
   val partition1 = Partition.unsafe(1)
   val partition2 = Partition.unsafe(2)
   val partition3 = Partition.unsafe(3)
   val partition4 = Partition.unsafe(4)
-  val offset = Offset.unsafe(0)
+  val offset     = Offset.unsafe(0)
 
   type F[A] = StateT[Try, Context, A]
 
@@ -108,8 +108,8 @@ object RebalanceListenerSpec {
 
     val consumer: Consumer[F] = new Consumer[F] {
       def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]): F[Unit] = ().pure[F]
-      def poll(timeout: FiniteDuration): F[ConsRecords] = ConsRecords.empty.pure[F]
-      def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] = ().pure[F]
+      def poll(timeout: FiniteDuration): F[ConsRecords]                                   = ConsRecords.empty.pure[F]
+      def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit]        = ().pure[F]
     }
 
     def flow(topic: String) = new TopicFlow[F] {

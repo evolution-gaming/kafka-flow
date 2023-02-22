@@ -18,8 +18,9 @@ private[snapshot] object SnapshotSchema {
     synchronize: CassandraSync[F]
   ): SnapshotSchema[F] = new SnapshotSchema[F] {
     def create = synchronize("SnapshotSchema") {
-      session.execute(
-        """CREATE TABLE IF NOT EXISTS snapshots_v2(
+      session
+        .execute(
+          """CREATE TABLE IF NOT EXISTS snapshots_v2(
           |application_id TEXT,
           |group_id TEXT,
           |topic TEXT,
@@ -32,7 +33,9 @@ private[snapshot] object SnapshotSchema {
           |PRIMARY KEY((application_id, group_id, topic, partition, key))
           |)
           |""".stripMargin
-      ).first.void
+        )
+        .first
+        .void
     }
     def truncate = synchronize("SnapshotSchema") {
       session.execute("TRUNCATE snapshots_v2").first.void

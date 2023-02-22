@@ -33,36 +33,36 @@ object TimerFlowOf {
     */
   def unloadOrphaned[F[_]: MonadThrow](
     fireEvery: FiniteDuration = 10.minutes,
-    maxOffsetDifference: Int = 100000,
-    maxIdle: FiniteDuration = 10.minutes,
-    flushOnRevoke: Boolean = false,
+    maxOffsetDifference: Int  = 100000,
+    maxIdle: FiniteDuration   = 10.minutes,
+    flushOnRevoke: Boolean    = false,
   ): TimerFlowOf[F] = { (context, persistence, timers) =>
-
     def register(touchedAt: Timestamp) =
       timers.registerProcessing(touchedAt.clock plusMillis fireEvery.toMillis)
 
     val acquire = Resource.eval {
       for {
-        current <- timers.current
+        current     <- timers.current
         persistedAt <- timers.persistedAt
-        committedAt = persistedAt getOrElse current
-        _ <- context.hold(committedAt.offset)
-        _ <- register(committedAt)
+        committedAt  = persistedAt getOrElse current
+        _           <- context.hold(committedAt.offset)
+        _           <- register(committedAt)
       } yield new TimerFlow[F] {
         def onTimer = for {
-          current <- timers.current
-          processedAt <- timers.processedAt
-          touchedAt = processedAt getOrElse committedAt
-          expiredAt = touchedAt.clock plusMillis maxIdle.toMillis
-          expired = current.clock isAfter expiredAt
+          current         <- timers.current
+          processedAt     <- timers.processedAt
+          touchedAt        = processedAt getOrElse committedAt
+          expiredAt        = touchedAt.clock plusMillis maxIdle.toMillis
+          expired          = current.clock isAfter expiredAt
           offsetDifference = current.offset.value - touchedAt.offset.value
-          _ <- if (expired || offsetDifference > maxOffsetDifference) {
-            context.log.info(s"flush, offset difference: $offsetDifference") *>
-            persistence.flush *>
-            context.remove
-          } else {
-            register(touchedAt)
-          }
+          _ <-
+            if (expired || offsetDifference > maxOffsetDifference) {
+              context.log.info(s"flush, offset difference: $offsetDifference") *>
+                persistence.flush *>
+                context.remove
+            } else {
+              register(touchedAt)
+            }
         } yield ()
       }
     }
@@ -91,27 +91,26 @@ object TimerFlowOf {
     *                            `held`, so as a result no new offset will be committed for the partition.
     */
   def persistPeriodically[F[_]: MonadThrow](
-    fireEvery: FiniteDuration = 1.minute,
+    fireEvery: FiniteDuration    = 1.minute,
     persistEvery: FiniteDuration = 1.minute,
-    flushOnRevoke: Boolean = false,
+    flushOnRevoke: Boolean       = false,
     ignorePersistErrors: Boolean = false,
   ): TimerFlowOf[F] = { (context, persistence, timers) =>
-
     def register(current: Timestamp): F[Unit] =
       timers.registerProcessing(current.clock plusMillis fireEvery.toMillis)
 
     val acquire = Resource.eval {
       for {
-        current <- timers.current
+        current     <- timers.current
         persistedAt <- timers.persistedAt
-        committedAt = persistedAt getOrElse current
-        _ <- context.hold(committedAt.offset)
-        _ <- register(current)
+        committedAt  = persistedAt getOrElse current
+        _           <- context.hold(committedAt.offset)
+        _           <- register(current)
       } yield new TimerFlow[F] {
         def onTimer: F[Unit] = for {
-          current <- timers.current
-          persistedAt <- timers.persistedAt
-          flushedAt = persistedAt getOrElse committedAt
+          current       <- timers.current
+          persistedAt   <- timers.persistedAt
+          flushedAt      = persistedAt getOrElse committedAt
           triggerFlushAt = flushedAt.clock plusMillis persistEvery.toMillis
           _ <-
             MonadThrow[F].whenA((current.clock compareTo triggerFlushAt) >= 0) {
@@ -121,7 +120,9 @@ object TimerFlowOf {
                   // and offsets committed (or just the last committed offset if no state has ever been persisted before).
                   // Thus, when calculating the next offset to commit in `PartitionFlow#offsetToCommit` it will take
                   // the minimal one (previous) and won't commit any offsets
-                  context.log.info(s"Failed to persist state, the error is ignored and offsets won't be committed, error: $err")
+                  context
+                    .log
+                    .info(s"Failed to persist state, the error is ignored and offsets won't be committed, error: $err")
                 case Left(err) =>
                   err.raiseError[F, Unit]
                 case Right(_) =>
@@ -141,12 +142,11 @@ object TimerFlowOf {
 
   /** Performs flush when `Resource` is cancelled only */
   def flushOnCancel[F[_]: Monad]: TimerFlowOf[F] = { (context, persistence, _) =>
-
     val cancel = context.holding flatMap { holding =>
       Applicative[F].whenA(holding.isDefined) {
         context.log.info(s"flush on revoke, holding offset: $holding") *>
-        persistence.flush *>
-        context.remove
+          persistence.flush *>
+          context.remove
       }
     }
 

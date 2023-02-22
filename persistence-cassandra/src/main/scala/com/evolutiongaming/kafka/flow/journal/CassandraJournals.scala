@@ -38,8 +38,8 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
   def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
     for {
       boundStatement <- Statements.persist(session, key, event)
-      statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _ <- session.execute(statement).first.void
+      statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
+      _              <- session.execute(statement).first.void
     } yield ()
 
   def get(key: KafkaKey): Stream[F, ConsRecord] = {
@@ -55,8 +55,8 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
   def delete(key: KafkaKey): F[Unit] =
     for {
       boundStatement <- Statements.delete(session, key)
-      statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _ <- session.execute(statement).first.void
+      statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
+      _              <- session.execute(statement).first.void
     } yield ()
 
 }
@@ -82,21 +82,22 @@ object CassandraJournals {
   // we cannot use DecodeRow here because TupleToHeader is effectful
   protected def decode[F[_]: MonadThrow](key: KafkaKey, row: Row): F[ConsRecord] = {
     val headers = row.decode[Map[String, String]]("headers")
-    val value = row.decode[Option[ByteVector]]("value")
+    val value   = row.decode[Option[ByteVector]]("value")
     for {
-      headers <- headers.toList traverse { case (key, value) =>
-        TupleToHeader[F].apply(key, value)
+      headers <- headers.toList traverse {
+        case (key, value) =>
+          TupleToHeader[F].apply(key, value)
       }
     } yield ConsRecord(
       topicPartition = key.topicPartition,
-      key = Some(WithSize(key.key)),
-      offset = row.decode[Offset]("offset"),
+      key            = Some(WithSize(key.key)),
+      offset         = row.decode[Offset]("offset"),
       timestampAndType = for {
-        timestamp <- row.decode[Option[Instant]]("timestamp")
+        timestamp     <- row.decode[Option[Instant]]("timestamp")
         timestampType <- row.decode[Option[TimestampType]]("timestamp_type")
       } yield TimestampAndType(timestamp, timestampType),
       headers = headers,
-      value = value map { value => WithSize(value, value.length.toInt) }
+      value   = value map { value => WithSize(value, value.length.toInt) }
     )
   }
 

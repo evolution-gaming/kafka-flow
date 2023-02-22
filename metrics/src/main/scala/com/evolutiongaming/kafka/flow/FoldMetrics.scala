@@ -15,10 +15,10 @@ object FoldMetrics {
 
   implicit def foldMetricsKOf[F[_]: Monad: MeasureDuration]: MetricsKOf[F, Fold[F, *, ConsRecord]] = { registry =>
     registry.summary(
-      name = "fold_apply_duration_seconds",
-      help = "Time required to apply fold",
+      name      = "fold_apply_duration_seconds",
+      help      = "Time required to apply fold",
       quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
-      labels = LabelNames("topic", "partition")
+      labels    = LabelNames("topic", "partition")
     ) map { foldSummary =>
       new MetricsK[Fold[F, *, ConsRecord]] {
         def withMetrics[S](fold: Fold[F, S, ConsRecord]) = Fold { (s, record) =>
@@ -44,10 +44,10 @@ object FoldMetrics {
   def of[F[_]: Monad: MeasureDuration](registry: CollectorRegistry[F]): Resource[F, FoldMetrics[F]] =
     registry
       .summary(
-        name = "fold_apply_duration_seconds",
-        help = "Time required to apply fold",
+        name      = "fold_apply_duration_seconds",
+        help      = "Time required to apply fold",
         quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
-        labels = LabelNames("topic", "partition")
+        labels    = LabelNames("topic", "partition")
       )
       .map { foldSummary =>
         new FoldMetrics[F] {

@@ -46,7 +46,7 @@ object EntityRegistry {
   /** Calculates the number of partitions based on the number of CPU cores */
   def memory[F[_]: Monad: Ref.Make: Runtime, K: Hash, S]: F[EntityRegistry[F, K, S]] = {
     for {
-      cores <- Runtime[F].availableCores
+      cores    <- Runtime[F].availableCores
       registry <- memory[F, K, S](cores + 2)
     } yield registry
   }
@@ -64,16 +64,16 @@ object EntityRegistry {
   /** No-op registry, always returning None and an empty map on `get` and no-op on `register` */
   private final class EmptyEntityRegistry[F[_], K, S](implicit F: Applicative[F]) extends EntityRegistry[F, K, S] {
     override def register(key: K, state: F[Option[S]]): Resource[F, Unit] = Resource.unit
-    override def get(key: K): F[Option[S]] = F.pure(none[S])
-    override def getAll: F[Map[K, S]] = F.pure(Map.empty)
+    override def get(key: K): F[Option[S]]                                = F.pure(none[S])
+    override def getAll: F[Map[K, S]]                                     = F.pure(Map.empty)
   }
 
   /** Immutable registry with a no-op `register` method. `get` and `getAll` query the passed map */
   private final class ConstEntityRegistry[F[_], K, S](values: Map[K, S])(implicit F: Applicative[F])
       extends EntityRegistry[F, K, S] {
     override def register(key: K, state: F[Option[S]]): Resource[F, Unit] = Resource.unit
-    override def get(key: K): F[Option[S]] = F.pure(values.get(key))
-    override def getAll: F[Map[K, S]] = F.pure(values)
+    override def get(key: K): F[Option[S]]                                = F.pure(values.get(key))
+    override def getAll: F[Map[K, S]]                                     = F.pure(values)
   }
 
   /** Mutable registry that keeps the state in a number of `Ref`s distributed over multiple in-memory partitions */
@@ -98,14 +98,17 @@ object EntityRegistry {
         )
 
     override def getAll: F[Map[K, S]] = {
-      partitions.values.foldLeftM(Map.empty[K, S]) { case (acc, ref) =>
-        ref.get
-          .flatMap { map =>
-            map.toList
-              .traverseFilter { case (key, readValue) => readValue.map(maybeValue => maybeValue.map(v => key -> v)) }
-              .map(_.toMap)
-          }
-          .map(map => map ++ acc)
+      partitions.values.foldLeftM(Map.empty[K, S]) {
+        case (acc, ref) =>
+          ref
+            .get
+            .flatMap { map =>
+              map
+                .toList
+                .traverseFilter { case (key, readValue) => readValue.map(maybeValue => maybeValue.map(v => key -> v)) }
+                .map(_.toMap)
+            }
+            .map(map => map ++ acc)
       }
     }
   }

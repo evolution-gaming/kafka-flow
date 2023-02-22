@@ -38,17 +38,17 @@ private[flow] object Compression {
 private[flow] class Lz4Compression[F[_]: MonadThrow](factory: LZ4Factory) extends Compression[F] {
   private val codec = int32 ~ bytes
 
-  private val compressor = factory.fastCompressor()
+  private val compressor   = factory.fastCompressor()
   private val decompressor = factory.fastDecompressor()
 
   override def compress(bytes0: ByteVector): F[ByteVector] = {
-    val bytes = bytes0.toArray
+    val bytes              = bytes0.toArray
     val lengthDecompressed = bytes.length
     for {
       bytesCompressed <- MonadThrow[F].catchNonFatal {
         val maxLengthCompressed = compressor.maxCompressedLength(lengthDecompressed)
-        val compressed = new Array[Byte](maxLengthCompressed)
-        val lengthCompressed = compressor.compress(bytes, compressed)
+        val compressed          = new Array[Byte](maxLengthCompressed)
+        val lengthCompressed    = compressor.compress(bytes, compressed)
         ByteVector.view(compressed, 0, lengthCompressed)
       }
       bits <- codec.encode((lengthDecompressed, bytesCompressed)) match {
@@ -65,7 +65,7 @@ private[flow] class Lz4Compression[F[_]: MonadThrow](factory: LZ4Factory) extend
         case Attempt.Failure(e)        => CompressionError(e.message).raiseError
       }
       (lengthDecompressed, byteVector) = decoded.value
-      buffer = byteVector.toByteBuffer
+      buffer                           = byteVector.toByteBuffer
       decompressed <- MonadThrow[F].catchNonFatal {
         val decompressed = ByteBuffer.allocate(lengthDecompressed)
         decompressor.decompress(buffer, decompressed)

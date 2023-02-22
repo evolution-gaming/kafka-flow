@@ -28,7 +28,7 @@ class AdditionalPersistSpec extends FunSuite {
   test("persist state both on request and periodically when regular persist succeeds") {
     val fold: EnhancedFold[IO, String, ConsRecord] = EnhancedFold.of[IO, String, ConsRecord] { (extras, _, record) =>
       val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
-      val key = record.key.get.value
+      val key   = record.key.get.value
 
       for {
         _ <- key match {
@@ -77,41 +77,50 @@ class AdditionalPersistSpec extends FunSuite {
         //   2) key1 and key2 are holding new offsets after additional persisting
         // Offset 103 is committed as it's the minimal held offset among all keys (offset of key1:value2 + 1)
         _ <- control.advanceAndTick(1.second)
-        _ <- fixture.snapshots.get.map(
-          assertEquals(
-            _,
-            Map(
-              KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value2",
-              KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value4"
+        _ <- fixture
+          .snapshots
+          .get
+          .map(
+            assertEquals(
+              _,
+              Map(
+                KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value2",
+                KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value4"
+              )
             )
           )
-        )
         _ <- fixture.commits.get.map(assertEquals(_, List(Offset.unsafe(103L))))
         // T=31, the second batch is handled, key1:value8 and key2:value10 are persisted additionally after cooldown expired.
         // The offset is not committed as it's not yet time for a regular commit
         _ <- control.advanceAndTick(30.seconds)
-        _ <- fixture.snapshots.get.map(
-          assertEquals(
-            _,
-            Map(
-              KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value8",
-              KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value10"
+        _ <- fixture
+          .snapshots
+          .get
+          .map(
+            assertEquals(
+              _,
+              Map(
+                KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value8",
+                KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value10"
+              )
             )
           )
-        )
         _ <- fixture.commits.get.map(assertEquals(_, List(Offset.unsafe(103L))))
         // T=91, the third batch is handled, no additional persist requested, but the latest state is persisted
         // on a regular basis (key1:value14, key2:value16) and latest offset (117) is committed
         _ <- control.advanceAndTick(1.minute)
-        _ <- fixture.snapshots.get.map(
-          assertEquals(
-            _,
-            Map(
-              KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value14",
-              KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value16"
+        _ <- fixture
+          .snapshots
+          .get
+          .map(
+            assertEquals(
+              _,
+              Map(
+                KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value14",
+                KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value16"
+              )
             )
           )
-        )
         _ <- fixture.commits.get.map(assertEquals(_, List(Offset.unsafe(103L), Offset.unsafe(117L))))
       } yield ()
     }
@@ -122,7 +131,7 @@ class AdditionalPersistSpec extends FunSuite {
   test("persist state both on request and periodically when persisting results in error") {
     val fold: EnhancedFold[IO, String, ConsRecord] = EnhancedFold.of[IO, String, ConsRecord] { (extras, _, record) =>
       val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
-      val key = record.key.get.value
+      val key   = record.key.get.value
 
       for {
         _ <- key match {
@@ -134,11 +143,11 @@ class AdditionalPersistSpec extends FunSuite {
 
     val fixture = new TestFixture {
       override val enhancedFold: EnhancedFold[IO, String, ConsRecord] = fold
-      override val ignorePersistFailures: Boolean = true
+      override val ignorePersistFailures: Boolean                     = true
 
       override def snapshotDatabase: SnapshotDatabase[IO, KafkaKey, String] =
         new SnapshotDatabase[IO, KafkaKey, String] {
-          override def delete(key: KafkaKey): IO[Unit] = snapshots.update(_ - key)
+          override def delete(key: KafkaKey): IO[Unit]        = snapshots.update(_ - key)
           override def get(key: KafkaKey): IO[Option[String]] = snapshots.get.map(_.get(key))
           override def persist(key: KafkaKey, snapshot: String): IO[Unit] =
             if (key.key == "key1" && snapshot == "value10") {
@@ -186,45 +195,56 @@ class AdditionalPersistSpec extends FunSuite {
         // T=61, the second batch is handled, key1:value4, key2:value5, key3:value6 are persisted on a regular basis.
         // Offset 107 is committed as the next one after key3:value6
         _ <- control.advanceAndTick(60.seconds)
-        _ <- fixture.snapshots.get.map(
-          assertEquals(
-            _,
-            Map(
-              KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value4",
-              KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value5",
-              KafkaKey("app", "group", TopicPartition.empty, "key3") -> "value6"
+        _ <- fixture
+          .snapshots
+          .get
+          .map(
+            assertEquals(
+              _,
+              Map(
+                KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value4",
+                KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value5",
+                KafkaKey("app", "group", TopicPartition.empty, "key3") -> "value6"
+              )
             )
           )
-        )
         _ <- fixture.commits.get.map(assertEquals(_, List(Offset.unsafe(101L), Offset.unsafe(107L))))
         // T=66, the third batch is handled, key1:value7 is persisted additionally; no new offset committed
         _ <- control.advanceAndTick(5.seconds)
-        _ <- fixture.snapshots.get.map(
-          assertEquals(
-            _,
-            Map(
-              KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value7",
-              KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value5",
-              KafkaKey("app", "group", TopicPartition.empty, "key3") -> "value6"
+        _ <- fixture
+          .snapshots
+          .get
+          .map(
+            assertEquals(
+              _,
+              Map(
+                KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value7",
+                KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value5",
+                KafkaKey("app", "group", TopicPartition.empty, "key3") -> "value6"
+              )
             )
           )
-        )
         _ <- fixture.commits.get.map(assertEquals(_, List(Offset.unsafe(101L), Offset.unsafe(107L))))
         // T=126, the fourth batch is handled
         // key1:value10 is persisted unsuccessfully, the error is ignored; key2:value11 and key3:value12 are persisted successfully.
         // Offset 108 is committed as the next one after additionally persisted key1:value7 from the previous batch
         _ <- control.advanceAndTick(60.seconds)
-        _ <- fixture.snapshots.get.map(
-          assertEquals(
-            _,
-            Map(
-              KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value7",
-              KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value11",
-              KafkaKey("app", "group", TopicPartition.empty, "key3") -> "value12"
+        _ <- fixture
+          .snapshots
+          .get
+          .map(
+            assertEquals(
+              _,
+              Map(
+                KafkaKey("app", "group", TopicPartition.empty, "key1") -> "value7",
+                KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value11",
+                KafkaKey("app", "group", TopicPartition.empty, "key3") -> "value12"
+              )
             )
           )
-        )
-        _ <- fixture.commits.get
+        _ <- fixture
+          .commits
+          .get
           .map(assertEquals(_, List(Offset.unsafe(101L), Offset.unsafe(107L), Offset.unsafe(108L))))
       } yield ()
     }
@@ -237,9 +257,9 @@ class AdditionalPersistSpec extends FunSuite {
 object AdditionalPersistSpec {
   class TestFixture {
     implicit val logOf = LogOf.empty[IO]
-    implicit val log = logOf.apply(classOf[AdditionalPersistSpec]).unsafeRunSync()(IORuntime.global)
+    implicit val log   = logOf.apply(classOf[AdditionalPersistSpec]).unsafeRunSync()(IORuntime.global)
 
-    val snapshots: Ref[IO, Map[KafkaKey, String]] = Ref.unsafe[IO, Map[KafkaKey, String]](Map.empty)
+    val snapshots: Ref[IO, Map[KafkaKey, String]]                = Ref.unsafe[IO, Map[KafkaKey, String]](Map.empty)
     def snapshotDatabase: SnapshotDatabase[IO, KafkaKey, String] = SnapshotDatabase.memory(snapshots.stateInstance)
 
     val commits = Ref.unsafe[IO, List[Offset]](List.empty)
@@ -252,7 +272,7 @@ object AdditionalPersistSpec {
     def enhancedFold: EnhancedFold[IO, String, ConsRecord] = EnhancedFold.of[IO, String, ConsRecord] {
       (extras, _, record) =>
         val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
-        val key = record.key.get.value
+        val key   = record.key.get.value
 
         for {
           _ <- key match {
@@ -265,12 +285,12 @@ object AdditionalPersistSpec {
 
     def record(key: String, i: Int): ConsRecord =
       ConsRecord(
-        topicPartition = TopicPartition.empty,
-        offset = Offset.unsafe(100L + i.toLong),
+        topicPartition   = TopicPartition.empty,
+        offset           = Offset.unsafe(100L + i.toLong),
         timestampAndType = None,
-        key = Some(WithSize(key)),
-        value = Some(WithSize(ByteVector(s"value$i".getBytes(StandardCharsets.UTF_8)))),
-        headers = List.empty
+        key              = Some(WithSize(key)),
+        value            = Some(WithSize(ByteVector(s"value$i".getBytes(StandardCharsets.UTF_8)))),
+        headers          = List.empty
       )
 
     def batch(key: String, from: Int, to: Int): List[ConsRecord] =
@@ -278,31 +298,31 @@ object AdditionalPersistSpec {
 
     def partitionFlow: Resource[IO, PartitionFlow[IO]] =
       for {
-        keysOf <- Resource.eval(KeysOf.memory[IO, KafkaKey])
+        keysOf   <- Resource.eval(KeysOf.memory[IO, KafkaKey])
         timersOf <- Resource.eval(TimersOf.memory[IO, KafkaKey])
         partitionFlow <- PartitionFlow.resource(
           topicPartition = TopicPartition.empty,
-          assignedAt = Offset.unsafe(100L),
+          assignedAt     = Offset.unsafe(100L),
           keyStateOf = KeyStateOf.eagerRecovery(
             applicationId = "app",
-            groupId = "group",
-            keysOf = keysOf,
-            timersOf = timersOf,
+            groupId       = "group",
+            keysOf        = keysOf,
+            timersOf      = timersOf,
             persistenceOf = PersistenceOf
               .snapshotsOnly(keysOf, SnapshotsOf.backedBy(snapshotDatabase)),
             keyFlowOf = KeyFlowOf(
               timerFlowOf = TimerFlowOf.persistPeriodically[IO](
-                fireEvery = 1.minute,
-                persistEvery = 1.minute,
+                fireEvery           = 1.minute,
+                persistEvery        = 1.minute,
                 ignorePersistErrors = ignorePersistFailures
               ),
               fold = enhancedFold,
               tick = TickOption.id[IO, String],
             ),
             additionalPersistOf = AdditionalStatePersistOf.of[IO, String](cooldown = 20.seconds),
-            registry = EntityRegistry.empty[IO, KafkaKey, String]
+            registry            = EntityRegistry.empty[IO, KafkaKey, String]
           ),
-          config = PartitionFlowConfig(commitOffsetsInterval = 1.minute),
+          config         = PartitionFlowConfig(commitOffsetsInterval = 1.minute),
           scheduleCommit = scheduleCommit
         )
       } yield partitionFlow

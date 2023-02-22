@@ -52,22 +52,22 @@ private class CassandraKeys[F[_]: Monad: Fail: Clock](
   def persist(key: KafkaKey): F[Unit] =
     for {
       boundStatement <- Statements.persist(session, key, segments)
-      statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _ <- session.execute(statement).first.void
+      statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
+      _              <- session.execute(statement).first.void
     } yield ()
 
   def delete(key: KafkaKey): F[Unit] =
     for {
       boundStatement <- Statements.delete(session, key, segments)
-      statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _ <- session.execute(statement).first.void
+      statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
+      _              <- session.execute(statement).first.void
     } yield ()
 
   def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, KafkaKey] =
     for {
       segment <- Stream.from[F, List, Int]((0 until segments.value).toList)
       segment <- Stream.lift(SegmentNr.of[F](segment.toLong))
-      key <- all(applicationId, groupId, segment, topicPartition)
+      key     <- all(applicationId, groupId, segment, topicPartition)
     } yield key
 
   private def all(
@@ -119,10 +119,10 @@ object CassandraKeys {
 
   protected def rowToKey(row: Row, appId: String, groupId: String, topicPartition: TopicPartition): KafkaKey =
     KafkaKey(
-      applicationId = appId,
-      groupId = groupId,
+      applicationId  = appId,
+      groupId        = groupId,
       topicPartition = topicPartition,
-      key = row.decode[String]("key")
+      key            = row.decode[String]("key")
     )
 
   protected object Statements {
