@@ -36,7 +36,7 @@ trait JournalParser[F[_]] {
   def toPayloads(record: ConsRecord): F[List[Event[Payload]]]
 
   /** Parsed events contained in `ConsRecord` if any */
-  def toEvents[T: Reads](record: ConsRecord):  F[List[(SeqNr, T)]]
+  def toEvents[T: Reads](record: ConsRecord): F[List[(SeqNr, T)]]
 
 }
 object JournalParser {
@@ -45,10 +45,10 @@ object JournalParser {
 
   def of[F[_]: MonadThrow](implicit jsonCodec: JsonCodec[Try]): JournalParser[F] = new JournalParser[F] {
 
-    implicit val fail = Fail.lift[F]
+    implicit val fail         = Fail.lift[F]
     implicit val fromJsResult = FromJsResult.lift[F]
-    implicit val fromAttempt = FromAttempt.lift[F]
-    implicit val jsonCodecF = jsonCodec mapK FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
+    implicit val fromAttempt  = FromAttempt.lift[F]
+    implicit val jsonCodecF   = jsonCodec mapK FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
 
     implicit val parseAction = ConsRecordToActionRecord[F]
 
@@ -63,7 +63,7 @@ object JournalParser {
           record <- record
           append <- record.action match {
             case action: Action.Append => Some(action)
-            case _ => None
+            case _                     => None
           }
         } yield append
       }
@@ -73,7 +73,6 @@ object JournalParser {
       toAppend(record) map { append =>
         append map (_.header.range)
       }
-
 
     def toPayloads(record: ConsRecord) =
       toAppend(record) flatMap { append =>
@@ -89,10 +88,11 @@ object JournalParser {
           payload <- F.fromOption(event.payload, new RuntimeException(s"Payload is empty: $event"))
           payload <- payload match {
             case payload: Payload.Json => payload.pure[F]
-            case payload => F.raiseError[Payload.Json](new RuntimeException(s"Payload is not JSON: $payload"))
+            case payload               => F.raiseError[Payload.Json](new RuntimeException(s"Payload is not JSON: $payload"))
           }
-          payload <- F.fromTry(JsResult.toTry((payload.value \ "payload").validate[T])) adaptError { case e =>
-            new RuntimeException(s"Cannot parse payload: ${payload.value}", e)
+          payload <- F.fromTry(JsResult.toTry((payload.value \ "payload").validate[T])) adaptError {
+            case e =>
+              new RuntimeException(s"Cannot parse payload: ${payload.value}", e)
           }
         } yield event.seqNr -> payload
       }

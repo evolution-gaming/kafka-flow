@@ -28,7 +28,7 @@ object PartitionFlowOf {
     */
   def apply[F[_]: Async: LogOf](
     keyStateOf: KeyStateOf[F],
-    config: PartitionFlowConfig = PartitionFlowConfig(),
+    config: PartitionFlowConfig     = PartitionFlowConfig(),
     filter: Option[FilterRecord[F]] = None
   ): PartitionFlowOf[F] = { (topicPartition, assignedAt, scheduleCommit) =>
     PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config, filter, scheduleCommit)

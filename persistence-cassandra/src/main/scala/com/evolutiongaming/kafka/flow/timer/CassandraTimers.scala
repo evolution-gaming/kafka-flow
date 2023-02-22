@@ -33,7 +33,8 @@ class CassandraTimers[F[_]: MonadThrow](
           |   AND value = :value
         """.stripMargin
       )
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("topic", key.topicPartition.topic)
@@ -50,7 +51,7 @@ class CassandraTimers[F[_]: MonadThrow](
 
     val decode = DecodeRow { row =>
       val valueType = row.decode[String]("value_type")
-      val value = row.decode[Long]("value")
+      val value     = row.decode[Long]("value")
       KafkaTimer.of[F](valueType, value)
     }
 
@@ -72,12 +73,13 @@ class CassandraTimers[F[_]: MonadThrow](
       """.stripMargin
     )
     val boundStatement = preparedStatement map { preparedStatement =>
-      preparedStatement.bind()
-      .encode("application_id", key.applicationId)
-      .encode("group_id", key.groupId)
-      .encode("topic", key.topicPartition.topic)
-      .encode("partition", key.topicPartition.partition)
-      .encode("key", key.key)
+      preparedStatement
+        .bind()
+        .encode("application_id", key.applicationId)
+        .encode("group_id", key.groupId)
+        .encode("topic", key.topicPartition.topic)
+        .encode("partition", key.topicPartition.partition)
+        .encode("key", key.key)
     }
 
     Stream.lift(boundStatement) flatMap session.execute mapM { row =>
@@ -99,7 +101,8 @@ class CassandraTimers[F[_]: MonadThrow](
           |   AND key = :key
         """.stripMargin
       )
-      boundStatement = preparedStatement.bind()
+      boundStatement = preparedStatement
+        .bind()
         .encode("application_id", key.applicationId)
         .encode("group_id", key.groupId)
         .encode("topic", key.topicPartition.topic)

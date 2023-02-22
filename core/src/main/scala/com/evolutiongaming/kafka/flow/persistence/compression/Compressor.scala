@@ -71,8 +71,8 @@ object Compressor {
                 (false, payload).pure[F]
               }
             (compressed, compressedBytes) = result
-            headerBytes <- headerToBytes.apply(Header(compressed = compressed), topic = "")
-            bytes <- HeaderAndPayload.toBytes[F](ByteVector.view(headerBytes), compressedBytes)
+            headerBytes                  <- headerToBytes.apply(Header(compressed = compressed), topic = "")
+            bytes                        <- HeaderAndPayload.toBytes[F](ByteVector.view(headerBytes), compressedBytes)
           } yield bytes
         }
 
@@ -81,9 +81,9 @@ object Compressor {
             bytes.pure[F]
           } else {
             for {
-              result <- HeaderAndPayload.fromBytes(bytes)
+              result                <- HeaderAndPayload.fromBytes(bytes)
               (headerBytes, payload) = result
-              header <- headerFromBytes.apply(headerBytes.toArray, topic = "")
+              header                <- headerFromBytes.apply(headerBytes.toArray, topic = "")
               bytes <-
                 if (header.compressed) {
                   compression.decompress(payload)

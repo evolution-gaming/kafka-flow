@@ -17,6 +17,7 @@ trait JournalReader[F[_], E] {
   def read: Stream[F, E]
 
 }
+
 /** Provides a persistence for a specific key */
 trait JournalWriter[F[_], E] {
 
@@ -42,7 +43,8 @@ object Journals {
 
   /** Creates a buffer for a given database */
   private[journal] def of[F[_]: Monad: Ref.Make: Log, K, E](
-    key: K, database: JournalDatabase[F, K, E]
+    key: K,
+    database: JournalDatabase[F, K, E]
   ): F[Journals[F, E]] =
     Ref.of[F, List[E]](List.empty) map { buffer =>
       Journals(key, database, buffer.stateInstance)
@@ -68,7 +70,7 @@ object Journals {
     def delete(persist: Boolean) = {
       val delete = if (persist) {
         database.delete(key) *>
-        Log[F].info("deleted journal")
+          Log[F].info("deleted journal")
       } else {
         ().pure[F]
       }
@@ -79,9 +81,9 @@ object Journals {
 
   def empty[F[_]: Applicative, E]: Journals[F, E] =
     new Journals[F, E] {
-      def read = Stream.empty[F, E]
-      def append(event: E) = ().pure[F]
-      def flush = ().pure[F]
+      def read                     = Stream.empty[F, E]
+      def append(event: E)         = ().pure[F]
+      def flush                    = ().pure[F]
       def delete(persist: Boolean) = ().pure[F]
     }
 

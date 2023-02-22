@@ -66,7 +66,6 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
   def transformM[T, B](f: T => F[S], g: B => F[A])(h: (S, B) => F[T])(implicit F: Monad[F]): FoldOption[F, T, B] =
     contramapM(g).transformStateM(f)(h)
 
-
   /** Applies `A` second time using another `Fold`.
     *
     * If `None` is returned by first `Fold` then the second will not be executed.
@@ -79,9 +78,9 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     }
 
   /** Applies `A` second time using another `Fold`.
-   *
-   * If `None` is returned by first `Fold` then the second will not be executed.
-   */
+    *
+    * If `None` is returned by first `Fold` then the second will not be executed.
+    */
   def productR(that: FoldOption[F, S, A])(implicit F: Monad[F]): FoldOption[F, S, A] =
     this flatMap { _ => that }
 
@@ -121,7 +120,7 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     */
   def handleErrorWith[E](f: (S, E) => F[S])(implicit F: ApplicativeError[F, E]): FoldOption[F, S, A] =
     FoldOption {
-      value handleErrorWith[E] { (s, e) =>
+      value handleErrorWith [E] { (s, e) =>
         s traverse (f(_, e))
       }
     }

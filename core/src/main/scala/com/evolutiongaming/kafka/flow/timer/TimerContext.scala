@@ -20,21 +20,21 @@ object TimerContext {
 
   def apply[F[_]: Timers: Timestamps]: TimerContext[F] = new TimerContext[F] {
 
-    def current = Timestamps[F].current
+    def current     = Timestamps[F].current
     def persistedAt = Timestamps[F].persistedAt
     def processedAt = Timestamps[F].processedAt
 
     def set(timestamp: Timestamp) = Timestamps[F].set(timestamp)
-    def onPersisted = Timestamps[F].onPersisted
-    def onProcessed = Timestamps[F].onProcessed
+    def onPersisted               = Timestamps[F].onPersisted
+    def onProcessed               = Timestamps[F].onProcessed
 
-    def registerWatermark(timestamp: Instant) = Timers[F].registerWatermark(timestamp)
+    def registerWatermark(timestamp: Instant)  = Timers[F].registerWatermark(timestamp)
     def registerProcessing(timestamp: Instant) = Timers[F].registerProcessing(timestamp)
-    def registerOffset(offset: Offset) = Timers[F].registerOffset(offset)
+    def registerOffset(offset: Offset)         = Timers[F].registerOffset(offset)
 
     def trigger(implicit F: TimerFlow[F]) = Timers[F].trigger
 
-    def flush = Timers[F].flush
+    def flush                    = Timers[F].flush
     def delete(persist: Boolean) = Timers[F].delete(persist)
 
   }

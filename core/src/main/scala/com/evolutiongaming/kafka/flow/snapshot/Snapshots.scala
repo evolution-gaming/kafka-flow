@@ -91,9 +91,9 @@ object Snapshots {
   }
 
   def empty[F[_]: Applicative, S]: Snapshots[F, S] = new Snapshots[F, S] {
-    def read = none[S].pure[F]
-    def append(event: S) = ().pure[F]
-    def flush = ().pure[F]
+    def read                     = none[S].pure[F]
+    def append(event: S)         = ().pure[F]
+    def flush                    = ().pure[F]
     def delete(persist: Boolean) = ().pure[F]
   }
 

@@ -47,13 +47,13 @@ object KeyStateOf {
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = lazyRecovery(
     applicationId = applicationId,
-    groupId = groupId,
-    timersOf = timersOf,
+    groupId       = groupId,
+    timersOf      = timersOf,
     persistenceOf = persistenceOf,
-    timerFlowOf = timerFlowOf,
-    fold = fold,
-    tick = TickOption.id[F, S],
-    registry = registry
+    timerFlowOf   = timerFlowOf,
+    fold          = fold,
+    tick          = TickOption.id[F, S],
+    registry      = registry
   )
 
   /** Does not recover keys until record with such key is encountered.
@@ -76,17 +76,17 @@ object KeyStateOf {
     def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[F]) = {
       implicit val _context = context
       val kafkaKey = KafkaKey(
-        applicationId = applicationId,
-        groupId = groupId,
+        applicationId  = applicationId,
+        groupId        = groupId,
         topicPartition = topicPartition,
-        key = key
+        key            = key
       )
 
       for {
-        timers <- Resource.eval(timersOf(kafkaKey, createdAt))
+        timers      <- Resource.eval(timersOf(kafkaKey, createdAt))
         persistence <- Resource.eval(persistenceOf(kafkaKey, fold, timers))
-        timerFlow <- timerFlowOf(context, persistence, timers)
-        keyFlow <- KeyFlow.of(kafkaKey, fold, tick, persistence, timerFlow, registry)
+        timerFlow   <- timerFlowOf(context, persistence, timers)
+        keyFlow     <- KeyFlow.of(kafkaKey, fold, tick, persistence, timerFlow, registry)
       } yield KeyState(keyFlow, timers)
 
     }
@@ -115,14 +115,14 @@ object KeyStateOf {
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
     applicationId = applicationId,
-    groupId = groupId,
-    keysOf = keysOf,
-    timersOf = timersOf,
+    groupId       = groupId,
+    keysOf        = keysOf,
+    timersOf      = timersOf,
     persistenceOf = persistenceOf,
-    timerFlowOf = timerFlowOf,
-    fold = fold,
-    tick = TickOption.id[F, S],
-    registry = registry
+    timerFlowOf   = timerFlowOf,
+    fold          = fold,
+    tick          = TickOption.id[F, S],
+    registry      = registry
   )
 
   /** Recovers keys as soon as partition is assigned.
@@ -142,15 +142,15 @@ object KeyStateOf {
     tick: TickOption[F, S],
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
-    applicationId = applicationId,
-    groupId = groupId,
-    keysOf = keysOf,
-    timersOf = timersOf,
-    persistenceOf = persistenceOf,
+    applicationId       = applicationId,
+    groupId             = groupId,
+    keysOf              = keysOf,
+    timersOf            = timersOf,
+    persistenceOf       = persistenceOf,
     additionalPersistOf = AdditionalStatePersistOf.empty[F, S],
-    keyFlowOf = KeyFlowOf(timerFlowOf, fold, tick),
-    recover = fold,
-    registry = registry
+    keyFlowOf           = KeyFlowOf(timerFlowOf, fold, tick),
+    recover             = fold,
+    registry            = registry
   )
 
   /** Recovers keys as soon as partition is assigned.
@@ -168,15 +168,15 @@ object KeyStateOf {
     additionalPersistOf: AdditionalStatePersistOf[F, S],
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
-    applicationId = applicationId,
-    groupId = groupId,
-    keysOf = keysOf,
-    timersOf = timersOf,
-    persistenceOf = persistenceOf,
+    applicationId       = applicationId,
+    groupId             = groupId,
+    keysOf              = keysOf,
+    timersOf            = timersOf,
+    persistenceOf       = persistenceOf,
     additionalPersistOf = additionalPersistOf,
-    keyFlowOf = keyFlowOf,
-    recover = FoldOption.empty[F, S, ConsRecord],
-    registry = registry
+    keyFlowOf           = keyFlowOf,
+    recover             = FoldOption.empty[F, S, ConsRecord],
+    registry            = registry
   )
 
   /** Recovers keys as soon as partition is assigned.
@@ -197,15 +197,15 @@ object KeyStateOf {
     keyFlowOf: KeyFlowOf[F, S, ConsRecord],
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
-    applicationId = applicationId,
-    groupId = groupId,
-    keysOf = keysOf,
-    timersOf = timersOf,
-    persistenceOf = persistenceOf,
+    applicationId       = applicationId,
+    groupId             = groupId,
+    keysOf              = keysOf,
+    timersOf            = timersOf,
+    persistenceOf       = persistenceOf,
     additionalPersistOf = AdditionalStatePersistOf.empty[F, S],
-    keyFlowOf = keyFlowOf,
-    recover = FoldOption.empty[F, S, ConsRecord],
-    registry = registry
+    keyFlowOf           = keyFlowOf,
+    recover             = FoldOption.empty[F, S, ConsRecord],
+    registry            = registry
   )
 
   /** Recovers keys as soon as partition is assigned.
@@ -227,16 +227,16 @@ object KeyStateOf {
 
     def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[F]) = {
       val kafkaKey = KafkaKey(
-        applicationId = applicationId,
-        groupId = groupId,
+        applicationId  = applicationId,
+        groupId        = groupId,
         topicPartition = topicPartition,
-        key = key
+        key            = key
       )
       for {
-        timers <- Resource.eval(timersOf(kafkaKey, createdAt))
-        persistence <- Resource.eval(persistenceOf(kafkaKey, recover, timers))
+        timers            <- Resource.eval(timersOf(kafkaKey, createdAt))
+        persistence       <- Resource.eval(persistenceOf(kafkaKey, recover, timers))
         additionalPersist <- Resource.eval(additionalPersistOf(persistence, context))
-        keyFlow <- keyFlowOf(kafkaKey, context, persistence, timers, additionalPersist, registry)
+        keyFlow           <- keyFlowOf(kafkaKey, context, persistence, timers, additionalPersist, registry)
       } yield KeyState(keyFlow, timers)
     }
 

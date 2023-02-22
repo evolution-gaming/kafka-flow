@@ -15,7 +15,7 @@ object KafkaTimer {
 
   sealed trait InstantTimer extends KafkaTimer {
     def value: Instant
-    def toLong: Long = value.toEpochMilli
+    def toLong: Long          = value.toEpochMilli
     def toWindow: TimerWindow = TimerWindow.of(value, 1.day)
   }
   final case class Clock(value: Instant) extends InstantTimer {
@@ -31,8 +31,8 @@ object KafkaTimer {
     def ofEpochMilli(value: Long): Watermark = Watermark(Instant.ofEpochMilli(value))
   }
   final case class Offset(value: KafkaOffset) extends KafkaTimer {
-    def valueType: String = "offset"
-    def toLong: Long = value.value
+    def valueType: String     = "offset"
+    def toLong: Long          = value.value
     def toWindow: TimerWindow = TimerWindow.of(value, 100000)
   }
 

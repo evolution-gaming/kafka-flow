@@ -22,7 +22,7 @@ object CompressorSyntax {
   ) extends ToBytes[F, A] {
     def apply(a: A, topic: Topic): F[Bytes] =
       for {
-        bytes <- self(a, topic)
+        bytes           <- self(a, topic)
         compressedBytes <- compressor.to(ByteVector.view(bytes))
       } yield compressedBytes.toArray
   }
@@ -34,7 +34,7 @@ object CompressorSyntax {
     def apply(bytes: Bytes, topic: Topic): F[A] =
       for {
         decompressed <- compressor.from(ByteVector.view(bytes))
-        value <- self(decompressed.toArray, topic)
+        value        <- self(decompressed.toArray, topic)
       } yield value
   }
 }

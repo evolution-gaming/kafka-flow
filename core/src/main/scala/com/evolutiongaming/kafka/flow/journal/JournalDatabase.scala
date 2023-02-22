@@ -53,7 +53,7 @@ object JournalDatabase {
 
       def persist(key: K, event: E) = storage modify { storage =>
         val existingEvents = storage.getOrElse(key, SortedMap.empty[Offset, E])
-        val updatedEvents = existingEvents + (E.offset(event) -> event)
+        val updatedEvents  = existingEvents + (E.offset(event) -> event)
         storage + (key -> updatedEvents)
       }
 
@@ -69,8 +69,8 @@ object JournalDatabase {
   def empty[F[_]: Applicative, K, R]: JournalDatabase[F, K, R] =
     new JournalDatabase[F, K, R] {
       def persist(key: K, event: R) = ().pure
-      def get(key: K) = Stream.empty
-      def delete(key: K) = ().pure
+      def get(key: K)               = Stream.empty
+      def delete(key: K)            = ().pure
     }
 
 }

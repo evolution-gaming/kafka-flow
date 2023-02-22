@@ -19,10 +19,10 @@ class CompressorSpec extends FunSuite {
 
   test("compression below threshold") {
     val t = for {
-      compressor <- Compressor.of[Try](compressionThreshold = 10000)
-      bytes <- ByteVector.encodeString("test")(Charset.defaultCharset()).toTry
-      compressed <- compressor.to(bytes)
-      uncompressed <- compressor.from(compressed)
+      compressor         <- Compressor.of[Try](compressionThreshold = 10000)
+      bytes              <- ByteVector.encodeString("test")(Charset.defaultCharset()).toTry
+      compressed         <- compressor.to(bytes)
+      uncompressed       <- compressor.from(compressed)
       uncompressedString <- uncompressed.decodeString(Charset.defaultCharset()).toTry
     } yield {
       assertEquals(compressed.length, 9L) // 4-byte string + metainformation
@@ -35,10 +35,10 @@ class CompressorSpec extends FunSuite {
 
   test("compression above threshold") {
     val t = for {
-      compressor <- Compressor.of[Try](compressionThreshold = 1)
-      bytes <- ByteVector.encodeString("test")(Charset.defaultCharset()).toTry
-      compressed <- compressor.to(bytes)
-      uncompressed <- compressor.from(compressed)
+      compressor         <- Compressor.of[Try](compressionThreshold = 1)
+      bytes              <- ByteVector.encodeString("test")(Charset.defaultCharset()).toTry
+      compressed         <- compressor.to(bytes)
+      uncompressed       <- compressor.from(compressed)
       uncompressedString <- uncompressed.decodeString(Charset.defaultCharset()).toTry
     } yield {
       assertEquals(uncompressed.length, bytes.length)
@@ -54,8 +54,8 @@ class CompressorSpec extends FunSuite {
 
   test("backward-compatibility support") {
     val t = for {
-      compressor <- Compressor.of[Try](compressionThreshold = 1)
-      bytes <- ByteVector.encodeString("""{"key":"value"}""")(Charset.defaultCharset()).toTry
+      compressor   <- Compressor.of[Try](compressionThreshold = 1)
+      bytes        <- ByteVector.encodeString("""{"key":"value"}""")(Charset.defaultCharset()).toTry
       uncompressed <- compressor.from(bytes)
     } yield {
       assertEquals(uncompressed, bytes)

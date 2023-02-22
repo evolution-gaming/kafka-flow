@@ -14,7 +14,7 @@ class FoldToStateSpec extends FunSuite {
 
   test("persistence and fold get called correctly") {
 
-    val f = new ConstFixture
+    val f           = new ConstFixture
     val foldToState = FoldToState(f.storage, f.foldUntil(100), f.persistence)
 
     // Given("empty database")
@@ -22,22 +22,26 @@ class FoldToStateSpec extends FunSuite {
 
     // When("several events are sent")
     val program = foldToState(NonEmptyList.of("event1", "event2", "event3"))
-    val result = program.runS(context).value
+    val result  = program.runS(context).value
 
     // Then("no removals are called")
     assert(result.removeCalled == 0)
 
     // And("all events and states get into persistence")
-    assert(result.eventsPersisted.reverse == List(
-      "event1", "event2", "event3"
-    ))
+    assert(
+      result.eventsPersisted.reverse == List(
+        "event1",
+        "event2",
+        "event3"
+      )
+    )
     assert(result.statesPersisted.reverse == List(1, 2, 3))
 
   }
 
   test("delete is called if all messages are processed") {
 
-    val f = new ConstFixture
+    val f           = new ConstFixture
     val foldToState = FoldToState(f.storage, f.foldUntil(3), f.persistence)
 
     // Given("empty database")
@@ -45,7 +49,7 @@ class FoldToStateSpec extends FunSuite {
 
     // When("several events are sent")
     val program = foldToState(NonEmptyList.of("event1", "event2", "event3"))
-    val result = program.runS(context).value
+    val result  = program.runS(context).value
 
     // Then("removal get called")
     assert(result.removeCalled == 1)
@@ -57,7 +61,7 @@ class FoldToStateSpec extends FunSuite {
 
   test("delete is not called if it happens in the middle of the batch") {
 
-    val f = new ConstFixture
+    val f           = new ConstFixture
     val foldToState = FoldToState(f.storage, f.foldUntil(3), f.persistence)
 
     // Given("empty database")
@@ -65,15 +69,21 @@ class FoldToStateSpec extends FunSuite {
 
     // When("several events are sent")
     val program = foldToState(NonEmptyList.of("event1", "event2", "event3", "event4", "event5"))
-    val result = program.runS(context).value
+    val result  = program.runS(context).value
 
     // Then("removal does not get called")
     assert(result.removeCalled == 0)
 
     // And("all persisted events and states are kept")
-    assert(result.eventsPersisted.reverse == List(
-      "event1", "event2", "event3", "event4", "event5"
-    ))
+    assert(
+      result.eventsPersisted.reverse == List(
+        "event1",
+        "event2",
+        "event3",
+        "event4",
+        "event5"
+      )
+    )
     assert(result.statesPersisted.reverse == List(1, 2, 1, 2))
 
   }
@@ -84,10 +94,10 @@ object FoldToStateSpec {
   type F[T] = State[Context, T]
 
   case class Context(
-    state: Option[Int] = None,
+    state: Option[Int]            = None,
     eventsPersisted: List[String] = Nil,
-    statesPersisted: List[Int] = Nil,
-    removeCalled: Int = 0
+    statesPersisted: List[Int]    = Nil,
+    removeCalled: Int             = 0
   )
 
   class ConstFixture {
@@ -103,7 +113,7 @@ object FoldToStateSpec {
     }
 
     val persistence: Persistence[F, Int, String] = new Persistence[F, Int, String] {
-      def read = State.pure(None)
+      def read  = State.pure(None)
       def flush = State.empty
       def appendEvent(event: String) = State.modify { context =>
         context.copy(eventsPersisted = event :: context.eventsPersisted)
@@ -119,7 +129,7 @@ object FoldToStateSpec {
   }
 
   implicit val keyContext: KeyContext[F] = new KeyContext[F] {
-    def holding = State.pure(None)
+    def holding              = State.pure(None)
     def hold(offset: Offset) = State.empty
     def remove: F[Unit] = State.modify { context =>
       context.copy(removeCalled = context.removeCalled + 1)

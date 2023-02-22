@@ -14,7 +14,7 @@ class KeysSpec extends FunSuite {
 
     // Given("empty database")
     val database = KeyDatabase.memory(f.database)
-    val keys = Keys("key1", database)
+    val keys     = Keys("key1", database)
 
     // When("Keys is flushed")
     val program = keys.flush
@@ -31,13 +31,13 @@ class KeysSpec extends FunSuite {
     val f = new ConstFixture
 
     // Given("database with contents")
-    val database = KeyDatabase.memory(f.database)
+    val database  = KeyDatabase.memory(f.database)
     val snapshots = Keys("key1", database)
-    val context = Set("key1")
+    val context   = Set("key1")
 
     // When("delete is requested")
     val program = snapshots.delete(true)
-    val result = program.runS(context).value
+    val result  = program.runS(context).value
 
     // Then("key is deleted")
     assert(result.isEmpty)
@@ -49,13 +49,13 @@ class KeysSpec extends FunSuite {
     val f = new ConstFixture
 
     // Given("database with contents")
-    val database = KeyDatabase.memory(f.database)
+    val database  = KeyDatabase.memory(f.database)
     val snapshots = Keys("key1", database)
-    val context = Set("key1")
+    val context   = Set("key1")
 
     // When("delete is requested")
     val program = snapshots.delete(false)
-    val result = program.runS(context).value
+    val result  = program.runS(context).value
 
     // Then("key is not deleted")
     assert(result.nonEmpty)

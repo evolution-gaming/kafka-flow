@@ -11,7 +11,6 @@ import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.evolutiongaming.scassandra.util.FromGFuture
 import com.google.common.util.concurrent.ListenableFuture
 
-
 trait CassandraModule[F[_]] {
   def session: SafeSession[F]
   def sync: CassandraSync[F]
@@ -47,14 +46,15 @@ object CassandraModule {
       fromGFuture = new FromGFuture[F] {
         val self = FromGFuture.lift1[F]
         def apply[A](future: => ListenableFuture[A]) = {
-          self(future) onError { case e =>
-            log.error("Cassandra request failed", e)
+          self(future) onError {
+            case e =>
+              log.error("Cassandra request failed", e)
           }
         }
       }
       clusterOf <- Resource.eval(clusterOf[F](fromGFuture))
-      cluster <- clusterOf(config.client)
-      keyspace = config.schema.keyspace
+      cluster   <- clusterOf(config.client)
+      keyspace   = config.schema.keyspace
       globalSession = {
         LogResource[F](CassandraModule.getClass, "CassandraGlobal") *>
           cluster.connect
@@ -67,19 +67,19 @@ object CassandraModule {
       syncSession <- if (keyspace.autoCreate) globalSession else keyspaceSession
       _sync <- Resource.eval(
         CassandraSync.of[F](
-          session = syncSession,
-          keyspace = keyspace.name,
+          session    = syncSession,
+          keyspace   = keyspace.name,
           autoCreate = if (keyspace.autoCreate) AutoCreate.KeyspaceAndTable.Default else AutoCreate.None
         )
       )
       // `syncSession` is `keyspaceSession` if `autoCreate` was disabled,
       // no need to reconnect
       unsafeSession <- if (keyspace.autoCreate) keyspaceSession else Resource.eval(syncSession.pure[F])
-      _session <- SafeSession.of(unsafeSession)
-      _healthCheck <- CassandraHealthCheckOf(unsafeSession, config)
+      _session      <- SafeSession.of(unsafeSession)
+      _healthCheck  <- CassandraHealthCheckOf(unsafeSession, config)
     } yield new CassandraModule[F] {
-      def session = _session
-      def sync = _sync
+      def session     = _session
+      def sync        = _sync
       def healthCheck = _healthCheck
     }
 

@@ -18,14 +18,14 @@ class SnapshotsSpec extends FunSuite {
     val f = new ConstFixture
 
     // Given("empty database")
-    val database = SnapshotDatabase.memory(f.database)
+    val database  = SnapshotDatabase.memory(f.database)
     val snapshots = Snapshots("key1", database, f.buffer)
 
     // When("buffer is filled with state")
     val program =
       snapshots.append(100) *>
-      snapshots.append(101) *>
-      snapshots.append(102)
+        snapshots.append(101) *>
+        snapshots.append(102)
 
     val result = program.runS(Context()).value
 
@@ -39,16 +39,16 @@ class SnapshotsSpec extends FunSuite {
     val f = new ConstFixture
 
     // Given("empty database")
-    val database = SnapshotDatabase.memory(f.database)
+    val database  = SnapshotDatabase.memory(f.database)
     val snapshots = Snapshots("key1", database, f.buffer)
 
     // When("buffer is filled with state")
     // And("Snapshots is flushed")
     val program =
       snapshots.append(100) *>
-      snapshots.append(101) *>
-      snapshots.append(102) *>
-      snapshots.flush
+        snapshots.append(101) *>
+        snapshots.append(102) *>
+        snapshots.flush
 
     val result = program.runS(Context()).value
 
@@ -62,16 +62,16 @@ class SnapshotsSpec extends FunSuite {
     val f = new ConstFixture
 
     // Given("database with contents")
-    val database = SnapshotDatabase.memory(f.database)
+    val database  = SnapshotDatabase.memory(f.database)
     val snapshots = Snapshots("key1", database, f.buffer)
     val context = Context(
       database = Map("key1" -> 102),
-      buffer = Some(Snapshots.Snapshot(103, persisted = false))
+      buffer   = Some(Snapshots.Snapshot(103, persisted = false))
     )
 
     // When("delete is requested")
     val program = snapshots.delete(true)
-    val result = program.runS(context).value
+    val result  = program.runS(context).value
 
     // Then("buffer is cleared")
     assert(result.buffer.isEmpty)
@@ -85,16 +85,16 @@ class SnapshotsSpec extends FunSuite {
     val f = new ConstFixture
 
     // Given("database with contents")
-    val database = SnapshotDatabase.memory(f.database)
+    val database  = SnapshotDatabase.memory(f.database)
     val snapshots = Snapshots("key1", database, f.buffer)
     val context = Context(
       database = Map("key1" -> 102),
-      buffer = Some(Snapshots.Snapshot(103, persisted = false))
+      buffer   = Some(Snapshots.Snapshot(103, persisted = false))
     )
 
     // When("delete is requested")
     val program = snapshots.delete(false)
-    val result = program.runS(context).value
+    val result  = program.runS(context).value
 
     // Then("buffer is cleared")
     assert(result.buffer.isEmpty)
@@ -108,16 +108,16 @@ class SnapshotsSpec extends FunSuite {
     val f = new ConstFixture
 
     // Given("database with contents")
-    val database = countingSnapshotDb(f.database)
+    val database  = countingSnapshotDb(f.database)
     val snapshots = Snapshots("key1", database, f.buffer)
     val context = Context(
       database = Map("key1" -> 102),
-      buffer = Some(Snapshots.Snapshot(103, persisted = false))
+      buffer   = Some(Snapshots.Snapshot(103, persisted = false))
     )
 
     // When("flush is requested multiple times")
     val program = snapshots.flush *> snapshots.flush *> snapshots.flush
-    val result = program.runS(context).value
+    val result  = program.runS(context).value
 
     // Then("state gets into database1")
     assertEquals(result.database.get("key1"), Some(103))
@@ -136,13 +136,13 @@ object SnapshotsSpec {
   type S = Int
 
   case class Context(
-    database: Map[K, S] = Map.empty,
+    database: Map[K, S]                   = Map.empty,
     buffer: Option[Snapshots.Snapshot[S]] = None
   )
 
   class ConstFixture {
     val database = Stateful[F, Context] focus GenLens[Context](_.database)
-    val buffer = Stateful[F, Context] focus GenLens[Context](_.buffer)
+    val buffer   = Stateful[F, Context] focus GenLens[Context](_.buffer)
   }
 
   implicit val log: Log[F] = Log.empty[F]
@@ -155,7 +155,7 @@ object SnapshotsSpec {
 
   def countingSnapshotDb(storage: Stateful[F, Map[K, S]]): SnapshotDatabaseWithPersistCount = {
     new SnapshotDatabaseWithPersistCount {
-      val db = SnapshotDatabase.memory(storage)
+      val db             = SnapshotDatabase.memory(storage)
       var persistCounter = 0
       def persist(key: K, snapshot: S) = {
         persistCounter += 1

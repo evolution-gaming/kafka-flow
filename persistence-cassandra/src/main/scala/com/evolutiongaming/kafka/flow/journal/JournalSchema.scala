@@ -18,8 +18,9 @@ private[journal] object JournalSchema {
     synchronize: CassandraSync[F]
   ): JournalSchema[F] = new JournalSchema[F] {
     def create = synchronize("JournalSchema") {
-      session.execute(
-        """CREATE TABLE IF NOT EXISTS records(
+      session
+        .execute(
+          """CREATE TABLE IF NOT EXISTS records(
           |application_id TEXT,
           |group_id TEXT,
           |topic TEXT,
@@ -35,7 +36,9 @@ private[journal] object JournalSchema {
           |PRIMARY KEY((application_id, group_id, topic, partition, key), offset)
           |)
           |""".stripMargin
-      ).first.void
+        )
+        .first
+        .void
     }
     def truncate = synchronize("JournalSchema") {
       session.execute("TRUNCATE records").first.void

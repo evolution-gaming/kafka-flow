@@ -12,8 +12,8 @@ object KeyStateMetrics {
 
   implicit def keyStateOfMetricsOf[F[_]: Monad]: MetricsOf[F, KeyStateOf[F]] = { registry =>
     registry.gauge(
-      name = "key_flow_count",
-      help = "The number of active key flows",
+      name   = "key_flow_count",
+      help   = "The number of active key flows",
       labels = LabelNames("topic")
     ) map { countGauge =>
       def count(topic: String) = {

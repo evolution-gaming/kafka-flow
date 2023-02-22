@@ -33,7 +33,7 @@ object KafkaFlow {
 
     val retry = for {
       random <- Random.State.fromClock[F]()
-      log <- LogOf[F].apply(KafkaFlow.getClass)
+      log    <- LogOf[F].apply(KafkaFlow.getClass)
     } yield Retry(
       strategy = Strategy
         .exponential(100.millis)
@@ -62,10 +62,10 @@ object KafkaFlow {
     flowOf: ConsumerFlowOf[F]
   ): Stream[F, ConsRecords] =
     for {
-      _ <- Stream.around(Retry[F].toFunctionK)
+      _        <- Stream.around(Retry[F].toFunctionK)
       consumer <- Stream.fromResource(consumer)
-      flow <- Stream.fromResource(flowOf(consumer))
-      records <- flow.stream
+      flow     <- Stream.fromResource(flowOf(consumer))
+      records  <- flow.stream
     } yield records
 
   /** Process records from consumer with given flow and retry strategy
@@ -79,10 +79,13 @@ object KafkaFlow {
     consumer: Resource[F, Consumer[F]],
     flowOf: ConsumerFlowOf[F]
   ): Resource[F, F[Unit]] =
-    stream(consumer, flowOf).drain.background.map(_.flatMap {
-      case Outcome.Succeeded(fa) => fa
-      case Outcome.Errored(e)    => e.raiseError[F, Unit]
-      case Outcome.Canceled()    => Concurrent[F].canceled
-    })
+    stream(consumer, flowOf)
+      .drain
+      .background
+      .map(_.flatMap {
+        case Outcome.Succeeded(fa) => fa
+        case Outcome.Errored(e)    => e.raiseError[F, Unit]
+        case Outcome.Canceled()    => Concurrent[F].canceled
+      })
 
 }

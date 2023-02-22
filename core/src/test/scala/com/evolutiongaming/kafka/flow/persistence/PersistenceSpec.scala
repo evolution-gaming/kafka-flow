@@ -23,9 +23,9 @@ class PersistenceSpec extends FunSuite {
     // And("delete requested")
     val program =
       f.persistence.appendEvent("event1") *>
-      f.persistence.replaceState(0) *>
-      f.persistence.flush *>
-      f.persistence.delete
+        f.persistence.replaceState(0) *>
+        f.persistence.flush *>
+        f.persistence.delete
 
     // When("program is run")
     val context = program.runS(Context()).value
@@ -42,7 +42,7 @@ class PersistenceSpec extends FunSuite {
     // And("delete requested")
     val program =
       f.persistence.read *>
-      f.persistence.delete
+        f.persistence.delete
 
     // When("program is run")
     val context = program.runS(Context()).value
@@ -58,8 +58,8 @@ class PersistenceSpec extends FunSuite {
     // And("delete requested")
     val program =
       f.persistence.appendEvent("event1") *>
-      f.persistence.replaceState(0) *>
-      f.persistence.delete
+        f.persistence.replaceState(0) *>
+        f.persistence.delete
 
     // When("program is run")
     val context = program.runS(Context()).value
@@ -75,7 +75,7 @@ class PersistenceSpec extends FunSuite {
     // And("delete is called")
     val program =
       f.persistence.read *>
-      f.persistence.delete
+        f.persistence.delete
 
     // When("program is run")
     val context = program.runS(Context()).value
@@ -89,11 +89,13 @@ object PersistenceSpec {
 
   type F[T] = State[Context, T]
   case class Context(
-    timestamps: TimestampState = TimestampState(Timestamp(
-      clock = Instant.parse("2020-01-01T01:02:03.004Z"),
-      watermark = None,
-      offset = Offset.min
-    )),
+    timestamps: TimestampState = TimestampState(
+      Timestamp(
+        clock     = Instant.parse("2020-01-01T01:02:03.004Z"),
+        watermark = None,
+        offset    = Offset.min
+      )
+    ),
     deleteCalled: Boolean = false
   )
 
@@ -101,18 +103,18 @@ object PersistenceSpec {
 
     val buffers: Buffers[F, Int, String] = new Buffers[F, Int, String] {
       def appendEvent(event: String) = ().pure[F]
-      def replaceState(state: Int) = ().pure[F]
+      def replaceState(state: Int)   = ().pure[F]
       def delete(persist: Boolean) = State.modify { context =>
         context.copy(deleteCalled = persist)
       }
-      def flushKeys = ().pure[F]
+      def flushKeys  = ().pure[F]
       def flushState = ().pure[F]
     }
 
     val timestamp: Timestamp = Timestamp(
-      clock = Instant.parse("2020-01-01T01:02:03.004Z"),
+      clock     = Instant.parse("2020-01-01T01:02:03.004Z"),
       watermark = None,
-      offset = Offset.min
+      offset    = Offset.min
     )
 
     implicit val timestamps: Timestamps[F] = Timestamps(
@@ -121,7 +123,7 @@ object PersistenceSpec {
 
     val persistence: Persistence[F, Int, String] = Persistence(
       readState = ReadState.pure(state),
-      buffers = buffers
+      buffers   = buffers
     )
 
   }
