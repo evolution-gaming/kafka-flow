@@ -14,7 +14,7 @@ object KafkaSnapshotReadDatabase {
   ): SnapshotReadDatabase[F, KafkaKey, S] =
     key =>
       for {
-        state <- getState(key.key)
+        state      <- getState(key.key)
         maybeState <- state.traverse(bytes => FromBytes[F, S].apply(bytes.toArray, snapshotTopic))
       } yield maybeState
 }

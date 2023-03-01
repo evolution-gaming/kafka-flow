@@ -26,14 +26,14 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow flushes after 3 messages accumulated")
     val startedAt = f.timestamp.copy(offset = Offset.unsafe(1234))
-    val context = Context(timestamps = TimestampState(startedAt))
-    val flowOf = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val context   = Context(timestamps = TimestampState(startedAt))
+    val flowOf    = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
+    val flow      = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("flow is started")
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- flow.use { _ => IO.unit }
+      _      <- f.contextRef.set(context)
+      _      <- flow.use { _ => IO.unit }
       result <- f.contextRef.get
     } yield {
       // Then("offset is being held")
@@ -41,7 +41,7 @@ class TimerFlowOfSpec extends FunSuite {
       assertEquals(result.flushed, 0)
       assertEquals(result.removed, 0)
     }
-    
+
     testIO.unsafeRunSync()
   }
 
@@ -51,20 +51,20 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow flushes after 3 messages accumulated")
     val context = Context(timestamps = TimestampState(f.timestamp))
-    val flowOf = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val flowOf  = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
+    val flow    = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("timers trigger called")
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- flow.use { flow => f.timerContext.trigger(flow) }
-      result <-  f.contextRef.get
+      _      <- f.contextRef.set(context)
+      _      <- flow.use { flow => f.timerContext.trigger(flow) }
+      result <- f.contextRef.get
     } yield {
       // Then("flush does not happen")
       assertEquals(result.flushed, 0)
       assertEquals(result.removed, 0)
     }
-    
+
     testIO.unsafeRunSync()
   }
 
@@ -74,9 +74,9 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow flushes after 3 messages accumulated")
     val startedAt = f.timestamp.copy(offset = Offset.unsafe(1000))
-    val context = Context(timestamps = TimestampState(startedAt))
-    val flowOf = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val context   = Context(timestamps = TimestampState(startedAt))
+    val flowOf    = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
+    val flow      = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("timers trigger called")
     val program = flow use { flow =>
@@ -89,17 +89,17 @@ class TimerFlowOfSpec extends FunSuite {
         f.timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1004))) *>
         f.timerContext.trigger(flow)
     }
-    
+
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- program
+      _      <- f.contextRef.set(context)
+      _      <- program
       result <- f.contextRef.get
     } yield {
       // Then("flush happens and remove happens")
       assertEquals(result.flushed, 1)
       assertEquals(result.removed, 1)
     }
-    
+
     testIO.unsafeRunSync()
   }
 
@@ -109,9 +109,9 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow flushes after 3 messages accumulated")
     val startedAt = f.timestamp.copy(offset = Offset.unsafe(1000))
-    val context = Context(timestamps = TimestampState(startedAt))
-    val flowOf = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val context   = Context(timestamps = TimestampState(startedAt))
+    val flowOf    = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
+    val flow      = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("timers trigger called")
     val program = flow use { flow =>
@@ -122,17 +122,17 @@ class TimerFlowOfSpec extends FunSuite {
         f.timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1003))) *>
         f.timerContext.trigger(flow)
     }
-    
+
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- program
+      _      <- f.contextRef.set(context)
+      _      <- program
       result <- f.contextRef.get
     } yield {
       // Then("neither flush or remove happens")
       assertEquals(result.flushed, 0)
       assertEquals(result.removed, 0)
     }
-    
+
     testIO.unsafeRunSync()
   }
 
@@ -142,9 +142,9 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow flushes after 3 messages accumulated")
     val startedAt = f.timestamp.copy(offset = Offset.unsafe(1000))
-    val context = Context(timestamps = TimestampState(startedAt))
-    val flowOf = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val context   = Context(timestamps = TimestampState(startedAt))
+    val flowOf    = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
+    val flow      = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("timers trigger called")
     val program = flow use { flow =>
@@ -159,10 +159,9 @@ class TimerFlowOfSpec extends FunSuite {
         f.timerContext.trigger(flow)
     }
 
-
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- program
+      _      <- f.contextRef.set(context)
+      _      <- program
       result <- f.contextRef.get
     } yield {
       // Then("neither flush or remove happens")
@@ -179,15 +178,15 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow is configured to flush on revoke")
     val context = Context(timestamps = TimestampState(f.timestamp))
-    val flowOf = TimerFlowOf.unloadOrphaned[IO](flushOnRevoke = true)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val flowOf  = TimerFlowOf.unloadOrphaned[IO](flushOnRevoke = true)
+    val flow    = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("flow is started and cancelled")
     val program = flow use { _ => ().pure[IO] }
 
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- program
+      _      <- f.contextRef.set(context)
+      _      <- program
       result <- f.contextRef.get
     } yield {
       // Then("state is flushed and removed")
@@ -205,15 +204,15 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow is configured to flush on revoke")
     val context = Context(timestamps = TimestampState(f.timestamp))
-    val flowOf = TimerFlowOf.unloadOrphaned[IO](flushOnRevoke = false)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val flowOf  = TimerFlowOf.unloadOrphaned[IO](flushOnRevoke = false)
+    val flow    = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("flow is started and cancelled")
     val program = flow use { _ => ().pure[IO] }
 
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- program
+      _      <- f.contextRef.set(context)
+      _      <- program
       result <- f.contextRef.get
     } yield {
       // Then("neither flush or remove happens")
@@ -231,11 +230,11 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow flushes after 3 messages accumulated")
     val startedAt = f.timestamp.copy(offset = Offset.unsafe(1000))
-    val context = Context(timestamps = TimestampState(startedAt))
+    val context   = Context(timestamps = TimestampState(startedAt))
     val flowOf = TimerFlowOf.unloadOrphaned[IO](
-      fireEvery = 0.minutes,
+      fireEvery           = 0.minutes,
       maxOffsetDifference = 3,
-      flushOnRevoke = true
+      flushOnRevoke       = true
     )
     val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
@@ -250,10 +249,14 @@ class TimerFlowOfSpec extends FunSuite {
         f.timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1004))) *>
         f.timerContext.trigger(flow) *>
         // Then("flush happens and remove happens before resource is closed")
-        f.contextRef.get.flatMap(ctx => IO {
-          assertEquals(ctx.flushed, 1)
-          assertEquals(ctx.removed, 1)
-        })
+        f.contextRef
+          .get
+          .flatMap(ctx =>
+            IO {
+              assertEquals(ctx.flushed, 1)
+              assertEquals(ctx.removed, 1)
+            }
+          )
     }
 
     program.unsafeRunSync()
@@ -266,9 +269,9 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow persists every minute")
     val startedAt = f.timestamp.copy(offset = Offset.unsafe(1234))
-    val context = Context(timestamps = TimestampState(startedAt))
-    val flowOf = TimerFlowOf.persistPeriodically[IO](1.minute)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val context   = Context(timestamps = TimestampState(startedAt))
+    val flowOf    = TimerFlowOf.persistPeriodically[IO](1.minute)
+    val flow      = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("flow is started")
     val testIO = f.contextRef.set(context) >> flow.use { _ =>
@@ -290,18 +293,17 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow persists every minute")
     val context = Context(timestamps = TimestampState(f.timestamp))
-    val flowOf = TimerFlowOf.persistPeriodically[IO](1.minute)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val flowOf  = TimerFlowOf.persistPeriodically[IO](1.minute)
+    val flow    = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("timers trigger called")
     val program = flow use { flow =>
       f.timerContext.trigger(flow)
     }
 
-
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- program
+      _      <- f.contextRef.set(context)
+      _      <- program
       result <- f.contextRef.get
     } yield {
       // Then("flush does not happen")
@@ -323,36 +325,42 @@ class TimerFlowOfSpec extends FunSuite {
       )
     )
     val flowOf = TimerFlowOf.persistPeriodically[IO](1.minute)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val flow   = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("timers trigger called")
     val program = flow use { flow =>
-      f.timerContext.set(
-        f.timestamp.copy(
-          offset = Offset.unsafe(101),
-          clock = Instant.parse("2020-03-01T00:01:00.000Z")
-        )
-      ) *>
-        f.timerContext.trigger(flow) *>
-        f.timerContext.set(
-          f.timestamp.copy(
-            offset = Offset.unsafe(102),
-            clock = Instant.parse("2020-03-01T00:02:00.000Z")
-          )
+      f.timerContext
+        .set(
+          f.timestamp
+            .copy(
+              offset = Offset.unsafe(101),
+              clock  = Instant.parse("2020-03-01T00:01:00.000Z")
+            )
         ) *>
         f.timerContext.trigger(flow) *>
-        f.timerContext.set(
-          f.timestamp.copy(
-            offset = Offset.unsafe(103),
-            clock = Instant.parse("2020-03-01T00:03:00.000Z")
-          )
-        ) *>
+        f.timerContext
+          .set(
+            f.timestamp
+              .copy(
+                offset = Offset.unsafe(102),
+                clock  = Instant.parse("2020-03-01T00:02:00.000Z")
+              )
+          ) *>
+        f.timerContext.trigger(flow) *>
+        f.timerContext
+          .set(
+            f.timestamp
+              .copy(
+                offset = Offset.unsafe(103),
+                clock  = Instant.parse("2020-03-01T00:03:00.000Z")
+              )
+          ) *>
         f.timerContext.trigger(flow)
     }
 
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- program
+      _      <- f.contextRef.set(context)
+      _      <- program
       result <- f.contextRef.get
     } yield {
       // Then("flush happens 3 times, but remove never happens")
@@ -372,13 +380,13 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow is configured to flush on revoke")
     val context = Context(timestamps = TimestampState(f.timestamp))
-    val flowOf = TimerFlowOf.persistPeriodically[IO](flushOnRevoke = true)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val flowOf  = TimerFlowOf.persistPeriodically[IO](flushOnRevoke = true)
+    val flow    = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("flow is started and cancelled")
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- flow use { _ => IO.unit }
+      _      <- f.contextRef.set(context)
+      _      <- flow use { _ => IO.unit }
       result <- f.contextRef.get
     } yield {
       // Then("state is flushed and removed")
@@ -395,13 +403,13 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flow is configured to flush on revoke")
     val context = Context(timestamps = TimestampState(f.timestamp))
-    val flowOf = TimerFlowOf.persistPeriodically[IO](flushOnRevoke = false)
-    val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+    val flowOf  = TimerFlowOf.persistPeriodically[IO](flushOnRevoke = false)
+    val flow    = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
 
     // When("flow is started and cancelled")
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- flow use { _ => ().pure[IO] }
+      _      <- f.contextRef.set(context)
+      _      <- flow use { _ => ().pure[IO] }
       result <- f.contextRef.get
     } yield {
       // Then("neither flush or remove happens")
@@ -420,8 +428,8 @@ class TimerFlowOfSpec extends FunSuite {
     // Given("flow is configured to flush on revoke")
     val context = Context(timestamps = TimestampState(f.timestamp))
     val flowOf = TimerFlowOf.persistPeriodically[IO](
-      fireEvery = 0.seconds,
-      persistEvery = 0.seconds,
+      fireEvery     = 0.seconds,
+      persistEvery  = 0.seconds,
       flushOnRevoke = true
     )
     val flow = flowOf(f.keyContext, f.flushBuffers, f.timerContext)
@@ -455,24 +463,30 @@ class TimerFlowOfSpec extends FunSuite {
       )
     )
     val flowOf = TimerFlowOf.persistPeriodically[IO](1.minute, ignorePersistErrors = false)
-    val flow = flowOf(f.keyContext, flushBuffersErr, f.timerContext)
+    val flow   = flowOf(f.keyContext, flushBuffersErr, f.timerContext)
 
     // When("timers trigger called")
     val program = f.contextRef.set(context) >> flow.use { flow =>
       for {
-        _ <- f.timerContext.set(
-          f.timestamp.copy(
-            offset = Offset.unsafe(101),
-            clock = Instant.parse("2020-03-01T00:01:00.000Z")
+        _ <- f
+          .timerContext
+          .set(
+            f.timestamp
+              .copy(
+                offset = Offset.unsafe(101),
+                clock  = Instant.parse("2020-03-01T00:01:00.000Z")
+              )
           )
-        )
         _ <- f.timerContext.trigger(flow)
-        _ <- f.timerContext.set(
-          f.timestamp.copy(
-            offset = Offset.unsafe(102),
-            clock = Instant.parse("2020-03-01T00:02:00.000Z")
+        _ <- f
+          .timerContext
+          .set(
+            f.timestamp
+              .copy(
+                offset = Offset.unsafe(102),
+                clock  = Instant.parse("2020-03-01T00:02:00.000Z")
+              )
           )
-        )
         _ <- f.timerContext.trigger(flow)
       } yield ()
     }
@@ -501,31 +515,37 @@ class TimerFlowOfSpec extends FunSuite {
       )
     )
     val flowOf = TimerFlowOf.persistPeriodically[IO](1.minute, ignorePersistErrors = true)
-    val flow = flowOf(f.keyContext, flushBuffersErr, f.timerContext)
+    val flow   = flowOf(f.keyContext, flushBuffersErr, f.timerContext)
 
     // When("timers trigger called")
     val program = flow use { flow =>
       for {
-        _ <- f.timerContext.set(
-          f.timestamp.copy(
-            offset = Offset.unsafe(101),
-            clock = Instant.parse("2020-03-01T00:01:00.000Z")
+        _ <- f
+          .timerContext
+          .set(
+            f.timestamp
+              .copy(
+                offset = Offset.unsafe(101),
+                clock  = Instant.parse("2020-03-01T00:01:00.000Z")
+              )
           )
-        )
         _ <- f.timerContext.trigger(flow)
-        _ <- f.timerContext.set(
-          f.timestamp.copy(
-            offset = Offset.unsafe(102),
-            clock = Instant.parse("2020-03-01T00:02:00.000Z")
+        _ <- f
+          .timerContext
+          .set(
+            f.timestamp
+              .copy(
+                offset = Offset.unsafe(102),
+                clock  = Instant.parse("2020-03-01T00:02:00.000Z")
+              )
           )
-        )
         _ <- f.timerContext.trigger(flow)
       } yield ()
     }
 
     val testIO = for {
-      _ <- f.contextRef.set(context)
-      _ <- program
+      _      <- f.contextRef.set(context)
+      _      <- program
       result <- f.contextRef.get
     } yield {
       // Then("flush and remove never happen")
@@ -545,7 +565,7 @@ object TimerFlowSpec {
 
   case class Context(
     holding: Option[Offset] = None,
-    timers: TimerState = TimerState(),
+    timers: TimerState      = TimerState(),
     timestamps: TimestampState,
     removed: Int = 0,
     flushed: Int = 0
@@ -559,9 +579,9 @@ object TimerFlowSpec {
     import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 
     val timestamp: Timestamp = Timestamp(
-      offset = Offset.unsafe(100),
+      offset    = Offset.unsafe(100),
       watermark = Some(Instant.parse("2020-03-01T00:00:00.000Z")),
-      clock = Instant.parse("2020-03-01T00:00:00.000Z")
+      clock     = Instant.parse("2020-03-01T00:00:00.000Z")
     )
 
     val contextRef: Ref[IO, Context] =
@@ -569,7 +589,7 @@ object TimerFlowSpec {
 
     implicit val keyContext: KeyContext[IO] =
       KeyContext(
-        storage = contextRef.stateInstance.focus(Context.lens(_.holding)),
+        storage         = contextRef.stateInstance.focus(Context.lens(_.holding)),
         removeFromCache = contextRef.update(ctx => ctx.copy(removed = ctx.removed + 1))
       )
 

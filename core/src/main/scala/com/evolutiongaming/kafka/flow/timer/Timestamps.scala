@@ -62,7 +62,7 @@ object Timestamps {
     storage: Stateful[F, TimestampState]
   ): Timestamps[F] = new Timestamps[F] {
 
-    def current = storage.get map (_.current)
+    def current     = storage.get map (_.current)
     def persistedAt = storage.get map (_.persisted)
     def processedAt = storage.get map (_.processed)
 

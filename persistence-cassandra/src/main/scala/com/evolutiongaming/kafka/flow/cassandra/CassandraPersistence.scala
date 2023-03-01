@@ -26,10 +26,7 @@ object CassandraPersistence {
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
-  )(implicit
-    fromBytes: FromBytes[F, S],
-    toBytes: ToBytes[F, S]
-  ): F[PersistenceModule[F, S]] =
+  )(implicit fromBytes: FromBytes[F, S], toBytes: ToBytes[F, S]): F[PersistenceModule[F, S]] =
     withSchemaF(session, sync, consistencyOverrides, CassandraKeys.DefaultSegments)
 
   /** Creates schema in Cassandra if not there yet. */
@@ -38,16 +35,13 @@ object CassandraPersistence {
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
     keysSegments: Segments
-  )(implicit
-    fromBytes: FromBytes[F, S],
-    toBytes: ToBytes[F, S]
-  ): F[PersistenceModule[F, S]] = for {
-    _keys <- CassandraKeys.withSchema(session, sync, consistencyOverrides, keysSegments)
-    _journals <- CassandraJournals.withSchema(session, sync, consistencyOverrides)
+  )(implicit fromBytes: FromBytes[F, S], toBytes: ToBytes[F, S]): F[PersistenceModule[F, S]] = for {
+    _keys      <- CassandraKeys.withSchema(session, sync, consistencyOverrides, keysSegments)
+    _journals  <- CassandraJournals.withSchema(session, sync, consistencyOverrides)
     _snapshots <- CassandraSnapshots.withSchema[F, S](session, sync, consistencyOverrides)
   } yield new CassandraPersistence[F, S] {
-    def keys = _keys
-    def journals = _journals
+    def keys      = _keys
+    def journals  = _journals
     def snapshots = _snapshots
   }
 
@@ -66,10 +60,8 @@ object CassandraPersistence {
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
-  )(implicit
-    fromBytes: FromBytes[Try, S],
-    toBytes: ToBytes[Try, S]
-  ): F[PersistenceModule[F, S]] = withSchema(session, sync, consistencyOverrides, CassandraKeys.DefaultSegments)
+  )(implicit fromBytes: FromBytes[Try, S], toBytes: ToBytes[Try, S]): F[PersistenceModule[F, S]] =
+    withSchema(session, sync, consistencyOverrides, CassandraKeys.DefaultSegments)
 
   /** Creates schema in Cassandra if not there yet
     *
@@ -84,13 +76,10 @@ object CassandraPersistence {
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
     keysSegments: Segments
-  )(implicit
-    fromBytes: FromBytes[Try, S],
-    toBytes: ToBytes[Try, S]
-  ): F[PersistenceModule[F, S]] = {
-    val fromTry = FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
+  )(implicit fromBytes: FromBytes[Try, S], toBytes: ToBytes[Try, S]): F[PersistenceModule[F, S]] = {
+    val fromTry             = FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
     implicit val _fromBytes = fromBytes mapK fromTry
-    implicit val _toBytes = toBytes mapK fromTry
+    implicit val _toBytes   = toBytes mapK fromTry
     withSchemaF(session, sync, consistencyOverrides, keysSegments)
   }
 

@@ -21,17 +21,17 @@ class JournalDatabaseSpec extends FunSuite {
 
     // When("update is performed")
     val program =
-      database.persist("key1", 100 -> "event1") *>
-      database.persist("key1", 101 -> "event2") *>
-      database.persist("key1", 102 -> "event3") *>
-      database.get("key1").toList
+      database.persist("key1", 100   -> "event1") *>
+        database.persist("key1", 101 -> "event2") *>
+        database.persist("key1", 102 -> "event3") *>
+        database.get("key1").toList
 
     val result = program.runA(Map.empty).value
 
     // Then("records go to the database")
     assert(
       result ==
-      List(100 -> "event1", 101 -> "event2", 102 -> "event3")
+        List(100 -> "event1", 101 -> "event2", 102 -> "event3")
     )
 
   }
@@ -53,7 +53,7 @@ class JournalDatabaseSpec extends FunSuite {
     // When("wrong key gets deleted")
     val program =
       database.delete("key2") *>
-      database.get("key1").toList
+        database.get("key1").toList
 
     // Then("records do not disappear the database")
     val result = program.runA(context).value
@@ -78,7 +78,7 @@ class JournalDatabaseSpec extends FunSuite {
     // When("right key gets deleted")
     val program =
       database.delete("key1") *>
-      database.get("key1").toList
+        database.get("key1").toList
 
     // Then("records disappear from the database")
     val result = program.runA(context).value
@@ -91,16 +91,17 @@ object JournalDatabaseSpec {
 
   type F[T] = State[Context, T]
 
-  type K = String
-  type E = (Int, String)
+  type K       = String
+  type E       = (Int, String)
   type Context = Map[K, SortedMap[Offset, E]]
 
   class ConstFixture {
     val database = Stateful[F, Context]
   }
 
-  implicit val withOffset: ToOffset[(Int, String)] = { case (offset, _) =>
-    Offset.unsafe(offset)
+  implicit val withOffset: ToOffset[(Int, String)] = {
+    case (offset, _) =>
+      Offset.unsafe(offset)
   }
 
 }

@@ -7,7 +7,7 @@ import com.evolutiongaming.catshelper.{Log, LogOf}
 
 object LogResource {
 
-  def apply[F[_] : FlatMap : LogOf](source: Class[_], prefix: String): Resource[F, Log[F]] = {
+  def apply[F[_]: FlatMap: LogOf](source: Class[_], prefix: String): Resource[F, Log[F]] = {
     val result = for {
       log0 <- LogOf[F].apply(source)
       log   = log0.prefixed(prefix)

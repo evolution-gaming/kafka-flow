@@ -34,7 +34,7 @@ object Keys {
     def delete(persist: Boolean): F[Unit] =
       if (persist) {
         database.delete(key) *>
-        Log[F].info("deleted key")
+          Log[F].info("deleted key")
       } else {
         ().pure[F]
       }
@@ -42,7 +42,7 @@ object Keys {
   }
 
   def empty[F[_]: Applicative]: Keys[F] = new Keys[F] {
-    def flush: F[Unit] = ().pure[F]
+    def flush: F[Unit]                    = ().pure[F]
     def delete(persist: Boolean): F[Unit] = ().pure[F]
   }
 

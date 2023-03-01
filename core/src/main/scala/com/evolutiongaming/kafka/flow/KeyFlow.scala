@@ -52,7 +52,16 @@ object KeyFlow {
     timer: TimerFlow[F],
     registry: EntityRegistry[F, KafkaKey, S],
   ): Resource[F, KeyFlow[F, A]] =
-    of(key, storage, EnhancedFold.fromFold(fold), tick, persistence, AdditionalStatePersist.empty[F, S, A], timer, registry)
+    of(
+      key,
+      storage,
+      EnhancedFold.fromFold(fold),
+      tick,
+      persistence,
+      AdditionalStatePersist.empty[F, S, A],
+      timer,
+      registry
+    )
 
   def of[F[_]: Monad: KeyContext, S, A](
     key: KafkaKey,
@@ -66,17 +75,17 @@ object KeyFlow {
   ): Resource[F, KeyFlow[F, A]] =
     for {
       state <- persistence.read(KeyContext[F].log).toResource
-      _ <- storage.set(state).toResource
+      _     <- storage.set(state).toResource
       // we should not run any timers if there was decision
       // by fold or tick to run the state, because in this
       // case we may flush the key which was already removed
       timerCancelled = storage inspect (_.isEmpty)
-      foldToState = FoldToState(storage, fold, persistence, additionalPersist)
-      tickToState = TickToState(storage, tick, persistence)
-      _ <- registry.register(key, storage.get)
+      foldToState    = FoldToState(storage, fold, persistence, additionalPersist)
+      tickToState    = TickToState(storage, tick, persistence)
+      _             <- registry.register(key, storage.get)
     } yield new KeyFlow[F, A] {
       def apply(records: NonEmptyList[A]): F[Unit] = foldToState(records)
-      def onTimer: F[Unit] = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
+      def onTimer: F[Unit]                         = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
 
   /** Does not save anything to the database */
@@ -89,23 +98,23 @@ object KeyFlow {
   ): Resource[F, KeyFlow[F, A]] =
     for {
       startedAt <- ReadTimestamps[F].current.toResource
-      _ <- KeyContext[F].hold(startedAt.offset).toResource
-      storage <- Ref.of[F, Option[S]](none[S]).toResource
+      _         <- KeyContext[F].hold(startedAt.offset).toResource
+      storage   <- Ref.of[F, Option[S]](none[S]).toResource
       // we should not run any timers if there was decision
       // by fold or tick to run the state, because in this
       // case we may flush the key which was already removed
       timerCancelled = storage.get map (_.isEmpty)
-      foldToState = FoldToState(storage.stateInstance, fold, Persistence.empty[F, S, A])
-      tickToState = TickToState(storage.stateInstance, tick, Persistence.empty[F, S, A])
-      _ <- registry.register(key, storage.get)
+      foldToState    = FoldToState(storage.stateInstance, fold, Persistence.empty[F, S, A])
+      tickToState    = TickToState(storage.stateInstance, tick, Persistence.empty[F, S, A])
+      _             <- registry.register(key, storage.get)
     } yield new KeyFlow[F, A] {
       def apply(records: NonEmptyList[A]) = foldToState(records)
-      def onTimer = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
+      def onTimer                         = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
 
   def empty[F[_]: Applicative, A]: KeyFlow[F, A] = new KeyFlow[F, A] {
     def apply(records: NonEmptyList[A]) = ().pure[F]
-    def onTimer = ().pure[F]
+    def onTimer                         = ().pure[F]
   }
 
 }

@@ -33,9 +33,9 @@ class JournalFoldSpec extends FunSuite {
     val f = new ConstFixture
 
     val state1 = for {
-      fold <- f.fold
+      fold   <- f.fold
       record <- f.record(Offset.unsafe(1), SeqNr.unsafe(100))
-      state0 = None
+      state0  = None
       state1 <- fold(state0, record)
     } yield state1
 
@@ -49,9 +49,9 @@ class JournalFoldSpec extends FunSuite {
     val f = new ConstFixture
 
     val state1 = for {
-      fold <- f.fold
+      fold   <- f.fold
       record <- f.record(Offset.unsafe(2), SeqNr.unsafe(101))
-      state0 = Some(KafkaSnapshot(offset = Offset.unsafe(1), value = SeqNr.unsafe(100)))
+      state0  = Some(KafkaSnapshot(offset = Offset.unsafe(1), value = SeqNr.unsafe(100)))
       state1 <- fold(state0, record)
     } yield state1
 
@@ -62,13 +62,13 @@ class JournalFoldSpec extends FunSuite {
   }
 
   test("JournalFold ignores duplicate offset") {
-    val f = new ConstFixture
+    val f      = new ConstFixture
     val record = f.record(Offset.unsafe(1), SeqNr.unsafe(100))
 
     val state1 = for {
-      fold <- f.fold
+      fold   <- f.fold
       record <- record
-      state0 = None
+      state0  = None
       state1 <- fold(state0, record)
     } yield state1
 
@@ -78,7 +78,7 @@ class JournalFoldSpec extends FunSuite {
     )
 
     val state2 = for {
-      fold <- f.fold
+      fold   <- f.fold
       record <- record
       state1 <- state1
       state2 <- fold(state1, record)
@@ -91,10 +91,10 @@ class JournalFoldSpec extends FunSuite {
     val f = new ConstFixture
 
     val state1 = for {
-      fold <- f.fold
+      fold    <- f.fold
       record0 <- f.record(Offset.unsafe(1), SeqNr.unsafe(100))
-      state0 = None
-      state1 <- fold(state0, record0)
+      state0   = None
+      state1  <- fold(state0, record0)
     } yield state1
 
     assertEquals(
@@ -103,10 +103,10 @@ class JournalFoldSpec extends FunSuite {
     )
 
     val state2 = for {
-      fold <- f.fold
+      fold    <- f.fold
       record1 <- f.record(Offset.unsafe(2), SeqNr.unsafe(100))
-      state1 <- state1
-      state2 <- fold(state1, record1)
+      state1  <- state1
+      state2  <- fold(state1, record1)
     } yield state2
 
     assertEquals(obtained = state2, expected = state1)
@@ -120,22 +120,24 @@ object JournalFoldSpec {
     def record(offset: Offset, seqNr: SeqNr) = for {
       header <- ToBytes[Try, ActionHeader].apply(
         ActionHeader.Append(
-          range = SeqRange(seqNr),
-          origin = None,
-          version = Version.current.some,
+          range       = SeqRange(seqNr),
+          origin      = None,
+          version     = Version.current.some,
           payloadType = PayloadType.Json,
-          metadata = HeaderMetadata.empty
+          metadata    = HeaderMetadata.empty
         )
       )
       record = ConsRecord(
         topicPartition = TopicPartition.empty,
-        offset = offset,
-        timestampAndType = Some(TimestampAndType(
-          timestamp = Instant.parse("2020-01-02T03:04:05.000Z"),
-          timestampType = TimestampType.Append
-        )),
-        key = Some(WithSize("id")),
-        value = Some(WithSize(ByteVector.empty)),
+        offset         = offset,
+        timestampAndType = Some(
+          TimestampAndType(
+            timestamp     = Instant.parse("2020-01-02T03:04:05.000Z"),
+            timestampType = TimestampType.Append
+          )
+        ),
+        key     = Some(WithSize("id")),
+        value   = Some(WithSize(ByteVector.empty)),
         headers = List(Header(ActionHeader.key, header.toArray))
       )
     } yield record
@@ -150,8 +152,8 @@ object JournalFoldSpec {
 
   }
 
-  implicit val jsonCodec: JsonCodec[Try] = JsonCodec.default
+  implicit val jsonCodec: JsonCodec[Try]         = JsonCodec.default
   implicit val journalParser: JournalParser[Try] = JournalParser.of
-  implicit val logOf: LogOf[Try] = LogOf.empty
+  implicit val logOf: LogOf[Try]                 = LogOf.empty
 
 }

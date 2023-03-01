@@ -31,17 +31,17 @@ object KafkaPersistenceModuleOf {
     consumerConfig: ConsumerConfig,
     snapshotTopic: Topic,
     metrics: FlowMetrics[F]
-  )(implicit
-    fromBytesKey: FromBytes[F, String],
+  )(
+    implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     override def make(partition: Partition): Resource[F, KafkaPersistenceModule[F, S]] = KafkaPersistenceModule.caching(
-      consumerOf = consumerOf,
-      producer = producer,
-      consumerConfig = consumerConfig,
+      consumerOf             = consumerOf,
+      producer               = producer,
+      consumerConfig         = consumerConfig,
       snapshotTopicPartition = TopicPartition(snapshotTopic, partition),
-      metrics = metrics
+      metrics                = metrics
     )
   }
 
@@ -50,8 +50,8 @@ object KafkaPersistenceModuleOf {
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
     snapshotTopic: Topic
-  )(implicit
-    fromBytesKey: FromBytes[F, String],
+  )(
+    implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] = caching(consumerOf, producer, consumerConfig, snapshotTopic, FlowMetrics.empty[F])
@@ -64,19 +64,19 @@ object KafkaPersistenceModuleOf {
     producerConfig: ProducerConfig,
     snapshotTopic: Topic,
     metrics: FlowMetrics[F] = FlowMetrics.empty[F]
-  )(implicit
-    fromBytesKey: FromBytes[F, String],
+  )(
+    implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     override def make(partition: Partition): Resource[F, KafkaPersistenceModule[F, S]] = {
       KafkaPersistenceModule.caching[F, S](
-        consumerOf = consumerOf,
-        producerOf = producerOf,
-        consumerConfig = consumerConfig,
-        producerConfig = producerConfig,
+        consumerOf             = consumerOf,
+        producerOf             = producerOf,
+        consumerConfig         = consumerConfig,
+        producerConfig         = producerConfig,
         snapshotTopicPartition = TopicPartition(snapshotTopic, partition),
-        metrics = metrics
+        metrics                = metrics
       )
     }
   }

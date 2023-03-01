@@ -31,7 +31,7 @@ object TopicFlowMetrics {
         quantiles = Quantiles(Quantile(1.0, 0.0001)),
         labels    = LabelNames()
       )
-     } yield { topicFlow =>
+    } yield { topicFlow =>
       new TopicFlow[F] {
         def apply(records: ConsRecords) =
           topicFlow.apply(records) measureDuration { duration =>

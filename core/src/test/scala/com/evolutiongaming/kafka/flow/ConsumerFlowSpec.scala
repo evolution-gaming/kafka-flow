@@ -16,7 +16,7 @@ import scala.util.{Success, Try}
 class ConsumerFlowSpec extends FunSuite {
 
   test("happy path") {
-    val topic = "test-topic"
+    val topic     = "test-topic"
     val partition = Partition.unsafe(1)
 
     val commands = List(
@@ -40,8 +40,8 @@ class ConsumerFlowSpec extends FunSuite {
   }
 
   test("multi topic subscription") {
-    val topic1 = "test-topic-1"
-    val topic2 = "test-topic-2"
+    val topic1     = "test-topic-1"
+    val topic2     = "test-topic-2"
     val partition1 = Partition.unsafe(1)
     val partition2 = Partition.unsafe(2)
     val partition3 = Partition.unsafe(3)
@@ -107,11 +107,11 @@ object ConsumerFlowSpec {
   }
 
   case class Context(
-    commands: List[Command] = Nil,
-    actions: List[Action] = Nil,
+    commands: List[Command]                 = Nil,
+    actions: List[Action]                   = Nil,
     listener: Option[SRebalanceListener[F]] = None
   ) {
-    def +(action: Action): Context = copy(actions = action :: actions)
+    def +(action: Action): Context                  = copy(actions = action :: actions)
     def +(listener: SRebalanceListener[F]): Context = copy(listener = listener.some)
   }
 
@@ -131,7 +131,8 @@ object ConsumerFlowSpec {
             case head :: tail =>
               val next = context.copy(commands = tail)
               def withListener(f: SRebalanceListener[F] => RebalanceCallback[F, Unit]): Try[(Context, ConsRecords)] = {
-                next.listener
+                next
+                  .listener
                   .traverse(f(_).toF(noopConsumer))
                   .run(next)
                   .map { case (context, _) => context -> ConsRecords.empty }
@@ -163,11 +164,12 @@ object ConsumerFlowSpec {
     def app(topics: Topic*) = {
       val consumerFlow = ConsumerFlow[F](
         consumer = consumer(),
-        flows = topics.map(topic => topic -> flow(topic)).toMap,
-        config = ConsumerFlowConfig(1.second)
+        flows    = topics.map(topic => topic -> flow(topic)).toMap,
+        config   = ConsumerFlowConfig(1.second)
       )
-      consumerFlow.stream.drain.handleErrorWith { case StopException(context) =>
-        StateT.set(context)
+      consumerFlow.stream.drain.handleErrorWith {
+        case StopException(context) =>
+          StateT.set(context)
       }
     }
   }

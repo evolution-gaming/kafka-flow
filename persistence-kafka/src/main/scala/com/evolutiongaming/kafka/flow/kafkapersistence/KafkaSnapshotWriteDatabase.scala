@@ -18,10 +18,10 @@ object KafkaSnapshotWriteDatabase {
 
     private def produce(key: KafkaKey, snapshot: Option[S]): F[Unit] = {
       val record = new ProducerRecord(
-        topic = snapshotTopicPartition.topic,
+        topic     = snapshotTopicPartition.topic,
         partition = snapshotTopicPartition.partition.some,
-        key = key.key.some,
-        value = snapshot
+        key       = key.key.some,
+        value     = snapshot
       )
 
       Producer[F].send(record).flatten.void

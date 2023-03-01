@@ -22,7 +22,7 @@ class KeyFlowSpec extends FunSuite {
 
   test("KeyFlow processes messages correctly") {
 
-    val f = new ConstFixture
+    val f               = new ConstFixture
     implicit val timers = f.timers
 
     // Given("writer that counts messages")
@@ -30,7 +30,7 @@ class KeyFlowSpec extends FunSuite {
     val persistence = new Persistence[SyncIO, State, ConsRecord] {
       def appendEvent(event: ConsRecord) =
         for {
-          _ <- messagesSent update (_ + 1)
+          _         <- messagesSent update (_ + 1)
           messageNr <- messagesSent.get
           _ <- SyncIO {
             // Then(s"correct message N$messageNr is sent to a writer")
@@ -38,12 +38,12 @@ class KeyFlowSpec extends FunSuite {
           }
         } yield ()
       def replaceState(state: State) = SyncIO.unit
-      def delete = SyncIO.unit
-      def flush = SyncIO.unit
-      def read = SyncIO.pure(Some((Offset.min, 0)))
+      def delete                     = SyncIO.unit
+      def flush                      = SyncIO.unit
+      def read                       = SyncIO.pure(Some((Offset.min, 0)))
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
-    val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
+    val key         = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
     val keyFlow = timerFlowOf(context, persistence, timers).flatMap(tf =>
       KeyFlow.of(key, f.fold, f.tick, persistence, tf, f.registry)
     )
@@ -54,8 +54,8 @@ class KeyFlowSpec extends FunSuite {
         _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
         _ <- flow(f.records(key.key, 1, List("event1", "event2", "event3")))
         // And("time comes to flush them")
-        _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1000000)))
-        _ <- timers.trigger(flow)
+        _            <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1000000)))
+        _            <- timers.trigger(flow)
         messagesSent <- messagesSent.get
         // And("total of 3 messages is sent to a writer")
         _ <- SyncIO { assertEquals(messagesSent, 3) }
@@ -67,7 +67,7 @@ class KeyFlowSpec extends FunSuite {
 
   test("KeyFlow does not delete prematurely") {
 
-    val f = new ConstFixture
+    val f               = new ConstFixture
     implicit val timers = f.timers
 
     // Given("writer that records if delete was called")
@@ -75,10 +75,10 @@ class KeyFlowSpec extends FunSuite {
     val removeCalled = Ref.unsafe[SyncIO, Boolean](false)
     val persistence = new Persistence[SyncIO, State, ConsRecord] {
       def appendEvent(event: ConsRecord) = SyncIO.unit
-      def replaceState(state: State) = SyncIO.unit
-      def delete = deleteCalled.set(true)
-      def flush = SyncIO.unit
-      def read = SyncIO.pure(Some((Offset.min, 0)))
+      def replaceState(state: State)     = SyncIO.unit
+      def delete                         = deleteCalled.set(true)
+      def flush                          = SyncIO.unit
+      def read                           = SyncIO.pure(Some((Offset.min, 0)))
     }
     // And("fold that never completes")
     val fold = FoldOption.set[SyncIO, State, ConsRecord] {
@@ -86,10 +86,10 @@ class KeyFlowSpec extends FunSuite {
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
     implicit val context = new KeyContext[SyncIO] {
-      def holding = none[Offset].pure[SyncIO]
+      def holding              = none[Offset].pure[SyncIO]
       def hold(offset: Offset) = SyncIO.unit
-      def remove = removeCalled.set(true)
-      def log = Log.empty
+      def remove               = removeCalled.set(true)
+      def log                  = Log.empty
     }
     val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
     val keyFlow = timerFlowOf(context, persistence, timers).flatMap(tf =>
@@ -99,9 +99,9 @@ class KeyFlowSpec extends FunSuite {
     val program = keyFlow use { flow =>
       for {
         // When("a message is sent to a flow")
-        _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-        _ <- flow(f.records(key.key, 1, List("event1")))
-        _ <- timers.trigger(flow)
+        _            <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
+        _            <- flow(f.records(key.key, 1, List("event1")))
+        _            <- timers.trigger(flow)
         deleteCalled <- deleteCalled.get
         removeCalled <- removeCalled.get
         // Then("the flow is not done")
@@ -118,7 +118,7 @@ class KeyFlowSpec extends FunSuite {
 
   test("KeyFlow does delete state when fold returns none") {
 
-    val f = new ConstFixture
+    val f               = new ConstFixture
     implicit val timers = f.timers
 
     // Given("writer that records if delete was called")
@@ -126,20 +126,20 @@ class KeyFlowSpec extends FunSuite {
     val removeCalled = Ref.unsafe[SyncIO, Boolean](false)
     val persistence = new Persistence[SyncIO, State, ConsRecord] {
       def appendEvent(event: ConsRecord) = SyncIO.unit
-      def replaceState(state: State) = SyncIO.unit
-      def delete = deleteCalled.set(true)
-      def flush = SyncIO.unit
-      def read = SyncIO.pure(Some((Offset.min, 0)))
+      def replaceState(state: State)     = SyncIO.unit
+      def delete                         = deleteCalled.set(true)
+      def flush                          = SyncIO.unit
+      def read                           = SyncIO.pure(Some((Offset.min, 0)))
     }
     // And("fold that completes immediately")
-    val fold = FoldOption.empty[SyncIO, State, ConsRecord]
+    val fold        = FoldOption.empty[SyncIO, State, ConsRecord]
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 
     implicit val context = new KeyContext[SyncIO] {
-      def holding = none[Offset].pure[SyncIO]
+      def holding              = none[Offset].pure[SyncIO]
       def hold(offset: Offset) = SyncIO.unit
-      def remove = removeCalled.set(true)
-      def log = Log.empty
+      def remove               = removeCalled.set(true)
+      def log                  = Log.empty
     }
 
     val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
@@ -150,9 +150,9 @@ class KeyFlowSpec extends FunSuite {
     val program = keyFlow.use { flow =>
       for {
         // When("a message is sent to a flow")
-        _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
-        _ <- flow(f.records(key.key, 1, List("event1")))
-        _ <- timers.trigger(flow)
+        _            <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
+        _            <- flow(f.records(key.key, 1, List("event1")))
+        _            <- timers.trigger(flow)
         deleteCalled <- deleteCalled.get
         removeCalled <- removeCalled.get
         // Then("the flow is done")
@@ -169,7 +169,7 @@ class KeyFlowSpec extends FunSuite {
 
   test("KeyFlow restores messages correctly") {
 
-    val f = new ConstFixture
+    val f               = new ConstFixture
     implicit val timers = f.timers
     // Given("writer that counts messages")
     // And("reader that restores a single message")
@@ -177,18 +177,18 @@ class KeyFlowSpec extends FunSuite {
     val persistence = new Persistence[SyncIO, State, ConsRecord] {
       def appendEvent(event: ConsRecord) =
         for {
-          _ <- messagesSent update (_ + 1)
+          _         <- messagesSent update (_ + 1)
           messageNr <- messagesSent.get
-          offset = messageNr + 1
+          offset     = messageNr + 1
           _ <- SyncIO {
             // Then(s"correct message N$offset is sent to a writer")
             assertEquals(event.offset.value, offset.toLong)
           }
         } yield ()
       def replaceState(state: State) = SyncIO.unit
-      def delete = SyncIO.unit
-      def flush = SyncIO.unit
-      def read = SyncIO.pure(Some(Offset.unsafe(1) -> 1))
+      def delete                     = SyncIO.unit
+      def flush                      = SyncIO.unit
+      def read                       = SyncIO.pure(Some(Offset.unsafe(1) -> 1))
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 
@@ -204,8 +204,8 @@ class KeyFlowSpec extends FunSuite {
         _ <- flow(f.records(key.key, 2, List("event2", "event3", "event4")))
         _ <- timers.trigger(flow)
         // And("time comes to flush them")
-        _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1000000)))
-        _ <- timers.trigger(flow)
+        _            <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1000000)))
+        _            <- timers.trigger(flow)
         messagesSent <- messagesSent.get
         _ <- SyncIO {
           // And("total of 3 messages is sent to a writer")
@@ -219,21 +219,21 @@ class KeyFlowSpec extends FunSuite {
 
   test("KeyFlow.transient does not flush") {
 
-    val f = new ConstFixture
+    val f               = new ConstFixture
     implicit val timers = f.timers
 
     val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
 
     val flow = for {
-      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1))).toResource
+      _    <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1))).toResource
       flow <- KeyFlow.transient(key, f.fold, f.tick, TimerFlow.empty[SyncIO], f.registry)
       // Given("a message is sent to a flow")
       _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1))).toResource
       _ <- flow(f.records(key.key, 1, List("event1"))).toResource
       _ <- timers.trigger(flow).toResource
       // When("flush attempt happend")
-      _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(100002))).toResource
-      _ <- timers.trigger(flow).toResource
+      _       <- timers.set(f.timestamp.copy(offset = Offset.unsafe(100002))).toResource
+      _       <- timers.trigger(flow).toResource
       holding <- context.holding.toResource
       // Then("flow does not say it is okay to remove the flow")
       _ <- SyncIO {
@@ -252,17 +252,18 @@ object KeyFlowSpec {
   class ConstFixture {
 
     val timestamp: Timestamp = Timestamp(
-      offset = Offset.unsafe(100),
+      offset    = Offset.unsafe(100),
       watermark = Some(Instant.parse("2020-03-01T00:00:00.000Z")),
-      clock = Instant.parse("2020-03-02T00:00:00.000Z")
+      clock     = Instant.parse("2020-03-02T00:00:00.000Z")
     )
 
     def fold: FoldOption[SyncIO, State, ConsRecord] =
       FoldOption.of { (state, record) =>
         SyncIO.pure {
           // return number of records processed as a state
-          state map { case (_, messagesSent) =>
-            (record.offset, messagesSent + 1)
+          state map {
+            case (_, messagesSent) =>
+              (record.offset, messagesSent + 1)
           } orElse {
             Some((record.offset, 1))
           }
@@ -273,14 +274,15 @@ object KeyFlowSpec {
 
     def records(key: String, offset: Int, events: List[String]): NonEmptyList[ConsRecord] =
       NonEmptyList.fromListUnsafe {
-        events.toList.zipWithIndex map { case (event, index) =>
-          ConsRecord(
-            topicPartition = TopicPartition.empty,
-            timestampAndType = None,
-            offset = Offset.unsafe(offset + index.toLong),
-            key = Some(WithSize(key)),
-            value = Some(WithSize(ByteVector.encodeUtf8(event) getOrElse sys.error(s"Cannot encode $event")))
-          )
+        events.toList.zipWithIndex map {
+          case (event, index) =>
+            ConsRecord(
+              topicPartition   = TopicPartition.empty,
+              timestampAndType = None,
+              offset           = Offset.unsafe(offset + index.toLong),
+              key              = Some(WithSize(key)),
+              value            = Some(WithSize(ByteVector.encodeUtf8(event) getOrElse sys.error(s"Cannot encode $event")))
+            )
         }
       }
 
@@ -295,8 +297,9 @@ object KeyFlowSpec {
   implicit val context: KeyContext[SyncIO] =
     KeyContext.of(().pure[SyncIO]).unsafeRunSync()
 
-  implicit val stateToOffset: ToOffset[State] = { case (offset, _) =>
-    offset
+  implicit val stateToOffset: ToOffset[State] = {
+    case (offset, _) =>
+      offset
   }
 
 }

@@ -30,22 +30,22 @@ class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
       boundStatement <- Statements.persist(session, key, snapshot)
-      statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _ <- session.execute(statement).first.void
+      statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
+      _              <- session.execute(statement).first.void
     } yield ()
 
   def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] =
     for {
       boundStatement <- Statements.get(session, key)
-      statement = boundStatement.withConsistencyLevel(consistencyOverrides.read)
-      row <- session.execute(statement).first
-      snapshot <- row.map(row => decode(row)).sequence
+      statement       = boundStatement.withConsistencyLevel(consistencyOverrides.read)
+      row            <- session.execute(statement).first
+      snapshot       <- row.map(row => decode(row)).sequence
     } yield snapshot
 
   def delete(key: KafkaKey): F[Unit] = for {
     boundStatement <- Statements.delete(session, key)
-    statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-    _ <- session.execute(statement).first.void
+    statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
+    _              <- session.execute(statement).first.void
   } yield ()
 
 }
@@ -70,9 +70,9 @@ object CassandraSnapshots {
     val value = row.decode[ByteVector]("value")
     value.fromBytes.map { value =>
       KafkaSnapshot[T](
-        offset = row.decode[Offset]("offset"),
+        offset   = row.decode[Offset]("offset"),
         metadata = row.decode[String]("metadata"),
-        value = value
+        value    = value
       )
     }
   }
@@ -101,7 +101,7 @@ object CassandraSnapshots {
         """.stripMargin
         )
         created <- Clock[F].instant
-        value <- snapshot.value.toBytes
+        value   <- snapshot.value.toBytes
       } yield {
         preparedStatement
           .bind()

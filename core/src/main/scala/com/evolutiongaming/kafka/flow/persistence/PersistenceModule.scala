@@ -19,28 +19,31 @@ trait PersistenceModule[F[_], S] {
 
   /** Saves both events and snapshots, restores state from events */
   def restoreEvents(
-    implicit F: Sync[F], logOf: LogOf[F]
+    implicit F: Sync[F],
+    logOf: LogOf[F]
   ): Resource[F, PersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
-    keysOf <- Resource.eval(keys.keysOf)
-    journalsOf <- Resource.eval(journals.journalsOf)
-    snapshotsOf <- Resource.eval(snapshots.snapshotsOf)
+    keysOf        <- Resource.eval(keys.keysOf)
+    journalsOf    <- Resource.eval(journals.journalsOf)
+    snapshotsOf   <- Resource.eval(snapshots.snapshotsOf)
     persistenceOf <- PersistenceOf.restoreEvents(keysOf, journalsOf, snapshotsOf)
   } yield persistenceOf
 
   /** Saves both events and snapshots, restores state from snapshots */
   def restoreSnapshots(
-    implicit F: Sync[F], logOf: LogOf[F]
+    implicit F: Sync[F],
+    logOf: LogOf[F]
   ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
-    keysOf <- keys.keysOf
-    journalsOf <- journals.journalsOf
+    keysOf      <- keys.keysOf
+    journalsOf  <- journals.journalsOf
     snapshotsOf <- snapshots.snapshotsOf
   } yield PersistenceOf.restoreSnapshots(keysOf, journalsOf, snapshotsOf)
 
   /** Saves snapshots only, restores state from snapshots */
   def snapshotsOnly(
-    implicit F: Sync[F], logOf: LogOf[F]
+    implicit F: Sync[F],
+    logOf: LogOf[F]
   ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
-    keysOf <- keys.keysOf
+    keysOf      <- keys.keysOf
     snapshotsOf <- snapshots.snapshotsOf
   } yield PersistenceOf.snapshotsOnly(keysOf, snapshotsOf)
 
@@ -50,8 +53,8 @@ object PersistenceModule {
 
   def empty[F[_]: Applicative, S]: PersistenceModule[F, S] =
     new PersistenceModule[F, S] {
-      def keys = KeyDatabase.empty
-      def journals = JournalDatabase.empty
+      def keys      = KeyDatabase.empty
+      def journals  = JournalDatabase.empty
       def snapshots = SnapshotDatabase.empty
     }
 

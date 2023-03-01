@@ -9,7 +9,12 @@ import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.journal.{ConsRecord, ConsRecords}
 import com.evolutiongaming.retry.{OnError, Retry, Sleep, Strategy}
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, WithSize, RebalanceListener1 => SRebalanceListener}
+import com.evolutiongaming.skafka.consumer.{
+  ConsumerRecord,
+  ConsumerRecords,
+  WithSize,
+  RebalanceListener1 => SRebalanceListener
+}
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 
@@ -124,11 +129,11 @@ class KafkaFlowSpec extends FunSuite {
 object KafkaFlowSpec {
 
   val topic: Topic = "topic"
-  val key: String = "key"
+  val key: String  = "key"
 
   final case class State(
     commands: List[Command] = Nil,
-    actions: List[Action] = Nil
+    actions: List[Action]   = Nil
   ) {
 
     def +(action: Action): State = copy(actions = action :: actions)
@@ -139,9 +144,9 @@ object KafkaFlowSpec {
 
   implicit val syncIoSleep = new Sleep[SyncIO] {
     override def sleep(time: FiniteDuration): SyncIO[Unit] = SyncIO(Thread.sleep(time.toMillis))
-    override def applicative: Applicative[SyncIO] = implicitly
-    override def monotonic: SyncIO[FiniteDuration] = SyncIO.monotonic
-    override def realTime: SyncIO[FiniteDuration] = SyncIO.realTime
+    override def applicative: Applicative[SyncIO]          = implicitly
+    override def monotonic: SyncIO[FiniteDuration]         = SyncIO.monotonic
+    override def realTime: SyncIO[FiniteDuration]          = SyncIO.realTime
   }
 
   class ConstFixture(val state: Ref[F, State]) {
@@ -152,7 +157,7 @@ object KafkaFlowSpec {
         topic = topic,
         flowOf = { (_, _) =>
           val result = state modify { s =>
-            val s1 = s + Action.AcquireTopicFlow
+            val s1      = s + Action.AcquireTopicFlow
             val release = state update (_ + Action.ReleaseTopicFlow)
             val topicFlow: TopicFlow[F] = new TopicFlow[F] {
 
@@ -198,12 +203,16 @@ object KafkaFlowSpec {
 
         def revoke(partitions: NonEmptySet[Partition]) =
           state.get flatMap { state =>
-            val revoke = state.actions collectFirst { case action: Action.Subscribe =>
-              action.listener
-                .onPartitionsRevoked(
-                  partitions concatMap { partition => action.topics.map { topic => TopicPartition(topic, partition) } }
-                )
-                .toF(noopConsumer)
+            val revoke = state.actions collectFirst {
+              case action: Action.Subscribe =>
+                action
+                  .listener
+                  .onPartitionsRevoked(
+                    partitions concatMap { partition =>
+                      action.topics.map { topic => TopicPartition(topic, partition) }
+                    }
+                  )
+                  .toF(noopConsumer)
             }
             revoke.sequence_
           }
@@ -211,7 +220,7 @@ object KafkaFlowSpec {
       }
 
       val result: F[(Consumer[F], F[Unit])] = state modify { s =>
-        val s1 = s + Action.AcquireConsumer
+        val s1      = s + Action.AcquireConsumer
         val release = state update (_ + Action.ReleaseConsumer)
         (s1, (consumer, release))
       }
@@ -237,12 +246,12 @@ object KafkaFlowSpec {
 
   def consumerRecord(partition: Int, offset: Long): ConsRecord = {
     ConsumerRecord(
-      topicPartition = TopicPartition(topic = topic, partition = Partition.unsafe(partition)),
-      offset = Offset.unsafe(offset),
+      topicPartition   = TopicPartition(topic = topic, partition = Partition.unsafe(partition)),
+      offset           = Offset.unsafe(offset),
       timestampAndType = none,
-      key = WithSize(key).some,
-      value = none,
-      headers = List.empty
+      key              = WithSize(key).some,
+      value            = none,
+      headers          = List.empty
     )
   }
 

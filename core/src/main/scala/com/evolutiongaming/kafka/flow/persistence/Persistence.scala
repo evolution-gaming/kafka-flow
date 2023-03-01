@@ -18,10 +18,7 @@ import com.evolutiongaming.kafka.flow.timer.Timestamps
   * caching optimizations. It is recommended to have one `Persistence` instance
   * per application therefore.
   */
-trait Persistence[F[_], S, E]
-  extends ReadState[F, S]
-  with WriteToBuffers[F, S, E]
-  with FlushBuffers[F] {
+trait Persistence[F[_], S, E] extends ReadState[F, S] with WriteToBuffers[F, S, E] with FlushBuffers[F] {
 
   /** Delete from buffers and from persistence if required */
   def delete: F[Unit]
@@ -69,6 +66,7 @@ trait FlushBuffers[F[_]] {
 object FlushBuffers {
   def apply[F[_]](implicit F: FlushBuffers[F]): FlushBuffers[F] = F
 }
+
 /** Allows to read a previously saved state */
 trait ReadState[F[_], S] {
 
@@ -87,11 +85,11 @@ trait ReadState[F[_], S] {
 object Persistence {
 
   def empty[F[_]: Applicative, S, E]: Persistence[F, S, E] = new Persistence[F, S, E] {
-    def read = none[S].pure[F]
-    def flush = ().pure[F]
-    def appendEvent(event: E) = ().pure[F]
+    def read                   = none[S].pure[F]
+    def flush                  = ().pure[F]
+    def appendEvent(event: E)  = ().pure[F]
     def replaceState(state: S) = ().pure[F]
-    def delete = ().pure[F]
+    def delete                 = ().pure[F]
   }
 
   def apply[F[_]: Monad: Timestamps, S, E](
@@ -99,7 +97,7 @@ object Persistence {
     buffers: Buffers[F, S, E]
   ): Persistence[F, S, E] = new Persistence[F, S, E] {
 
-    def appendEvent(event: E) = buffers.appendEvent(event)
+    def appendEvent(event: E)  = buffers.appendEvent(event)
     def replaceState(state: S) = buffers.replaceState(state)
 
     // We avoid persisting `delete` unless the state is in a database, i.e.
@@ -110,7 +108,7 @@ object Persistence {
     def delete = Timestamps[F].persistedAt flatMap { persistedAt =>
       if (persistedAt.isDefined) {
         Timestamps[F].onPersisted *>
-        buffers.delete(true)
+          buffers.delete(true)
       } else {
         buffers.delete(false)
       }
@@ -137,10 +135,10 @@ object Persistence {
 object Buffers {
 
   def empty[F[_]: Applicative, S, E]: Buffers[F, S, E] = new Buffers[F, S, E] {
-    def appendEvent(event: E) = ().pure[F]
-    def replaceState(state: S) = ().pure[F]
-    def flushKeys = ().pure[F]
-    def flushState = ().pure[F]
+    def appendEvent(event: E)    = ().pure[F]
+    def replaceState(state: S)   = ().pure[F]
+    def flushKeys                = ().pure[F]
+    def flushState               = ().pure[F]
     def delete(persist: Boolean) = ().pure[F]
   }
 
@@ -177,7 +175,7 @@ object ReadState {
     def read = {
       val recover = journals.read.foldLeftM(Option.empty[S]) { (state, event) =>
         Log[F].info(s"Restoring: $event") *>
-        fold(state, event)
+          fold(state, event)
       }
       recover.last map (_.flatten)
     }

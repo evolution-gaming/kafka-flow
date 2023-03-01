@@ -5,7 +5,7 @@ import pureconfig.ConfigReader
 import pureconfig.generic.semiauto.deriveReader
 
 final case class ConsistencyOverrides(
-  read: Option[ConsistencyLevel] = None,
+  read: Option[ConsistencyLevel]  = None,
   write: Option[ConsistencyLevel] = None
 )
 

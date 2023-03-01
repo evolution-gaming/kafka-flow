@@ -49,7 +49,7 @@ object Timers {
   final case class TimerState(
     processing: Set[Instant] = Set.empty,
     watermarks: Set[Instant] = Set.empty,
-    offsets: Set[Offset] = Set.empty
+    offsets: Set[Offset]     = Set.empty
   ) {
 
     def registerWatermark(timestamp: Instant): TimerState =
@@ -112,9 +112,9 @@ object Timers {
       buffer modify (_.registerOffset(offset))
 
     def trigger(implicit F: TimerFlow[F]) = for {
-      timestamp <- ReadTimestamps[F].current
+      timestamp        <- ReadTimestamps[F].current
       beforeExpiration <- buffer.get
-      afterExpiration = beforeExpiration expire timestamp
+      afterExpiration   = beforeExpiration expire timestamp
       _ <-
         if (beforeExpiration != afterExpiration) {
           buffer.set(afterExpiration) *> F.onTimer
@@ -126,15 +126,15 @@ object Timers {
     def flush = buffer.get flatMap { state =>
       val processing = state.processing.toList.sorted map KafkaTimer.Clock.apply
       val watermarks = state.watermarks.toList.sorted map KafkaTimer.Watermark.apply
-      val offsets = state.offsets.toList.sorted map KafkaTimer.Offset.apply
-      val timers = processing ++ watermarks ++ offsets
+      val offsets    = state.offsets.toList.sorted map KafkaTimer.Offset.apply
+      val timers     = processing ++ watermarks ++ offsets
       timers traverse_ { timer => database.persist(key, timer) }
     }
 
     def delete(persist: Boolean) = {
       val delete = if (persist) {
         database.delete(key) *>
-        Log[F].info("deleted timers")
+          Log[F].info("deleted timers")
       } else {
         ().pure[F]
       }
@@ -144,12 +144,12 @@ object Timers {
   }
 
   def empty[F[_]: Applicative]: Timers[F] = new Timers[F] {
-    def registerWatermark(timestamp: Instant) = ().pure[F]
+    def registerWatermark(timestamp: Instant)  = ().pure[F]
     def registerProcessing(timestamp: Instant) = ().pure[F]
-    def registerOffset(offset: Offset) = ().pure[F]
-    def trigger(implicit F: TimerFlow[F]) = ().pure[F]
-    def flush = ().pure[F]
-    def delete(persist: Boolean) = ().pure[F]
+    def registerOffset(offset: Offset)         = ().pure[F]
+    def trigger(implicit F: TimerFlow[F])      = ().pure[F]
+    def flush                                  = ().pure[F]
+    def delete(persist: Boolean)               = ().pure[F]
   }
 
 }

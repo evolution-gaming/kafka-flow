@@ -23,14 +23,14 @@ class FoldSpec extends FunSuite {
 
     type F[T] = Either[String, T]
 
-    val add = Fold[F, Int, Int] { (s, a) => Right(s + a) }
+    val add  = Fold[F, Int, Int] { (s, a) => Right(s + a) }
     val fail = Fold[F, Int, Int] { (_, _) => Left("failed") }
 
-    val addAndFail = add *> fail
-    val failAndRecover = fail handleErrorWith[String] { (s, _) => Right(s) }
+    val addAndFail     = add *> fail
+    val failAndRecover = fail handleErrorWith [String] { (s, _) => Right(s) }
 
     val recoverEarly = add *> failAndRecover
-    val recoverLate = addAndFail handleErrorWith[String] { (s, _) => Right(s) }
+    val recoverLate  = addAndFail handleErrorWith [String] { (s, _) => Right(s) }
 
     // 1 + 2 = 3
     assertEquals(recoverEarly(1, 2), Right(3))
@@ -39,6 +39,5 @@ class FoldSpec extends FunSuite {
     assertEquals(recoverLate(1, 2), Right(1))
 
   }
-
 
 }

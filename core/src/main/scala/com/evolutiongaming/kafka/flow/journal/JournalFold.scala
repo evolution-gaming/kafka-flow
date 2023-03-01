@@ -19,7 +19,7 @@ object JournalFold {
     LogOf[F].apply(JournalFold.getClass) map { log =>
       SnapshotFold(fold) filterM { (snapshot, record) =>
         for {
-          seqRange <- JournalParser[F].toSeqRange(record)
+          seqRange  <- JournalParser[F].toSeqRange(record)
           stateSeqNr = stateToSeqNr(snapshot.value)
           // we ignore records without sequence numbers silently, but warn about the actual duplicates
           condition <- seqRange.fold(false.pure[F]) { seqRange =>

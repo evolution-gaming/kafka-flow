@@ -38,8 +38,8 @@ object TickToState {
     def run = for {
       state <- storage.get
       state <- tick(state)
-      _ <- state traverse_ persistence.replaceState
-      _ <- storage set state
+      _     <- state traverse_ persistence.replaceState
+      _     <- storage set state
       _ <-
         if (state.isEmpty) {
           persistence.delete *> KeyContext[F].remove

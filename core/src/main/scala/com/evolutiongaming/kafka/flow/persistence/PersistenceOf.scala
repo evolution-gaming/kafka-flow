@@ -28,11 +28,12 @@ trait PersistenceOf[F[_], K, S, A] {
   ): F[Persistence[F, S, A]]
 
 }
+
 /** Creates snapshot persistence for a key.
   *
   * Ignores recovery function because the state is to be restored from snapshot.
   */
-trait SnapshotPersistenceOf[F[_], K, S, A] extends PersistenceOf[F, K, S, A] {self =>
+trait SnapshotPersistenceOf[F[_], K, S, A] extends PersistenceOf[F, K, S, A] { self =>
 
   def apply(
     key: K,
@@ -45,7 +46,7 @@ trait SnapshotPersistenceOf[F[_], K, S, A] extends PersistenceOf[F, K, S, A] {se
     timestamps: Timestamps[F],
   ): F[Persistence[F, S, A]] = apply(key, timestamps)
 
-  final def contramap[B](f: B => K ): SnapshotPersistenceOf[F, B,S,A] = new SnapshotPersistenceOf[F, B,S,A] {
+  final def contramap[B](f: B => K): SnapshotPersistenceOf[F, B, S, A] = new SnapshotPersistenceOf[F, B, S, A] {
     override def apply(key: B, timestamps: Timestamps[F]): F[Persistence[F, S, A]] = self(f(key), timestamps)
   }
 }
@@ -61,12 +62,12 @@ object PersistenceOf {
     Resource.eval(log) map { implicit log => (key, fold, timestamps) =>
       implicit val _timestamps = timestamps
       for {
-        journals <- journalsOf(key)
+        journals  <- journalsOf(key)
         snapshots <- snapshotsOf(key)
-        keys = keysOf(key)
+        keys       = keysOf(key)
       } yield Persistence(
         readState = ReadState(journals, fold),
-        buffers = Buffers(keys, journals, snapshots)
+        buffers   = Buffers(keys, journals, snapshots)
       )
     }
   }
@@ -79,12 +80,12 @@ object PersistenceOf {
   ): SnapshotPersistenceOf[F, K, S, A] = { (key, timestamps) =>
     implicit val _timestamps = timestamps
     for {
-      journals <- journalsOf(key)
+      journals  <- journalsOf(key)
       snapshots <- snapshotsOf(key)
-      keys = keysOf(key)
+      keys       = keysOf(key)
     } yield Persistence(
       readState = ReadState(snapshots),
-      buffers = Buffers(keys, journals, snapshots),
+      buffers   = Buffers(keys, journals, snapshots),
     )
   }
 
@@ -96,10 +97,10 @@ object PersistenceOf {
     implicit val _timestamps = timestamps
     for {
       snapshots <- snapshotsOf(key)
-      keys = keysOf(key)
+      keys       = keysOf(key)
     } yield Persistence(
       readState = ReadState(snapshots),
-      buffers = Buffers(keys, Journals.empty[F, A], snapshots),
+      buffers   = Buffers(keys, Journals.empty[F, A], snapshots),
     )
   }
 

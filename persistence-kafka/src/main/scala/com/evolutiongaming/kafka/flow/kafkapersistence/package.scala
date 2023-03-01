@@ -1,10 +1,11 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.{Clock, Concurrent, Resource}
+import cats.effect.{Async, Resource}
 import cats.syntax.all._
-import cats.{Eval, Foldable, Monad, Parallel}
-import com.evolutiongaming.catshelper.{LogOf, Runtime}
+import cats.{Eval, Foldable, Monad}
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
@@ -44,7 +45,7 @@ package object kafkapersistence {
     * @param metrics enhances framework with metrics
     * @param filter optional function to pre-filter incoming events before they are processed by `fold`
     */
-  def kafkaEagerRecovery[F[_]: Concurrent: Parallel: LogOf: Clock: Runtime, S](
+  def kafkaEagerRecovery[F[_]: Async: LogOf, S](
     kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
     applicationId: String,
     groupId: String,
@@ -53,23 +54,23 @@ package object kafkapersistence {
     fold: FoldOption[F, S, ConsRecord],
     tick: TickOption[F, S],
     partitionFlowConfig: PartitionFlowConfig,
-    metrics: FlowMetrics[F] = FlowMetrics.empty[F],
+    metrics: FlowMetrics[F]         = FlowMetrics.empty[F],
     filter: Option[FilterRecord[F]] = None,
     registry: EntityRegistry[F, KafkaKey, S]
   ): PartitionFlowOf[F] =
     kafkaEagerRecovery(
       kafkaPersistenceModuleOf = kafkaPersistenceModuleOf,
-      applicationId = applicationId,
-      groupId = groupId,
-      timersOf = timersOf,
-      timerFlowOf = timerFlowOf,
-      fold = EnhancedFold.fromFold(fold),
-      tick = tick,
-      partitionFlowConfig = partitionFlowConfig,
-      metrics = metrics,
-      filter = filter,
-      additionalPersistOf = AdditionalStatePersistOf.empty[F, S],
-      registry = registry
+      applicationId            = applicationId,
+      groupId                  = groupId,
+      timersOf                 = timersOf,
+      timerFlowOf              = timerFlowOf,
+      fold                     = EnhancedFold.fromFold(fold),
+      tick                     = tick,
+      partitionFlowConfig      = partitionFlowConfig,
+      metrics                  = metrics,
+      filter                   = filter,
+      additionalPersistOf      = AdditionalStatePersistOf.empty[F, S],
+      registry                 = registry
     )
 
   /** Create a PartitionFlowOf with a snapshot-based persistence and recovery from a Kafka
@@ -101,7 +102,7 @@ package object kafkapersistence {
     *                            persisting. That part of functionality in `KeyFlowExtras` will work only if you pass
     *                            a functional (non-empty) implementation here
     */
-  def kafkaEagerRecovery[F[_]: Concurrent: Parallel: LogOf: Clock: Runtime, S](
+  def kafkaEagerRecovery[F[_]: Async: LogOf, S](
     kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
     applicationId: String,
     groupId: String,
@@ -119,7 +120,7 @@ package object kafkapersistence {
       override def apply(
         topicPartition: TopicPartition,
         assignedAt: Offset,
-        context: PartitionContext[F]
+        scheduleCommit: ScheduleCommit[F]
       ): Resource[F, PartitionFlow[F]] = {
         for {
           // TODO: per-partition persistence module with 'String -> ByteVector' cache or global persistence module with 'KafkaKey -> ByteVector' cache?
@@ -128,22 +129,22 @@ package object kafkapersistence {
           partitionFlowOf = PartitionFlowOf.apply[F](
             keyStateOf = KeyStateOf.eagerRecovery(
               applicationId = applicationId,
-              groupId = groupId,
-              keysOf = kafkaPersistenceModule.keysOf,
-              timersOf = timersOf,
+              groupId       = groupId,
+              keysOf        = kafkaPersistenceModule.keysOf,
+              timersOf      = timersOf,
               persistenceOf = kafkaPersistenceModule.persistenceOf,
               keyFlowOf = KeyFlowOf(
                 timerFlowOf = timerFlowOf,
-                fold = fold,
-                tick = tick
+                fold        = fold,
+                tick        = tick
               ),
               additionalPersistOf = additionalPersistOf,
-              registry = registry
+              registry            = registry
             ) withMetrics metrics.keyStateOfMetrics,
             config = partitionFlowConfig,
             filter = filter
           )
-          partitionFlow <- partitionFlowOf(topicPartition, assignedAt, context)
+          partitionFlow <- partitionFlowOf(topicPartition, assignedAt, scheduleCommit)
         } yield partitionFlow
       }
     }
