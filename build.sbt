@@ -13,10 +13,8 @@ lazy val commonSettings = Seq(
   releaseCrossBuild := true,
   testFrameworks += new TestFramework("munit.Framework"),
   testOptions += Tests.Argument(new TestFramework("munit.Framework"), "+l"),
-  resolvers ++= Seq(
-    Resolver.bintrayRepo("evolutiongaming", "maven"),
-    Resolver.sonatypeRepo("public")
-  ),
+  resolvers += Resolver.bintrayRepo("evolutiongaming", "maven"),
+  resolvers ++= Resolver.sonatypeOssRepos("public"),
   libraryDependencySchemes ++= Seq(
     "org.scala-lang.modules" %% "scala-java8-compat" % "always"
   ),
