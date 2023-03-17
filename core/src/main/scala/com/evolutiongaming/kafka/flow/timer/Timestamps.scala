@@ -54,9 +54,6 @@ object Timestamps {
       Timestamps(storage.stateInstance)
     }
 
-  def resource[F[_]: Sync](createdAt: Timestamp): Resource[F, Timestamps[F]] =
-    Resource.eval(of(createdAt))
-
   /** Creates a timestamp storage for a key */
   def apply[F[_]: Functor](
     storage: Stateful[F, TimestampState]

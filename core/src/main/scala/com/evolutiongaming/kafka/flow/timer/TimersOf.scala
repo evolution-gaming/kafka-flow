@@ -1,8 +1,7 @@
 package com.evolutiongaming.kafka.flow.timer
 
-import cats.effect.Sync
-import cats.syntax.all._
-import com.evolutiongaming.catshelper.LogOf
+import cats.Monad
+import cats.effect.Ref
 
 trait TimersOf[F[_], K] {
 
@@ -12,13 +11,13 @@ trait TimersOf[F[_], K] {
 
 object TimersOf {
 
-  def memory[F[_]: Sync: LogOf, K]: F[TimersOf[F, K]] =
-    LogOf[F].apply(TimersOf.getClass) map { implicit log => (key, createdAt) =>
-      Timestamps.of(createdAt) flatMap { implicit timestamps =>
-        Timers.memory(key) map { timers =>
-          TimerContext(timers, timestamps)
-        }
+  def memory[F[_]: Monad: Ref.Make, K]: F[TimersOf[F, K]] = {
+    val timersOf = new TimersOf[F, K] {
+      override def apply(key: K, createdAt: Timestamp): F[TimerContext[F]] = {
+        TimerContext.memory[F](createdAt)
       }
     }
 
+    Monad[F].pure(timersOf)
+  }
 }
