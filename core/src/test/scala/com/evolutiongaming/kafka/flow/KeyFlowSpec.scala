@@ -287,7 +287,7 @@ object KeyFlowSpec {
       }
 
     val timers: TimerContext[SyncIO] =
-      TimerContext.memory[SyncIO, String]("key", timestamp).unsafeRunSync()
+      TimerContext.memory[SyncIO](timestamp).unsafeRunSync()
 
     val registry: EntityRegistry[SyncIO, KafkaKey, State] = EntityRegistry.empty
   }

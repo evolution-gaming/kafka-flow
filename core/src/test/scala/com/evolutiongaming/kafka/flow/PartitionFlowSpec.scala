@@ -329,7 +329,7 @@ object PartitionFlowSpec {
           val fold0             = fold
           val kafkaKey          = KafkaKey("test", "test", topicPartition, key)
           for {
-            timers      <- Resource.eval(TimerContext.memory[IO, String](key, createdAt))
+            timers      <- Resource.eval(TimerContext.memory[IO](createdAt))
             persistence <- Resource.eval(persistenceOf(key, fold0, timers))
             timerFlow   <- timerFlowOf(context, persistence, timers)
             keyFlow <- KeyFlow.of(
