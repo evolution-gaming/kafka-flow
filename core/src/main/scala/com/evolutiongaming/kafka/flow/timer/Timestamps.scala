@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.timer
 
 import cats.{Functor, Monad}
-import cats.effect.{Ref, Resource, Sync}
+import cats.effect.Ref
 import cats.mtl.Stateful
 import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
