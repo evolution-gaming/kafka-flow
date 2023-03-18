@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.timer
 
 import cats.{Functor, Monad}
-import cats.effect.{Ref, Resource, Sync}
+import cats.effect.Ref
 import cats.mtl.Stateful
 import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
@@ -53,9 +53,6 @@ object Timestamps {
     Ref.of(TimestampState(createdAt)) map { storage =>
       Timestamps(storage.stateInstance)
     }
-
-  def resource[F[_]: Sync](createdAt: Timestamp): Resource[F, Timestamps[F]] =
-    Resource.eval(of(createdAt))
 
   /** Creates a timestamp storage for a key */
   def apply[F[_]: Functor](
