@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.snapshot
 import cats.effect.{Ref, Sync}
 import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.{Applicative, Functor}
+import cats.{Applicative, Functor, Monad}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 
@@ -32,10 +32,8 @@ object SnapshotDatabase {
     * The data will survive destruction of specific `Snapshots` instance,
     * but will not survive destruction of specific `SnapshotDatabase` instance.
     */
-  def memory[F[_]: Sync, K, S]: F[SnapshotDatabase[F, K, S]] =
-    Ref.of[F, Map[K, S]](Map.empty) map { storage =>
-      memory(storage.stateInstance)
-    }
+  def memory[F[_]: Ref.Make: Monad, K, S]: F[SnapshotDatabase[F, K, S]] =
+    Ref.of[F, Map[K, S]](Map.empty).map(storage => memory(storage.stateInstance))
 
   /** Creates in-memory database implementation.
     *
