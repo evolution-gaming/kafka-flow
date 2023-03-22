@@ -7,7 +7,7 @@ import com.evolutiongaming.catshelper.{FromTry, Log, LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
-import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, Snapshots, SnapshotsOf}
+import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.scache.Cache
@@ -136,28 +136,18 @@ object KafkaPersistenceModule {
       cache: Cache[F, String, ByteVector],
       producer: Producer[F]
     ): F[SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord]] = {
-      LogOf[F].apply(classOf[KafkaPersistenceModule[F, S]]).map { log =>
+      LogOf[F].apply(classOf[KafkaPersistenceModule[F, S]]).map { implicit log =>
         val read =
           KafkaSnapshotReadDatabase.of[F, S](snapshotTopicPartition.topic, getState = key => cache.remove(key).flatten)
 
-        // A manual overriding of SnapshotsOf is required to pass a custom prefixed Log.
-        // Since both `SnapshotsOf.backedBy` and `Snapshots.of` are parameterized by a generic K (`KafkaKey` here),
-        // they would log the whole KafkaKey if Log.prefixed was to be called from inside.
-        val snapshotsOf: SnapshotsOf[F, KafkaKey, S] = {
-          val snapshotDatabase = SnapshotDatabase(
-            read  = read,
-            write = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition, producer)
-          ).withMetricsK(metrics.snapshotDatabaseMetrics)
-
-          (key: KafkaKey) => {
-            implicit val prefixedLog: Log[F] = log.prefixed(s"${key.topicPartition} ${key.key}")
-            Snapshots.of(key, snapshotDatabase)
-          }
-        }
+        val snapshotDatabase = SnapshotDatabase(
+          read  = read,
+          write = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition, producer)
+        ).withMetricsK(metrics.snapshotDatabaseMetrics)
 
         PersistenceOf.snapshotsOnly[F, KafkaKey, S, ConsRecord](
           keysOf      = keysOf,
-          snapshotsOf = snapshotsOf
+          snapshotsOf = SnapshotsOf.backedBy[F, KafkaKey, S](snapshotDatabase)
         )
       }
     }

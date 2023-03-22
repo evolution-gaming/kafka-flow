@@ -5,6 +5,7 @@ import cats.mtl.Stateful
 import cats.syntax.all._
 import cats.{Applicative, Functor, Monad}
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.LogPrefix
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 
 trait SnapshotDatabase[F[_], K, S] extends SnapshotReadDatabase[F, K, S] with SnapshotWriteDatabase[F, K, S]
@@ -78,7 +79,11 @@ object SnapshotDatabase {
     val self: SnapshotDatabase[F, K, KafkaSnapshot[S]]
   ) extends AnyVal {
 
-    def snapshotsOf(implicit F: Sync[F], logOf: LogOf[F]): F[SnapshotsOf[F, K, KafkaSnapshot[S]]] =
+    def snapshotsOf(
+      implicit F: Sync[F],
+      logOf: LogOf[F],
+      logPrefix: LogPrefix[K]
+    ): F[SnapshotsOf[F, K, KafkaSnapshot[S]]] =
       logOf(SnapshotDatabase.getClass) map { implicit log => key => Snapshots.of(key, self) }
 
   }

@@ -5,6 +5,7 @@ import cats.mtl.Stateful
 import cats.syntax.all._
 import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.kafka.flow.LogPrefix
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 
 trait Snapshots[F[_], S] extends SnapshotReader[F, S] with SnapshotWriter[F, S]
@@ -41,17 +42,18 @@ trait SnapshotWriter[F[_], S] {
 object Snapshots {
 
   /** Creates a buffer for a given writer */
-  private[flow] def of[F[_]: Ref.Make: Monad, K, S](
+  private[flow] def of[F[_]: Ref.Make: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S]
   )(implicit log: Log[F]): F[Snapshots[F, S]] =
     Ref.of[F, Option[Snapshot[S]]](None).map(buffer => Snapshots(key, database, buffer.stateInstance))
 
-  private[snapshot] def apply[F[_]: Monad, K, S](
+  private[snapshot] def apply[F[_]: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
     buffer: Stateful[F, Option[Snapshot[S]]]
   )(implicit log: Log[F]): Snapshots[F, S] = new Snapshots[F, S] {
+    private val prefixLog: Log[F] = log.prefixed(LogPrefix[K].extract(key))
 
     def read = database.get(key)
 
@@ -78,7 +80,7 @@ object Snapshots {
 
     def delete(persist: Boolean) = {
       val delete = if (persist) {
-        database.delete(key) *> log.info("deleted snapshot")
+        database.delete(key) *> prefixLog.info("deleted snapshot")
       } else {
         ().pure[F]
       }
