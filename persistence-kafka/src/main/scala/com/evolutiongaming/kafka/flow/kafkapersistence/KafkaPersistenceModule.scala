@@ -1,15 +1,13 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
 import cats.Parallel
-import cats.effect.concurrent.Ref
 import cats.effect.{Concurrent, Resource}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
-import com.evolutiongaming.kafka.flow.snapshot.Snapshots.Snapshot
-import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, Snapshots, SnapshotsOf}
+import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey}
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.scache.Cache
@@ -17,7 +15,6 @@ import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf}
 import com.evolutiongaming.skafka.{FromBytes, ToBytes, TopicPartition}
 import com.evolutiongaming.sstream.Stream
-import com.olegpy.meow.effects._
 import scodec.bits.ByteVector
 
 /** A module, necessary to create a Kafka snapshot persistence.
@@ -140,26 +137,17 @@ object KafkaPersistenceModule {
       producer: Producer[F]
     ): F[SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord]] = {
       LogOf[F].apply(classOf[SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord]]).map { implicit log =>
-        implicit val producer_ = producer
-        val read = KafkaSnapshotReadDatabase.of[F, S](snapshotTopicPartition.topic, key => cache.remove(key).flatten)
+        val read =
+          KafkaSnapshotReadDatabase.of[F, S](snapshotTopicPartition.topic, getState = key => cache.remove(key).flatten)
 
-        val snapshotsOf = new SnapshotsOf[F, KafkaKey, S] {
-          override def apply(key: KafkaKey): F[Snapshots[F, S]] =
-            for {
-              buffer <- Ref.of(none[Snapshot[S]]).map(_.stateInstance)
-            } yield Snapshots(
-              key = key,
-              database = SnapshotDatabase(
-                read = read,
-                write = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition)
-              ) withMetricsK metrics.snapshotDatabaseMetrics,
-              buffer = buffer
-            )
-        }
+        val snapshotDatabase = SnapshotDatabase(
+          read = read,
+          write = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition, producer)
+        ).withMetricsK(metrics.snapshotDatabaseMetrics)
 
         PersistenceOf.snapshotsOnly[F, KafkaKey, S, ConsRecord](
           keysOf = keysOf,
-          snapshotsOf = snapshotsOf
+          snapshotsOf = SnapshotsOf.backedBy(snapshotDatabase)
         )
       }
     }

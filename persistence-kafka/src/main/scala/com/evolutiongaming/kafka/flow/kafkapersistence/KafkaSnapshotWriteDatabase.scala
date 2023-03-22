@@ -9,8 +9,9 @@ import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord}
 import com.evolutiongaming.skafka.{ToBytes, TopicPartition}
 
 object KafkaSnapshotWriteDatabase {
-  def of[F[_]: FromTry: Monad: Producer, S: ToBytes[F, *]](
-    snapshotTopicPartition: TopicPartition
+  def of[F[_]: FromTry: Monad, S: ToBytes[F, *]](
+    snapshotTopicPartition: TopicPartition,
+    producer: Producer[F]
   ): SnapshotWriteDatabase[F, KafkaKey, S] = new SnapshotWriteDatabase[F, KafkaKey, S] {
     override def persist(key: KafkaKey, snapshot: S): F[Unit] = produce(key, snapshot.some)
 
@@ -24,7 +25,7 @@ object KafkaSnapshotWriteDatabase {
         value = snapshot
       )
 
-      Producer[F].send(record).flatten.void
+      producer.send(record).flatten.void
     }
   }
 }

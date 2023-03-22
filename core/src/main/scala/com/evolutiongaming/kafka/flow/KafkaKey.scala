@@ -12,4 +12,5 @@ final case class KafkaKey(
 
 object KafkaKey {
   implicit val hashKafkaKey: Hash[KafkaKey] = Hash.fromUniversalHashCode
+  implicit val logPrefix: LogPrefix[KafkaKey] = LogPrefix.function(key => s"${key.topicPartition} ${key.key}")
 }
