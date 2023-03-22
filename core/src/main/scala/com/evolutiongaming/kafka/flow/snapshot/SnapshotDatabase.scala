@@ -3,8 +3,9 @@ package com.evolutiongaming.kafka.flow.snapshot
 import cats.effect.{Ref, Sync}
 import cats.mtl.Stateful
 import cats.syntax.all._
-import cats.{Applicative, Functor}
+import cats.{Applicative, Functor, Monad}
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.LogPrefix
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 
 trait SnapshotDatabase[F[_], K, S] extends SnapshotReadDatabase[F, K, S] with SnapshotWriteDatabase[F, K, S]
@@ -32,10 +33,8 @@ object SnapshotDatabase {
     * The data will survive destruction of specific `Snapshots` instance,
     * but will not survive destruction of specific `SnapshotDatabase` instance.
     */
-  def memory[F[_]: Sync, K, S]: F[SnapshotDatabase[F, K, S]] =
-    Ref.of[F, Map[K, S]](Map.empty) map { storage =>
-      memory(storage.stateInstance)
-    }
+  def memory[F[_]: Ref.Make: Monad, K, S]: F[SnapshotDatabase[F, K, S]] =
+    Ref.of[F, Map[K, S]](Map.empty).map(storage => memory(storage.stateInstance))
 
   /** Creates in-memory database implementation.
     *
@@ -80,7 +79,11 @@ object SnapshotDatabase {
     val self: SnapshotDatabase[F, K, KafkaSnapshot[S]]
   ) extends AnyVal {
 
-    def snapshotsOf(implicit F: Sync[F], logOf: LogOf[F]): F[SnapshotsOf[F, K, KafkaSnapshot[S]]] =
+    def snapshotsOf(
+      implicit F: Sync[F],
+      logOf: LogOf[F],
+      logPrefix: LogPrefix[K]
+    ): F[SnapshotsOf[F, K, KafkaSnapshot[S]]] =
       logOf(SnapshotDatabase.getClass) map { implicit log => key => Snapshots.of(key, self) }
 
   }

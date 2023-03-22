@@ -1,8 +1,10 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
-import cats.effect.Sync
+import cats.Monad
+import cats.effect.Ref
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.kafka.flow.LogPrefix
 
 trait SnapshotsOf[F[_], K, S] {
 
@@ -11,13 +13,12 @@ trait SnapshotsOf[F[_], K, S] {
 }
 object SnapshotsOf {
 
-  def memory[F[_]: Sync: Log, K, S]: F[SnapshotsOf[F, K, S]] =
-    SnapshotDatabase.memory[F, K, S] map { database =>
-      backedBy(database)
-    }
+  def memory[F[_]: Ref.Make: Monad: Log, K: LogPrefix, S]: F[SnapshotsOf[F, K, S]] =
+    SnapshotDatabase.memory[F, K, S].map(database => backedBy(database))
 
-  def backedBy[F[_]: Sync: Log, K, S](db: SnapshotDatabase[F, K, S]): SnapshotsOf[F, K, S] = { key =>
-    Snapshots.of(key, db)
+  def backedBy[F[_]: Ref.Make: Monad: Log, K: LogPrefix, S](db: SnapshotDatabase[F, K, S]): SnapshotsOf[F, K, S] = {
+    key =>
+      Snapshots.of(key, db)
   }
 
 }
