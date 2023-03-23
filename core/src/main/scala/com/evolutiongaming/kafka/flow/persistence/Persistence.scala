@@ -79,7 +79,7 @@ trait ReadState[F[_], S] {
   def read(log: Log[F])(implicit F: Monad[F]): F[Option[S]] =
     read flatTap { state =>
       state traverse_ { _ =>
-        log.info(s"recovered state")
+        log.debug(s"recovered state")
       }
     }
 
