@@ -31,34 +31,26 @@ import java.time.{LocalDate, ZoneOffset}
   * @param session Cassandra session
   * @param consistencyOverrides allows overriding read and write query consistency separately
   * @param segments a number of segments
+  * @param tableName the name of Cassandra table used
   * @see See `com.evolutiongaming.kafka.flow.key.KeySchema` for a schema description
   */
 private class CassandraKeys[F[_]: Monad: Fail: Clock](
   session: CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides,
-  segments: Segments
+  segments: Segments,
+  tableName: String,
 ) extends KeyDatabase[F, KafkaKey] {
-
-  def this(session: CassandraSession[F], segments: Segments) =
-    this(session, consistencyOverrides = ConsistencyOverrides.none, segments)
-
-  /** Uses a default number of Segments (10000).
-    * Consider using one of the main constructors with an explicit Segments argument as this one will be removed in future releases.
-    */
-  @deprecated("Use one of constructors with an explicit Segments argument", since = "0.6.6")
-  def this(session: CassandraSession[F]) =
-    this(session, consistencyOverrides = ConsistencyOverrides.none, CassandraKeys.DefaultSegments)
 
   def persist(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- Statements.persist(session, key, segments)
+      boundStatement <- Statements.persist(session, key, segments, tableName)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).first.void
     } yield ()
 
   def delete(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- Statements.delete(session, key, segments)
+      boundStatement <- Statements.delete(session, key, segments, tableName)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).first.void
     } yield ()
@@ -77,7 +69,7 @@ private class CassandraKeys[F[_]: Monad: Fail: Clock](
     topicPartition: TopicPartition
   ): Stream[F, KafkaKey] = {
     val boundStatement = Statements
-      .all(session, applicationId, groupId, segment, topicPartition)
+      .all(session, applicationId, groupId, segment, topicPartition, tableName)
       .map(_.withConsistencyLevel(consistencyOverrides.read))
 
     Stream
@@ -90,32 +82,27 @@ object CassandraKeys {
 
   val DefaultSegments: Segments = Segments.unsafe(10000)
 
-  /** Creates schema in Cassandra if not there yet.
-    * Uses a default number of segments (10000).
-    */
-  @deprecated("Use the alternative with an explicit passing of segments number", since = "0.6.6")
-  def withSchema[F[_]: MonadThrow: Clock](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
-  ): F[KeyDatabase[F, KafkaKey]] =
-    withSchema(session, sync, consistencyOverrides, DefaultSegments)
+  val DefaultTableName: String = "keys"
 
   /** Creates schema in Cassandra if not there yet */
   def withSchema[F[_]: MonadThrow: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
-    keySegments: Segments
+    keySegments: Segments,
+    tableName: String = DefaultTableName,
   ): F[KeyDatabase[F, KafkaKey]] = {
     implicit val fail = Fail.lift
-    KeySchema(session, sync).create as new CassandraKeys(session, consistencyOverrides, keySegments)
+    KeySchema(session, sync, tableName)
+      .create
+      .as(new CassandraKeys(session, consistencyOverrides, keySegments, tableName))
   }
 
   def truncate[F[_]: Monad](
     session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] = KeySchema(session, sync).truncate
+    sync: CassandraSync[F],
+    tableName: String = DefaultTableName,
+  ): F[Unit] = KeySchema(session, sync, tableName).truncate
 
   protected def rowToKey(row: Row, appId: String, groupId: String, topicPartition: TopicPartition): KafkaKey =
     KafkaKey(
@@ -130,16 +117,17 @@ object CassandraKeys {
       session: CassandraSession[F],
       applicationId: String,
       groupId: String,
-      segment: SegmentNr
+      segment: SegmentNr,
+      tableName: String,
     ): F[BoundStatement] =
       session
         .prepare(
-          """ SELECT
+          s"""SELECT
             |   topic,
             |   partition,
             |   key
             | FROM
-            |   keys
+            |   $tableName
             | WHERE
             |   application_id = :application_id
             |   AND group_id = :group_id
@@ -160,14 +148,15 @@ object CassandraKeys {
       applicationId: String,
       groupId: String,
       segment: SegmentNr,
-      topicPartition: TopicPartition
+      topicPartition: TopicPartition,
+      tableName: String,
     ): F[BoundStatement] =
       session
         .prepare(
-          """ SELECT
+          s"""SELECT
             |   key
             | FROM
-            |   keys
+            |   $tableName
             | WHERE
             |   application_id = :application_id
             |   AND group_id = :group_id
@@ -190,12 +179,13 @@ object CassandraKeys {
     def persist[F[_]: Monad: Clock](
       session: CassandraSession[F],
       key: KafkaKey,
-      segments: Segments
+      segments: Segments,
+      tableName: String,
     ): F[BoundStatement] =
       for {
         preparedStatement <- session.prepare(
-          """ UPDATE
-            |   keys
+          s"""UPDATE
+            |   $tableName
             | SET
             |   created = :created,
             |   created_date = :created_date,
@@ -225,11 +215,16 @@ object CassandraKeys {
           .encode("metadata", "")
       }
 
-    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, segments: Segments): F[BoundStatement] =
+    def delete[F[_]: Monad](
+      session: CassandraSession[F],
+      key: KafkaKey,
+      segments: Segments,
+      tableName: String
+    ): F[BoundStatement] =
       session
         .prepare(
-          """ DELETE FROM
-            |   keys
+          s"""DELETE FROM
+            |   $tableName
             | WHERE
             |   application_id = :application_id
             |   AND group_id = :group_id

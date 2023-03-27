@@ -15,35 +15,37 @@ private[key] object KeySchema {
 
   def apply[F[_]: Monad](
     session: CassandraSession[F],
-    synchronize: CassandraSync[F]
+    synchronize: CassandraSync[F],
+    tableName: String,
   ): KeySchema[F] = new KeySchema[F] {
     def create = synchronize("KeySchema") {
       session
         .execute(
-          """CREATE TABLE IF NOT EXISTS keys(
-          |application_id TEXT,
-          |group_id TEXT,
-          |segment BIGINT,
-          |topic TEXT,
-          |partition INT,
-          |key TEXT,
-          |created TIMESTAMP,
-          |created_date DATE,
-          |metadata TEXT,
-          |PRIMARY KEY((application_id, group_id, segment), topic, partition, key)
+          s"""
+          |CREATE TABLE IF NOT EXISTS $tableName(
+          |   application_id TEXT,
+          |   group_id TEXT,
+          |   segment BIGINT,
+          |   topic TEXT,
+          |   partition INT,
+          |   key TEXT,
+          |   created TIMESTAMP,
+          |   created_date DATE,
+          |   metadata TEXT,
+          |   PRIMARY KEY((application_id, group_id, segment), topic, partition, key)
           |)
           |""".stripMargin
         )
         .first *>
         session
           .execute(
-            "CREATE INDEX IF NOT EXISTS keys_created_date_idx ON keys(created_date)"
+            s"CREATE INDEX IF NOT EXISTS ${tableName}_created_date_idx ON $tableName(created_date)"
           )
           .first
           .void
     }
     def truncate = synchronize("KeySchema") {
-      session.execute("TRUNCATE keys").first.void
+      session.execute(s"TRUNCATE $tableName").first.void
     }
   }
 
