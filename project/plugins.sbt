@@ -5,11 +5,11 @@ libraryDependencySchemes ++= Seq(
 
 addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.0.2")
 
-addSbtPlugin("org.scoverage" % "sbt-coveralls" % "1.3.1")
+addSbtPlugin("org.scoverage" % "sbt-coveralls" % "1.3.7")
 
 addSbtPlugin("com.github.sbt" % "sbt-release" % "1.0.15")
 
-addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.2.18" )
+addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.2.18")
 
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.4.2")
 
