@@ -58,7 +58,7 @@ class ShutdownSpec extends ForAllKafkaSuite {
       flowOf = ShutdownSpec.topicFlowOf(state)
       program <- program(flowOf, finished).toList.start
       // wait for first record to process
-      _ <- finished.get.timeoutTo(10.seconds, program.join)
+      _ <- finished.get.timeoutTo(10.seconds, program.join.void)
       // validate subscriptions in active flow
       partitions <- state.get
       _ = assertEquals(partitions, Set(Partition.min))
