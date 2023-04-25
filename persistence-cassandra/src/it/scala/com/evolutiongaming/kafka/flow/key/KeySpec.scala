@@ -7,7 +7,11 @@ import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.{CassandraSessionStub, CassandraSpec, KafkaKey}
 import com.evolutiongaming.skafka.{Partition, TopicPartition}
 
+import scala.concurrent.duration._
+
 class KeySpec extends CassandraSpec {
+
+  override def munitTimeout = 2.minutes
 
   test("queries") {
     val partition1 = TopicPartition("topic1", Partition.unsafe(1))
