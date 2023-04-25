@@ -24,21 +24,20 @@ object Compressor {
     def from(bytes: ByteVector): F[ByteVector] = bytes.pure[F]
   }
 
-  /** Implements compression using L4Z algorithm.
-    * The layout of resulting byte vector is as follows:
+  /** Implements compression using L4Z algorithm. The layout of resulting byte vector is as follows:
     * {{{
     * |---------------|-----------------|------------------|
     * | h_len (int32) | header (byte[]) | payload (byte[]) |
     * |---------------|-----------------|------------------|
     * }}}
     * where:
-    *  - h_len is a length of a serialized header
-    *  - header is a `com.evolution.aggregator.compression.Header` serialized to JSON and then to byte array
-    *   with the flag indicating whether the payload is compressed
-    *  - payload is a user payload, either compressed or as-is (see the details below)
+    *   - h_len is a length of a serialized header
+    *   - header is a `com.evolution.aggregator.compression.Header` serialized to JSON and then to byte array with the
+    *     flag indicating whether the payload is compressed
+    *   - payload is a user payload, either compressed or as-is (see the details below)
     *
-    * If the payload size is below the specified threshold, it's not compressed and left as-is with the header indicating that.
-    * Otherwise, the payload is compressed on writing and decompressed on reading.
+    * If the payload size is below the specified threshold, it's not compressed and left as-is with the header
+    * indicating that. Otherwise, the payload is compressed on writing and decompressed on reading.
     *
     * When a payload is compressed, it looks like the following:
     * {{{
@@ -47,12 +46,11 @@ object Compressor {
     * |---------------|------------------|
     * }}}
     * where:
-    *  - p_len is a length of the decompressed payload
-    *  - payload is a compressed user payload
+    *   - p_len is a length of the decompressed payload
+    *   - payload is a compressed user payload
     *
-    * This implementation supports backward-compatible decoding from a serialized JSON, meaning that it will not try
-    * to parse byte array to the aforementioned layout if the first bytes of it contain byte representation
-    * of a symbol '{'
+    * This implementation supports backward-compatible decoding from a serialized JSON, meaning that it will not try to
+    * parse byte array to the aforementioned layout if the first bytes of it contain byte representation of a symbol '{'
     */
   def of[F[_]: MonadThrow](
     compressionThreshold: Int = 10000

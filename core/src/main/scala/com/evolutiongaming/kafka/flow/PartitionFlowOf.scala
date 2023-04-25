@@ -21,10 +21,11 @@ object PartitionFlowOf {
 
   /** Creates `PartitionFlowOf` for specific application with optional filtering of events
     *
-    * @param filter determines whether an incoming consumer record should be processed or skipped.
-    *               Skipping a record means that (1) no state will be restored for that key; (2) no fold will be executed for that event.
-    *               It doesn't affect committing consumer offsets, thus, even if all records in a batch are skipped,
-    *               new offsets will still be committed if necessary
+    * @param filter
+    *   determines whether an incoming consumer record should be processed or skipped. Skipping a record means that (1)
+    *   no state will be restored for that key; (2) no fold will be executed for that event. It doesn't affect
+    *   committing consumer offsets, thus, even if all records in a batch are skipped, new offsets will still be
+    *   committed if necessary
     */
   def apply[F[_]: Async: LogOf](
     keyStateOf: KeyStateOf[F],

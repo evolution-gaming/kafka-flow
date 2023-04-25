@@ -23,8 +23,8 @@ trait JournalWriter[F[_], E] {
 
   /** Saves the next event to a buffer.
     *
-    * Note, that completing the append does not guarantee that the state will be
-    * persisted. I.e. persistence might choose to do the updates in batches.
+    * Note, that completing the append does not guarantee that the state will be persisted. I.e. persistence might
+    * choose to do the updates in batches.
     */
   def append(event: E): F[Unit]
 
@@ -33,8 +33,8 @@ trait JournalWriter[F[_], E] {
 
   /** Removes state from the buffers and optionally also from persistence.
     *
-    * @param persist if `true` then also calls underlying database, only clears
-    * buffers otherwise.
+    * @param persist
+    *   if `true` then also calls underlying database, only clears buffers otherwise.
     */
   def delete(persist: Boolean): F[Unit]
 

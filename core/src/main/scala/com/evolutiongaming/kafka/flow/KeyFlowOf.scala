@@ -20,13 +20,15 @@ trait KeyFlowOf[F[_], S, A] {
 }
 object KeyFlowOf {
 
-  /** Construct `KeyFlow` from the premade components. This version doesn't have a notion of `EnhancedFold` thus
-    * it can't use any additional functionality of `KeyFlowExtras`.
+  /** Construct `KeyFlow` from the premade components. This version doesn't have a notion of `EnhancedFold` thus it
+    * can't use any additional functionality of `KeyFlowExtras`.
     *
-    * @param timerFlowOf storage / factory of timers flows, usually configures
-    * how often the timer ticks etc.
-    * @param fold defines how to change the state on incoming records.
-    * @param tick defines what to do when the timer ticks.
+    * @param timerFlowOf
+    *   storage / factory of timers flows, usually configures how often the timer ticks etc.
+    * @param fold
+    *   defines how to change the state on incoming records.
+    * @param tick
+    *   defines what to do when the timer ticks.
     */
   def apply[F[_]: Monad: Ref.Make, S, A](
     timerFlowOf: TimerFlowOf[F],
@@ -37,10 +39,12 @@ object KeyFlowOf {
   /** Construct `KeyFlow` from the premade components. This version accepts `EnhancedFold` which can use an additional
     * functionality provided by `KeyFlowExtras`
     *
-    * @param timerFlowOf storage / factory of timers flows, usually configures
-    * how often the timer ticks etc.
-    * @param fold defines how to change the state on incoming records
-    * @param tick defines what to do when the timer ticks
+    * @param timerFlowOf
+    *   storage / factory of timers flows, usually configures how often the timer ticks etc.
+    * @param fold
+    *   defines how to change the state on incoming records
+    * @param tick
+    *   defines what to do when the timer ticks
     */
   def apply[F[_]: Monad: Ref.Make, S, A](
     timerFlowOf: TimerFlowOf[F],

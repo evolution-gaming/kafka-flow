@@ -30,16 +30,16 @@ object SnapshotDatabase {
 
   /** Creates in-memory database implementation.
     *
-    * The data will survive destruction of specific `Snapshots` instance,
-    * but will not survive destruction of specific `SnapshotDatabase` instance.
+    * The data will survive destruction of specific `Snapshots` instance, but will not survive destruction of specific
+    * `SnapshotDatabase` instance.
     */
   def memory[F[_]: Ref.Make: Monad, K, S]: F[SnapshotDatabase[F, K, S]] =
     Ref.of[F, Map[K, S]](Map.empty).map(storage => memory(storage.stateInstance))
 
   /** Creates in-memory database implementation.
     *
-    * The data will survive destruction of specific `Snapshots` instance,
-    * but will not survive destruction of specific `SnapshotDatabase` instance.
+    * The data will survive destruction of specific `Snapshots` instance, but will not survive destruction of specific
+    * `SnapshotDatabase` instance.
     */
   def memory[F[_]: Functor, K, S](storage: Stateful[F, Map[K, S]]): SnapshotDatabase[F, K, S] =
     new SnapshotDatabase[F, K, S] {

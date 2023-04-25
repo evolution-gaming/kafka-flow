@@ -7,17 +7,19 @@ import cats.Applicative
   * It's passed as an argument to a user-defined code of `EnhancedFold`, allowing one to use this functionality when
   * processing incoming events.
   *
-  * An instance is created per key when the key is recovered (either from persistence or when encountered the first
-  * time in a source Kafka topic)
+  * An instance is created per key when the key is recovered (either from persistence or when encountered the first time
+  * in a source Kafka topic)
   *
-  * @see [[com.evolutiongaming.kafka.flow.EnhancedFold]] for the user API allowing construction of an enhanced fold
+  * @see
+  *   [[com.evolutiongaming.kafka.flow.EnhancedFold]] for the user API allowing construction of an enhanced fold
   */
 trait KeyFlowExtras[F[_]] {
 
   /** Requests to persist a current state of the key. Calling this function doesn't guarantee that the state will be
     * persisted immediately; it persists the state after the fold is executed
     *
-    * @see See [[com.evolutiongaming.kafka.flow.AdditionalStatePersist]] for the underlying implementation of persisting
+    * @see
+    *   See [[com.evolutiongaming.kafka.flow.AdditionalStatePersist]] for the underlying implementation of persisting
     */
   def requestAdditionalPersist: F[Unit]
 }

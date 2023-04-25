@@ -47,7 +47,8 @@ object Timestamps {
 
   /** Creates a timestamp storage for a key.
     *
-    * @param createdAt Current timestamp at the time the key was encountered.
+    * @param createdAt
+    *   Current timestamp at the time the key was encountered.
     */
   def of[F[_]: Monad: Ref.Make](createdAt: Timestamp): F[Timestamps[F]] =
     Ref.of(TimestampState(createdAt)) map { storage =>

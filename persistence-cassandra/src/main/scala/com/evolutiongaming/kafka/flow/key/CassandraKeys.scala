@@ -21,17 +21,21 @@ import java.time.{LocalDate, ZoneOffset}
 
 /** `KeyDatabase` that uses a Cassandra table to store instances of `KafkaKey`.
   *
-  * All keys are distributed over a specified number of segments.
-  * A number of segment is determined by first calculating a hashcode of `KafkaKey#key` and then reducing it modulo number of segments.
-  * That is, for `Segments=100` the number of segment would be {{{segment = hashCode(KafkaKey#key) mod 100}}}
+  * All keys are distributed over a specified number of segments. A number of segment is determined by first calculating
+  * a hashcode of `KafkaKey#key` and then reducing it modulo number of segments. That is, for `Segments=100` the number
+  * of segment would be {{{segment = hashCode(KafkaKey#key) mod 100}}}
   *
-  * Note that reducing this number between runs can break the logic of recovering keys as it's used by `all` method
-  * that fetches keys for all known segments.
+  * Note that reducing this number between runs can break the logic of recovering keys as it's used by `all` method that
+  * fetches keys for all known segments.
   *
-  * @param session Cassandra session
-  * @param consistencyOverrides allows overriding read and write query consistency separately
-  * @param segments a number of segments
-  * @see See `com.evolutiongaming.kafka.flow.key.KeySchema` for a schema description
+  * @param session
+  *   Cassandra session
+  * @param consistencyOverrides
+  *   allows overriding read and write query consistency separately
+  * @param segments
+  *   a number of segments
+  * @see
+  *   See `com.evolutiongaming.kafka.flow.key.KeySchema` for a schema description
   */
 private class CassandraKeys[F[_]: Monad: Fail: Clock](
   session: CassandraSession[F],
@@ -42,8 +46,8 @@ private class CassandraKeys[F[_]: Monad: Fail: Clock](
   def this(session: CassandraSession[F], segments: Segments) =
     this(session, consistencyOverrides = ConsistencyOverrides.none, segments)
 
-  /** Uses a default number of Segments (10000).
-    * Consider using one of the main constructors with an explicit Segments argument as this one will be removed in future releases.
+  /** Uses a default number of Segments (10000). Consider using one of the main constructors with an explicit Segments
+    * argument as this one will be removed in future releases.
     */
   @deprecated("Use one of constructors with an explicit Segments argument", since = "0.6.6")
   def this(session: CassandraSession[F]) =
@@ -90,8 +94,7 @@ object CassandraKeys {
 
   val DefaultSegments: Segments = Segments.unsafe(10000)
 
-  /** Creates schema in Cassandra if not there yet.
-    * Uses a default number of segments (10000).
+  /** Creates schema in Cassandra if not there yet. Uses a default number of segments (10000).
     */
   @deprecated("Use the alternative with an explicit passing of segments number", since = "0.6.6")
   def withSchema[F[_]: MonadThrow: Clock](

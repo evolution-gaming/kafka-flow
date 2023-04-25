@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
-/** Extract a common prefix from `A` that is suitable for being logged in order to correlate a specific log message
-  * with `A`
+/** Extract a common prefix from `A` that is suitable for being logged in order to correlate a specific log message with
+  * `A`
   */
 trait LogPrefix[A] {
   def extract(value: A): String

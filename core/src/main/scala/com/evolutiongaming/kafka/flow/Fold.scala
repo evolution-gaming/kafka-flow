@@ -8,9 +8,8 @@ import cats.syntax.all._
 
 /** Reads a state and effectfully produces a new one.
   *
-  * Roughly speaking it is `Kleisli[F, (S, A), S]` with the main additional
-  * requirement that input and output types are not independent (because `S`
-  * is present both in input and output values).
+  * Roughly speaking it is `Kleisli[F, (S, A), S]` with the main additional requirement that input and output types are
+  * not independent (because `S` is present both in input and output values).
   */
 final case class Fold[F[_], S, A](run: (S, A) => F[S]) {
 
@@ -19,9 +18,8 @@ final case class Fold[F[_], S, A](run: (S, A) => F[S]) {
 
   /** Transforms the input `A` of the `Fold` to something else.
     *
-    * The common use for this method is to use `Fold` with the parsed
-    * input to construct a new `Fold` which knows how to parse the
-    * binary representation.
+    * The common use for this method is to use `Fold` with the parsed input to construct a new `Fold` which knows how to
+    * parse the binary representation.
     */
   def contramap[B](f: B => A): Fold[F, S, B] =
     Fold { (s, a) =>
@@ -41,8 +39,8 @@ final case class Fold[F[_], S, A](run: (S, A) => F[S]) {
     *
     * It is possible to use additional information from `A` to build a new state.
     *
-    * The common use for this method is to augument original state with
-    * some metainformation, i.e. offset or sequence number.
+    * The common use for this method is to augument original state with some metainformation, i.e. offset or sequence
+    * number.
     *
     * See also `StateT#transformS` for more details.
     */
@@ -57,8 +55,7 @@ final case class Fold[F[_], S, A](run: (S, A) => F[S]) {
     *
     * Same as `transformState`, but allows to have an effect when calculating new state.
     *
-    * Useful, for example, if `A` should be parsed to get the required
-    * additional information, but parsing may fail.
+    * Useful, for example, if `A` should be parsed to get the required additional information, but parsing may fail.
     */
   def transformStateM[T](f: T => F[S])(g: (S, A) => F[T])(implicit F: Monad[F]): Fold[F, T, A] =
     Fold { (t, a) =>
