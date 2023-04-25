@@ -33,7 +33,8 @@ private[flow] object Compression {
   *   - `p_len` is a length of an uncompressed input byte vector. It's required to allocate the buffer of a proper size
   *     when decompressing is done
   *   - `payload` is a compressed version of the input byte vector
-  * @param factory a factory instance which is reusable
+  * @param factory
+  *   a factory instance which is reusable
   */
 private[flow] class Lz4Compression[F[_]: MonadThrow](factory: LZ4Factory) extends Compression[F] {
   private val codec = int32 ~ bytes

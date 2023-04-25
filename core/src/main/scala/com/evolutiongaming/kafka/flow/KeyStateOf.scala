@@ -23,8 +23,7 @@ trait KeyStateOf[F[_]] { self =>
 
   /** Restores a state for all keys present in persistence.
     *
-    * The usual way to call this method is before starting processing consumer
-    * records.
+    * The usual way to call this method is before starting processing consumer records.
     */
   def all(topicPartition: TopicPartition): Stream[F, String]
 
@@ -33,9 +32,8 @@ object KeyStateOf {
 
   /** Does not recover keys until record with such key is encountered.
     *
-    * This version only requires `TimerFlowOf` and uses default `KeyFlow`
-    * which reads the state from the generic persistence folds it using
-    * default `FoldToState`.
+    * This version only requires `TimerFlowOf` and uses default `KeyFlow` which reads the state from the generic
+    * persistence folds it using default `FoldToState`.
     */
   def lazyRecovery[F[_]: Sync, S](
     applicationId: String,
@@ -58,9 +56,8 @@ object KeyStateOf {
 
   /** Does not recover keys until record with such key is encountered.
     *
-    * This version only requires `TimerFlowOf` and uses default `KeyFlow`
-    * which reads the state from the generic persistence folds it using
-    * default `FoldToState`.
+    * This version only requires `TimerFlowOf` and uses default `KeyFlow` which reads the state from the generic
+    * persistence folds it using default `FoldToState`.
     */
   def lazyRecovery[F[_]: Sync, S](
     applicationId: String,
@@ -97,12 +94,10 @@ object KeyStateOf {
 
   /** Recovers keys as soon as partition is assigned.
     *
-    * This version only requires `TimerFlowOf` and uses default `KeyFlow`
-    * which reads the state from the generic persistence and folds it using
-    * default `FoldToState`.
+    * This version only requires `TimerFlowOf` and uses default `KeyFlow` which reads the state from the generic
+    * persistence and folds it using default `FoldToState`.
     *
-    * It also uses default implementation of `Tick` which does nothing and
-    * does not touch the state.
+    * It also uses default implementation of `Tick` which does nothing and does not touch the state.
     */
   def eagerRecovery[F[_]: Sync, S](
     applicationId: String,
@@ -127,9 +122,8 @@ object KeyStateOf {
 
   /** Recovers keys as soon as partition is assigned.
     *
-    * This version only requires `TimerFlowOf` and uses default `Keyflow`
-    * which reads the state from the generic persistence and folds it using
-    * default `FoldToState`.
+    * This version only requires `TimerFlowOf` and uses default `Keyflow` which reads the state from the generic
+    * persistence and folds it using default `FoldToState`.
     */
   def eagerRecovery[F[_]: Sync, S](
     applicationId: String,
@@ -155,8 +149,7 @@ object KeyStateOf {
 
   /** Recovers keys as soon as partition is assigned.
     *
-    * This version allows one to construct a custom `KeyFlowOf`
-    * for snapshot persistence.
+    * This version allows one to construct a custom `KeyFlowOf` for snapshot persistence.
     */
   def eagerRecovery[F[_]: Applicative, S](
     applicationId: String,
@@ -181,11 +174,10 @@ object KeyStateOf {
 
   /** Recovers keys as soon as partition is assigned.
     *
-    * This version allows one to construct a custom `KeyFlowOf`
-    * for snapshot persistence.
+    * This version allows one to construct a custom `KeyFlowOf` for snapshot persistence.
     *
-    * Note that this version doesn't enable "additional persisting" functionality even if you pass `KeyFlowOf`
-    * that was constructed using `EnhancedFold`. In this case, please use another version that expects `AdditionalStatePersistOf`
+    * Note that this version doesn't enable "additional persisting" functionality even if you pass `KeyFlowOf` that was
+    * constructed using `EnhancedFold`. In this case, please use another version that expects `AdditionalStatePersistOf`
     * as an argument.
     */
   def eagerRecovery[F[_]: Applicative, S](
@@ -210,8 +202,7 @@ object KeyStateOf {
 
   /** Recovers keys as soon as partition is assigned.
     *
-    * This version allows one to construct a custom `KeyFlowOf`
-    * for generic persistence.
+    * This version allows one to construct a custom `KeyFlowOf` for generic persistence.
     */
   def eagerRecovery[F[_], S](
     applicationId: String,

@@ -23,8 +23,8 @@ trait SnapshotWriter[F[_], S] {
 
   /** Saves the next snapshot to a buffer.
     *
-    * Note, that completing the append does not guarantee that the state will be
-    * persisted. I.e. persistence might choose to do the updates in batches.
+    * Note, that completing the append does not guarantee that the state will be persisted. I.e. persistence might
+    * choose to do the updates in batches.
     */
   def append(snapshot: S): F[Unit]
 
@@ -33,8 +33,8 @@ trait SnapshotWriter[F[_], S] {
 
   /** Removes state from the buffers and optionally also from persistence.
     *
-    * @param persist if `true` then also calls underlying database, flushes
-    * buffers only otherwise.
+    * @param persist
+    *   if `true` then also calls underlying database, flushes buffers only otherwise.
     */
   def delete(persist: Boolean): F[Unit]
 

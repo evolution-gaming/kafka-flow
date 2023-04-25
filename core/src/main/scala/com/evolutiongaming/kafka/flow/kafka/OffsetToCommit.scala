@@ -6,8 +6,8 @@ import com.evolutiongaming.skafka.Offset
 
 /** Constructs an offset to commit to Kafka.
   *
-  * From KafkaClient documentation:
-  * "The committed offset should be the next message your application will consume, i.e. lastProcessedMessageOffset + 1"
+  * From KafkaClient documentation: "The committed offset should be the next message your application will consume, i.e.
+  * lastProcessedMessageOffset + 1"
   */
 object OffsetToCommit {
 

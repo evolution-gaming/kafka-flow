@@ -16,9 +16,8 @@ trait ConsumerFlow[F[_]] {
 
   /** Returns records already processed by the `ConsumerFlow`.
     *
-    * Note, that returned record does not guarantee that commit to
-    * Kafka happened, i.e. that the record will not be processed for the
-    * second time.
+    * Note, that returned record does not guarantee that commit to Kafka happened, i.e. that the record will not be
+    * processed for the second time.
     */
   def stream: Stream[F, ConsRecords]
 
@@ -29,8 +28,8 @@ object ConsumerFlow {
 
   /** Constructs a consumer flow for specific topic.
     *
-    * Note, that topic specified by an appropriate parameter should contain a
-    * journal in the format of `Kafka Journal` library.
+    * Note, that topic specified by an appropriate parameter should contain a journal in the format of `Kafka Journal`
+    * library.
     */
   def of[F[_]: MonadThrow: LogOf](
     consumer: Consumer[F],
@@ -46,8 +45,8 @@ object ConsumerFlow {
 
   /** Constructs a consumer flow for specific topics.
     *
-    * Note, that topics specified by an appropriate parameter should contain a
-    * journal in the format of `Kafka Journal` library.
+    * Note, that topics specified by an appropriate parameter should contain a journal in the format of `Kafka Journal`
+    * library.
     */
   def of[F[_]: MonadThrow: LogOf](
     consumer: Consumer[F],
@@ -63,11 +62,11 @@ object ConsumerFlow {
 
   /** Constructs a consumer for preconstructed topic flows.
     *
-    * The resulting flow will subscribe consumer to the topics and pass
-    * resulting messages to the appropriate `TopicFlow`.
+    * The resulting flow will subscribe consumer to the topics and pass resulting messages to the appropriate
+    * `TopicFlow`.
     *
-    * Note, that topic specified by an appropriate parameter should contain a
-    * journal in the format of `Kafka Journal` library.
+    * Note, that topic specified by an appropriate parameter should contain a journal in the format of `Kafka Journal`
+    * library.
     */
   def apply[F[_]: MonadThrow: LogOf](
     consumer: Consumer[F],

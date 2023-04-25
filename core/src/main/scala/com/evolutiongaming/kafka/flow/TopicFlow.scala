@@ -23,15 +23,13 @@ trait TopicFlow[F[_]] {
 
   /** Called when a new partition is added to a topic.
     *
-    * I.e. when Kafka rebalancing happens and this consumer is to consume an
-    * additional partition.
+    * I.e. when Kafka rebalancing happens and this consumer is to consume an additional partition.
     */
   def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit]
 
   /** Called when a partition is removed from topic.
     *
-    * I.e. when Kafka rebalancing happens and this consumer is to consume an
-    * additional partition.
+    * I.e. when Kafka rebalancing happens and this consumer is to consume an additional partition.
     */
   def remove(partitions: NonEmptySet[Partition]): F[Unit]
 
@@ -147,11 +145,12 @@ object TopicFlow {
     *
     * It provides following safeties in case of a fiber cancellation and resource's release:
     *
-    *  - processing of current kafka messages won't be cancelled (TopicFlow.apply)
-    *  - pending offsets would be committed
-    *  - accumulated state would be persisted
-    *  - resource would be released only after previous steps are completed
-    *  - if resource is released before start of messages' processing, then it does nothing (no message processing, no commits, no persists)
+    *   - processing of current kafka messages won't be cancelled (TopicFlow.apply)
+    *   - pending offsets would be committed
+    *   - accumulated state would be persisted
+    *   - resource would be released only after previous steps are completed
+    *   - if resource is released before start of messages' processing, then it does nothing (no message processing, no
+    *     commits, no persists)
     */
   private def safeguard[F[_]: Concurrent](a: Resource[F, TopicFlow[F]]): Resource[F, TopicFlow[F]] = {
     // A combination of Semaphore and uncancelable is required to implement the aforementioned safeties

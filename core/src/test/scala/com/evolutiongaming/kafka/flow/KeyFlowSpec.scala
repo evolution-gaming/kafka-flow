@@ -43,7 +43,7 @@ class KeyFlowSpec extends FunSuite {
       def read                       = SyncIO.pure(Some((Offset.min, 0)))
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
-    val key         = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
+    val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
     val keyFlow = timerFlowOf(context, persistence, timers).flatMap(tf =>
       KeyFlow.of(key, f.fold, f.tick, persistence, tf, f.registry)
     )
@@ -281,7 +281,7 @@ object KeyFlowSpec {
               timestampAndType = None,
               offset           = Offset.unsafe(offset + index.toLong),
               key              = Some(WithSize(key)),
-              value            = Some(WithSize(ByteVector.encodeUtf8(event) getOrElse sys.error(s"Cannot encode $event")))
+              value = Some(WithSize(ByteVector.encodeUtf8(event) getOrElse sys.error(s"Cannot encode $event")))
             )
         }
       }

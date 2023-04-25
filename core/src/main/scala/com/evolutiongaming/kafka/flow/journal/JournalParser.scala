@@ -27,8 +27,8 @@ trait JournalParser[F[_]] {
 
   /** Sequence numbers of events contained in `ConsRecord` if any.
     *
-    * It could be a bit faster than `toPayloads` because it does not
-    * parse the actual payload, but looks at headers instead.
+    * It could be a bit faster than `toPayloads` because it does not parse the actual payload, but looks at headers
+    * instead.
     */
   def toSeqRange(record: ConsRecord): F[Option[SeqRange]]
 
@@ -88,7 +88,7 @@ object JournalParser {
           payload <- F.fromOption(event.payload, new RuntimeException(s"Payload is empty: $event"))
           payload <- payload match {
             case payload: Payload.Json => payload.pure[F]
-            case payload               => F.raiseError[Payload.Json](new RuntimeException(s"Payload is not JSON: $payload"))
+            case payload => F.raiseError[Payload.Json](new RuntimeException(s"Payload is not JSON: $payload"))
           }
           payload <- F.fromTry(JsResult.toTry((payload.value \ "payload").validate[T])) adaptError {
             case e =>

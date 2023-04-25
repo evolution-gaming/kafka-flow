@@ -3,16 +3,19 @@ package com.evolutiongaming.kafka.flow
 import cats.syntax.all._
 import cats.{Applicative, ApplicativeError, Monad}
 
-/** Given an optional state `S` and an incoming event `E`, produces a resulting optional state `S`.
-  * This is the main user API to define stateful processing.
-  * In contrast to `FoldOption`, it also accepts `KeyFlowExtras`, providing an access to some additional framework APIs.
+/** Given an optional state `S` and an incoming event `E`, produces a resulting optional state `S`. This is the main
+  * user API to define stateful processing. In contrast to `FoldOption`, it also accepts `KeyFlowExtras`, providing an
+  * access to some additional framework APIs.
   *
-  * This abstraction is not expressed in terms of `FoldOption` to avoid unnecessary allocations of `FoldOption`
-  * when the logic involves multiple nested `EnhancedFold` instances invoking each other.
+  * This abstraction is not expressed in terms of `FoldOption` to avoid unnecessary allocations of `FoldOption` when the
+  * logic involves multiple nested `EnhancedFold` instances invoking each other.
   *
-  * @tparam F computation effect
-  * @tparam S state
-  * @tparam E incoming event
+  * @tparam F
+  *   computation effect
+  * @tparam S
+  *   state
+  * @tparam E
+  *   incoming event
   */
 trait EnhancedFold[F[_], S, E] {
 

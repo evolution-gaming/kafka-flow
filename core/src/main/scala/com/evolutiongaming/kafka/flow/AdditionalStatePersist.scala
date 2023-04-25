@@ -11,8 +11,8 @@ import com.evolutiongaming.kafka.journal.ConsRecord
 import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 
-/** Internal API to handle user requests for additional persisting of a key's state.
-  * One instance of this class is created per each key
+/** Internal API to handle user requests for additional persisting of a key's state. One instance of this class is
+  * created per each key
   */
 trait AdditionalStatePersist[F[_], S, E] {
 
@@ -21,11 +21,12 @@ trait AdditionalStatePersist[F[_], S, E] {
     */
   def request: F[Unit]
 
-  /** Persists a current state of a key and marks the offset of a currently processed record as "allowed to commit"
-    * for that particular key. Persisting is done only after it was explicitly requested via `request` method.
-    * It's recommended to have a "cooldown" between persisting the state again to avoid overwhelming the underlying storage.
+  /** Persists a current state of a key and marks the offset of a currently processed record as "allowed to commit" for
+    * that particular key. Persisting is done only after it was explicitly requested via `request` method. It's
+    * recommended to have a "cooldown" between persisting the state again to avoid overwhelming the underlying storage.
     *
-    * @param event currently processed record
+    * @param event
+    *   currently processed record
     */
   def persistIfNeeded(event: E, state: S): F[Unit]
 }
@@ -40,9 +41,12 @@ object AdditionalStatePersist {
     * After persisting is done successfully, it "holds" the next offset after the one of a given record (effectively
     * marking it as "allowed" to be committed for that specific key).
     *
-    * @param persistence key-specific persistence layer
-    * @param keyContext key-specific offset information
-    * @param cooldown allowed cooldown between two persisting of a key
+    * @param persistence
+    *   key-specific persistence layer
+    * @param keyContext
+    *   key-specific offset information
+    * @param cooldown
+    *   allowed cooldown between two persisting of a key
     */
   def of[F[_]: MonadCancelThrow: Ref.Make: Clock, S](
     persistence: Persistence[F, S, ConsRecord],

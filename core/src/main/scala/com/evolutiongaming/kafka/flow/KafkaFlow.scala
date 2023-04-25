@@ -19,12 +19,10 @@ object KafkaFlow {
     *
     * Returns records already processed by the `KafkaFlow`.
     *
-    * Note, that returned record does not guarantee that commit to
-    * Kafka happened, i.e. that the record will not be processsed for the
-    * second time.
+    * Note, that returned record does not guarantee that commit to Kafka happened, i.e. that the record will not be
+    * processsed for the second time.
     *
-    * WARNING: Do not forget to `flatMap` returned `F[Unit]` or the
-    * potential errors may be lost.
+    * WARNING: Do not forget to `flatMap` returned `F[Unit]` or the potential errors may be lost.
     */
   def retryOnError[F[_]: Concurrent: Sleep: LogOf](
     consumer: Resource[F, Consumer[F]],
@@ -53,9 +51,8 @@ object KafkaFlow {
     *
     * Returns records already processed by the `KafkaFlow`.
     *
-    * Note, that returned record does not guarantee that commit to
-    * Kafka happened, i.e. that the record will not be processsed for the
-    * second time.
+    * Note, that returned record does not guarantee that commit to Kafka happened, i.e. that the record will not be
+    * processsed for the second time.
     */
   def stream[F[_]: BracketThrowable: Retry](
     consumer: Resource[F, Consumer[F]],
@@ -72,8 +69,7 @@ object KafkaFlow {
     *
     * Tears down if cancelled or retry strategy failed.
     *
-    * WARNING: Do not forget to `flatMap` returned `F[Unit]` or the
-    * potential errors may be lost.
+    * WARNING: Do not forget to `flatMap` returned `F[Unit]` or the potential errors may be lost.
     */
   def resource[F[_]: Concurrent: Retry](
     consumer: Resource[F, Consumer[F]],

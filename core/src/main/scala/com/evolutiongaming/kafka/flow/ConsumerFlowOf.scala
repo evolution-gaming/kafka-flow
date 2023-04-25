@@ -17,8 +17,8 @@ object ConsumerFlowOf {
 
   /** Constructs a consumer flow for specific topic.
     *
-    * Note, that topic specified by an appropriate parameter should contain a
-    * journal in the format of `Kafka Journal` library.
+    * Note, that topic specified by an appropriate parameter should contain a journal in the format of `Kafka Journal`
+    * library.
     */
   def apply[F[_]: MonadThrow: LogOf](
     topic: Topic,
@@ -30,8 +30,8 @@ object ConsumerFlowOf {
 
   /** Constructs a consumer flow for specific topics.
     *
-    * Note, that topics specified by an appropriate parameter should contain a
-    * journal in the format of `Kafka Journal` library.
+    * Note, that topics specified by an appropriate parameter should contain a journal in the format of `Kafka Journal`
+    * library.
     */
   def apply[F[_]: MonadThrow: LogOf](
     topics: NonEmptySet[Topic],
@@ -40,8 +40,8 @@ object ConsumerFlowOf {
 
   /** Constructs a consumer flow for specific topics.
     *
-    * Note, that topics specified by an appropriate parameter should contain a
-    * journal in the format of `Kafka Journal` library.
+    * Note, that topics specified by an appropriate parameter should contain a journal in the format of `Kafka Journal`
+    * library.
     */
   def apply[F[_]: MonadThrow: LogOf](
     topics: NonEmptySet[Topic],

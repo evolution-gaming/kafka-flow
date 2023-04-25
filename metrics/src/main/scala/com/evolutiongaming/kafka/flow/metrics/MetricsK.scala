@@ -6,11 +6,11 @@ import com.evolutiongaming.smetrics.CollectorRegistry
 
 /** Enriches existing `F[A]` instance with metrics.
   *
-  * Useful when single instance of metrics is used with several different class
-  * instances only different with some time parameter `A`.
+  * Useful when single instance of metrics is used with several different class instances only different with some time
+  * parameter `A`.
   *
-  * I.e. if one have `Repository[User]` and `Repository[Wallet]` and wants
-  * to have a single metrics instance for both of them.
+  * I.e. if one have `Repository[User]` and `Repository[Wallet]` and wants to have a single metrics instance for both of
+  * them.
   */
 trait MetricsK[F[_]] {
 

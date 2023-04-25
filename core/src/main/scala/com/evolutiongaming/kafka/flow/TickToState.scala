@@ -26,9 +26,8 @@ object TickToState {
 
   /** Uses `tick` to call the effect on a state stored inside of `storage`.
     *
-    * Performs the necessary actions upon the state being changes, i.e.
-    * sends it to persistence, or removes the key if the flow processing
-    * is finished.
+    * Performs the necessary actions upon the state being changes, i.e. sends it to persistence, or removes the key if
+    * the flow processing is finished.
     */
   def apply[F[_]: Monad: KeyContext, S](
     storage: Stateful[F, Option[S]],

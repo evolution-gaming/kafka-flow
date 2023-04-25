@@ -18,8 +18,7 @@ import scala.util.Try
 trait CassandraPersistence[F[_], S] extends PersistenceModule[F, S]
 object CassandraPersistence {
 
-  /** Creates schema in Cassandra if not there yet
-    * Uses a default number of Segments (10000) for keys table.
+  /** Creates schema in Cassandra if not there yet Uses a default number of Segments (10000) for keys table.
     */
   @deprecated("Use the alternative with an explicit passing of segments number", since = "0.6.6")
   def withSchemaF[F[_]: MonadThrow: Clock, S](
@@ -47,10 +46,8 @@ object CassandraPersistence {
 
   /** Creates schema in Cassandra if not there yet
     *
-    * This method uses the same `JsonCodec[Try]` as `JournalParser` does to
-    * simplify defining the basic application.
-    * if @consistencyConfig is present then applies
-    * ConsistencyConfig.Read for all read queries and
+    * This method uses the same `JsonCodec[Try]` as `JournalParser` does to simplify defining the basic application. if
+    * \@consistencyConfig is present then applies ConsistencyConfig.Read for all read queries and
     * ConsistencyConfig.Write for all the mutations
     *
     * Uses a default number of Segments (10000) for keys table.
@@ -65,10 +62,8 @@ object CassandraPersistence {
 
   /** Creates schema in Cassandra if not there yet
     *
-    * This method uses the same `JsonCodec[Try]` as `JournalParser` does to
-    * simplify defining the basic application.
-    * if @consistencyConfig is present then applies
-    * ConsistencyConfig.Read for all read queries and
+    * This method uses the same `JsonCodec[Try]` as `JournalParser` does to simplify defining the basic application. if
+    * \@consistencyConfig is present then applies ConsistencyConfig.Read for all read queries and
     * ConsistencyConfig.Write for all the mutations
     */
   def withSchema[F[_]: MonadThrow: Clock, S](

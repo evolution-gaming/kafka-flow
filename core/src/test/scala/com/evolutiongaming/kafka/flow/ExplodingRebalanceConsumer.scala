@@ -13,8 +13,8 @@ import scala.util.control.NoStackTrace
 
 /** It is intentional to have all methods as `Try(notImplemented)` (fails with NotImplementedOnPurpose)
   *
-  * It is used to verify the only expected interaction in corresponding tests
-  * by implementing the only expected method to be called in test
+  * It is used to verify the only expected interaction in corresponding tests by implementing the only expected method
+  * to be called in test
   */
 class ExplodingRebalanceConsumer extends RebalanceConsumer {
   def assignment(): Try[Set[TopicPartition]] = Try(notImplemented)

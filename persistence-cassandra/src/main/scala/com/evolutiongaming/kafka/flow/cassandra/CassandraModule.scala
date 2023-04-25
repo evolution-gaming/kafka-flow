@@ -29,10 +29,11 @@ object CassandraModule {
 
   /** Creates connection, synchronization and health check routines
     *
-    * @param config Connection parameters.
-    * @param executor Executor to run Cassandra requests on. It requires
-    * `ExecutionContextExecutor` rather than `ContextShift` because we need it
-    * to convert `ListenableFuture` to `F[_]`.
+    * @param config
+    *   Connection parameters.
+    * @param executor
+    *   Executor to run Cassandra requests on. It requires `ExecutionContextExecutor` rather than `ContextShift` because
+    *   we need it to convert `ListenableFuture` to `F[_]`.
     */
   def of[F[_]: Async: Parallel: LogOf](
     config: CassandraConfig
