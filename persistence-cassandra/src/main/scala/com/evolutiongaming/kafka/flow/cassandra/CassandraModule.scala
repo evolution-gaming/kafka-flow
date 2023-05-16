@@ -46,7 +46,7 @@ object CassandraModule {
       // while kafka-flow is accessing Cassandra in bracket/resource release
       // routine
       fromGFuture = new FromGFuture[F] {
-        val self = FromGFuture.lift[F]
+        val self = FromGFuture.lift1[F]
         def apply[A](future: => ListenableFuture[A]) = {
           self(future) onError { case e =>
             log.error("Cassandra request failed", e)

@@ -17,7 +17,7 @@ object Dependencies {
   }
 
   object KafkaJournal {
-    private val version = "0.1.1"
+    private val version = "0.2.0"
     val journal = "com.evolutiongaming" %% "kafka-journal" % version
     val cassandra = "com.evolutiongaming" %% "kafka-journal-eventual-cassandra" % version
     val persistence = "com.evolutiongaming" %% "kafka-journal-persistence" % version
