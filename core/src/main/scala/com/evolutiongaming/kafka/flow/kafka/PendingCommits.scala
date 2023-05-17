@@ -15,8 +15,8 @@ private[flow] trait PendingCommits[F[_]] {
   /** Remove stored offsets for a given set of partitions */
   def remove(topicPartitions: NonEmptySet[TopicPartition]): F[Unit]
 
-  /** Create a new instance of [[ScheduleCommit]] allowing individual partitions to request ("schedule") an offset
-    * to be committed during the next commit attempt
+  /** Create a new instance of [[ScheduleCommit]] allowing individual partitions to request ("schedule") an offset to be
+    * committed during the next commit attempt
     */
   def newScheduleCommit(topic: String, partition: Partition): ScheduleCommit[F]
 }

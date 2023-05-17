@@ -25,7 +25,7 @@ class JournalsSpec extends FunSuite {
 
     // When("buffer is filled with events")
     val program =
-      journals.append(100   -> "event1") *>
+      journals.append(100 -> "event1") *>
         journals.append(101 -> "event2") *>
         journals.append(102 -> "event3")
 
@@ -47,7 +47,7 @@ class JournalsSpec extends FunSuite {
     // When("buffer is filled with events")
     // And("journals is flushed")
     val program =
-      journals.append(100   -> "event1") *>
+      journals.append(100 -> "event1") *>
         journals.append(101 -> "event2") *>
         journals.append(102 -> "event3") *>
         journals.flush

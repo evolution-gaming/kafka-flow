@@ -15,8 +15,8 @@ trait KeyWriter[F[_]] {
 
   /** Removes state from the buffers and optionally also from persistence.
     *
-    * @param persist if `true` then also calls underlying database, flushes
-    * buffers only otherwise.
+    * @param persist
+    *   if `true` then also calls underlying database, flushes buffers only otherwise.
     */
   def delete(persist: Boolean): F[Unit]
 

@@ -11,7 +11,7 @@ object Dependencies {
 
   object Cats {
     private val version       = "2.7.0"
-    private val effectVersion = "3.4.8"
+    private val effectVersion = "3.4.9"
     val core                  = "org.typelevel" %% "cats-core"           % version
     val mtl                   = "org.typelevel" %% "cats-mtl"            % "1.2.1"
     val effect                = "org.typelevel" %% "cats-effect"         % effectVersion
@@ -19,7 +19,7 @@ object Dependencies {
   }
 
   object KafkaJournal {
-    private val version = "1.1.1"
+    private val version = "2.1.0"
     val journal         = "com.evolutiongaming" %% "kafka-journal"                    % version
     val cassandra       = "com.evolutiongaming" %% "kafka-journal-eventual-cassandra" % version
     val persistence     = "com.evolutiongaming" %% "kafka-journal-persistence"        % version
@@ -32,10 +32,10 @@ object Dependencies {
   }
 
   object Testing {
-    val munit = "org.scalameta" %% "munit" % "0.7.29"
+    val munit = "org.scalameta" %% "munit" % "1.0.0-M7"
 
     object Testcontainers {
-      private val version = "0.40.12"
+      private val version = "0.40.15"
       val munit           = "com.dimafeng" %% "testcontainers-scala-munit"     % version
       val kafka           = "com.dimafeng" %% "testcontainers-scala-kafka"     % version
       val cassandra       = "com.dimafeng" %% "testcontainers-scala-cassandra" % version

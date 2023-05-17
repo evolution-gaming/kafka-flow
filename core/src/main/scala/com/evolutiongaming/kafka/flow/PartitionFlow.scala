@@ -20,8 +20,8 @@ trait PartitionFlow[F[_]] {
 
   /** Processes incoming consumer records and triggers the underlying timers.
     *
-    * It is possible for `records` parameter to come empty (for an empty poll).
-    * In this case only the timers will be called.
+    * It is possible for `records` parameter to come empty (for an empty poll). In this case only the timers will be
+    * called.
     */
   def apply(records: List[ConsRecord]): F[Unit]
 

@@ -21,7 +21,7 @@ class JournalDatabaseSpec extends FunSuite {
 
     // When("update is performed")
     val program =
-      database.persist("key1", 100   -> "event1") *>
+      database.persist("key1", 100 -> "event1") *>
         database.persist("key1", 101 -> "event2") *>
         database.persist("key1", 102 -> "event3") *>
         database.get("key1").toList

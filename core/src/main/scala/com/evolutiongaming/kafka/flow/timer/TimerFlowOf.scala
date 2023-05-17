@@ -20,16 +20,17 @@ trait TimerFlowOf[F[_]] {
 }
 object TimerFlowOf {
 
-  /** Performs persist based on the difference between the state offset and current offset
-    * and idle time since the state was last touched.
+  /** Performs persist based on the difference between the state offset and current offset and idle time since the state
+    * was last touched.
     *
     * Removes the state from memory after it is persisted.
     *
-    * @param fireEvery How often the check should be performed.
-    * @param maxOffsetDifference How many events could have happened without updates
-    * to the state before persist is initiated.
-    * @param maxIdle How long since the state was recovered, or last record was processed
-    * should pass before persist is initiated.
+    * @param fireEvery
+    *   How often the check should be performed.
+    * @param maxOffsetDifference
+    *   How many events could have happened without updates to the state before persist is initiated.
+    * @param maxIdle
+    *   How long since the state was recovered, or last record was processed should pass before persist is initiated.
     */
   def unloadOrphaned[F[_]: MonadThrow](
     fireEvery: FiniteDuration = 10.minutes,
@@ -77,18 +78,22 @@ object TimerFlowOf {
     *
     * The flush will be called every `persitEvery` FiniteDuration.
     *
-    * Note that using `ignorePersistErrors` can cause the persisted state to become inconsistent with the committed offset.
-    * For example, if 9 out of 10 snapshots were persisted successfully but the last persisting fails,
-    * no new offset will be committed. Therefore, in case of an application crash or offset rebalance, the state will be
+    * Note that using `ignorePersistErrors` can cause the persisted state to become inconsistent with the committed
+    * offset. For example, if 9 out of 10 snapshots were persisted successfully but the last persisting fails, no new
+    * offset will be committed. Therefore, in case of an application crash or offset rebalance, the state will be
     * restored from these snapshots and some messages will be reprocessed again, so it's important to have an idempotent
     * processing logic
     *
-    * @param fireEvery the interval at which `onTimer` triggers
-    * @param persistEvery the interval at which the state will be persisted
-    * @param flushOnRevoke controls whether persistence flushing should happen on partition revocation
-    * @param ignorePersistErrors if true, a failure to persist the state will not fail the computation.
-    *                            Instead, an error message will be logged and a new offset for the key will not be
-    *                            `held`, so as a result no new offset will be committed for the partition.
+    * @param fireEvery
+    *   the interval at which `onTimer` triggers
+    * @param persistEvery
+    *   the interval at which the state will be persisted
+    * @param flushOnRevoke
+    *   controls whether persistence flushing should happen on partition revocation
+    * @param ignorePersistErrors
+    *   if true, a failure to persist the state will not fail the computation. Instead, an error message will be logged
+    *   and a new offset for the key will not be `held`, so as a result no new offset will be committed for the
+    *   partition.
     */
   def persistPeriodically[F[_]: MonadThrow](
     fireEvery: FiniteDuration    = 1.minute,

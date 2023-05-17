@@ -6,36 +6,42 @@ import cats.syntax.all._
 import cats.{Applicative, Hash, Monad}
 import com.evolutiongaming.catshelper.{Partitions, Runtime}
 
-/** Observability API allowing to inspect current state of in-memory entities externally (from HTTP handler, for example).
-  * When passed to the library, it's used to register an association between entity key and the function
-  * to obtain its current state when the state is initialized for the first time.
-  * When the entity is removed from the in-memory cache, this association is also supposed to be removed.
+/** Observability API allowing to inspect current state of in-memory entities externally (from HTTP handler, for
+  * example). When passed to the library, it's used to register an association between entity key and the function to
+  * obtain its current state when the state is initialized for the first time. When the entity is removed from the
+  * in-memory cache, this association is also supposed to be removed.
   *
   * There are three pre-defined implementations currently provided:
   *   - `EntityRegistry.empty` for no-op implementation
   *   - `EntityRegistry.const` for immutable constant data
   *   - `EntityRegistry.memory`, fully functional in-memory registry
-  * @tparam K entity key
-  * @tparam S entity state
+  * @tparam K
+  *   entity key
+  * @tparam S
+  *   entity state
   */
 trait EntityRegistry[F[_], K, S] {
 
-  /** Registers an association between an entity's key and the function to obtain current state of it.
-    * This is used internally by the library and shouldn't be called by the library users.
-    * @param key entity key
-    * @param state computation (effectively function) to obtain the current value of the entity
-    * @return `Resource` which acquisition registers the entity and releasing removes it from the registry
+  /** Registers an association between an entity's key and the function to obtain current state of it. This is used
+    * internally by the library and shouldn't be called by the library users.
+    * @param key
+    *   entity key
+    * @param state
+    *   computation (effectively function) to obtain the current value of the entity
+    * @return
+    *   `Resource` which acquisition registers the entity and releasing removes it from the registry
     */
   def register(key: K, state: F[Option[S]]): Resource[F, Unit]
 
   /** Returns current state of the entity by key (or None if there's no such entity or it has empty state)
-    * @param key entity key
-    * @return `Some` when the entity is present and has non-empty state, None otherwise
+    * @param key
+    *   entity key
+    * @return
+    *   `Some` when the entity is present and has non-empty state, None otherwise
     */
   def get(key: K): F[Option[S]]
 
-  /** Returns keys and states of all currently registered in-memory entities.
-    * Filters out entities having None as state
+  /** Returns keys and states of all currently registered in-memory entities. Filters out entities having None as state
     */
   def getAll: F[Map[K, S]]
 }

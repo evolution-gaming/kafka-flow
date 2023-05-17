@@ -7,10 +7,11 @@ import com.evolutiongaming.kafka.journal.ConsRecord
 
 import scala.concurrent.duration.FiniteDuration
 
-/** A factory of `AdditionalStatePersist`. It's invoked when a key is recovered, either from a persistence layer or
-  * from a source topic.
+/** A factory of `AdditionalStatePersist`. It's invoked when a key is recovered, either from a persistence layer or from
+  * a source topic.
   *
-  * @see [[com.evolutiongaming.kafka.flow.KeyStateOf]] for usage during recovery of a key
+  * @see
+  *   [[com.evolutiongaming.kafka.flow.KeyStateOf]] for usage during recovery of a key
   */
 trait AdditionalStatePersistOf[F[_], S] {
   def apply(

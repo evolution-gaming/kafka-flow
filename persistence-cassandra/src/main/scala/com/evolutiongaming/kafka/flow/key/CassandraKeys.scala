@@ -21,18 +21,21 @@ import java.time.{LocalDate, ZoneOffset}
 
 /** `KeyDatabase` that uses a Cassandra table to store instances of `KafkaKey`.
   *
-  * All keys are distributed over a specified number of segments.
-  * A number of segment is determined by first calculating a hashcode of `KafkaKey#key` and then reducing it modulo number of segments.
-  * That is, for `Segments=100` the number of segment would be {{{segment = hashCode(KafkaKey#key) mod 100}}}
+  * All keys are distributed over a specified number of segments. A number of segment is determined by first calculating
+  * a hashcode of `KafkaKey#key` and then reducing it modulo number of segments. That is, for `Segments=100` the number
+  * of segment would be {{{segment = hashCode(KafkaKey#key) mod 100}}}
   *
-  * Note that reducing this number between runs can break the logic of recovering keys as it's used by `all` method
-  * that fetches keys for all known segments.
+  * Note that reducing this number between runs can break the logic of recovering keys as it's used by `all` method that
+  * fetches keys for all known segments.
   *
-  * @param session Cassandra session
-  * @param consistencyOverrides allows overriding read and write query consistency separately
-  * @param segments a number of segments
-  * @param tableName the name of Cassandra table used
-  * @see See `com.evolutiongaming.kafka.flow.key.KeySchema` for a schema description
+  * @param session
+  *   Cassandra session
+  * @param consistencyOverrides
+  *   allows overriding read and write query consistency separately
+  * @param segments
+  *   a number of segments
+  * @see
+  *   See `com.evolutiongaming.kafka.flow.key.KeySchema` for a schema description
   */
 private class CassandraKeys[F[_]: Monad: Fail: Clock](
   session: CassandraSession[F],

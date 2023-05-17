@@ -39,10 +39,8 @@ object CassandraPersistence {
 
   /** Creates schema in Cassandra if not there yet
     *
-    * This method uses the same `JsonCodec[Try]` as `JournalParser` does to
-    * simplify defining the basic application.
-    * if @consistencyConfig is present then applies
-    * ConsistencyConfig.Read for all read queries and
+    * This method uses the same `JsonCodec[Try]` as `JournalParser` does to simplify defining the basic application. if
+    * \@consistencyConfig is present then applies ConsistencyConfig.Read for all read queries and
     * ConsistencyConfig.Write for all the mutations
     */
   def withSchema[F[_]: MonadThrow: Clock, S](
