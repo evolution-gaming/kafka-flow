@@ -1,13 +1,13 @@
 package com.evolutiongaming.kafka.flow.persistence
 
 import cats.Monad
+import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.journal.JournalDatabaseMetrics
 import com.evolutiongaming.kafka.flow.key.KeyDatabaseMetrics
 import com.evolutiongaming.kafka.flow.metrics.MetricsK
 import com.evolutiongaming.kafka.flow.metrics.MetricsKOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabaseMetrics
-import com.evolutiongaming.smetrics.MeasureDuration
 
 object PersistenceModuleMetrics {
 

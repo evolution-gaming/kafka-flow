@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Monad
 import cats.syntax.all._
+import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._
@@ -9,7 +10,6 @@ import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.smetrics.LabelNames
-import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.smetrics.MetricsHelper._
 import com.evolutiongaming.smetrics.Quantile
 import com.evolutiongaming.smetrics.Quantiles

@@ -6,11 +6,11 @@ import cats.effect.std.Semaphore
 import cats.effect.syntax.all._
 import cats.effect.{Concurrent, Ref, Resource}
 import cats.syntax.all._
+import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.DataHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.kafka.{Consumer, PendingCommits}
 import com.evolutiongaming.kafka.journal.{ConsRecords, PartitionOffset}
-import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 
@@ -43,7 +43,7 @@ object TopicFlow {
   ): Resource[F, TopicFlow[F]] =
     safeguard(
       for {
-        cache <- Cache.loading1[F, Partition, PartitionFlow[F]]
+        cache <- Cache.loading[F, Partition, PartitionFlow[F]]
         pendingCommits <- Ref
           .of[F, Map[TopicPartition, OffsetAndMetadata]](Map.empty)
           .toResource

@@ -2,11 +2,11 @@ import sbt._
 
 object Dependencies {
 
-  val catsHelper        = "com.evolutiongaming" %% "cats-helper"         % "3.4.0"
-  val catsHelperLogback = "com.evolutiongaming" %% "cats-helper-logback" % "3.4.0"
-  val smetrics          = "com.evolutiongaming" %% "smetrics"            % "1.0.7"
-  val scache            = "com.evolutiongaming" %% "scache"              % "4.3.1"
-  val skafka            = "com.evolutiongaming" %% "skafka"              % "15.0.1"
+  val catsHelper        = "com.evolutiongaming" %% "cats-helper"         % "3.5.0"
+  val catsHelperLogback = "com.evolutiongaming" %% "cats-helper-logback" % "3.5.0"
+  val smetrics          = "com.evolutiongaming" %% "smetrics"            % "2.0.0"
+  val scache            = "com.evolution"       %% "scache"              % "5.0.0"
+  val skafka            = "com.evolutiongaming" %% "skafka"              % "16.0.0"
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.0.1"
 
   object Cats {
@@ -19,7 +19,7 @@ object Dependencies {
   }
 
   object KafkaJournal {
-    private val version = "2.1.0"
+    private val version = "3.0.0"
     val journal         = "com.evolutiongaming" %% "kafka-journal"                    % version
     val cassandra       = "com.evolutiongaming" %% "kafka-journal-eventual-cassandra" % version
     val persistence     = "com.evolutiongaming" %% "kafka-journal-persistence"        % version
