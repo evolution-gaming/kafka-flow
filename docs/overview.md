@@ -59,7 +59,7 @@ main "dog food" application is written in Tagless Final style.
 import cats.effect.{IO, MonadCancelThrow}
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.smetrics.MeasureDuration
+import com.evolutiongaming.catshelper.MeasureDuration
 
 implicit val MT = MonadCancelThrow[IO]
 implicit val measureDuration = MeasureDuration.empty[IO]
