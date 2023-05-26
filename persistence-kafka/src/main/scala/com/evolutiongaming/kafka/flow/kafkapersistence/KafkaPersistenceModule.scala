@@ -3,6 +3,7 @@ package com.evolutiongaming.kafka.flow.kafkapersistence
 import cats.Parallel
 import cats.effect.{Concurrent, Resource}
 import cats.syntax.all._
+import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.metrics.syntax._
@@ -10,7 +11,6 @@ import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersis
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey}
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf}
 import com.evolutiongaming.skafka.{FromBytes, ToBytes, TopicPartition}
@@ -165,7 +165,7 @@ object KafkaPersistenceModule {
     }
 
     for {
-      partitionDataCache <- Cache.loading1[F, String, ByteVector]
+      partitionDataCache <- Cache.loading[F, String, ByteVector]
       keysOf_            <- Resource.eval(makeKeysOf(partitionDataCache))
       persistence_       <- Resource.eval(makeSnapshotPersistenceOf(keysOf_, partitionDataCache, producer))
     } yield new KafkaPersistenceModule[F, S] {

@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.kafka
 
 import cats.effect.{Async, Clock, Resource}
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.{FromTry, LogOf, ToFuture, ToTry}
+import com.evolutiongaming.catshelper.{FromTry, LogOf, MeasureDuration, ToFuture, ToTry}
 import com.evolutiongaming.kafka.flow.LogResource
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.kafka.journal.{
@@ -19,7 +19,7 @@ import com.evolutiongaming.skafka.consumer.{
   ConsumerOf => RawConsumerOf
 }
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerMetrics, ProducerOf => RawProducerOf}
-import com.evolutiongaming.smetrics.{CollectorRegistry, MeasureDuration}
+import com.evolutiongaming.smetrics.CollectorRegistry
 import scodec.bits.ByteVector
 
 trait KafkaModule[F[_]] {

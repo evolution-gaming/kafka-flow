@@ -4,10 +4,11 @@ import cats.Monad
 import cats.arrow.FunctionK
 import cats.effect.Resource
 import cats.syntax.all._
+import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.metrics.MetricsK
 import com.evolutiongaming.kafka.flow.metrics.MetricsKOf
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.smetrics.{CollectorRegistry, LabelNames, MeasureDuration, Quantile, Quantiles}
+import com.evolutiongaming.smetrics.{CollectorRegistry, LabelNames, Quantile, Quantiles}
 import com.evolutiongaming.smetrics.MetricsHelper._
 import metrics.syntax._
 

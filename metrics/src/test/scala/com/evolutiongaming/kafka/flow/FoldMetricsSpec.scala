@@ -1,9 +1,9 @@
 package com.evolutiongaming.kafka.flow
 
 import FoldMetrics._
+import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.smetrics.CollectorRegistry
-import com.evolutiongaming.smetrics.MeasureDuration
 import metrics.syntax._
 import munit.FunSuite
 

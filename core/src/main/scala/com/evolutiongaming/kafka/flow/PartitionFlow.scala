@@ -1,17 +1,17 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.Applicative
 import cats.data.NonEmptyList
 import cats.effect._
 import cats.effect.implicits._
-import cats.syntax.all._
-import cats.Applicative
 import cats.kernel.CommutativeMonoid
+import cats.syntax.all._
+import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.scache.Cache
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 
 import java.time.Instant
@@ -58,7 +58,7 @@ object PartitionFlow {
     scheduleCommit: ScheduleCommit[F]
   ): Resource[F, PartitionFlow[F]] =
     LogResource[F](getClass, topicPartition.toString) flatMap { implicit log =>
-      Cache.loading1[F, String, PartitionKey[F]] flatMap { cache =>
+      Cache.loading[F, String, PartitionKey[F]] flatMap { cache =>
         of(topicPartition, assignedAt, keyStateOf, cache, config, filter, scheduleCommit)
       }
     }
