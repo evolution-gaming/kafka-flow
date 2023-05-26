@@ -1,11 +1,11 @@
 package com.evolutiongaming.kafka.flow.key
 
 import cats.Monad
+import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.smetrics.LabelNames
-import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.smetrics.MetricsHelper._
 import com.evolutiongaming.smetrics.Quantile
 import com.evolutiongaming.smetrics.Quantiles

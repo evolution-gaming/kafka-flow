@@ -3,10 +3,11 @@ package com.evolutiongaming.kafka.flow.metrics
 import cats.data.State
 import cats.effect.Resource
 import cats.syntax.all._
+import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.smetrics.CollectorRegistry
-import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
+
 import scala.concurrent.duration.FiniteDuration
 import syntax._
 

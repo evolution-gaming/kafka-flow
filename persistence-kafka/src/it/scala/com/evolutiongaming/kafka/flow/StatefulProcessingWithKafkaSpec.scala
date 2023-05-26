@@ -4,7 +4,7 @@ import cats.data.NonEmptyList
 import cats.effect.concurrent.{Deferred, Ref}
 import cats.effect.{IO, Resource}
 import cats.syntax.all._
-import cats.{Applicative, Functor, Monad}
+import cats.{Functor, Monad}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec._
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
@@ -304,7 +304,7 @@ object StatefulProcessingWithKafkaSpec {
   object Boilerplate {
     implicit val jsonCodec: JsonCodec[IO] = JsonCodec.default[IO]
 
-    implicit def fromWrites[F[_]: Applicative, A](implicit
+    implicit def fromWrites[F[_], A](implicit
       writes: OWrites[A],
       encode: JsonCodec.Encode[F]
     ): com.evolutiongaming.kafka.journal.ToBytes[F, A] = com.evolutiongaming.kafka.journal.ToBytes.fromWrites[F, A]

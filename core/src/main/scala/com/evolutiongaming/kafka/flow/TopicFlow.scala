@@ -3,18 +3,16 @@ package com.evolutiongaming.kafka.flow
 import cats.Parallel
 import cats.data.NonEmptySet
 import cats.effect.concurrent.{Ref, Semaphore}
-import cats.effect.{Concurrent, Resource}
 import cats.effect.syntax.all._
+import cats.effect.{Concurrent, Resource}
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.DataHelper._
-import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.journal.ConsRecords
-import com.evolutiongaming.kafka.journal.PartitionOffset
-import com.evolutiongaming.scache.Cache
-import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, Partition, Topic, TopicPartition}
-import kafka.{Consumer, PendingCommits}
+import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.CatsHelper._
+import com.evolutiongaming.catshelper.DataHelper._
+import com.evolutiongaming.catshelper.{Log, LogOf}
+import com.evolutiongaming.kafka.flow.kafka.{Consumer, PendingCommits}
+import com.evolutiongaming.kafka.journal.{ConsRecords, PartitionOffset}
+import com.evolutiongaming.skafka._
 
 import scala.collection.immutable.SortedSet
 
@@ -47,7 +45,7 @@ object TopicFlow {
   ): Resource[F, TopicFlow[F]] =
     safeguard(
       for {
-        cache <- Cache.loading1[F, Partition, PartitionFlow[F]]
+        cache <- Cache.loading[F, Partition, PartitionFlow[F]]
         pendingCommits <- Ref
           .of[F, Map[TopicPartition, OffsetAndMetadata]](Map.empty)
           .toResource
