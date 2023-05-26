@@ -7,10 +7,7 @@ import cats.effect.ContextShift
 import cats.effect.Resource
 import cats.effect.Timer
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.FromTry
-import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.catshelper.ToFuture
-import com.evolutiongaming.catshelper.ToTry
+import com.evolutiongaming.catshelper.{FromTry, LogOf, MeasureDuration, ToFuture, ToTry}
 import com.evolutiongaming.kafka.flow.LogResource
 import com.evolutiongaming.kafka.journal.KafkaConfig
 import com.evolutiongaming.kafka.journal.KafkaHealthCheck
@@ -22,7 +19,6 @@ import com.evolutiongaming.skafka.consumer.AutoOffsetReset
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerMetrics, ConsumerOf => RawConsumerOf}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerMetrics, ProducerOf => RawProducerOf}
 import com.evolutiongaming.smetrics.CollectorRegistry
-import com.evolutiongaming.smetrics.MeasureDuration
 import scodec.bits.ByteVector
 
 trait KafkaModule[F[_]] {

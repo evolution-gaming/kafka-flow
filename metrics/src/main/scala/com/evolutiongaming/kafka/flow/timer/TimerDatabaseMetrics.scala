@@ -2,12 +2,12 @@ package com.evolutiongaming.kafka.flow.timer
 
 import cats.Monad
 import cats.syntax.all._
+import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.metrics.MetricsK
 import com.evolutiongaming.kafka.flow.metrics.MetricsKOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.smetrics.LabelNames
-import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.smetrics.MetricsHelper._
 import com.evolutiongaming.smetrics.Quantile
 import com.evolutiongaming.smetrics.Quantiles

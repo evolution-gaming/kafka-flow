@@ -60,7 +60,7 @@ import cats.effect.IO
 import com.evolutiongaming.catshelper.BracketThrowable
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.smetrics.MeasureDuration
+import com.evolutiongaming.catshelper.MeasureDuration
 import scala.concurrent.ExecutionContext
 
 implicit val contextShift = IO.contextShift(ExecutionContext.global)

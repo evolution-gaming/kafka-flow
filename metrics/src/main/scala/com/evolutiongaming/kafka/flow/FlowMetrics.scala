@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Monad
 import cats.effect.Resource
+import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.KeyStateMetrics._
 import com.evolutiongaming.kafka.flow.PartitionFlowMetrics._
 import com.evolutiongaming.kafka.flow.TopicFlowMetrics._
@@ -18,7 +19,7 @@ import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabaseMetrics._
 import com.evolutiongaming.kafka.flow.timer.TimerDatabase
 import com.evolutiongaming.kafka.flow.timer.TimerDatabaseMetrics._
 import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.smetrics.{CollectorRegistry, MeasureDuration}
+import com.evolutiongaming.smetrics.CollectorRegistry
 
 trait FlowMetrics[F[_]] {
 

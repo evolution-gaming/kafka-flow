@@ -5,9 +5,10 @@ import cats.FlatMap
 import cats.Monad
 import cats.effect.Resource
 import cats.syntax.all._
+import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.smetrics.CollectorRegistry
-import com.evolutiongaming.smetrics.MeasureDuration
 import com.evolutiongaming.sstream.Stream
+
 import scala.concurrent.duration.FiniteDuration
 
 package object syntax {
