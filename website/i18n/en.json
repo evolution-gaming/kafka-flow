@@ -5,10 +5,6 @@
     "previous": "Previous",
     "tagline": "Reliable processing of Kafka Journal events",
     "docs": {
-      "changelog": {
-        "title": "Changelog",
-        "sidebar_label": "Changelog"
-      },
       "faq": {
         "title": "FAQ",
         "sidebar_label": "FAQ"
