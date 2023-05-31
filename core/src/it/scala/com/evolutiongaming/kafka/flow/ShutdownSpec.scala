@@ -23,7 +23,7 @@ class ShutdownSpec extends ForAllKafkaSuite {
     val producerConfig = ProducerConfig(common =
       CommonConfig(
         bootstrapServers = NonEmptyList.one(kafka.container.bootstrapServers),
-        clientId = Some("ShutdownSpec-producer")
+        clientId         = Some("ShutdownSpec-producer")
       )
     )
 
@@ -43,7 +43,7 @@ class ShutdownSpec extends ForAllKafkaSuite {
         _ <- KafkaFlow.stream(
           consumer = kafkaModule().consumerOf("ShutdownSpec-groupId"),
           flowOf = ConsumerFlowOf[IO](
-            topic = "ShutdownSpec-topic",
+            topic  = "ShutdownSpec-topic",
             flowOf = flowOf
           )
         )
@@ -54,21 +54,21 @@ class ShutdownSpec extends ForAllKafkaSuite {
     }
 
     val test: IO[Unit] = for {
-      state <- Ref.of[IO, Set[Partition]](Set.empty)
+      state    <- Ref.of[IO, Set[Partition]](Set.empty)
       finished <- Deferred[IO, Unit]
       // start a stream
-      flowOf = ShutdownSpec.topicFlowOf(state)
+      flowOf   = ShutdownSpec.topicFlowOf(state)
       program <- program(flowOf, finished).toList.start
       // wait for first record to process
       _ <- finished.get.timeoutTo(10.seconds, program.join.void)
       // validate subscriptions in active flow
       partitions <- state.get
-      _ = assertEquals(partitions, Set(Partition.min))
+      _           = assertEquals(partitions, Set(Partition.min))
       // cancel the program
       _ <- program.cancel
       // validate subscriptions in cancelled flow
       partitions <- state.get
-      _ = assert(partitions.isEmpty, s"Partitions weren't empty: $partitions")
+      _           = assert(partitions.isEmpty, s"Partitions weren't empty: $partitions")
     } yield ()
 
     test.unsafeRunSync()

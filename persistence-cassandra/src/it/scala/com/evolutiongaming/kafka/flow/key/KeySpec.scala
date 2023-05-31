@@ -15,9 +15,9 @@ class KeySpec extends CassandraSpec {
   test("queries") {
     val partition1 = TopicPartition("topic1", Partition.unsafe(1))
     val partition2 = TopicPartition("topic1", Partition.unsafe(2))
-    val key1 = KafkaKey("KeySpec", "integration-tests-1", partition1, "queries.key1")
-    val key2 = KafkaKey("KeySpec", "integration-tests-1", partition2, "queries.key2")
-    val key3 = KafkaKey("KeySpec", "integration-tests-1", partition2, "queries.key3")
+    val key1       = KafkaKey("KeySpec", "integration-tests-1", partition1, "queries.key1")
+    val key2       = KafkaKey("KeySpec", "integration-tests-1", partition2, "queries.key2")
+    val key3       = KafkaKey("KeySpec", "integration-tests-1", partition2, "queries.key3")
     val test: IO[Unit] = for {
       keys <- CassandraKeys.withSchema(
         cassandra().session,
@@ -25,14 +25,14 @@ class KeySpec extends CassandraSpec {
         ConsistencyOverrides.none,
         CassandraKeys.DefaultSegments
       )
-      partition1KeysBeforeTest <- keys.all("KeySpec", "integration-tests-1", partition1).toList
-      partition2KeysBeforeTest <- keys.all("KeySpec", "integration-tests-1", partition2).toList
-      _ <- List(key1, key2, key3) traverse_ keys.persist
+      partition1KeysBeforeTest   <- keys.all("KeySpec", "integration-tests-1", partition1).toList
+      partition2KeysBeforeTest   <- keys.all("KeySpec", "integration-tests-1", partition2).toList
+      _                          <- List(key1, key2, key3) traverse_ keys.persist
       partition1KeysAfterPersist <- keys.all("KeySpec", "integration-tests-1", partition1).toList
       partition2KeysAfterPersist <- keys.all("KeySpec", "integration-tests-1", partition2).toList
-      _ <- List(key1, key2, key3) traverse_ keys.delete
-      partition1KeysAfterDelete <- keys.all("KeySpec", "integration-tests-1", partition1).toList
-      partition2KeysAfterDelete <- keys.all("KeySpec", "integration-tests-1", partition2).toList
+      _                          <- List(key1, key2, key3) traverse_ keys.delete
+      partition1KeysAfterDelete  <- keys.all("KeySpec", "integration-tests-1", partition1).toList
+      partition2KeysAfterDelete  <- keys.all("KeySpec", "integration-tests-1", partition2).toList
     } yield {
       assert(clue(partition1KeysBeforeTest.isEmpty))
       assert(clue(partition2KeysBeforeTest.isEmpty))
@@ -48,14 +48,14 @@ class KeySpec extends CassandraSpec {
   test("failures") {
     val test: IO[Unit] = for {
       failAfter <- Ref.of[IO, Int](100)
-      session = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
+      session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
       keys <- CassandraKeys.withSchema(
         session,
         cassandra().sync,
         ConsistencyOverrides.none,
         CassandraKeys.DefaultSegments
       )
-      _ <- failAfter.set(1)
+      _    <- failAfter.set(1)
       keys <- keys.all("KeySpec", "integration-tests-1", TopicPartition("topic", Partition.min)).toList.attempt
     } yield assert(clue(keys.isLeft))
 

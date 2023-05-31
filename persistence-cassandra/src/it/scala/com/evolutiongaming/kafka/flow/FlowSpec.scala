@@ -22,43 +22,43 @@ class FlowSpec extends CassandraSpec {
   test("flow fails when Cassandra insert fails") {
     val flow = for {
       failAfter <- Resource.eval(Ref.of[IO, Int](10000))
-      session = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
+      session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
       storage <- Resource.eval(
         CassandraPersistence
           .withSchema[IO, String](session, cassandra().sync, ConsistencyOverrides.none, CassandraKeys.DefaultSegments)
       )
-      timersOf <- Resource.eval(TimersOf.memory[IO, KafkaKey])
-      keysOf <- Resource.eval(storage.keys.keysOf)
+      timersOf      <- Resource.eval(TimersOf.memory[IO, KafkaKey])
+      keysOf        <- Resource.eval(storage.keys.keysOf)
       persistenceOf <- storage.restoreEvents
       keyStateOf = KeyStateOf.eagerRecovery[IO, KafkaSnapshot[String]](
         applicationId = "FlowSpec",
-        groupId = "integration-tests-1",
-        keysOf = keysOf,
+        groupId       = "integration-tests-1",
+        keysOf        = keysOf,
         persistenceOf = persistenceOf,
-        timersOf = timersOf,
+        timersOf      = timersOf,
         timerFlowOf = TimerFlowOf.unloadOrphaned[IO](
-          fireEvery = 10.minutes,
-          maxIdle = 30.minutes,
+          fireEvery     = 10.minutes,
+          maxIdle       = 30.minutes,
           flushOnRevoke = true
         ),
-        fold = FoldOption.empty[IO, KafkaSnapshot[String], ConsRecord],
-        tick = TickOption.id[IO, KafkaSnapshot[String]],
+        fold     = FoldOption.empty[IO, KafkaSnapshot[String], ConsRecord],
+        tick     = TickOption.id[IO, KafkaSnapshot[String]],
         registry = EntityRegistry.empty[IO, KafkaKey, KafkaSnapshot[String]]
       )
       partitionFlowOf = PartitionFlowOf(
         keyStateOf = keyStateOf,
         config = PartitionFlowConfig(
           triggerTimersInterval = 1.minute,
-          commitOnRevoke = true
+          commitOnRevoke        = true
         )
       )
       topicFlowOf = TopicFlowOf(partitionFlowOf)
       records = NonEmptyList.of(
         ConsRecord(
-          topicPartition = TopicPartition.empty,
-          offset = Offset.min,
+          topicPartition   = TopicPartition.empty,
+          offset           = Offset.min,
           timestampAndType = None,
-          key = Some(WithSize("key"))
+          key              = Some(WithSize("key"))
         )
       )
       consumer = Consumer.repeat[IO] {
@@ -68,7 +68,7 @@ class FlowSpec extends CassandraSpec {
         implicit val retry = Retry.empty[IO]
         KafkaFlow.resource(
           consumer = Resource.eval(consumer),
-          flowOf = ConsumerFlowOf(topic = "", flowOf = topicFlowOf)
+          flowOf   = ConsumerFlowOf(topic = "", flowOf = topicFlowOf)
         )
       }
     } yield join
