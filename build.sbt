@@ -8,7 +8,7 @@ lazy val commonSettings = Seq(
   organizationHomepage := Some(url("https://evolution.com/")),
   publishTo := Some(Resolver.evolutionReleases),
   scalaVersion := crossScalaVersions.value.head,
-  crossScalaVersions := Seq("2.13.10", "2.12.17"),
+  crossScalaVersions := Seq("2.13.10", "2.12.18"),
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   releaseCrossBuild := true,
   testFrameworks += new TestFramework("munit.Framework"),
@@ -43,7 +43,7 @@ lazy val core = (project in file("core"))
       KafkaJournal.journal,
       KafkaJournal.persistence,
       Monocle.`macro` % Test,
-      Monocle.core % Test,
+      Monocle.core    % Test,
       catsHelper,
       scache,
       skafka,
@@ -73,7 +73,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
     libraryDependencies ++= Seq(
       KafkaJournal.cassandra,
       Testing.Testcontainers.cassandra % IntegrationTest,
-      Testing.Testcontainers.munit % IntegrationTest
+      Testing.Testcontainers.munit     % IntegrationTest
     ),
     Defaults.itSettings,
     IntegrationTest / fork := true
@@ -88,7 +88,7 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
     libraryDependencies ++= Seq(
       Monocle.core,
       Monocle.`macro`,
-      catsHelperLogback % IntegrationTest,
+      catsHelperLogback            % IntegrationTest,
       Testing.Testcontainers.kafka % IntegrationTest,
       Testing.Testcontainers.munit % IntegrationTest
     ),
