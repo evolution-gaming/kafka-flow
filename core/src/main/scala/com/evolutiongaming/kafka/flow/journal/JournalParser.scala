@@ -53,7 +53,7 @@ object JournalParser {
 
     implicit val parseAction: ConsRecordToActionRecord[F] = ConsRecordToActionRecord[F]
 
-    implicit val parsePayload: KafkaRead[F, Payload] = KafkaRead.summon[F, Payload]
+    implicit val parsePayload: KafkaRead[F, Payload] = KafkaRead.payloadKafkaRead[F]
 
     def toAppend(record: ConsRecord) = {
       parseAction(record).value map { record =>
