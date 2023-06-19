@@ -13,9 +13,9 @@ object CassandraSessionStub {
     def fail[T]: F[T] = MonadThrow[F].raiseError {
       new RuntimeException("CassandraSessionStub: always fails")
     }
-    def prepare(query: String) = fail
+    def prepare(query: String)        = fail
     def execute(statement: Statement) = Stream.lift(fail)
-    def unsafe = sys.error("CassandraSessionStub: no unsafe session")
+    def unsafe                        = sys.error("CassandraSessionStub: no unsafe session")
   }
 
   def injectFailures[F[_]: MonadThrow](

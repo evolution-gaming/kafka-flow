@@ -15,17 +15,17 @@ class JournalSpec extends CassandraSpec {
       journals <- CassandraJournals.withSchema(cassandra().session, cassandra().sync)
       contents <- IO.fromEither(ByteVector.encodeUtf8("record-contents"))
       record = ConsRecord(
-        topicPartition = TopicPartition.empty,
-        offset = Offset.min,
+        topicPartition   = TopicPartition.empty,
+        offset           = Offset.min,
         timestampAndType = None,
-        key = Some(WithSize("queries")),
-        value = Some(WithSize(contents, 15))
+        key              = Some(WithSize("queries")),
+        value            = Some(WithSize(contents, 15))
       )
-      journalBeforeTest <- journals.get(key).toList
-      _ <- journals.persist(key, record)
+      journalBeforeTest   <- journals.get(key).toList
+      _                   <- journals.persist(key, record)
       journalAfterPersist <- journals.get(key).toList
-      _ <- journals.delete(key)
-      journalAfterDelete <- journals.get(key).toList
+      _                   <- journals.delete(key)
+      journalAfterDelete  <- journals.get(key).toList
 
       _ = assert(clue(journalBeforeTest.isEmpty))
       _ = assertEquals(clue(journalAfterPersist), List(record))
@@ -41,9 +41,9 @@ class JournalSpec extends CassandraSpec {
       failAfter <- Ref.of[IO, Int](100)
       session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
       journals  <- CassandraJournals.withSchema(session, cassandra().sync)
-      _ <- failAfter.set(1)
-      records <- journals.get(key).toList.attempt
-      _ = assert(clue(records.isLeft))
+      _         <- failAfter.set(1)
+      records   <- journals.get(key).toList.attempt
+      _          = assert(clue(records.isLeft))
     } yield ()
 
     test.unsafeRunSync()

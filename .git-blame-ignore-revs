@@ -3,3 +3,6 @@
 
 # Format all code with scalafmt 3.7.3
 7d16f65e44aa2b7bf1ac0cd031ea762dea0bb5e9
+
+# Scala Steward: Reformat with scalafmt 3.7.4
+3fdc4ecbe2c83dd36ed03eb55dc7f3966abb410b

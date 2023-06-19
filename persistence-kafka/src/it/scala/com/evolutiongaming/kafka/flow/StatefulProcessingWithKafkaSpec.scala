@@ -8,7 +8,11 @@ import cats.{Functor, Monad}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec._
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
-import com.evolutiongaming.kafka.flow.kafkapersistence.{KafkaPersistenceModule, KafkaPersistenceModuleOf, kafkaEagerRecovery}
+import com.evolutiongaming.kafka.flow.kafkapersistence.{
+  KafkaPersistenceModule,
+  KafkaPersistenceModuleOf,
+  kafkaEagerRecovery
+}
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -44,9 +48,9 @@ import scala.jdk.CollectionConverters._
 
  */
 class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
-  implicit val ioRuntime = IORuntime.global
+  implicit val ioRuntime        = IORuntime.global
   implicit val logOf: LogOf[IO] = LogOf.slf4j[IO].unsafeRunSync()
-  implicit val log: Log[IO] = logOf(this.getClass).unsafeRunSync()
+  implicit val log: Log[IO]     = logOf(this.getClass).unsafeRunSync()
 
   private def producerConfig =
     ProducerConfig(common = CommonConfig(bootstrapServers = NonEmptyList.one(kafka.container.bootstrapServers)))
@@ -73,7 +77,7 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
         Resource.pure(inMemoryPersistenceModule)
     }
 
-  private val appId = "app-id"
+  private val appId       = "app-id"
   private val testGroupId = "group-id"
   /*
    * State stores:
@@ -104,10 +108,10 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
       .map { producer =>
         KafkaPersistenceModuleOf.caching[IO, State](
           consumerOf = ConsumerOf.apply1[IO](),
-          producer = producer,
+          producer   = producer,
           consumerConfig = ConsumerConfig(
-            common = producerConfig.common,
-            autoCommit = false,
+            common          = producerConfig.common,
+            autoCommit      = false,
             autoOffsetReset = AutoOffsetReset.Earliest
           ),
           snapshotTopic = stateTopic
@@ -118,7 +122,7 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
 
   test("stateful processing using in-memory persistence") {
     // using unique input topic name per test as weaver is running tests in parallel
-    val inputTopic = "in-memory-persistence-test"
+    val inputTopic          = "in-memory-persistence-test"
     val persistenceModuleOf = inMemoryPersistenceModuleOf
     comboTestCase(kafkaModule(), persistenceModuleOf, inputTopic).unsafeRunSync()
   }
@@ -174,25 +178,25 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
     }
 
     def program: IO[List[Output]] = for {
-      output <- Ref.of[IO, List[Output]](List.empty)
+      output   <- Ref.of[IO, List[Output]](List.empty)
       finished <- Deferred[IO, Unit]
-      flowOf <- topicFlowOf(persistenceModuleOf, output, finished)
+      flowOf   <- topicFlowOf(persistenceModuleOf, output, finished)
       run = KafkaFlow.resource(
         consumer = kafka.consumerOf("groupId-StatefulProcessingWithKafkaSpec"),
         flowOf = ConsumerFlowOf[IO](
-          topic = inputTopic,
+          topic  = inputTopic,
           flowOf = flowOf
         )
       )
       // wait for records to be processed
-      _ <- run.use(_ => finished.get.timeout(5.seconds))
+      _      <- run.use(_ => finished.get.timeout(5.seconds))
       output <- output.get
     } yield output
 
     for {
-      _ <- produceInput(1)
-      _ <- produceInput(2)
-      _ <- produceInput(3)
+      _      <- produceInput(1)
+      _      <- produceInput(2)
+      _      <- produceInput(3)
       output <- program
       _ = assertEquals(
         output,
@@ -205,9 +209,9 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
         )
       )
 
-      _ <- produceInput(4)
-      _ <- produceInput(5)
-      _ <- produceInput(6)
+      _      <- produceInput(4)
+      _      <- produceInput(5)
+      _      <- produceInput(6)
       output <- program
       _ = assertEquals(
         output,
@@ -223,7 +227,7 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
         )
       )
 
-      _ <- produceInput(0) // Input(0) removes state
+      _      <- produceInput(0) // Input(0) removes state
       output <- program
       _ = assertEquals(
         output,
@@ -233,7 +237,7 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
         )
       )
 
-      _ <- produceInput(9)
+      _      <- produceInput(9)
       output <- program
       _ = assertEquals(
         output,
@@ -254,14 +258,14 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
       timersOf <- TimersOf.memory[IO, KafkaKey]
       partitionFlowOf = kafkaEagerRecovery[IO, State](
         kafkaPersistenceModuleOf = persistenceModuleOf,
-        applicationId = appId,
-        groupId = testGroupId,
-        timersOf = timersOf,
+        applicationId            = appId,
+        groupId                  = testGroupId,
+        timersOf                 = timersOf,
         timerFlowOf = TimerFlowOf
           .persistPeriodically[IO](
             // 0 seconds intervals are used to persist state after every consumer.poll
             // to simplify test scenarios
-            fireEvery = 0.seconds,
+            fireEvery    = 0.seconds,
             persistEvery = 0.seconds,
             // flush on revoke is set to false, as it has no impact on test outcomes
             // coz we persist the state after every consumer.poll
@@ -274,8 +278,8 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
           triggerTimersInterval = 0.seconds,
           commitOffsetsInterval = 0.seconds
         ),
-        tick = TickOption.id[IO, State],
-        filter = none,
+        tick     = TickOption.id[IO, State],
+        filter   = none,
         registry = EntityRegistry.empty[IO, KafkaKey, State]
       )
     } yield TopicFlowOf(partitionFlowOf)
@@ -301,23 +305,23 @@ object StatefulProcessingWithKafkaSpec {
   object Boilerplate {
     implicit val jsonCodec: JsonCodec[IO] = JsonCodec.default[IO]
 
-    implicit def fromWrites[F[_], A](implicit
-      writes: OWrites[A],
+    implicit def fromWrites[F[_], A](
+      implicit writes: OWrites[A],
       encode: JsonCodec.Encode[F]
     ): com.evolutiongaming.kafka.journal.ToBytes[F, A] = com.evolutiongaming.kafka.journal.ToBytes.fromWrites
 
-    implicit def fromReads[F[_]: Monad: FromJsResult, A <: Product](implicit
-      writes: Reads[A],
+    implicit def fromReads[F[_]: Monad: FromJsResult, A <: Product](
+      implicit writes: Reads[A],
       decode: JsonCodec.Decode[F]
     ): com.evolutiongaming.kafka.journal.FromBytes[F, A] = com.evolutiongaming.kafka.journal.FromBytes.fromReads
 
-    implicit def toBytesBridge[F[_]: Functor, A](implicit
-      toBytes: com.evolutiongaming.kafka.journal.ToBytes[F, A]
+    implicit def toBytesBridge[F[_]: Functor, A](
+      implicit toBytes: com.evolutiongaming.kafka.journal.ToBytes[F, A]
     ): com.evolutiongaming.skafka.ToBytes[F, A] =
       (a: A, _) => toBytes(a).map(_.toArray)
 
-    implicit def fromBytesBridge[F[_], A](implicit
-      fromBytes: com.evolutiongaming.kafka.journal.FromBytes[F, A]
+    implicit def fromBytesBridge[F[_], A](
+      implicit fromBytes: com.evolutiongaming.kafka.journal.FromBytes[F, A]
     ): com.evolutiongaming.skafka.FromBytes[F, A] =
       (bytes: Bytes, _) => fromBytes(ByteVector(bytes))
   }
@@ -331,10 +335,12 @@ object StatefulProcessingWithKafkaSpec {
 
   final case class Output(key: String, stateBeforeInput: Option[State], input: Input)
 
-  /** processing kafka messages Input(n: Int) by storing `n` in State(n: Int)
-    * key is considered processed when n == 0 (i.e. state can be removed from persistent storage)
-    * @param output   list of Output(stateBeforeInput: Option[State], input: Input)
-    * @param finished is completed on Input(n % 3 == 0 || n == 0)
+  /** processing kafka messages Input(n: Int) by storing `n` in State(n: Int) key is considered processed when n == 0
+    * (i.e. state can be removed from persistent storage)
+    * @param output
+    *   list of Output(stateBeforeInput: Option[State], input: Input)
+    * @param finished
+    *   is completed on Input(n % 3 == 0 || n == 0)
     */
   def bizLogic(
     output: Ref[IO, List[Output]],
@@ -346,7 +352,7 @@ object StatefulProcessingWithKafkaSpec {
       for {
         // parse input assuming correct payload, otherwise intentionally exploding with exception to have simpler test
         input <- IO(Input(record.value.get.value.decodeUtf8.toOption.map(_.toInt).get))
-        key = record.key.get.value
+        key    = record.key.get.value
         newState =
           if (input.n == 0) none
           else state.fold(State(input.n))(s => s.copy(n = input.n)).some
