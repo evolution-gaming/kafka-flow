@@ -19,7 +19,7 @@ lazy val commonSettings = Seq(
     "org.scala-lang.modules" %% "scala-java8-compat" % "always"
   ),
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.2" cross CrossVersion.full),
-  coverageScalacPluginVersion := "2.0.8",
+  coverageScalacPluginVersion := "2.0.10",
 )
 
 lazy val root = (project in file("."))
