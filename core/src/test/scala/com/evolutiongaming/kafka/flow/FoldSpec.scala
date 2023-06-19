@@ -27,10 +27,10 @@ class FoldSpec extends FunSuite {
     val fail = Fold[F, Int, Int] { (_, _) => Left("failed") }
 
     val addAndFail     = add *> fail
-    val failAndRecover = fail handleErrorWith [String] { (s, _) => Right(s) }
+    val failAndRecover = fail.handleErrorWith[String] { (s, _) => Right(s) }
 
     val recoverEarly = add *> failAndRecover
-    val recoverLate  = addAndFail handleErrorWith [String] { (s, _) => Right(s) }
+    val recoverLate  = addAndFail.handleErrorWith[String] { (s, _) => Right(s) }
 
     // 1 + 2 = 3
     assertEquals(recoverEarly(1, 2), Right(3))

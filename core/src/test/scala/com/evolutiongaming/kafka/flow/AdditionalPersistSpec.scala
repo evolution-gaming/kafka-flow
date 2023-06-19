@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow
 import cats.effect.testkit.TestControl
 import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
-import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.KeysOf
@@ -23,7 +23,7 @@ import scala.concurrent.duration._
 class AdditionalPersistSpec extends FunSuite {
   import AdditionalPersistSpec.TestFixture
 
-  implicit val ioRuntime = IORuntime.global
+  implicit val ioRuntime: IORuntime = IORuntime.global
 
   test("persist state both on request and periodically when regular persist succeeds") {
     val fold: EnhancedFold[IO, String, ConsRecord] = EnhancedFold.of[IO, String, ConsRecord] { (extras, _, record) =>
@@ -256,8 +256,8 @@ class AdditionalPersistSpec extends FunSuite {
 
 object AdditionalPersistSpec {
   class TestFixture {
-    implicit val logOf = LogOf.empty[IO]
-    implicit val log   = logOf.apply(classOf[AdditionalPersistSpec]).unsafeRunSync()(IORuntime.global)
+    implicit val logOf: LogOf[IO] = LogOf.empty[IO]
+    implicit val log: Log[IO]     = logOf.apply(classOf[AdditionalPersistSpec]).unsafeRunSync()(IORuntime.global)
 
     val snapshots: Ref[IO, Map[KafkaKey, String]]                = Ref.unsafe[IO, Map[KafkaKey, String]](Map.empty)
     def snapshotDatabase: SnapshotDatabase[IO, KafkaKey, String] = SnapshotDatabase.memory(snapshots.stateInstance)

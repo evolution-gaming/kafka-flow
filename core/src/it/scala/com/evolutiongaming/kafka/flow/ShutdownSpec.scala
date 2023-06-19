@@ -15,7 +15,7 @@ import scala.concurrent.duration._
 
 class ShutdownSpec extends ForAllKafkaSuite {
 
-  implicit val ioRuntime = IORuntime.global
+  implicit val ioRuntime: IORuntime = IORuntime.global
 
   test("call and complete onPartitionsRevoked after shutdown started") {
     implicit val retry = Retry.empty[IO]

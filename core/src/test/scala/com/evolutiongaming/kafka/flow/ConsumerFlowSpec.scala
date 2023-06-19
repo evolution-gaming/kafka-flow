@@ -121,7 +121,7 @@ object ConsumerFlowSpec {
       private val noopConsumer = new Consumer.NoopRebalanceConsumer
 
       def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]): F[Unit] =
-        StateT modify [Try, Context] (_ + Action.Subscribe(topics) + listener)
+        StateT.modify[Try, Context](_ + Action.Subscribe(topics) + listener)
 
       def poll(timeout: FiniteDuration): F[ConsRecords] = {
         StateT { context =>

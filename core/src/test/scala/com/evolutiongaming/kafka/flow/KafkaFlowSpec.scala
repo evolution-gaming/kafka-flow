@@ -142,7 +142,7 @@ object KafkaFlowSpec {
 
   type F[A] = SyncIO[A]
 
-  implicit val syncIoSleep = new Sleep[SyncIO] {
+  implicit val syncIoSleep: Sleep[SyncIO] = new Sleep[SyncIO] {
     override def sleep(time: FiniteDuration): SyncIO[Unit] = SyncIO(Thread.sleep(time.toMillis))
     override def applicative: Applicative[SyncIO]          = implicitly
     override def monotonic: SyncIO[FiniteDuration]         = SyncIO.monotonic

@@ -3,17 +3,18 @@ package com.evolutiongaming.kafka.flow.journal
 import cats.MonadThrow
 import cats.arrow.FunctionK
 import cats.syntax.all._
-import com.evolutiongaming.kafka.journal.Action
-import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.kafka.journal.Event
-import com.evolutiongaming.kafka.journal.Events
-import com.evolutiongaming.kafka.journal.FromAttempt
-import com.evolutiongaming.kafka.journal.FromJsResult
-import com.evolutiongaming.kafka.journal.JsonCodec
-import com.evolutiongaming.kafka.journal.Payload
-import com.evolutiongaming.kafka.journal.PayloadAndType
-import com.evolutiongaming.kafka.journal.SeqNr
-import com.evolutiongaming.kafka.journal.SeqRange
+import com.evolutiongaming.kafka.journal.{
+  Action,
+  ConsRecord,
+  Event,
+  FromAttempt,
+  FromJsResult,
+  JsonCodec,
+  Payload,
+  PayloadAndType,
+  SeqNr,
+  SeqRange
+}
 import com.evolutiongaming.kafka.journal.conversions.ConsRecordToActionRecord
 import com.evolutiongaming.kafka.journal.conversions.KafkaRead
 import com.evolutiongaming.kafka.journal.util.Fail
@@ -45,17 +46,14 @@ object JournalParser {
 
   def of[F[_]: MonadThrow](implicit jsonCodec: JsonCodec[Try]): JournalParser[F] = new JournalParser[F] {
 
-    implicit val fail         = Fail.lift[F]
-    implicit val fromJsResult = FromJsResult.lift[F]
-    implicit val fromAttempt  = FromAttempt.lift[F]
-    implicit val jsonCodecF   = jsonCodec mapK FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
+    implicit val fail: Fail[F]                 = Fail.lift[F]
+    implicit val fromJsResult: FromJsResult[F] = FromJsResult.lift[F]
+    implicit val fromAttempt: FromAttempt[F]   = FromAttempt.lift[F]
+    implicit val jsonCodecF: JsonCodec[F]      = jsonCodec mapK FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
 
-    implicit val parseAction = ConsRecordToActionRecord[F]
+    implicit val parseAction: ConsRecordToActionRecord[F] = ConsRecordToActionRecord[F]
 
-    implicit val parsePayload = {
-      implicit val fromBytes = Events.eventsFromBytes[F, Payload]
-      KafkaRead.summon[F, Payload]
-    }
+    implicit val parsePayload: KafkaRead[F, Payload] = KafkaRead.summon[F, Payload]
 
     def toAppend(record: ConsRecord) = {
       parseAction(record).value map { record =>

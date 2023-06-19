@@ -48,7 +48,7 @@ import scala.jdk.CollectionConverters._
 
  */
 class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
-  implicit val ioRuntime        = IORuntime.global
+  implicit val ioRuntime: IORuntime = IORuntime.global
   implicit val logOf: LogOf[IO] = LogOf.slf4j[IO].unsafeRunSync()
   implicit val log: Log[IO]     = logOf(this.getClass).unsafeRunSync()
 
