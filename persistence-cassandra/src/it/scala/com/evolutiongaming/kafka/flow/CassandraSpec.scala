@@ -11,7 +11,7 @@ import munit.FunSuite
 import java.util.concurrent.atomic.AtomicReference
 
 abstract class CassandraSpec extends FunSuite {
-  implicit val ioRuntime = IORuntime.global
+  implicit val ioRuntime: IORuntime = IORuntime.global
 
   override def munitFixtures: Seq[Fixture[_]] = List(cassandra)
 

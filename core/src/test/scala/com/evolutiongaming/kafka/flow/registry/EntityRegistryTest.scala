@@ -18,8 +18,8 @@ import scodec.bits.ByteVector
 import java.nio.charset.StandardCharsets
 
 class EntityRegistryTest extends FunSuite {
-  implicit val logOf = LogOf.empty[IO]
-  implicit val log   = Log.empty[IO]
+  implicit val logOf: LogOf[IO] = LogOf.empty[IO]
+  implicit val log: Log[IO]     = Log.empty[IO]
 
   val key1 = KafkaKey("test", "test", TopicPartition.empty, "key1")
   val key2 = KafkaKey("test", "test", TopicPartition.empty, "key2")

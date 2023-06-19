@@ -118,7 +118,7 @@ final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {
     */
   def handleErrorWith[E](f: (S, E) => F[S])(implicit F: ApplicativeError[F, E]): FoldOption[F, S, A] =
     FoldOption {
-      value handleErrorWith [E] { (s, e) =>
+      value.handleErrorWith[E] { (s, e) =>
         s traverse (f(_, e))
       }
     }

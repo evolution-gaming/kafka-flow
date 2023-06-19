@@ -25,7 +25,7 @@ import scala.concurrent.duration._
 
 class PartitionFlowSpec extends FunSuite {
 
-  implicit val ioRuntime = IORuntime.global
+  implicit val ioRuntime: IORuntime = IORuntime.global
 
   test("PartitionFlow does not require commit if no flows finished") {
 
