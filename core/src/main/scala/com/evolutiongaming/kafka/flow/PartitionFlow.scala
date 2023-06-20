@@ -9,6 +9,7 @@ import cats.syntax.all._
 import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
+import com.evolutiongaming.kafka.flow.PartitionFlowConfig.RecoveryMode
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -63,7 +64,7 @@ object PartitionFlow {
       }
     }
 
-  def of[F[_]: Async: Log](
+  def of[F[_]: Async](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
@@ -71,7 +72,7 @@ object PartitionFlow {
     config: PartitionFlowConfig,
     filter: Option[FilterRecord[F]] = None,
     scheduleCommit: ScheduleCommit[F]
-  ): Resource[F, PartitionFlow[F]] = for {
+  )(implicit log: Log[F]): Resource[F, PartitionFlow[F]] = for {
     clock           <- Resource.eval(Clock[F].instant)
     committedOffset <- Resource.eval(Ref.of(assignedAt))
     timestamp       <- Resource.eval(Ref.of(Timestamp(clock, None, assignedAt)))
@@ -92,7 +93,7 @@ object PartitionFlow {
   } yield flow
 
   // TODO: put most `Ref` variables into one state class?
-  def of[F[_]: Async: Log](
+  def of[F[_]: Async](
     topicPartition: TopicPartition,
     keyStateOf: KeyStateOf[F],
     committedOffset: Ref[F, Offset],
@@ -103,14 +104,14 @@ object PartitionFlow {
     config: PartitionFlowConfig,
     filter: Option[FilterRecord[F]],
     scheduleCommit: ScheduleCommit[F]
-  ): Resource[F, PartitionFlow[F]] = {
+  )(implicit log: Log[F]): Resource[F, PartitionFlow[F]] = {
 
     def stateOf(createdAt: Timestamp, key: String): F[PartitionKey[F]] =
       cache.getOrUpdateResource(key) {
         for {
           context <- KeyContext.resource[F](
             removeFromCache = cache.remove(key).flatten.void,
-            log             = Log[F].prefixed(key)
+            log             = log.prefixed(key)
           )
           keyState <- keyStateOf(topicPartition, key, createdAt, context)
         } yield PartitionKey(keyState, context)
@@ -121,24 +122,25 @@ object PartitionFlow {
       committedOffset <- committedOffset.get
       timestamp        = Timestamp(clock, None, committedOffset)
       keys             = keyStateOf.all(topicPartition)
-      _               <- Log[F].info("partition recovery started")
+      _               <- log.info("partition recovery started")
       count <-
-        if (config.parallelRecovery) {
-          keys.toList flatMap { keys =>
-            keys.parFoldMapA { key =>
-              stateOf(timestamp, key) as 1
+        config.recoveryMode match {
+          case RecoveryMode.ParallelBounded(parallelism) =>
+            keys.toList.flatMap { keys =>
+              keys.parTraverseN(parallelism)(key => stateOf(timestamp, key)).map(_.size)
             }
-          }
-        } else {
-          keys.foldM(0) { (count, key) =>
-            stateOf(timestamp, key) as (count + 1)
-          }
+          case RecoveryMode.ParallelUnbounded =>
+            keys.toList.flatMap { keys =>
+              keys.parFoldMapA(key => stateOf(timestamp, key) as 1)
+            }
+          case RecoveryMode.Sequential =>
+            keys.foldM(0)((count, key) => stateOf(timestamp, key) as (count + 1))
         }
-      _ <- Log[F].info(s"partition recovery finished, $count keys recovered")
+      _ <- log.info(s"partition recovery finished, $count keys recovered")
     } yield ()
 
     def processRecords(records: NonEmptyList[ConsRecord]) = for {
-      _ <- Log[F].debug(s"processing ${records.size} records")
+      _ <- log.debug(s"processing ${records.size} records")
 
       clock <- Clock[F].instant
       keys = records groupBy (_.key map (_.value)) collect {
@@ -186,11 +188,11 @@ object PartitionFlow {
         )
       )
 
-      _ <- Log[F].debug(s"finished processing records")
+      _ <- log.debug(s"finished processing records")
     } yield ()
 
     def triggerTimers = for {
-      _ <- Log[F].debug("triggering timers")
+      _ <- log.debug("triggering timers")
 
       clock     <- Clock[F].instant
       timestamp <- timestamp updateAndGet (_.copy(clock = clock))
@@ -209,17 +211,17 @@ object PartitionFlow {
         triggerTimersAt plusMillis config.triggerTimersInterval.toMillis
       }
 
-      _ <- Log[F].debug("done triggering timers")
+      _ <- log.debug("done triggering timers")
     } yield ()
 
     def offsetToCommit: F[Option[Offset]] = for {
-      _ <- Log[F].debug("computing offset to commit")
+      _ <- log.debug("computing offset to commit")
 
       // find minimum offset if any
       minimumOffset <- cache.foldMap[Option[Offset]] {
         case (_, Right(value)) => value.context.holding
         case (key, Left(_)) =>
-          Log[F].error(s"trying to compute offset to commit but value for key $key is not ready").as(none[Offset])
+          log.error(s"trying to compute offset to commit but value for key $key is not ready").as(none[Offset])
       }(pickMinOffset)
 
       // maximum offset to commit is the offset of last record
@@ -237,7 +239,7 @@ object PartitionFlow {
           committedOffset.set(allowedOffset).as((allowedOffset.value - committedOffsetValue.value).some)
         } else none[Long].pure[F]
       offsetToCommit <- moveForward traverse { moveForward =>
-        Log[F].info(s"offset: $allowedOffset (+$moveForward)") as allowedOffset
+        log.info(s"offset: $allowedOffset (+$moveForward)") as allowedOffset
       }
       _ <- commitOffsetsAt update { commitOffsetsAt =>
         commitOffsetsAt plusMillis config.commitOffsetsInterval.toMillis
@@ -257,18 +259,18 @@ object PartitionFlow {
         commitOffsetsAt <- commitOffsetsAt.get
         offsetToCommit  <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
 
-        _ <- Log[F].debug(s"offset to commit: ${offsetToCommit.show}")
+        _ <- log.debug(s"offset to commit: ${offsetToCommit.show}")
 
         _ <- offsetToCommit.traverse_(offset => scheduleCommit.schedule(offset))
 
-        _ <- Log[F].debug("done with commits")
+        _ <- log.debug("done with commits")
       } yield ()
     }
 
     val release: F[Unit] = if (config.commitOnRevoke) {
       offsetToCommit.flatMap { offset =>
         offset.traverse_ { offset =>
-          Log[F].info(s"committing on revoke: $offset") *> scheduleCommit.schedule(offset)
+          log.info(s"committing on revoke: $offset") *> scheduleCommit.schedule(offset)
         }
       }
     } else {
