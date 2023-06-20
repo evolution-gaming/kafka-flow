@@ -4,10 +4,12 @@ import cats.data.NonEmptyList
 import cats.effect.concurrent.Ref
 import cats.effect.{Clock, Concurrent, Resource}
 import cats.syntax.all._
+import cats.effect.syntax.all._
 import cats.{Applicative, Parallel}
 import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
+import com.evolutiongaming.kafka.flow.PartitionFlowConfig.RecoveryMode
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -62,7 +64,7 @@ object PartitionFlow {
       }
     }
 
-  def of[F[_]: Concurrent: Parallel: Clock: Log, S](
+  def of[F[_]: Concurrent: Parallel: Clock, S](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
@@ -70,7 +72,7 @@ object PartitionFlow {
     config: PartitionFlowConfig,
     filter: Option[FilterRecord[F]] = None,
     scheduleCommit: ScheduleCommit[F]
-  ): Resource[F, PartitionFlow[F]] = for {
+  )(implicit log: Log[F]): Resource[F, PartitionFlow[F]] = for {
     clock <- Resource.eval(Clock[F].instant)
     committedOffset <- Resource.eval(Ref.of(assignedAt))
     timestamp <- Resource.eval(Ref.of(Timestamp(clock, None, assignedAt)))
@@ -91,7 +93,7 @@ object PartitionFlow {
   } yield flow
 
   // TODO: put most `Ref` variables into one state class?
-  def of[F[_]: Concurrent: Parallel: Clock: Log, S](
+  def of[F[_]: Concurrent: Parallel: Clock, S](
     topicPartition: TopicPartition,
     keyStateOf: KeyStateOf[F],
     committedOffset: Ref[F, Offset],
@@ -102,14 +104,14 @@ object PartitionFlow {
     config: PartitionFlowConfig,
     filter: Option[FilterRecord[F]],
     scheduleCommit: ScheduleCommit[F]
-  ): Resource[F, PartitionFlow[F]] = {
+  )(implicit log: Log[F]): Resource[F, PartitionFlow[F]] = {
 
     def stateOf(createdAt: Timestamp, key: String): F[PartitionKey[F]] =
       cache.getOrUpdateResource(key) {
         for {
           context <- KeyContext.resource[F](
             removeFromCache = cache.remove(key).flatten.void,
-            log = Log[F].prefixed(key)
+            log = log.prefixed(key)
           )
           keyState <- keyStateOf(topicPartition, key, createdAt, context)
         } yield PartitionKey(keyState, context)
@@ -120,20 +122,21 @@ object PartitionFlow {
       committedOffset <- committedOffset.get
       timestamp = Timestamp(clock, None, committedOffset)
       keys = keyStateOf.all(topicPartition)
-      _ <- Log[F].info("partition recovery started")
+      _ <- log.info("partition recovery started")
       count <-
-        if (config.parallelRecovery) {
-          keys.toList flatMap { keys =>
-            keys.parFoldMapA { key =>
-              stateOf(timestamp, key) as 1
+        config.recoveryMode match {
+          case RecoveryMode.ParallelBounded(parallelism) =>
+            keys.toList.flatMap { keys =>
+              keys.parTraverseN(parallelism.toLong)(key => stateOf(timestamp, key)).map(_.size)
             }
-          }
-        } else {
-          keys.foldM(0) { (count, key) =>
-            stateOf(timestamp, key) as (count + 1)
-          }
+          case RecoveryMode.ParallelUnbounded =>
+            keys.toList.flatMap { keys =>
+              keys.parFoldMapA(key => stateOf(timestamp, key) as 1)
+            }
+          case RecoveryMode.Sequential =>
+            keys.foldM(0)((count, key) => stateOf(timestamp, key) as (count + 1))
         }
-      _ <- Log[F].info(s"partition recovery finished, $count keys recovered")
+      _ <- log.info(s"partition recovery finished, $count keys recovered")
     } yield ()
 
     def processRecords(records: NonEmptyList[ConsRecord]) = for {
@@ -219,7 +222,7 @@ object PartitionFlow {
         }
       }
       offsetToCommit <- moveForward traverse { moveForward =>
-        Log[F].info(s"offset: $allowedOffset (+$moveForward)") as allowedOffset
+        log.info(s"offset: $allowedOffset (+$moveForward)") as allowedOffset
       }
       _ <- commitOffsetsAt update { commitOffsetsAt =>
         commitOffsetsAt plusMillis config.commitOffsetsInterval.toMillis
@@ -246,7 +249,7 @@ object PartitionFlow {
     val release: F[Unit] = if (config.commitOnRevoke) {
       offsetToCommit flatMap { offset =>
         offset traverse_ { offset =>
-          Log[F].info(s"committing on revoke: $offset") *> scheduleCommit.schedule(offset)
+          log.info(s"committing on revoke: $offset") *> scheduleCommit.schedule(offset)
         }
       }
     } else {
