@@ -14,13 +14,16 @@ jobs:
           - 2.12.18
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
-    - uses: coursier/cache-action@v5
+    - uses: coursier/cache-action@v6
 
-    - uses: olafurpg/setup-scala@v10
+    - name: Setup Java
+      uses: actions/setup-java@v3
       with:
-        java-version: openjdk@1.11
+        java-version: "17"
+        distribution: "temurin"
+        cache: "sbt"
 
     - name: Check formatting
       run: sbt scalafmtCheckAll
@@ -34,14 +37,14 @@ jobs:
       run: sbt ++${{ matrix.scala }} clean coverage test it:test
 
     - name: Report test coverage
-      if: success()
+      if: success() && github.repository == 'evolution-gaming/kafka-flow'
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
       run: sbt ++${{ matrix.scala }} coverageReport coverageAggregate coveralls
 
     - name: Publish documentation / Setup Node
       if: success() && matrix.scala == '2.13.11'
-      uses: actions/setup-node@v2-beta
+      uses: actions/setup-node@v3
       with:
         node-version: '12.x'
 
@@ -52,7 +55,7 @@ jobs:
 
     - name: Publish documentation / Cache dependencies
       if: success() && matrix.scala == '2.13.11'
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ${{ steps.yarn-cache.outputs.dir }}
         key: ${{ runner.os }}-website-${{ hashFiles('**/yarn.lock') }}
@@ -70,7 +73,7 @@ jobs:
       run: yarn build
 
     - name: Publish documentation / Deploy
-      if: success() && matrix.scala == '2.13.11' && github.ref == 'refs/heads/master'
+      if: success() && matrix.scala == '2.13.11' && github.ref == 'refs/heads/master' && github.repository == 'evolution-gaming/kafka-flow'
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -78,7 +81,7 @@ jobs:
 
     - name: Slack Notification
       uses: homoluctus/slatify@master
-      if: failure() && github.ref == 'refs/heads/master'
+      if: failure() && github.ref == 'refs/heads/master' && github.repository == 'evolution-gaming/kafka-flow'
       with:
         type: ${{ job.status }}
         job_name: Build
