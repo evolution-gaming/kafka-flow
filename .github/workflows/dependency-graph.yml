@@ -1,0 +1,17 @@
+name: Update Dependency Graph
+on:
+  push:
+    branches:
+      - master
+jobs:
+  dependency-graph:
+    name: Update Dependency Graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: scalacenter/sbt-dependency-submission@v2
+        with:
+          modules-ignore: docs_2.13 kafka-flow_2.12 kafka-flow-metrics_2.12 kafka-flow-persistence-kafka_2.12 docs_2.12 kafka-flow-persistence-cassandra_2.12
+          configs-ignore: test integration-test scala-tool scala-doc-tool
+permissions:
+  contents: write
