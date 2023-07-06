@@ -49,8 +49,8 @@ import scala.jdk.CollectionConverters._
  */
 class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
   implicit val ioRuntime: IORuntime = IORuntime.global
-  implicit val logOf: LogOf[IO] = LogOf.slf4j[IO].unsafeRunSync()
-  implicit val log: Log[IO]     = logOf(this.getClass).unsafeRunSync()
+  implicit val logOf: LogOf[IO]     = LogOf.slf4j[IO].unsafeRunSync()
+  implicit val log: Log[IO]         = logOf(this.getClass).unsafeRunSync()
 
   private def producerConfig =
     ProducerConfig(common = CommonConfig(bootstrapServers = NonEmptyList.one(kafka.container.bootstrapServers)))
