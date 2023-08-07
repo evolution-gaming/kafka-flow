@@ -48,7 +48,8 @@ lazy val core = (project in file("core"))
       scache,
       skafka,
       sstream,
-      Testing.munit,
+      Testing.munit % Test,
+      Testing.munit                % IntegrationTest,
       Testing.Testcontainers.kafka % IntegrationTest,
       Testing.Testcontainers.munit % IntegrationTest
     ),
@@ -61,7 +62,10 @@ lazy val metrics = (project in file("metrics"))
   .settings(commonSettings)
   .settings(
     name := "kafka-flow-metrics",
-    libraryDependencies += smetrics
+    libraryDependencies ++= Seq(
+      smetrics,
+      Testing.munit % Test,
+    )
   )
 
 lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
@@ -72,6 +76,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
     name := "kafka-flow-persistence-cassandra",
     libraryDependencies ++= Seq(
       KafkaJournal.cassandra,
+      Testing.munit                    % IntegrationTest,
       Testing.Testcontainers.cassandra % IntegrationTest,
       Testing.Testcontainers.munit     % IntegrationTest
     ),
@@ -89,6 +94,7 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
       Monocle.core,
       Monocle.`macro`,
       catsHelperLogback            % IntegrationTest,
+      Testing.munit                % IntegrationTest,
       Testing.Testcontainers.kafka % IntegrationTest,
       Testing.Testcontainers.munit % IntegrationTest
     ),
