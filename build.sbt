@@ -48,7 +48,7 @@ lazy val core = (project in file("core"))
       scache,
       skafka,
       sstream,
-      Testing.munit % Test,
+      Testing.munit                % Test,
       Testing.munit                % IntegrationTest,
       Testing.Testcontainers.kafka % IntegrationTest,
       Testing.Testcontainers.munit % IntegrationTest
