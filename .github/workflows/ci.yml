@@ -24,11 +24,11 @@ jobs:
 
     - name: Run tests ${{ matrix.scala }}
       if: success() && matrix.scala == '2.13.10'
-      run: sbt ++${{ matrix.scala }} clean coverage test it:test docs/mdoc
+      run: sbt ++${{ matrix.scala }} clean coverage test docs/mdoc
 
     - name: Run tests ${{ matrix.scala }}
       if: success() && matrix.scala != '2.13.10'
-      run: sbt ++${{ matrix.scala }} clean coverage test it:test
+      run: sbt ++${{ matrix.scala }} clean coverage test
 
     - name: Report test coverage
       if: success()

@@ -13,19 +13,24 @@ lazy val commonSettings = Seq(
   releaseCrossBuild := true,
   testFrameworks += new TestFramework("munit.Framework"),
   testOptions += Tests.Argument(new TestFramework("munit.Framework"), "+l"),
-  resolvers ++= Seq(
-    Resolver.bintrayRepo("evolutiongaming", "maven"),
-    Resolver.sonatypeRepo("public")
-  ),
+  resolvers ++= Resolver.sonatypeOssRepos("public") :+ Resolver.bintrayRepo("evolutiongaming", "maven"),
   libraryDependencySchemes ++= Seq(
     "org.scala-lang.modules" %% "scala-java8-compat" % "always"
   ),
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.2" cross CrossVersion.full),
-  coverageScalacPluginVersion := "2.0.8",
+  coverageScalacPluginVersion := "2.0.8"
 )
 
 lazy val root = (project in file("."))
-  .aggregate(core, `persistence-cassandra`, `persistence-kafka`, metrics)
+  .aggregate(
+    core,
+    `core-it-tests`,
+    `persistence-cassandra`,
+    `persistence-cassandra-it-tests`,
+    `persistence-kafka`,
+    `persistence-kafka-it-tests`,
+    metrics
+  )
   .settings(commonSettings)
   .settings(
     name := "kafka-flow",
@@ -33,7 +38,6 @@ lazy val root = (project in file("."))
   )
 
 lazy val core = (project in file("core"))
-  .configs(IntegrationTest)
   .settings(commonSettings)
   .settings(
     name := "kafka-flow",
@@ -50,13 +54,22 @@ lazy val core = (project in file("core"))
       scache,
       skafka,
       sstream,
+      Testing.munit % Test
+    )
+  )
+
+lazy val `core-it-tests` = (project in file("core-it-tests"))
+  .dependsOn(core)
+  .settings(commonSettings)
+  .settings(
+    name := "kafka-flow-core-it-tests",
+    libraryDependencies ++= Seq(
       Testing.munit % Test,
-      Testing.munit                % IntegrationTest,
-      Testing.Testcontainers.kafka % IntegrationTest,
-      Testing.Testcontainers.munit % IntegrationTest
+      Testing.Testcontainers.kafka % Test,
+      Testing.Testcontainers.munit % Test
     ),
-    Defaults.itSettings,
-    IntegrationTest / fork := true
+    Test / fork := true,
+    publish / skip := true
   )
 
 lazy val metrics = (project in file("metrics"))
@@ -66,42 +79,58 @@ lazy val metrics = (project in file("metrics"))
     name := "kafka-flow-metrics",
     libraryDependencies ++= Seq(
       smetrics,
-      Testing.munit % Test,
+      Testing.munit % Test
     )
   )
 
 lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
   .dependsOn(core)
-  .configs(IntegrationTest)
   .settings(commonSettings)
   .settings(
     name := "kafka-flow-persistence-cassandra",
     libraryDependencies ++= Seq(
-      KafkaJournal.cassandra,
-      Testing.munit                    % IntegrationTest,
-      Testing.Testcontainers.cassandra % IntegrationTest,
-      Testing.Testcontainers.munit     % IntegrationTest
+      KafkaJournal.cassandra
+    )
+  )
+
+lazy val `persistence-cassandra-it-tests` = (project in file("persistence-cassandra-it-tests"))
+  .dependsOn(`persistence-cassandra`)
+  .settings(commonSettings)
+  .settings(
+    name := "kafka-flow-persistence-cassandra-it-tests",
+    libraryDependencies ++= Seq(
+      Testing.munit % Test,
+      Testing.Testcontainers.cassandra % Test,
+      Testing.Testcontainers.munit % Test
     ),
-    Defaults.itSettings,
-    IntegrationTest / fork := true
+    Test / fork := true,
+    publish / skip := true
   )
 
 lazy val `persistence-kafka` = (project in file("persistence-kafka"))
   .dependsOn(core, metrics)
-  .configs(IntegrationTest)
   .settings(commonSettings)
   .settings(
     name := "kafka-flow-persistence-kafka",
     libraryDependencies ++= Seq(
       Monocle.core,
-      Monocle.`macro`,
-      catsHelperLogback            % IntegrationTest,
-      Testing.munit                % IntegrationTest,
-      Testing.Testcontainers.kafka % IntegrationTest,
-      Testing.Testcontainers.munit % IntegrationTest
+      Monocle.`macro`
+    )
+  )
+
+lazy val `persistence-kafka-it-tests` = (project in file("persistence-kafka-it-tests"))
+  .dependsOn(`persistence-kafka`)
+  .settings(commonSettings)
+  .settings(
+    name := "kafka-flow-persistence-kafka-it-tests",
+    libraryDependencies ++= Seq(
+      Testing.munit % Test,
+      Testing.Testcontainers.kafka % Test,
+      Testing.Testcontainers.munit % Test,
+      Testing.Testcontainers.cassandra % Test
     ),
-    Defaults.itSettings,
-    IntegrationTest / fork := true
+    Test / fork := true,
+    publish / skip := true
   )
 
 lazy val docs = (project in file("kafka-flow-docs"))
