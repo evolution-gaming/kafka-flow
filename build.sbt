@@ -113,10 +113,6 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
   .settings(commonSettings)
   .settings(
     name := "kafka-flow-persistence-kafka",
-    libraryDependencies ++= Seq(
-      Monocle.core,
-      Monocle.`macro`,
-    ),
   )
 
 lazy val `persistence-kafka-it-tests` = (project in file("persistence-kafka-it-tests"))
