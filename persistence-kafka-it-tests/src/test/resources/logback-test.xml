@@ -10,7 +10,7 @@
     <logger name="org.apache.zookeeper" level="ERROR"/>
     <logger name="kafka" level="ERROR"/>
 
-    <root level="INFO">
+    <root level="ERROR">
         <appender-ref ref="CONSOLE"/>
     </root>
 
