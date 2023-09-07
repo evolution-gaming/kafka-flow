@@ -14,15 +14,12 @@ import com.evolutiongaming.skafka.consumer.{
   WithSize,
   Consumer => SkafkaConsumer
 }
-import monocle.macros.GenLens
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
 
 object KafkaPartitionPersistence {
-  private val clientIdLens        = GenLens[ConsumerConfig](_.common.clientId)
-  private val autoOffsetResetLens = GenLens[ConsumerConfig](_.autoOffsetReset)
 
   private case class MissingOffsetError(topicPartition: TopicPartition) extends NoStackTrace
 
@@ -69,9 +66,12 @@ object KafkaPartitionPersistence {
   ): F[BytesByKey] = {
     consumerOf
       .apply[String, ByteVector](
-        clientIdLens
-          .modify(_.map(cid => s"$cid-snapshot-$partition"))
-          .andThen(autoOffsetResetLens.set(Earliest))(consumerConfig)
+        consumerConfig.copy(
+          autoOffsetReset = Earliest,
+          common = consumerConfig
+            .common
+            .copy(clientId = consumerConfig.common.clientId.map(cid => s"$cid-snapshot-$partition"))
+        )
       )
       .use { consumer =>
         val snapshotsPartition =
