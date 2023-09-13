@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
-import com.evolutiongaming.kafka.flow.PartitionFlowConfig.RecoveryMode
+import com.evolutiongaming.kafka.flow.PartitionFlowConfig.{RecoveryMode, TimersExecutionMode}
 
 import scala.concurrent.duration._
 
@@ -33,10 +33,11 @@ import scala.concurrent.duration._
   *   Try committing everything when partition is revoked.
   */
 case class PartitionFlowConfig(
-  triggerTimersInterval: FiniteDuration = 1.second,
-  commitOffsetsInterval: FiniteDuration = 1.minute,
-  recoveryMode: RecoveryMode            = RecoveryMode.ParallelUnbounded,
-  commitOnRevoke: Boolean               = false
+  triggerTimersInterval: FiniteDuration    = 1.second,
+  commitOffsetsInterval: FiniteDuration    = 1.minute,
+  recoveryMode: RecoveryMode               = RecoveryMode.ParallelUnbounded,
+  timersExecutionMode: TimersExecutionMode = TimersExecutionMode.Unbounded,
+  commitOnRevoke: Boolean                  = false
 )
 
 object PartitionFlowConfig {
@@ -65,5 +66,28 @@ object PartitionFlowConfig {
       * memory and does not lead to CPU starvation.
       */
     case object Sequential extends RecoveryMode
+  }
+
+  /** Controls how timers are executed. Timers are executed in parallel, but the number of concurrent executions can be
+    * limited by the specified parameter.
+    */
+  sealed trait TimersExecutionMode
+
+  object TimersExecutionMode {
+
+    /** Execute timers in parallel without a limit on the number of concurrent executions. For each timer (corresponds
+      * to a key) a fiber will be spawned. This is the fastest mode, but it might consume excessive CPU resources
+      * depending on a number of keys currently held in memory.
+      */
+    case object Unbounded extends TimersExecutionMode
+
+    /** Execute timers in parallel with a limit on the number of concurrent executions. For each timer (corresponds to a
+      * key) a fiber will be spawned, but a total number of concurrent fibers will not exceed the specified limit. This
+      * mode is slower than `Unbounded`, but it allows fine-tuning the number of concurrent fibers to prevent CPU
+      * starvation and overwhelming the underlying storage with too many parallel executions.
+      * @param parallelism
+      *   the upper bound on the number of concurrent fibers
+      */
+    case class Bounded(parallelism: Int) extends TimersExecutionMode
   }
 }

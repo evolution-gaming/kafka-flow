@@ -9,7 +9,7 @@ import cats.syntax.all._
 import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow.PartitionFlowConfig.RecoveryMode
+import com.evolutiongaming.kafka.flow.PartitionFlowConfig.{RecoveryMode, TimersExecutionMode}
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -191,6 +191,9 @@ object PartitionFlow {
       _ <- log.debug(s"finished processing records")
     } yield ()
 
+    def triggerTimersForKey(key: String, timestamp: Timestamp): F[Unit] =
+      cache.get(key).flatMap(_.traverse_(state => state.timers.set(timestamp) >> state.timers.trigger(state.flow)))
+
     def triggerTimers = for {
       _ <- log.debug("triggering timers")
 
@@ -198,13 +201,11 @@ object PartitionFlow {
       timestamp <- timestamp updateAndGet (_.copy(clock = clock))
 
       keys <- cache.keys
-      _ <- keys.toVector.parTraverse_ { key =>
-        cache.get(key).flatMap {
-          case None => Async[F].unit
-          case Some(state) =>
-            state.timers.set(timestamp) *>
-              state.timers.trigger(state.flow)
-        }
+      _ <- config.timersExecutionMode match {
+        case TimersExecutionMode.Bounded(parallelism) =>
+          keys.toVector.parTraverseN(parallelism)(triggerTimersForKey(_, timestamp)).void
+        case TimersExecutionMode.Unbounded =>
+          keys.toVector.parTraverse_(triggerTimersForKey(_, timestamp))
       }
 
       _ <- triggerTimersAt update { triggerTimersAt =>
