@@ -9,7 +9,7 @@ import cats.{Applicative, Parallel}
 import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow.PartitionFlowConfig.RecoveryMode
+import com.evolutiongaming.kafka.flow.PartitionFlowConfig.{RecoveryMode, TimersExecutionMode}
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -182,15 +182,18 @@ object PartitionFlow {
       )
     } yield ()
 
+    def triggerTimersForState(state: F[PartitionKey[F]], timestamp: Timestamp): F[Unit] =
+      state.flatMap(state => state.timers.set(timestamp) >> state.timers.trigger(state.flow))
+
     def triggerTimers = for {
       clock <- Clock[F].instant
       timestamp <- timestamp updateAndGet (_.copy(clock = clock))
       states <- cache.values
-      _ <- states.values.toList.parTraverse_ { state =>
-        state flatMap { state =>
-          state.timers.set(timestamp) *>
-            state.timers.trigger(state.flow)
-        }
+      _ <- config.timersExecutionMode match {
+        case TimersExecutionMode.Bounded(parallelism) =>
+          states.values.toList.parTraverseN(parallelism.toLong)(triggerTimersForState(_, timestamp)).void
+        case TimersExecutionMode.Unbounded =>
+          states.values.toList.parTraverse_(triggerTimersForState(_, timestamp))
       }
       _ <- triggerTimersAt update { triggerTimersAt =>
         triggerTimersAt plusMillis config.triggerTimersInterval.toMillis
