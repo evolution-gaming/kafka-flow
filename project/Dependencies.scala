@@ -32,7 +32,7 @@ object Dependencies {
   }
 
   object Testing {
-    val munit = "org.scalameta" %% "munit" % "1.0.0-M8"
+    val munit = "org.scalameta" %% "munit" % "1.0.0-M10"
 
     object Testcontainers {
       private val version = "0.41.0"
