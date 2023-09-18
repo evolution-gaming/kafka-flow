@@ -9,7 +9,7 @@ import cats.syntax.all._
 import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow.PartitionFlowConfig.RecoveryMode
+import com.evolutiongaming.kafka.flow.PartitionFlowConfig.ParallelismMode._
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -125,15 +125,15 @@ object PartitionFlow {
       _               <- log.info("partition recovery started")
       count <-
         config.recoveryMode match {
-          case RecoveryMode.ParallelBounded(parallelism) =>
+          case Parallel.Bounded(parallelism) =>
             keys.toList.flatMap { keys =>
               keys.parTraverseN(parallelism)(key => stateOf(timestamp, key)).map(_.size)
             }
-          case RecoveryMode.ParallelUnbounded =>
+          case Parallel.Unbounded =>
             keys.toList.flatMap { keys =>
               keys.parFoldMapA(key => stateOf(timestamp, key) as 1)
             }
-          case RecoveryMode.Sequential =>
+          case Sequential =>
             keys.foldM(0)((count, key) => stateOf(timestamp, key) as (count + 1))
         }
       _ <- log.info(s"partition recovery finished, $count keys recovered")
@@ -191,6 +191,9 @@ object PartitionFlow {
       _ <- log.debug(s"finished processing records")
     } yield ()
 
+    def triggerTimersForKey(key: String, timestamp: Timestamp): F[Unit] =
+      cache.get(key).flatMap(_.traverse_(state => state.timers.set(timestamp) >> state.timers.trigger(state.flow)))
+
     def triggerTimers = for {
       _ <- log.debug("triggering timers")
 
@@ -198,13 +201,11 @@ object PartitionFlow {
       timestamp <- timestamp updateAndGet (_.copy(clock = clock))
 
       keys <- cache.keys
-      _ <- keys.toVector.parTraverse_ { key =>
-        cache.get(key).flatMap {
-          case None => Async[F].unit
-          case Some(state) =>
-            state.timers.set(timestamp) *>
-              state.timers.trigger(state.flow)
-        }
+      _ <- config.timersExecutionMode match {
+        case Parallel.Bounded(parallelism) =>
+          keys.toVector.parTraverseN(parallelism)(triggerTimersForKey(_, timestamp)).void
+        case Parallel.Unbounded =>
+          keys.toVector.parTraverse_(triggerTimersForKey(_, timestamp))
       }
 
       _ <- triggerTimersAt update { triggerTimersAt =>
