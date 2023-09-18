@@ -228,8 +228,8 @@ object AdditionalPersistSpec {
   class TestFixture {
     val testContext = TestContext()
 
-    implicit val cs: ContextShift[IO] = testContext.contextShift[IO]
-    implicit val timer: Timer[IO] = testContext.timer[IO]
+    implicit val cs: ContextShift[IO] = testContext.ioContextShift
+    implicit val timer: Timer[IO] = testContext.ioTimer
 
     implicit val logOf: LogOf[IO] = LogOf.empty[IO]
     implicit val log: Log[IO] = logOf.apply(classOf[AdditionalPersistSpec]).unsafeRunSync()
