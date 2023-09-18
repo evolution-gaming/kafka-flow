@@ -90,7 +90,7 @@ object RebalanceListenerSpec {
 
   type F[A] = StateT[Try, Context, A]
 
-  implicit val logOf = LogOf.empty[F]
+  implicit val logOf: LogOf[F] = LogOf.empty[F]
 
   case class Context(actions: Map[Topic, Action] = Map.empty) {
     def add(topic: Topic, action: Action): Context = {

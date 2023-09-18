@@ -10,8 +10,8 @@ jobs:
     strategy:
       matrix:
         scala:
-          - 2.13.10
-          - 2.12.17
+          - 2.13.12
+          - 2.12.18
 
     steps:
     - uses: actions/checkout@v2
@@ -23,11 +23,11 @@ jobs:
         java-version: openjdk@1.11
 
     - name: Run tests ${{ matrix.scala }}
-      if: success() && matrix.scala == '2.13.10'
+      if: success() && matrix.scala == '2.13.12'
       run: sbt ++${{ matrix.scala }} clean coverage test docs/mdoc
 
     - name: Run tests ${{ matrix.scala }}
-      if: success() && matrix.scala != '2.13.10'
+      if: success() && matrix.scala != '2.13.12'
       run: sbt ++${{ matrix.scala }} clean coverage test
 
     - name: Report test coverage
@@ -37,18 +37,18 @@ jobs:
       run: sbt ++${{ matrix.scala }} coverageReport coverageAggregate coveralls
 
     - name: Publish documentation / Setup Node
-      if: success() && matrix.scala == '2.13.10'
+      if: success() && matrix.scala == '2.13.12'
       uses: actions/setup-node@v2-beta
       with:
         node-version: '12.x'
 
     - name: Publish documentation / Get yarn cache
-      if: success() && matrix.scala == '2.13.10'
+      if: success() && matrix.scala == '2.13.12'
       id: yarn-cache
       run: echo "::set-output name=dir::$(yarn cache dir)"
 
     - name: Publish documentation / Cache dependencies
-      if: success() && matrix.scala == '2.13.10'
+      if: success() && matrix.scala == '2.13.12'
       uses: actions/cache@v2
       with:
         path: ${{ steps.yarn-cache.outputs.dir }}
@@ -57,17 +57,17 @@ jobs:
           ${{ runner.os }}-website-
 
     - name: Publish documentation / Install dependencies
-      if: success() && matrix.scala == '2.13.10'
+      if: success() && matrix.scala == '2.13.12'
       working-directory: ./website
       run: yarn install --frozen-lockfile
 
     - name: Publish documentation / Build site
-      if: success() && matrix.scala == '2.13.10'
+      if: success() && matrix.scala == '2.13.12'
       working-directory: ./website
       run: yarn build
 
     - name: Publish documentation / Deploy
-      if: success() && matrix.scala == '2.13.10' && github.ref == 'refs/heads/master'
+      if: success() && matrix.scala == '2.13.12' && github.ref == 'refs/heads/master'
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}

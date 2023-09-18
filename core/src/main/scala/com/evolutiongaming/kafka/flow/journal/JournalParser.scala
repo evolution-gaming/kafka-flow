@@ -6,7 +6,6 @@ import cats.syntax.all._
 import com.evolutiongaming.kafka.journal.Action
 import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.Event
-import com.evolutiongaming.kafka.journal.Events
 import com.evolutiongaming.kafka.journal.FromAttempt
 import com.evolutiongaming.kafka.journal.FromJsResult
 import com.evolutiongaming.kafka.journal.JsonCodec
@@ -36,7 +35,7 @@ trait JournalParser[F[_]] {
   def toPayloads(record: ConsRecord): F[List[Event[Payload]]]
 
   /** Parsed events contained in `ConsRecord` if any */
-  def toEvents[T: Reads](record: ConsRecord):  F[List[(SeqNr, T)]]
+  def toEvents[T: Reads](record: ConsRecord): F[List[(SeqNr, T)]]
 
 }
 object JournalParser {
@@ -45,17 +44,14 @@ object JournalParser {
 
   def of[F[_]: MonadThrow](implicit jsonCodec: JsonCodec[Try]): JournalParser[F] = new JournalParser[F] {
 
-    implicit val fail = Fail.lift[F]
-    implicit val fromJsResult = FromJsResult.lift[F]
-    implicit val fromAttempt = FromAttempt.lift[F]
-    implicit val jsonCodecF = jsonCodec mapK FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
+    implicit val fail: Fail[F] = Fail.lift[F]
+    implicit val fromJsResult: FromJsResult[F] = FromJsResult.lift[F]
+    implicit val fromAttempt: FromAttempt[F] = FromAttempt.lift[F]
+    implicit val jsonCodecF: JsonCodec[F] = jsonCodec mapK FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
 
-    implicit val parseAction = ConsRecordToActionRecord[F]
+    implicit val parseAction: ConsRecordToActionRecord[F] = ConsRecordToActionRecord[F]
 
-    implicit val parsePayload = {
-      implicit val fromBytes = Events.eventsFromBytes[F, Payload]
-      KafkaRead.summon[F, Payload]
-    }
+    implicit val parsePayload: KafkaRead[F, Payload] = KafkaRead.payloadKafkaRead[F]
 
     def toAppend(record: ConsRecord) = {
       parseAction(record).value map { record =>
@@ -63,7 +59,7 @@ object JournalParser {
           record <- record
           append <- record.action match {
             case action: Action.Append => Some(action)
-            case _ => None
+            case _                     => None
           }
         } yield append
       }
@@ -73,7 +69,6 @@ object JournalParser {
       toAppend(record) map { append =>
         append map (_.header.range)
       }
-
 
     def toPayloads(record: ConsRecord) =
       toAppend(record) flatMap { append =>
@@ -89,7 +84,7 @@ object JournalParser {
           payload <- F.fromOption(event.payload, new RuntimeException(s"Payload is empty: $event"))
           payload <- payload match {
             case payload: Payload.Json => payload.pure[F]
-            case payload => F.raiseError[Payload.Json](new RuntimeException(s"Payload is not JSON: $payload"))
+            case payload               => F.raiseError[Payload.Json](new RuntimeException(s"Payload is not JSON: $payload"))
           }
           payload <- F.fromTry(JsResult.toTry((payload.value \ "payload").validate[T])) adaptError { case e =>
             new RuntimeException(s"Cannot parse payload: ${payload.value}", e)
