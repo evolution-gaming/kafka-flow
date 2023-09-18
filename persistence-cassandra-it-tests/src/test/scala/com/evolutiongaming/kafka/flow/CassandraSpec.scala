@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.IO
+import cats.effect.{ContextShift, IO, Timer}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.{CassandraConfig, CassandraModule}
 import com.evolutiongaming.nel.Nel
@@ -8,13 +8,13 @@ import com.evolutiongaming.scassandra
 import munit.FunSuite
 
 import java.util.concurrent.atomic.AtomicReference
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 abstract class CassandraSpec extends FunSuite {
 
-  protected implicit val CS = IO.contextShift(ExecutionContext.global)
-  protected implicit val timer = IO.timer(ExecutionContext.global)
-  protected implicit val executor = ExecutionContext.global
+  protected implicit val CS: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
+  protected implicit val timer: Timer[IO] = IO.timer(ExecutionContext.global)
+  protected implicit val executor: ExecutionContextExecutor = ExecutionContext.global
 
   override def munitFixtures: Seq[Fixture[_]] = List(cassandra)
 

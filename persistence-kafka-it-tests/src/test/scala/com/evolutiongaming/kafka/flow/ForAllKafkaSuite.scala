@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
-import cats.effect.{Blocker, IO}
+import cats.effect.{Blocker, ContextShift, IO, Timer}
 import com.dimafeng.testcontainers.KafkaContainer
 import com.dimafeng.testcontainers.munit.fixtures.TestContainersFixtures
 import com.evolutiongaming.catshelper.LogOf
@@ -16,8 +16,8 @@ import scala.concurrent.ExecutionContext
 
 abstract class ForAllKafkaSuite extends FunSuite with TestContainersFixtures {
 
-  protected implicit val CS = IO.contextShift(ExecutionContext.global)
-  protected implicit val timer = IO.timer(ExecutionContext.global)
+  protected implicit val CS: ContextShift[IO] = IO.contextShift(ExecutionContext.global)
+  protected implicit val timer: Timer[IO] = IO.timer(ExecutionContext.global)
 
   val kafka = ForAllContainerFixture(KafkaContainer())
 

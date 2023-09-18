@@ -2,8 +2,8 @@ package com.evolutiongaming.kafka.flow
 
 import cats.effect.concurrent.Ref
 import cats.effect.laws.util.TestContext
-import cats.effect.{IO, Resource}
-import com.evolutiongaming.catshelper.LogOf
+import cats.effect.{ContextShift, IO, Resource, Timer}
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
@@ -228,11 +228,11 @@ object AdditionalPersistSpec {
   class TestFixture {
     val testContext = TestContext()
 
-    implicit val timer = testContext.timer[IO]
-    implicit val cs = testContext.contextShift[IO]
+    implicit val cs: ContextShift[IO] = testContext.contextShift[IO]
+    implicit val timer: Timer[IO] = testContext.timer[IO]
 
-    implicit val logOf = LogOf.empty[IO]
-    implicit val log = logOf.apply(classOf[AdditionalPersistSpec]).unsafeRunSync()
+    implicit val logOf: LogOf[IO] = LogOf.empty[IO]
+    implicit val log: Log[IO] = logOf.apply(classOf[AdditionalPersistSpec]).unsafeRunSync()
 
     val snapshots: Ref[IO, Map[KafkaKey, String]] = Ref.unsafe[IO, Map[KafkaKey, String]](Map.empty)
     def snapshotDatabase: SnapshotDatabase[IO, KafkaKey, String] = SnapshotDatabase.memory(snapshots.stateInstance)
