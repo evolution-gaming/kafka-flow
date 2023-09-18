@@ -2,14 +2,14 @@ package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
 import cats.effect.concurrent.Ref
+import cats.effect.syntax.all._
 import cats.effect.{Clock, Concurrent, Resource}
 import cats.syntax.all._
-import cats.effect.syntax.all._
 import cats.{Applicative, Parallel}
 import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow.PartitionFlowConfig.{RecoveryMode, TimersExecutionMode}
+import com.evolutiongaming.kafka.flow.PartitionFlowConfig.ParallelismMode
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.kafka.journal.ConsRecord
@@ -125,15 +125,15 @@ object PartitionFlow {
       _ <- log.info("partition recovery started")
       count <-
         config.recoveryMode match {
-          case RecoveryMode.ParallelBounded(parallelism) =>
+          case ParallelismMode.Parallel.Bounded(parallelism) =>
             keys.toList.flatMap { keys =>
               keys.parTraverseN(parallelism.toLong)(key => stateOf(timestamp, key)).map(_.size)
             }
-          case RecoveryMode.ParallelUnbounded =>
+          case ParallelismMode.Parallel.Unbounded =>
             keys.toList.flatMap { keys =>
               keys.parFoldMapA(key => stateOf(timestamp, key) as 1)
             }
-          case RecoveryMode.Sequential =>
+          case ParallelismMode.Sequential =>
             keys.foldM(0)((count, key) => stateOf(timestamp, key) as (count + 1))
         }
       _ <- log.info(s"partition recovery finished, $count keys recovered")
@@ -190,9 +190,9 @@ object PartitionFlow {
       timestamp <- timestamp updateAndGet (_.copy(clock = clock))
       states <- cache.values
       _ <- config.timersExecutionMode match {
-        case TimersExecutionMode.Bounded(parallelism) =>
+        case ParallelismMode.Parallel.Bounded(parallelism) =>
           states.values.toList.parTraverseN(parallelism.toLong)(triggerTimersForState(_, timestamp)).void
-        case TimersExecutionMode.Unbounded =>
+        case ParallelismMode.Parallel.Unbounded =>
           states.values.toList.parTraverse_(triggerTimersForState(_, timestamp))
       }
       _ <- triggerTimersAt update { triggerTimersAt =>
