@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
-import com.evolutiongaming.kafka.flow.PartitionFlowConfig.{RecoveryMode, TimersExecutionMode}
+import com.evolutiongaming.kafka.flow.PartitionFlowConfig.ParallelismMode
 
 import scala.concurrent.duration._
 
@@ -19,75 +19,56 @@ import scala.concurrent.duration._
   *
   * @param triggerTimersInterval
   *   How often timers will be triggered if there are timers to trigger.
-  *
   * @param commitOffsetsInterval
   *   How often the state is to be evaluated for the pending commits.
-  *
   * @param recoveryMode
-  *   Controls how the snapshots are recovered. The default mode is `ParallelUnbounded`, which is the fastest, but
-  *   requires all the keys to fit in memory and might lead to CPU starvation (or overwhelming the underlying storage)
-  *   if there are a lot of keys. See [[com.evolutiongaming.kafka.flow.PartitionFlowConfig.RecoveryMode$]] for more
-  *   details.
+  *   Controls how the snapshots are recovered. The default mode is `Parallel.Unbounded`. Available modes:
+  *   - `Parallel.Unbounded` - read snapshots in parallel without a limit on the number of fibers spawned. For each key
+  *     a fiber will be spawned, reading the corresponding snapshot. This is the fastest recovery mode, but it requires
+  *     all the keys to fit in memory before snapshots are read and might lead to CPU starvation when the number of keys
+  *     is large.
+  *   - `Parallel.Bounded` - read snapshots in parallel with a limit on the number of fibers spawned. For each key a
+  *     fiber will be spawned, reading the corresponding snapshot. This mode is slower than `ParallelUnbounded`, but it
+  *     allows fine-tuning the number of concurrent fibers to prevent CPU starvation and overwhelming the underlying
+  *     storage with too many parallel recoveries. Just like `ParallelUnbounded`, this mode requires all the keys to fit
+  *     in memory before snapshots are read.
+  *   - `Sequential` - read snapshots sequentially. This is the slowest recovery mode, but it does not require all the
+  *     keys to fit in memory and does not lead to CPU starvation.
+  * @param timersExecutionMode
+  *   Controls how timers are executed. Timers are always executed in parallel, but the number of concurrent executions
+  *   can be limited by the specified parameter. The default mode is `Parallel.Unbounded`. Available modes:
+  *   - `Parallel.Unbounded` - execute timers in parallel without a limit on the number of concurrent executions. For
+  *     each timer (corresponds to a key) a fiber will be spawned. This is the fastest mode, but it might consume
+  *     excessive CPU resources depending on a number of keys currently held in memory.
+  *   - `Parallel.Bounded` - execute timers in parallel with a limit on the number of concurrent executions. For each
+  *     timer (corresponds to a key) a fiber will be spawned, but a total number of concurrent fibers will not exceed
+  *     the specified limit. This mode is slower than `Unbounded`, but it allows fine-tuning the number of concurrent
+  *     fibers to prevent CPU starvation and overwhelming the underlying storage with too many parallel executions.
   *
   * @param commitOnRevoke
   *   Try committing everything when partition is revoked.
   */
 case class PartitionFlowConfig(
-  triggerTimersInterval: FiniteDuration    = 1.second,
-  commitOffsetsInterval: FiniteDuration    = 1.minute,
-  recoveryMode: RecoveryMode               = RecoveryMode.ParallelUnbounded,
-  timersExecutionMode: TimersExecutionMode = TimersExecutionMode.Unbounded,
-  commitOnRevoke: Boolean                  = false
+  triggerTimersInterval: FiniteDuration         = 1.second,
+  commitOffsetsInterval: FiniteDuration         = 1.minute,
+  recoveryMode: ParallelismMode                 = ParallelismMode.Parallel.Unbounded,
+  timersExecutionMode: ParallelismMode.Parallel = ParallelismMode.Parallel.Unbounded,
+  commitOnRevoke: Boolean                       = false
 )
 
 object PartitionFlowConfig {
 
-  sealed trait RecoveryMode
+  sealed trait ParallelismMode
+  object ParallelismMode {
+    case object Sequential extends ParallelismMode
 
-  object RecoveryMode {
+    sealed trait Parallel extends ParallelismMode
 
-    /** Read snapshots in parallel with a limit on the number of fibers spawned. For each key a fiber will be spawned,
-      * but a total number of concurrent fibers will not exceed the specified limit. This mode is slower than
-      * `ParallelUnbounded`, but it allows fine-tuning the number of concurrent fibers to prevent CPU starvation and
-      * overwhelming the underlying storage with too many parallel recoveries. Just like `ParallelUnbounded`, this mode
-      * requires all the keys to fit in memory before snapshots are read.
-      * @param parallelism
-      *   the upper bound on the number of concurrent fibers
-      */
-    final case class ParallelBounded(parallelism: Int) extends RecoveryMode
+    object Parallel {
+      case object Unbounded extends Parallel
 
-    /** Read snapshots in parallel without a limit on the number of fibers spawned. For each key a fiber will be
-      * spawned, reading the corresponding snapshot. This is the fastest recovery mode, but it requires all the keys to
-      * fit in memory before snapshots are read and might lead to CPU starvation when the number of keys is large.
-      */
-    case object ParallelUnbounded extends RecoveryMode
-
-    /** Read snapshots sequentially. This is the slowest recovery mode, but it does not require all the keys to fit in
-      * memory and does not lead to CPU starvation.
-      */
-    case object Sequential extends RecoveryMode
+      case class Bounded(parallelism: Int) extends Parallel
+    }
   }
 
-  /** Controls how timers are executed. Timers are executed in parallel, but the number of concurrent executions can be
-    * limited by the specified parameter.
-    */
-  sealed trait TimersExecutionMode
-
-  object TimersExecutionMode {
-
-    /** Execute timers in parallel without a limit on the number of concurrent executions. For each timer (corresponds
-      * to a key) a fiber will be spawned. This is the fastest mode, but it might consume excessive CPU resources
-      * depending on a number of keys currently held in memory.
-      */
-    case object Unbounded extends TimersExecutionMode
-
-    /** Execute timers in parallel with a limit on the number of concurrent executions. For each timer (corresponds to a
-      * key) a fiber will be spawned, but a total number of concurrent fibers will not exceed the specified limit. This
-      * mode is slower than `Unbounded`, but it allows fine-tuning the number of concurrent fibers to prevent CPU
-      * starvation and overwhelming the underlying storage with too many parallel executions.
-      * @param parallelism
-      *   the upper bound on the number of concurrent fibers
-      */
-    case class Bounded(parallelism: Int) extends TimersExecutionMode
-  }
 }
