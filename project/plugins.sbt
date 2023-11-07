@@ -9,7 +9,7 @@ addSbtPlugin("org.scoverage" % "sbt-coveralls" % "1.3.11")
 
 addSbtPlugin("com.github.sbt" % "sbt-release" % "1.0.15")
 
-addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.3.8")
+addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.5.0")
 
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.5.2")
 
