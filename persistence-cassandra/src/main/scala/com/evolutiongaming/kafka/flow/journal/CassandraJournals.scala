@@ -32,19 +32,20 @@ import scodec.bits.ByteVector
 
 class CassandraJournals[F[_]: MonadThrow: Clock](
   session: CassandraSession[F],
-  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
+  tableName: String,
 ) extends JournalDatabase[F, KafkaKey, ConsRecord] {
 
   def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
     for {
-      boundStatement <- Statements.persist(session, key, event)
+      boundStatement <- Statements.persist(session, key, event, tableName)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).first.void
     } yield ()
 
   def get(key: KafkaKey): Stream[F, ConsRecord] = {
     val boundStatement = Statements
-      .get(session, key)
+      .get(session, key, tableName)
       .map(_.withConsistencyLevel(consistencyOverrides.read))
 
     Stream.lift(boundStatement).flatMap(session.execute).mapM { row =>
@@ -54,13 +55,15 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
 
   def delete(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- Statements.delete(session, key)
+      boundStatement <- Statements.delete(session, key, tableName)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).first.void
     } yield ()
 
 }
 object CassandraJournals {
+  val DefaultTableName: String = "records"
+
   implicit def fromAttempt[F[_]: MonadThrow]: FromAttempt[F] = {
     implicit val evidence = Fail.lift[F]
     FromAttempt.lift[F]
@@ -70,14 +73,16 @@ object CassandraJournals {
   def withSchema[F[_]: MonadThrow: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
+    tableName: String                          = DefaultTableName,
   ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =
-    JournalSchema(session, sync).create as new CassandraJournals(session, consistencyOverrides)
+    JournalSchema(session, sync, tableName).create as new CassandraJournals(session, consistencyOverrides, tableName)
 
   def truncate[F[_]: Monad](
     session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] = JournalSchema(session, sync).truncate
+    sync: CassandraSync[F],
+    tableName: String = DefaultTableName
+  ): F[Unit] = JournalSchema(session, sync, tableName).truncate
 
   // we cannot use DecodeRow here because TupleToHeader is effectful
   protected def decode[F[_]: MonadThrow](key: KafkaKey, row: Row): F[ConsRecord] = {
@@ -102,10 +107,10 @@ object CassandraJournals {
   }
 
   protected object Statements {
-    def get[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    def get[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, tableName: String): F[BoundStatement] =
       session
         .prepare(
-          """ SELECT
+          s"""SELECT
             |   offset,
             |   created,
             |   timestamp,
@@ -114,7 +119,7 @@ object CassandraJournals {
             |   metadata,
             |   value
             | FROM
-            |   records
+            |   $tableName
             | WHERE
             |   application_id = :application_id
             |   AND group_id = :group_id
@@ -136,11 +141,12 @@ object CassandraJournals {
     def persist[F[_]: MonadThrow: Clock](
       session: CassandraSession[F],
       key: KafkaKey,
-      event: ConsRecord
+      event: ConsRecord,
+      tableName: String,
     ): F[BoundStatement] = for {
       preparedStatement <- session.prepare(
-        """ UPDATE
-          |   records
+        s"""UPDATE
+          |   $tableName
           | SET
           |   created = :created,
           |   timestamp = :timestamp,
@@ -177,11 +183,11 @@ object CassandraJournals {
         .encodeSome("value", event.value map (_.value))
     }
 
-    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, tableName: String): F[BoundStatement] =
       session
         .prepare(
-          """ DELETE FROM
-            |   records
+          s"""DELETE FROM
+            |   $tableName
             | WHERE
             |   application_id = :application_id
             |   AND group_id = :group_id
