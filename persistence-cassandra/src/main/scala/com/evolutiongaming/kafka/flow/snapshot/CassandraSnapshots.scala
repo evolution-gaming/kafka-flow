@@ -23,56 +23,60 @@ import scodec.bits.ByteVector
 
 class CassandraSnapshots[F[_]: MonadThrow: Clock, T](
   session: CassandraSession[F],
-  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
+  tableName: String,
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
-      boundStatement <- Statements.persist(session, key, snapshot)
-      statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _ <- session.execute(statement).first.void
+      boundStatement <- Statements.persist(session, key, snapshot, tableName)
+      statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
+      _              <- session.execute(statement).first.void
     } yield ()
 
   def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] =
     for {
-      boundStatement <- Statements.get(session, key)
-      statement = boundStatement.withConsistencyLevel(consistencyOverrides.read)
-      row <- session.execute(statement).first
-      snapshot <- row.map(row => decode(row)).sequence
+      boundStatement <- Statements.get(session, key, tableName)
+      statement       = boundStatement.withConsistencyLevel(consistencyOverrides.read)
+      row            <- session.execute(statement).first
+      snapshot       <- row.map(row => decode(row)).sequence
     } yield snapshot
 
   def delete(key: KafkaKey): F[Unit] = for {
-    boundStatement <- Statements.delete(session, key)
-    statement = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-    _ <- session.execute(statement).first.void
+    boundStatement <- Statements.delete(session, key, tableName)
+    statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
+    _              <- session.execute(statement).first.void
   } yield ()
 
 }
 
 object CassandraSnapshots {
+  val DefaultTableName = "snapshots_v2"
 
   /** Creates schema in Cassandra if not there yet */
   def withSchema[F[_]: MonadThrow: Clock, T](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
+    tableName: String                          = DefaultTableName,
   )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
-    SnapshotSchema(session, sync).create as new CassandraSnapshots(session, consistencyOverrides)
+    SnapshotSchema(session, sync, tableName).create as new CassandraSnapshots(session, consistencyOverrides, tableName)
 
   def truncate[F[_]: Monad](
     session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] = SnapshotSchema(session, sync).truncate
+    sync: CassandraSync[F],
+    tableName: String = DefaultTableName,
+  ): F[Unit] = SnapshotSchema(session, sync, tableName).truncate
 
   // we cannot use DecodeRow here because Code[T].decode is effectful
   protected def decode[F[_]: Monad, T](row: Row)(implicit fromBytes: FromBytes[F, T]): F[KafkaSnapshot[T]] = {
     val value = row.decode[ByteVector]("value")
     value.fromBytes.map { value =>
       KafkaSnapshot[T](
-        offset = row.decode[Offset]("offset"),
+        offset   = row.decode[Offset]("offset"),
         metadata = row.decode[String]("metadata"),
-        value = value
+        value    = value
       )
     }
   }
@@ -81,12 +85,13 @@ object CassandraSnapshots {
     def persist[F[_]: Clock: Monad, T](
       session: CassandraSession[F],
       key: KafkaKey,
-      snapshot: KafkaSnapshot[T]
+      snapshot: KafkaSnapshot[T],
+      tableName: String,
     )(implicit toBytes: ToBytes[F, T]): F[BoundStatement] =
       for {
         preparedStatement <- session.prepare(
-          """ UPDATE
-            |   snapshots_v2
+          s"""UPDATE
+            |   $tableName
             | SET
             |   created = :created,
             |   metadata = :metadata,
@@ -101,7 +106,7 @@ object CassandraSnapshots {
         """.stripMargin
         )
         created <- Clock[F].instant
-        value <- snapshot.value.toBytes
+        value   <- snapshot.value.toBytes
       } yield {
         preparedStatement
           .bind()
@@ -116,15 +121,15 @@ object CassandraSnapshots {
           .encode("value", value)
       }
 
-    def get[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    def get[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, tableName: String): F[BoundStatement] =
       session
         .prepare(
-          """ SELECT
+          s"""SELECT
             |   offset,
             |   metadata,
             |   value
             | FROM
-            |   snapshots_v2
+            |   $tableName
             | WHERE
             |   application_id = :application_id
             |   AND group_id = :group_id
@@ -142,11 +147,11 @@ object CassandraSnapshots {
             .encode("key", key.key)
         )
 
-    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, tableName: String): F[BoundStatement] =
       session
         .prepare(
-          """ DELETE FROM
-            |   snapshots_v2
+          s"""DELETE FROM
+            |   $tableName
             | WHERE
             |   application_id = :application_id
             |   AND group_id = :group_id
