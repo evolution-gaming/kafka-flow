@@ -51,8 +51,8 @@ for {
 of `FlowMetrics` API from `kafka-flow-metrics` module in form of `FlowMetrics#compressorMetrics(component)` 
 where `component` is the name of the label that will be used for metrics of this compressor.  
 The following metrics are reported:
-  - `compressor_raw_bytes_total` - the size of state before compressing
-  - `compressor_compressed_bytes_total` - the size of compressed state (including library-added meta-information)
+  - `compressor_raw_bytes` - the size of state before compressing
+  - `compressor_compressed_bytes` - the size of compressed state (including library-added meta-information)
 ```scala mdoc:silent
 import cats.effect.syntax.resource._
 import com.evolutiongaming.kafka.flow.FlowMetrics
