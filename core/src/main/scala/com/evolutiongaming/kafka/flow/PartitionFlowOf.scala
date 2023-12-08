@@ -13,7 +13,8 @@ trait PartitionFlowOf[F[_]] {
   def apply(
     topicPartition: TopicPartition,
     assignedAt: Offset,
-    scheduleCommit: ScheduleCommit[F]
+    scheduleCommit: ScheduleCommit[F],
+    onRecoveryFinished: Option[F[Unit]] = None
   ): Resource[F, PartitionFlow[F]]
 
 }
@@ -31,7 +32,7 @@ object PartitionFlowOf {
     keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig     = PartitionFlowConfig(),
     filter: Option[FilterRecord[F]] = None
-  ): PartitionFlowOf[F] = { (topicPartition, assignedAt, scheduleCommit) =>
-    PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config, filter, scheduleCommit)
+  ): PartitionFlowOf[F] = { (topicPartition, assignedAt, scheduleCommit, onRecoveryFinished) =>
+    PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config, filter, scheduleCommit, onRecoveryFinished)
   }
 }

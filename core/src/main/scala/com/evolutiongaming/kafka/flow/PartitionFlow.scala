@@ -56,11 +56,12 @@ object PartitionFlow {
     keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig,
     filter: Option[FilterRecord[F]] = None,
-    scheduleCommit: ScheduleCommit[F]
+    scheduleCommit: ScheduleCommit[F],
+    onRecoveryFinished: Option[F[Unit]] = None
   ): Resource[F, PartitionFlow[F]] =
     LogResource[F](getClass, topicPartition.toString) flatMap { implicit log =>
       Cache.loading[F, String, PartitionKey[F]] flatMap { cache =>
-        of(topicPartition, assignedAt, keyStateOf, cache, config, filter, scheduleCommit)
+        of(topicPartition, assignedAt, keyStateOf, cache, config, filter, scheduleCommit, onRecoveryFinished)
       }
     }
 
@@ -71,7 +72,8 @@ object PartitionFlow {
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig,
     filter: Option[FilterRecord[F]] = None,
-    scheduleCommit: ScheduleCommit[F]
+    scheduleCommit: ScheduleCommit[F],
+    onRecoveryFinished: Option[F[Unit]] = None
   )(implicit log: Log[F]): Resource[F, PartitionFlow[F]] = for {
     clock           <- Resource.eval(Clock[F].instant)
     committedOffset <- Resource.eval(Ref.of(assignedAt))
@@ -79,16 +81,17 @@ object PartitionFlow {
     triggerTimersAt <- Resource.eval(Ref.of(clock))
     commitOffsetsAt <- Resource.eval(Ref.of(clock))
     flow <- of(
-      topicPartition  = topicPartition,
-      keyStateOf      = keyStateOf,
-      committedOffset = committedOffset,
-      timestamp       = timestamp,
-      triggerTimersAt = triggerTimersAt,
-      commitOffsetsAt = commitOffsetsAt,
-      cache           = cache,
-      config          = config,
-      filter          = filter,
-      scheduleCommit  = scheduleCommit
+      topicPartition     = topicPartition,
+      keyStateOf         = keyStateOf,
+      committedOffset    = committedOffset,
+      timestamp          = timestamp,
+      triggerTimersAt    = triggerTimersAt,
+      commitOffsetsAt    = commitOffsetsAt,
+      cache              = cache,
+      config             = config,
+      filter             = filter,
+      scheduleCommit     = scheduleCommit,
+      onRecoveryFinished = onRecoveryFinished
     )
   } yield flow
 
@@ -103,7 +106,8 @@ object PartitionFlow {
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig,
     filter: Option[FilterRecord[F]],
-    scheduleCommit: ScheduleCommit[F]
+    scheduleCommit: ScheduleCommit[F],
+    onRecoveryFinished: Option[F[Unit]]
   )(implicit log: Log[F]): Resource[F, PartitionFlow[F]] = {
 
     def stateOf(createdAt: Timestamp, key: String): F[PartitionKey[F]] =
@@ -136,6 +140,7 @@ object PartitionFlow {
           case Sequential =>
             keys.foldM(0)((count, key) => stateOf(timestamp, key) as (count + 1))
         }
+      _ <- onRecoveryFinished.getOrElse(().pure[F])
       _ <- log.info(s"partition recovery finished, $count keys recovered")
     } yield ()
 
