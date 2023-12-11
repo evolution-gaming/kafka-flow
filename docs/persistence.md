@@ -51,8 +51,13 @@ for {
 of `FlowMetrics` API from `kafka-flow-metrics` module in form of `FlowMetrics#compressorMetrics(component)` 
 where `component` is the name of the label that will be used for metrics of this compressor.  
 The following metrics are reported:
-  - `compressor_raw_bytes_total` - the size of state before compressing
-  - `compressor_compressed_bytes_total` - the size of compressed state (including library-added meta-information)
+  - `compressor_raw_bytes` - the size of state before compressing
+  - `compressor_compressed_bytes` - the size of compressed state (including library-added meta-information)
+
+Note: these metrics had a `_total` suffix in earlier versions. 
+Starting with `prometheus-metrics` v1.0.0 this suffix is no longer allowed and has therefore been removed.
+Users of `simpleclient` forked version `0.9.999-evo1` will see a change in the metric name, since the `_total` suffix is not automatically added in that version.
+
 ```scala mdoc:silent
 import cats.effect.syntax.resource._
 import com.evolutiongaming.kafka.flow.FlowMetrics
