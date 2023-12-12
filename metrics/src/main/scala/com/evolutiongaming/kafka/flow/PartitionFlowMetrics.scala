@@ -60,9 +60,8 @@ object PartitionFlowMetrics {
           topicPartition: TopicPartition,
           assignedAt: Offset,
           scheduleCommit: ScheduleCommit[F],
-          onRecoveryFinished: Option[F[Unit]]
         ) =
-          partitionFlowOf(topicPartition, assignedAt, scheduleCommit, onRecoveryFinished) map (_.withMetrics)
+          partitionFlowOf(topicPartition, assignedAt, scheduleCommit) map (_.withMetrics)
 
       }
     }

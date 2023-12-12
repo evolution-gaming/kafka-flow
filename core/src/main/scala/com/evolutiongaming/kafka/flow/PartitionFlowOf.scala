@@ -14,7 +14,6 @@ trait PartitionFlowOf[F[_]] {
     topicPartition: TopicPartition,
     assignedAt: Offset,
     scheduleCommit: ScheduleCommit[F],
-    onRecoveryFinished: Option[F[Unit]] = None
   ): Resource[F, PartitionFlow[F]]
 
 }
@@ -27,12 +26,15 @@ object PartitionFlowOf {
     *   no state will be restored for that key; (2) no fold will be executed for that event. It doesn't affect
     *   committing consumer offsets, thus, even if all records in a batch are skipped, new offsets will still be
     *   committed if necessary
+    * @param onRecoveryFinished
+    *   optional effect to execute when partition recovery is completed
     */
   def apply[F[_]: Async: LogOf](
     keyStateOf: KeyStateOf[F],
-    config: PartitionFlowConfig     = PartitionFlowConfig(),
-    filter: Option[FilterRecord[F]] = None
-  ): PartitionFlowOf[F] = { (topicPartition, assignedAt, scheduleCommit, onRecoveryFinished) =>
+    config: PartitionFlowConfig         = PartitionFlowConfig(),
+    filter: Option[FilterRecord[F]]     = None,
+    onRecoveryFinished: Option[F[Unit]] = None
+  ): PartitionFlowOf[F] = { (topicPartition, assignedAt, scheduleCommit) =>
     PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config, filter, scheduleCommit, onRecoveryFinished)
   }
 }

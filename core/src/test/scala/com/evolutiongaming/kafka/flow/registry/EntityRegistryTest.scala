@@ -59,7 +59,8 @@ class EntityRegistryTest extends FunSuite {
         fold          = fold,
         registry      = registry
       ),
-      config = PartitionFlowConfig()
+      config             = PartitionFlowConfig(),
+      onRecoveryFinished = None
     )
     partitionFlow <- partitionFlowOf.apply(
       topicPartition = TopicPartition.empty,
