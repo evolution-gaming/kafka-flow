@@ -53,8 +53,6 @@ package object kafkapersistence {
     *   enhances framework with metrics
     * @param filter
     *   optional function to pre-filter incoming events before they are processed by `fold`
-    * @param onPartitionRecoveryFinished
-    *   optional effect to execute when partition recovery is completed
     */
   def kafkaEagerRecovery[F[_]: Async: LogOf, S](
     kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
@@ -67,23 +65,21 @@ package object kafkapersistence {
     partitionFlowConfig: PartitionFlowConfig,
     metrics: FlowMetrics[F]         = FlowMetrics.empty[F],
     filter: Option[FilterRecord[F]] = None,
-    registry: EntityRegistry[F, KafkaKey, S],
-    onPartitionRecoveryFinished: Option[F[Unit]] = None
+    registry: EntityRegistry[F, KafkaKey, S]
   ): PartitionFlowOf[F] =
     kafkaEagerRecovery(
-      kafkaPersistenceModuleOf    = kafkaPersistenceModuleOf,
-      applicationId               = applicationId,
-      groupId                     = groupId,
-      timersOf                    = timersOf,
-      timerFlowOf                 = timerFlowOf,
-      fold                        = EnhancedFold.fromFold(fold),
-      tick                        = tick,
-      partitionFlowConfig         = partitionFlowConfig,
-      metrics                     = metrics,
-      filter                      = filter,
-      additionalPersistOf         = AdditionalStatePersistOf.empty[F, S],
-      registry                    = registry,
-      onPartitionRecoveryFinished = onPartitionRecoveryFinished
+      kafkaPersistenceModuleOf = kafkaPersistenceModuleOf,
+      applicationId            = applicationId,
+      groupId                  = groupId,
+      timersOf                 = timersOf,
+      timerFlowOf              = timerFlowOf,
+      fold                     = EnhancedFold.fromFold(fold),
+      tick                     = tick,
+      partitionFlowConfig      = partitionFlowConfig,
+      metrics                  = metrics,
+      filter                   = filter,
+      additionalPersistOf      = AdditionalStatePersistOf.empty[F, S],
+      registry                 = registry
     )
 
   /** Create a PartitionFlowOf with a snapshot-based persistence and recovery from a Kafka
@@ -123,8 +119,6 @@ package object kafkapersistence {
     * @param additionalPersistOf
     *   a factory of `AdditionalStatePersist` that can either enable or disable additional state persisting. That part
     *   of functionality in `KeyFlowExtras` will work only if you pass a functional (non-empty) implementation here
-    * @param onPartitionRecoveryFinished
-    *   optional effect to execute when partition recovery is completed
     */
   def kafkaEagerRecovery[F[_]: Async: LogOf, S](
     kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
@@ -138,8 +132,7 @@ package object kafkapersistence {
     metrics: FlowMetrics[F],
     filter: Option[FilterRecord[F]],
     additionalPersistOf: AdditionalStatePersistOf[F, S],
-    registry: EntityRegistry[F, KafkaKey, S],
-    onPartitionRecoveryFinished: Option[F[Unit]]
+    registry: EntityRegistry[F, KafkaKey, S]
   ): PartitionFlowOf[F] =
     new PartitionFlowOf[F] {
       override def apply(
@@ -166,9 +159,8 @@ package object kafkapersistence {
               additionalPersistOf = additionalPersistOf,
               registry            = registry
             ) withMetrics metrics.keyStateOfMetrics,
-            config             = partitionFlowConfig,
-            filter             = filter,
-            onRecoveryFinished = onPartitionRecoveryFinished
+            config = partitionFlowConfig,
+            filter = filter
           )
           partitionFlow <- partitionFlowOf(topicPartition, assignedAt, scheduleCommit)
         } yield partitionFlow
