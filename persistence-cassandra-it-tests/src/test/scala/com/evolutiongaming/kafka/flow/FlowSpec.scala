@@ -50,8 +50,7 @@ class FlowSpec extends CassandraSpec {
         config = PartitionFlowConfig(
           triggerTimersInterval = 1.minute,
           commitOnRevoke        = true
-        ),
-        onRecoveryFinished = None
+        )
       )
       topicFlowOf = TopicFlowOf(partitionFlowOf)
       records = NonEmptyList.of(

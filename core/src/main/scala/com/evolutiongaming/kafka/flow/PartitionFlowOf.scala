@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow
 import cats.effect.kernel.Async
 import cats.effect.Resource
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.PartitionFlow.{FilterRecord, OnPartitionRecovered}
+import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 
@@ -13,7 +13,7 @@ trait PartitionFlowOf[F[_]] {
   def apply(
     topicPartition: TopicPartition,
     assignedAt: Offset,
-    scheduleCommit: ScheduleCommit[F],
+    scheduleCommit: ScheduleCommit[F]
   ): Resource[F, PartitionFlow[F]]
 
 }
@@ -26,15 +26,12 @@ object PartitionFlowOf {
     *   no state will be restored for that key; (2) no fold will be executed for that event. It doesn't affect
     *   committing consumer offsets, thus, even if all records in a batch are skipped, new offsets will still be
     *   committed if necessary
-    * @param onRecoveryFinished
-    *   optional effect to execute when partition recovery is completed
     */
   def apply[F[_]: Async: LogOf](
     keyStateOf: KeyStateOf[F],
-    config: PartitionFlowConfig                         = PartitionFlowConfig(),
-    filter: Option[FilterRecord[F]]                     = None,
-    onRecoveryFinished: Option[OnPartitionRecovered[F]] = None
+    config: PartitionFlowConfig     = PartitionFlowConfig(),
+    filter: Option[FilterRecord[F]] = None
   ): PartitionFlowOf[F] = { (topicPartition, assignedAt, scheduleCommit) =>
-    PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config, filter, scheduleCommit, onRecoveryFinished)
+    PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config, filter, scheduleCommit)
   }
 }

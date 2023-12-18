@@ -138,7 +138,7 @@ package object kafkapersistence {
       override def apply(
         topicPartition: TopicPartition,
         assignedAt: Offset,
-        scheduleCommit: ScheduleCommit[F],
+        scheduleCommit: ScheduleCommit[F]
       ): Resource[F, PartitionFlow[F]] = {
         for {
           // TODO: per-partition persistence module with 'String -> ByteVector' cache or global persistence module with 'KafkaKey -> ByteVector' cache?
