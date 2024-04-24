@@ -6,6 +6,9 @@ import com.evolutiongaming.scassandra.EncodeByName
 import com.evolutiongaming.skafka.TimestampType
 import scala.jdk.CollectionConverters._
 import scodec.bits.ByteVector
+import com.evolutiongaming.skafka.Partition
+import scala.util.Try
+import com.evolutiongaming.skafka.Offset
 
 private[flow] object CassandraCodecs {
 
@@ -40,5 +43,13 @@ private[flow] object CassandraCodecs {
       }
     }
   }
+
+  implicit val encodeByNamePartition: EncodeByName[Partition] = EncodeByName[Int].contramap { a: Partition => a.value }
+
+  implicit val decodeByNamePartition: DecodeByName[Partition] = DecodeByName[Int].map { a => Partition.of[Try](a).get }
+
+  implicit val encodeByNameOffset: EncodeByName[Offset] = EncodeByName[Long].contramap { a: Offset => a.value }
+
+  implicit val decodeByNameOffset: DecodeByName[Offset] = DecodeByName[Long].map { a => Offset.of[Try](a).get }
 
 }

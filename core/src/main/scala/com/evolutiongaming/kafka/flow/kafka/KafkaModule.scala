@@ -4,13 +4,13 @@ import cats.effect.{Async, Clock, Resource}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.{FromTry, LogOf, MeasureDuration, ToFuture, ToTry}
 import com.evolutiongaming.kafka.flow.LogResource
-import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
+import com.evolutiongaming.kafka.flow.kafka.Codecs._
 import com.evolutiongaming.kafka.journal.{
   KafkaConfig,
-  KafkaHealthCheck,
-  RandomIdOf,
   KafkaConsumerOf => JournalConsumerOf,
-  KafkaProducerOf => JournalProducerOf
+  KafkaHealthCheck,
+  KafkaProducerOf => JournalProducerOf,
+  RandomIdOf
 }
 import com.evolutiongaming.skafka.consumer.{
   AutoOffsetReset,

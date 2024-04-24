@@ -13,7 +13,6 @@ import com.evolutiongaming.kafka.journal.FromBytes.implicits._
 import com.evolutiongaming.kafka.journal.ToBytes
 import com.evolutiongaming.kafka.journal.ToBytes.implicits._
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
-import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Offset
 import CassandraSnapshots._
