@@ -14,8 +14,7 @@ import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf, Timestamp}
-import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.skafka.consumer.WithSize
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
@@ -212,7 +211,7 @@ class PartitionFlowSpec extends FunSuite {
 
     class LocalFixture(waitForN: Int) extends ConstFixture(waitForN) {
       val foldedKeys = Ref.unsafe[IO, Set[String]](Set.empty)
-      override def fold: FoldOption[IO, (Offset, Int), ConsRecord] =
+      override def fold: FoldOption[IO, (Offset, Int), ConsumerRecord[String, ByteVector]] =
         FoldOption.of { (state, record) =>
           // memorize keys that were folded
           record.key.map(_.value).traverse(key => foldedKeys.update(_ + key)) >>
@@ -283,13 +282,13 @@ object PartitionFlowSpec {
 
     type State = (Offset, Int)
 
-    val keysOf      = KeysOf.memory[IO, String].unsafeRunSync()(IORuntime.global)
-    val journalsOf  = JournalsOf.memory[IO, String, ConsRecord].unsafeRunSync()(IORuntime.global)
+    val keysOf     = KeysOf.memory[IO, String].unsafeRunSync()(IORuntime.global)
+    val journalsOf = JournalsOf.memory[IO, String, ConsumerRecord[String, ByteVector]].unsafeRunSync()(IORuntime.global)
     val snapshotsOf = SnapshotsOf.memory[IO, String, State].unsafeRunSync()(IORuntime.global)
     val (persistenceOf, _) =
       PersistenceOf.restoreEvents(keysOf, journalsOf, snapshotsOf).allocated.unsafeRunSync()(IORuntime.global)
 
-    def fold: FoldOption[IO, State, ConsRecord] =
+    def fold: FoldOption[IO, State, ConsumerRecord[String, ByteVector]] =
       FoldOption.of { (state, record) =>
         IO {
           // return number of records processed as a state
@@ -315,7 +314,7 @@ object PartitionFlowSpec {
 
     def makeFlow(
       timerFlowOf: TimerFlowOf[IO],
-      persistenceOf: PersistenceOf[IO, String, State, ConsRecord],
+      persistenceOf: PersistenceOf[IO, String, State, ConsumerRecord[String, ByteVector]],
       filter: Option[FilterRecord[IO]] = none
     ): Resource[IO, PartitionFlow[IO]] = {
       val keyStateOf: KeyStateOf[IO] = new KeyStateOf[IO] {
@@ -324,7 +323,7 @@ object PartitionFlowSpec {
           key: String,
           createdAt: Timestamp,
           context: KeyContext[IO]
-        ): Resource[IO, KeyState[IO, ConsRecord]] = {
+        ): Resource[IO, KeyState[IO, ConsumerRecord[String, ByteVector]]] = {
           implicit val _context = context
           val fold0             = fold
           val kafkaKey          = KafkaKey("test", "test", topicPartition, key)
@@ -357,10 +356,10 @@ object PartitionFlowSpec {
       )
     }
 
-    def records(key: String, offset: Int, events: List[String]): List[ConsRecord] =
+    def records(key: String, offset: Int, events: List[String]): List[ConsumerRecord[String, ByteVector]] =
       events.zipWithIndex map {
         case (event, index) =>
-          ConsRecord(
+          ConsumerRecord[String, ByteVector](
             topicPartition   = TopicPartition.empty,
             timestampAndType = None,
             offset           = Offset.unsafe(offset + index.toLong),

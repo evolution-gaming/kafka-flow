@@ -5,10 +5,10 @@ import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.RebalanceListenerSpec._
 import com.evolutiongaming.kafka.flow.kafka.Consumer
-import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{RebalanceListener1 => SRebalanceListener}
+import com.evolutiongaming.skafka.consumer.{ConsumerRecords, RebalanceListener1 => SRebalanceListener}
 import munit.FunSuite
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
@@ -108,12 +108,12 @@ object RebalanceListenerSpec {
 
     val consumer: Consumer[F] = new Consumer[F] {
       def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]): F[Unit] = ().pure[F]
-      def poll(timeout: FiniteDuration): F[ConsRecords]                                   = ConsRecords.empty.pure[F]
-      def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit]        = ().pure[F]
+      def poll(timeout: FiniteDuration): F[ConsumerRecords[String, ByteVector]]    = ConsumerRecords.empty.pure[F]
+      def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] = ().pure[F]
     }
 
     def flow(topic: String) = new TopicFlow[F] {
-      def apply(records: ConsRecords): F[Unit] = ().pure[F]
+      def apply(records: ConsumerRecords[String, ByteVector]): F[Unit] = ().pure[F]
       def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] =
         StateT.modify(_.add(topic, Action.Add(partitions)))
       def remove(partitions: NonEmptySet[Partition]): F[Unit] =

@@ -1,11 +1,13 @@
 package com.evolutiongaming.kafka.flow
 
-import FoldMetrics._
 import com.evolutiongaming.catshelper.MeasureDuration
-import com.evolutiongaming.kafka.journal.ConsRecord
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.smetrics.CollectorRegistry
-import metrics.syntax._
 import munit.FunSuite
+import scodec.bits.ByteVector
+
+import FoldMetrics._
+import metrics.syntax._
 
 class FoldMetricsSpec extends FunSuite {
 
@@ -13,7 +15,7 @@ class FoldMetricsSpec extends FunSuite {
 
   test("having MetricsKOf enables withCollectorRegistry syntax") {
     implicit val measureDuration     = MeasureDuration.empty[F]
-    val fold: FoldOptionCons[F, Int] = FoldOption.empty[F, Int, ConsRecord]
+    val fold: FoldOptionCons[F, Int] = FoldOption.empty[F, Int, ConsumerRecord[String, ByteVector]]
     fold.withCollectorRegistry(CollectorRegistry.empty[F])
   }
 

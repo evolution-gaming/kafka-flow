@@ -6,10 +6,10 @@ import cats.effect.Resource
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
-import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka.Topic
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import com.evolutiongaming.sstream.Stream
+import scodec.bits.ByteVector
 
 /** Represents everything stateful happening on one `Consumer` */
 trait ConsumerFlow[F[_]] {
@@ -19,7 +19,7 @@ trait ConsumerFlow[F[_]] {
     * Note, that returned record does not guarantee that commit to Kafka happened, i.e. that the record will not be
     * processed for the second time.
     */
-  def stream: Stream[F, ConsRecords]
+  def stream: Stream[F, ConsumerRecords[String, ByteVector]]
 
 }
 object ConsumerFlow {

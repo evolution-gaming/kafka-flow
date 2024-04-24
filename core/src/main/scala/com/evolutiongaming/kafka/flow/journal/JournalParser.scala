@@ -4,29 +4,29 @@ import cats.MonadThrow
 import cats.arrow.FunctionK
 import cats.syntax.all._
 import com.evolutiongaming.kafka.journal._
-import com.evolutiongaming.kafka.journal.conversions.ConsRecordToActionRecord
-import com.evolutiongaming.kafka.journal.conversions.KafkaRead
+import com.evolutiongaming.kafka.journal.conversions.{ConsRecordToActionRecord, KafkaRead}
 import com.evolutiongaming.kafka.journal.util.Fail
-import play.api.libs.json.JsResult
-import play.api.libs.json.Reads
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
+import play.api.libs.json.{JsResult, Reads}
+import scodec.bits.ByteVector
 
 import scala.util.Try
 
 /** Deciphers the structures coming from Kafka Journal */
 trait JournalParser[F[_]] {
 
-  /** Sequence numbers of events contained in `ConsRecord` if any.
+  /** Sequence numbers of events contained in `ConsumerRecord[String, ByteVector]` if any.
     *
     * It could be a bit faster than `toPayloads` because it does not parse the actual payload, but looks at headers
     * instead.
     */
-  def toSeqRange(record: ConsRecord): F[Option[SeqRange]]
+  def toSeqRange(record: ConsumerRecord[String, ByteVector]): F[Option[SeqRange]]
 
-  /** Encoded events contained in `ConsRecord` if any */
-  def toPayloads(record: ConsRecord): F[List[Event[Payload]]]
+  /** Encoded events contained in `ConsumerRecord[String, ByteVector]` if any */
+  def toPayloads(record: ConsumerRecord[String, ByteVector]): F[List[Event[Payload]]]
 
-  /** Parsed events contained in `ConsRecord` if any */
-  def toEvents[T: Reads](record: ConsRecord): F[List[(SeqNr, T)]]
+  /** Parsed events contained in `ConsumerRecord[String, ByteVector]` if any */
+  def toEvents[T: Reads](record: ConsumerRecord[String, ByteVector]): F[List[(SeqNr, T)]]
 
 }
 object JournalParser {
@@ -44,7 +44,7 @@ object JournalParser {
 
     implicit val parsePayload: KafkaRead[F, Payload] = KafkaRead.payloadKafkaRead[F]
 
-    def toAppend(record: ConsRecord) = {
+    def toAppend(record: ConsumerRecord[String, ByteVector]) = {
       parseAction(record).value map { record =>
         for {
           record <- record
@@ -56,19 +56,19 @@ object JournalParser {
       }
     }
 
-    def toSeqRange(record: ConsRecord) =
+    def toSeqRange(record: ConsumerRecord[String, ByteVector]) =
       toAppend(record) map { append =>
         append map (_.header.range)
       }
 
-    def toPayloads(record: ConsRecord) =
+    def toPayloads(record: ConsumerRecord[String, ByteVector]) =
       toAppend(record) flatMap { append =>
         append.toList flatTraverse { append =>
           parsePayload(PayloadAndType(append.payload, append.header.payloadType)) map (_.events.toList)
         }
       }
 
-    def toEvents[T: Reads](record: ConsRecord) = toPayloads(record) flatMap { events =>
+    def toEvents[T: Reads](record: ConsumerRecord[String, ByteVector]) = toPayloads(record) flatMap { events =>
       val F = MonadThrow[F]
       events traverse { event =>
         for {

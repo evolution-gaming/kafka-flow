@@ -3,16 +3,15 @@ package com.evolutiongaming.kafka.flow.kafkapersistence
 import cats.implicits._
 import cats.{FlatMap, Monad, data}
 import com.evolutiongaming.catshelper.{BracketThrowable, Log}
-import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.AutoOffsetReset.Earliest
 import com.evolutiongaming.skafka.consumer.{
+  Consumer => SkafkaConsumer,
   ConsumerConfig,
   ConsumerOf,
   ConsumerRecord,
-  WithSize,
-  Consumer => SkafkaConsumer
+  WithSize
 }
 import scodec.bits.ByteVector
 
@@ -51,7 +50,7 @@ object KafkaPartitionPersistence {
 
   private[kafkapersistence] def processRecord(
     map: BytesByKey,
-    record: ConsRecord
+    record: ConsumerRecord[String, ByteVector]
   ): BytesByKey = record match {
     case ConsumerRecord(_, _, _, Some(WithSize(key, _)), Some(WithSize(value, _)), _) => map + (key -> value)
     case ConsumerRecord(_, _, _, Some(WithSize(key, _)), None, _)                     => map - key

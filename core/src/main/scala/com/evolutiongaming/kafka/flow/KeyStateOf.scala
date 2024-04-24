@@ -7,9 +7,10 @@ import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf, Timestamp}
-import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.TopicPartition
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.sstream.Stream
+import scodec.bits.ByteVector
 
 trait KeyStateOf[F[_]] { self =>
 
@@ -19,7 +20,7 @@ trait KeyStateOf[F[_]] { self =>
     key: String,
     createdAt: Timestamp,
     context: KeyContext[F]
-  ): Resource[F, KeyState[F, ConsRecord]]
+  ): Resource[F, KeyState[F, ConsumerRecord[String, ByteVector]]]
 
   /** Restores a state for all keys present in persistence.
     *
@@ -39,9 +40,9 @@ object KeyStateOf {
     applicationId: String,
     groupId: String,
     timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
+    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]],
     timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, ConsRecord],
+    fold: FoldOption[F, S, ConsumerRecord[String, ByteVector]],
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = lazyRecovery(
     applicationId = applicationId,
@@ -63,9 +64,9 @@ object KeyStateOf {
     applicationId: String,
     groupId: String,
     timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
+    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]],
     timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, ConsRecord],
+    fold: FoldOption[F, S, ConsumerRecord[String, ByteVector]],
     tick: TickOption[F, S],
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = new KeyStateOf[F] {
@@ -104,9 +105,9 @@ object KeyStateOf {
     groupId: String,
     keysOf: KeysOf[F, KafkaKey],
     timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
+    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]],
     timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, ConsRecord],
+    fold: FoldOption[F, S, ConsumerRecord[String, ByteVector]],
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
     applicationId = applicationId,
@@ -130,9 +131,9 @@ object KeyStateOf {
     groupId: String,
     keysOf: KeysOf[F, KafkaKey],
     timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
+    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]],
     timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, ConsRecord],
+    fold: FoldOption[F, S, ConsumerRecord[String, ByteVector]],
     tick: TickOption[F, S],
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
@@ -156,8 +157,8 @@ object KeyStateOf {
     groupId: String,
     keysOf: KeysOf[F, KafkaKey],
     timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord],
-    keyFlowOf: KeyFlowOf[F, S, ConsRecord],
+    persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]],
+    keyFlowOf: KeyFlowOf[F, S, ConsumerRecord[String, ByteVector]],
     additionalPersistOf: AdditionalStatePersistOf[F, S],
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
@@ -168,7 +169,7 @@ object KeyStateOf {
     persistenceOf       = persistenceOf,
     additionalPersistOf = additionalPersistOf,
     keyFlowOf           = keyFlowOf,
-    recover             = FoldOption.empty[F, S, ConsRecord],
+    recover             = FoldOption.empty[F, S, ConsumerRecord[String, ByteVector]],
     registry            = registry
   )
 
@@ -185,8 +186,8 @@ object KeyStateOf {
     groupId: String,
     keysOf: KeysOf[F, KafkaKey],
     timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord],
-    keyFlowOf: KeyFlowOf[F, S, ConsRecord],
+    persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]],
+    keyFlowOf: KeyFlowOf[F, S, ConsumerRecord[String, ByteVector]],
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = eagerRecovery(
     applicationId       = applicationId,
@@ -196,7 +197,7 @@ object KeyStateOf {
     persistenceOf       = persistenceOf,
     additionalPersistOf = AdditionalStatePersistOf.empty[F, S],
     keyFlowOf           = keyFlowOf,
-    recover             = FoldOption.empty[F, S, ConsRecord],
+    recover             = FoldOption.empty[F, S, ConsumerRecord[String, ByteVector]],
     registry            = registry
   )
 
@@ -209,10 +210,10 @@ object KeyStateOf {
     groupId: String,
     keysOf: KeysOf[F, KafkaKey],
     timersOf: TimersOf[F, KafkaKey],
-    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsRecord],
+    persistenceOf: PersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]],
     additionalPersistOf: AdditionalStatePersistOf[F, S],
-    keyFlowOf: KeyFlowOf[F, S, ConsRecord],
-    recover: FoldOption[F, S, ConsRecord],
+    keyFlowOf: KeyFlowOf[F, S, ConsumerRecord[String, ByteVector]],
+    recover: FoldOption[F, S, ConsumerRecord[String, ByteVector]],
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = new KeyStateOf[F] {
 

@@ -6,19 +6,18 @@ import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._
-import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.smetrics.LabelNames
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.smetrics.MetricsHelper._
-import com.evolutiongaming.smetrics.Quantile
-import com.evolutiongaming.smetrics.Quantiles
+import com.evolutiongaming.smetrics.{LabelNames, Quantile, Quantiles}
+import scodec.bits.ByteVector
 
 object JournalDatabaseMetrics {
 
-  def of[F[_]: Monad: MeasureDuration]: MetricsOf[F, JournalDatabase[F, KafkaKey, ConsRecord]] =
+  def of[F[_]: Monad: MeasureDuration]: MetricsOf[F, JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
     journalDatabaseMetricsOf
 
   implicit def journalDatabaseMetricsOf[F[_]: Monad: MeasureDuration]
-    : MetricsOf[F, JournalDatabase[F, KafkaKey, ConsRecord]] = { registry =>
+    : MetricsOf[F, JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] = { registry =>
     for {
       persistSummary <- registry.summary(
         name      = "journal_database_persist_duration_seconds",
@@ -39,8 +38,8 @@ object JournalDatabaseMetrics {
         labels    = LabelNames("topic", "partition")
       )
     } yield database =>
-      new JournalDatabase[F, KafkaKey, ConsRecord] {
-        def persist(key: KafkaKey, journal: ConsRecord) =
+      new JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]] {
+        def persist(key: KafkaKey, journal: ConsumerRecord[String, ByteVector]) =
           database.persist(key, journal) measureDuration { duration =>
             persistSummary
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)

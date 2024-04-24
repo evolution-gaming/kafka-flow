@@ -6,7 +6,8 @@ import cats.effect.{Clock, MonadCancel, MonadCancelThrow, Ref}
 import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.kafka.OffsetToCommit
 import com.evolutiongaming.kafka.flow.persistence.Persistence
-import com.evolutiongaming.kafka.journal.ConsRecord
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
+import scodec.bits.ByteVector
 
 import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
@@ -49,10 +50,10 @@ object AdditionalStatePersist {
     *   allowed cooldown between two persisting of a key
     */
   def of[F[_]: MonadCancelThrow: Ref.Make: Clock, S](
-    persistence: Persistence[F, S, ConsRecord],
+    persistence: Persistence[F, S, ConsumerRecord[String, ByteVector]],
     keyContext: KeyContext[F],
     cooldown: FiniteDuration
-  ): F[AdditionalStatePersist[F, S, ConsRecord]] = {
+  ): F[AdditionalStatePersist[F, S, ConsumerRecord[String, ByteVector]]] = {
     for {
       requestedRef     <- Ref.of(false)
       lastPersistedRef <- Ref.of(none[Instant])
@@ -60,13 +61,13 @@ object AdditionalStatePersist {
   }
 
   private[flow] def of[F[_]: MonadCancelThrow: Clock, S](
-    persistence: Persistence[F, S, ConsRecord],
+    persistence: Persistence[F, S, ConsumerRecord[String, ByteVector]],
     keyContext: KeyContext[F],
     cooldown: FiniteDuration,
     requestedRef: Ref[F, Boolean],
     lastPersistedRef: Ref[F, Option[Instant]]
-  ): AdditionalStatePersist[F, S, ConsRecord] =
-    new AdditionalStatePersist[F, S, ConsRecord] {
+  ): AdditionalStatePersist[F, S, ConsumerRecord[String, ByteVector]] =
+    new AdditionalStatePersist[F, S, ConsumerRecord[String, ByteVector]] {
       private val F          = MonadCancel[F, Throwable]
       private val cooldownMs = cooldown.toMillis
       // TODO: make configurable, now it's too much code to rewrite at once
@@ -75,7 +76,7 @@ object AdditionalStatePersist {
       override def request: F[Unit] =
         requestedRef.set(true) >> keyContext.log.info("Additional persisting requested")
 
-      override def persistIfNeeded(record: ConsRecord, state: S): F[Unit] = {
+      override def persistIfNeeded(record: ConsumerRecord[String, ByteVector], state: S): F[Unit] = {
         for {
           requested <- requestedRef.get
           _ <- F.whenA(requested) {

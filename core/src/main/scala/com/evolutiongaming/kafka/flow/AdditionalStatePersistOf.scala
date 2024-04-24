@@ -3,7 +3,8 @@ package com.evolutiongaming.kafka.flow
 import cats.Applicative
 import cats.effect.{Clock, MonadCancelThrow, Ref}
 import com.evolutiongaming.kafka.flow.persistence.Persistence
-import com.evolutiongaming.kafka.journal.ConsRecord
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -15,27 +16,27 @@ import scala.concurrent.duration.FiniteDuration
   */
 trait AdditionalStatePersistOf[F[_], S] {
   def apply(
-    persistence: Persistence[F, S, ConsRecord],
+    persistence: Persistence[F, S, ConsumerRecord[String, ByteVector]],
     keyContext: KeyContext[F]
-  ): F[AdditionalStatePersist[F, S, ConsRecord]]
+  ): F[AdditionalStatePersist[F, S, ConsumerRecord[String, ByteVector]]]
 }
 
 object AdditionalStatePersistOf {
   def empty[F[_]: Applicative, S]: AdditionalStatePersistOf[F, S] =
     new AdditionalStatePersistOf[F, S] {
       override def apply(
-        persistence: Persistence[F, S, ConsRecord],
+        persistence: Persistence[F, S, ConsumerRecord[String, ByteVector]],
         keyContext: KeyContext[F]
-      ): F[AdditionalStatePersist[F, S, ConsRecord]] =
-        Applicative[F].pure(AdditionalStatePersist.empty[F, S, ConsRecord])
+      ): F[AdditionalStatePersist[F, S, ConsumerRecord[String, ByteVector]]] =
+        Applicative[F].pure(AdditionalStatePersist.empty[F, S, ConsumerRecord[String, ByteVector]])
     }
 
   def of[F[_]: MonadCancelThrow: Ref.Make: Clock, S](cooldown: FiniteDuration): AdditionalStatePersistOf[F, S] = {
     new AdditionalStatePersistOf[F, S] {
       def apply(
-        persistence: Persistence[F, S, ConsRecord],
+        persistence: Persistence[F, S, ConsumerRecord[String, ByteVector]],
         keyContext: KeyContext[F]
-      ): F[AdditionalStatePersist[F, S, ConsRecord]] = {
+      ): F[AdditionalStatePersist[F, S, ConsumerRecord[String, ByteVector]]] = {
         AdditionalStatePersist.of(persistence, keyContext, cooldown)
       }
     }

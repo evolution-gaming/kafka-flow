@@ -8,20 +8,21 @@ import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.journal.JournalDatabase
 import com.evolutiongaming.kafka.flow.key.KeyDatabase
 import com.evolutiongaming.kafka.flow.snapshot.{KafkaSnapshot, SnapshotDatabase}
-import com.evolutiongaming.kafka.journal.ConsRecord
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
+import scodec.bits.ByteVector
 
 /** Convenience methods to create most common persistence setups */
 trait PersistenceModule[F[_], S] {
 
   def keys: KeyDatabase[F, KafkaKey]
-  def journals: JournalDatabase[F, KafkaKey, ConsRecord]
+  def journals: JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]
   def snapshots: SnapshotDatabase[F, KafkaKey, KafkaSnapshot[S]]
 
   /** Saves both events and snapshots, restores state from events */
   def restoreEvents(
     implicit F: Sync[F],
     logOf: LogOf[F]
-  ): Resource[F, PersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
+  ): Resource[F, PersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsumerRecord[String, ByteVector]]] = for {
     keysOf        <- Resource.eval(keys.keysOf)
     journalsOf    <- Resource.eval(journals.journalsOf)
     snapshotsOf   <- Resource.eval(snapshots.snapshotsOf)
@@ -32,7 +33,7 @@ trait PersistenceModule[F[_], S] {
   def restoreSnapshots(
     implicit F: Sync[F],
     logOf: LogOf[F]
-  ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
+  ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsumerRecord[String, ByteVector]]] = for {
     keysOf      <- keys.keysOf
     journalsOf  <- journals.journalsOf
     snapshotsOf <- snapshots.snapshotsOf
@@ -42,7 +43,7 @@ trait PersistenceModule[F[_], S] {
   def snapshotsOnly(
     implicit F: Sync[F],
     logOf: LogOf[F]
-  ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsRecord]] = for {
+  ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsumerRecord[String, ByteVector]]] = for {
     keysOf      <- keys.keysOf
     snapshotsOf <- snapshots.snapshotsOf
   } yield PersistenceOf.snapshotsOnly(keysOf, snapshotsOf)

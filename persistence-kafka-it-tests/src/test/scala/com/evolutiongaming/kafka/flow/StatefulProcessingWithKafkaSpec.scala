@@ -18,9 +18,9 @@ import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersis
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
-import com.evolutiongaming.kafka.journal.{ConsRecord, FromJsResult, JsonCodec}
+import com.evolutiongaming.kafka.journal.{FromJsResult, JsonCodec}
 import com.evolutiongaming.retry.Retry
-import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf}
+import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf, ConsumerRecord}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf, ProducerRecord, RecordMetadata}
 import com.evolutiongaming.skafka.{Bytes, CommonConfig, Partition}
 import org.apache.kafka.clients.admin.{AdminClient, AdminClientConfig, NewTopic}
@@ -57,18 +57,19 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
 
   trait Persistence {
     def keysOf: KeysOf[IO, KafkaKey]
-    def snapshotPersistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsRecord]
+    def snapshotPersistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsumerRecord[String, ByteVector]]
     def reset: IO[Unit]
   }
 
   private val inMemoryPersistenceModule: KafkaPersistenceModule[IO, State] = new KafkaPersistenceModule[IO, State] {
     private val db: SnapshotDatabase[IO, KafkaKey, State] = SnapshotDatabase.memory[IO, KafkaKey, State].unsafeRunSync()
     private val snapshotsOf: SnapshotsOf[IO, KafkaKey, State] = SnapshotsOf.backedBy(db)
-    val snapshotPersistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsRecord] =
+    val snapshotPersistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsumerRecord[String, ByteVector]] =
       PersistenceOf.snapshotsOnly(keysOf, snapshotsOf)
 
     override def keysOf: KeysOf[IO, KafkaKey] = KeysOf.memory[IO, KafkaKey].unsafeRunSync()
-    override def persistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsRecord] = snapshotPersistenceOf
+    override def persistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsumerRecord[String, ByteVector]] =
+      snapshotPersistenceOf
   }
 
   private val inMemoryPersistenceModuleOf: KafkaPersistenceModuleOf[IO, State] =
@@ -346,7 +347,7 @@ object StatefulProcessingWithKafkaSpec {
     output: Ref[IO, List[Output]],
     finished: Deferred[IO, Unit],
     log: Log[IO]
-  ): FoldOption[IO, State, ConsRecord] =
+  ): FoldOption[IO, State, ConsumerRecord[String, ByteVector]] =
     FoldOption.of { (state, record) =>
       var isFinished = false
       for {

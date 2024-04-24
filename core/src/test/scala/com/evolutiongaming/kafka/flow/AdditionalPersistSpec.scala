@@ -11,8 +11,7 @@ import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
-import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.skafka.consumer.WithSize
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import munit.FunSuite
 import scodec.bits.ByteVector
@@ -26,21 +25,22 @@ class AdditionalPersistSpec extends FunSuite {
   implicit val ioRuntime: IORuntime = IORuntime.global
 
   test("persist state both on request and periodically when regular persist succeeds") {
-    val fold: EnhancedFold[IO, String, ConsRecord] = EnhancedFold.of[IO, String, ConsRecord] { (extras, _, record) =>
-      val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
-      val key   = record.key.get.value
+    val fold: EnhancedFold[IO, String, ConsumerRecord[String, ByteVector]] =
+      EnhancedFold.of[IO, String, ConsumerRecord[String, ByteVector]] { (extras, _, record) =>
+        val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
+        val key   = record.key.get.value
 
-      for {
-        _ <- key match {
-          case "key1" if value == "value2" || value == "value8"  => extras.requestAdditionalPersist
-          case "key2" if value == "value4" || value == "value10" => extras.requestAdditionalPersist
-          case _                                                 => IO.unit
-        }
-      } yield Some(value)
-    }
+        for {
+          _ <- key match {
+            case "key1" if value == "value2" || value == "value8"  => extras.requestAdditionalPersist
+            case "key2" if value == "value4" || value == "value10" => extras.requestAdditionalPersist
+            case _                                                 => IO.unit
+          }
+        } yield Some(value)
+      }
 
     val fixture = new TestFixture {
-      override val enhancedFold: EnhancedFold[IO, String, ConsRecord] = fold
+      override val enhancedFold: EnhancedFold[IO, String, ConsumerRecord[String, ByteVector]] = fold
     }
 
     // Additional persist should happen at key1:value2 and key2:value4
@@ -129,21 +129,22 @@ class AdditionalPersistSpec extends FunSuite {
   }
 
   test("persist state both on request and periodically when persisting results in error") {
-    val fold: EnhancedFold[IO, String, ConsRecord] = EnhancedFold.of[IO, String, ConsRecord] { (extras, _, record) =>
-      val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
-      val key   = record.key.get.value
+    val fold: EnhancedFold[IO, String, ConsumerRecord[String, ByteVector]] =
+      EnhancedFold.of[IO, String, ConsumerRecord[String, ByteVector]] { (extras, _, record) =>
+        val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
+        val key   = record.key.get.value
 
-      for {
-        _ <- key match {
-          case "key1" if value == "value7" => extras.requestAdditionalPersist
-          case _                           => IO.unit
-        }
-      } yield Some(value)
-    }
+        for {
+          _ <- key match {
+            case "key1" if value == "value7" => extras.requestAdditionalPersist
+            case _                           => IO.unit
+          }
+        } yield Some(value)
+      }
 
     val fixture = new TestFixture {
-      override val enhancedFold: EnhancedFold[IO, String, ConsRecord] = fold
-      override val ignorePersistFailures: Boolean                     = true
+      override val enhancedFold: EnhancedFold[IO, String, ConsumerRecord[String, ByteVector]] = fold
+      override val ignorePersistFailures: Boolean                                             = true
 
       override def snapshotDatabase: SnapshotDatabase[IO, KafkaKey, String] =
         new SnapshotDatabase[IO, KafkaKey, String] {
@@ -269,8 +270,8 @@ object AdditionalPersistSpec {
 
     def ignorePersistFailures: Boolean = false
 
-    def enhancedFold: EnhancedFold[IO, String, ConsRecord] = EnhancedFold.of[IO, String, ConsRecord] {
-      (extras, _, record) =>
+    def enhancedFold: EnhancedFold[IO, String, ConsumerRecord[String, ByteVector]] =
+      EnhancedFold.of[IO, String, ConsumerRecord[String, ByteVector]] { (extras, _, record) =>
         val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
         val key   = record.key.get.value
 
@@ -281,10 +282,10 @@ object AdditionalPersistSpec {
             case _                                                 => IO.unit
           }
         } yield Some(value)
-    }
+      }
 
-    def record(key: String, i: Int): ConsRecord =
-      ConsRecord(
+    def record(key: String, i: Int): ConsumerRecord[String, ByteVector] =
+      ConsumerRecord[String, ByteVector](
         topicPartition   = TopicPartition.empty,
         offset           = Offset.unsafe(100L + i.toLong),
         timestampAndType = None,
@@ -293,7 +294,7 @@ object AdditionalPersistSpec {
         headers          = List.empty
       )
 
-    def batch(key: String, from: Int, to: Int): List[ConsRecord] =
+    def batch(key: String, from: Int, to: Int): List[ConsumerRecord[String, ByteVector]] =
       (from to to).map(i => record(key, i)).toList
 
     def partitionFlow: Resource[IO, PartitionFlow[IO]] =

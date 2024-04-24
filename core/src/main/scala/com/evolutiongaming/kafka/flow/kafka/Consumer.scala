@@ -4,9 +4,8 @@ import cats.MonadThrow
 import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
 import cats.effect.Ref
 import cats.syntax.all._
-import com.evolutiongaming.kafka.journal.ConsRecords
-import com.evolutiongaming.skafka.consumer.{Consumer => KafkaConsumer, _}
 import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.consumer.{Consumer => KafkaConsumer, _}
 import scodec.bits.ByteVector
 
 import java.time.Instant
@@ -21,7 +20,7 @@ trait Consumer[F[_]] {
 
   def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener1[F]): F[Unit]
 
-  def poll(timeout: FiniteDuration): F[ConsRecords]
+  def poll(timeout: FiniteDuration): F[ConsumerRecords[String, ByteVector]]
 
   def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit]
 
@@ -36,7 +35,7 @@ object Consumer {
     def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener1[F]): F[Unit] =
       consumer.subscribe(topics, listener)
 
-    def poll(timeout: FiniteDuration): F[ConsRecords] =
+    def poll(timeout: FiniteDuration): F[ConsumerRecords[String, ByteVector]] =
       consumer.poll(timeout)
 
     def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] =
@@ -46,7 +45,7 @@ object Consumer {
 
   /** Does not call Kafka, returns specified records on every poll */
   def repeat[F[_]: MonadThrow: Ref.Make](
-    records: ConsRecords
+    records: ConsumerRecords[String, ByteVector]
   ): F[Consumer[F]] = Ref.of(Set.empty[RebalanceListener1[F]]) map { listeners =>
     new Consumer[F] {
       private val noopConsumer = new NoopRebalanceConsumer
@@ -54,7 +53,7 @@ object Consumer {
       def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener1[F]): F[Unit] =
         listeners update (_ + listener)
 
-      def poll(timeout: FiniteDuration): F[ConsRecords] = for {
+      def poll(timeout: FiniteDuration): F[ConsumerRecords[String, ByteVector]] = for {
         // send assignment to all new listeners before polling
         listeners <- listeners.getAndSet(Set.empty)
         partitions = NonEmptyList.fromList(records.values.keys.toList)

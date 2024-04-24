@@ -5,10 +5,14 @@ import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.ConsumerFlowSpec._
 import com.evolutiongaming.kafka.flow.kafka.Consumer
-import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.skafka._
-import com.evolutiongaming.skafka.consumer.{RebalanceCallback, RebalanceListener1 => SRebalanceListener}
+import com.evolutiongaming.skafka.consumer.{
+  ConsumerRecords,
+  RebalanceCallback,
+  RebalanceListener1 => SRebalanceListener
+}
 import munit.FunSuite
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.{Success, Try}
@@ -95,12 +99,15 @@ object ConsumerFlowSpec {
     case class Subscribe(topics: NonEmptySet[Topic]) extends Action
     case class Add(topic: String, partitions: NonEmptySet[(Partition, Offset)]) extends Action
     case class Remove(topic: String, partitions: NonEmptySet[Partition]) extends Action
-    case class Apply(topic: String, records: ConsRecords = ConsRecords.empty) extends Action
+    case class Apply(
+      topic: String,
+      records: ConsumerRecords[String, ByteVector] = ConsumerRecords.empty
+    ) extends Action
   }
 
   sealed trait Command
   object Command {
-    case class Records(records: ConsRecords = ConsRecords.empty) extends Command
+    case class Records(records: ConsumerRecords[String, ByteVector] = ConsumerRecords.empty) extends Command
     case class Assigned(topicPartitions: NonEmptySet[TopicPartition]) extends Command
     case class Revoked(topicPartitions: NonEmptySet[TopicPartition]) extends Command
     case class Lost(topicPartitions: NonEmptySet[TopicPartition]) extends Command
@@ -123,19 +130,21 @@ object ConsumerFlowSpec {
       def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]): F[Unit] =
         StateT.modify[Try, Context](_ + Action.Subscribe(topics) + listener)
 
-      def poll(timeout: FiniteDuration): F[ConsRecords] = {
+      def poll(timeout: FiniteDuration): F[ConsumerRecords[String, ByteVector]] = {
         StateT { context =>
           context.commands match {
             case Nil =>
-              StopException(context).raiseError[Try, (Context, ConsRecords)]
+              StopException(context).raiseError[Try, (Context, ConsumerRecords[String, ByteVector])]
             case head :: tail =>
               val next = context.copy(commands = tail)
-              def withListener(f: SRebalanceListener[F] => RebalanceCallback[F, Unit]): Try[(Context, ConsRecords)] = {
+              def withListener(
+                f: SRebalanceListener[F] => RebalanceCallback[F, Unit]
+              ): Try[(Context, ConsumerRecords[String, ByteVector])] = {
                 next
                   .listener
                   .traverse(f(_).toF(noopConsumer))
                   .run(next)
-                  .map { case (context, _) => context -> ConsRecords.empty }
+                  .map { case (context, _) => context -> ConsumerRecords.empty }
               }
               head match {
                 case Command.Records(records)     => Try(next -> records)
@@ -151,7 +160,7 @@ object ConsumerFlowSpec {
     }
 
     def flow(topic: String) = new TopicFlow[F] {
-      def apply(records: ConsRecords): F[Unit] =
+      def apply(records: ConsumerRecords[String, ByteVector]): F[Unit] =
         StateT.modify(_ + Action.Apply(topic, records))
 
       def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] =

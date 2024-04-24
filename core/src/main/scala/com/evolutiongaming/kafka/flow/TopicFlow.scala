@@ -10,16 +10,16 @@ import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.DataHelper._
 import com.evolutiongaming.catshelper.{Log, LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.kafka.{Consumer, PendingCommits}
-import com.evolutiongaming.kafka.journal.{ConsRecords, PartitionOffset}
 import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
+import scodec.bits.ByteVector
 
 import scala.collection.immutable.SortedSet
 
 trait TopicFlow[F[_]] {
 
   /** Called when new records from the topic come to this consumer */
-  def apply(records: ConsRecords): F[Unit]
+  def apply(records: ConsumerRecords[String, ByteVector]): F[Unit]
 
   /** Called when a new partition is added to a topic.
     *
@@ -63,10 +63,11 @@ object TopicFlow {
   ): Resource[F, TopicFlow[F]] = {
 
     def commitPending(hint: String) = pendingCommits.clear.flatMap { offsets =>
-      def partitionOffsets = offsets map {
-        case (topicPartition, offsetAndMetadata) =>
-          PartitionOffset(topicPartition.partition, offsetAndMetadata.offset)
-      } mkString (", ")
+      def partitionOffsets: String = offsets
+        .map {
+          case (topicPartition, offsetAndMetadata) => s"${topicPartition.partition}:${offsetAndMetadata.offset}"
+        }
+        .mkString(", ")
 
       offsets.toNem.traverse_ { offsets =>
         Log[F].info(s"committing pending offsets: $offsets") *>
@@ -80,12 +81,12 @@ object TopicFlow {
 
     val acquire = new TopicFlow[F] {
 
-      def apply(records: ConsRecords) = {
+      def apply(records: ConsumerRecords[String, ByteVector]) = {
 
         for {
           partitions <- cache.values
           _ <- Log[F].debug(
-            s"got ConsRecords: ${ConsumerRecords.summaryShow.show(records)}; cached partitions: ${partitions.keys}"
+            s"got ConsumerRecords[String, ByteVector]: ${ConsumerRecords.summaryShow.show(records)}; cached partitions: ${partitions.keys}"
           )
           _ <- partitions.toList parTraverse {
             case (partition, flow) =>
@@ -167,7 +168,7 @@ object TopicFlow {
         xx                  <- a.allocated
         (topicFlow, release) = xx
         safeTopicFlow = new TopicFlow[F] {
-          def apply(records: ConsRecords): F[Unit] =
+          def apply(records: ConsumerRecords[String, ByteVector]): F[Unit] =
             semaphore.permit.use { _ => closed.get.ifM(().pure[F], topicFlow.apply(records)) }.uncancelable
           def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] =
             semaphore.permit.use { _ => closed.get.ifM(().pure[F], topicFlow.add(partitions)) }.uncancelable

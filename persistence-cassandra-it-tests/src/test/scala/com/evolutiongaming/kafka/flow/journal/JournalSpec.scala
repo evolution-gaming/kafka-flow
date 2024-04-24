@@ -2,9 +2,8 @@ package com.evolutiongaming.kafka.flow.journal
 
 import cats.effect.{IO, Ref}
 import com.evolutiongaming.kafka.flow.{CassandraSessionStub, CassandraSpec, KafkaKey}
-import com.evolutiongaming.kafka.journal.ConsRecord
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
-import com.evolutiongaming.skafka.consumer.WithSize
 import scodec.bits.ByteVector
 
 class JournalSpec extends CassandraSpec {
@@ -14,7 +13,7 @@ class JournalSpec extends CassandraSpec {
     val test: IO[Unit] = for {
       journals <- CassandraJournals.withSchema(cassandra().session, cassandra().sync)
       contents <- IO.fromEither(ByteVector.encodeUtf8("record-contents"))
-      record = ConsRecord(
+      record = ConsumerRecord[String, ByteVector](
         topicPartition   = TopicPartition.empty,
         offset           = Offset.min,
         timestampAndType = None,
