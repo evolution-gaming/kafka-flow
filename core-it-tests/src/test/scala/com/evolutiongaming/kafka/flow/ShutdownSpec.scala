@@ -5,11 +5,12 @@ import cats.effect.unsafe.IORuntime
 import cats.effect.{Deferred, IO, Ref, Resource}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.journal.ConsRecords
 import com.evolutiongaming.retry.Retry
+import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerRecord, RecordMetadata}
 import com.evolutiongaming.skafka.{CommonConfig, Offset, Partition}
 import com.evolutiongaming.sstream.Stream
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -80,7 +81,7 @@ object ShutdownSpec {
     (_, _) =>
       Resource.pure[IO, TopicFlow[IO]] {
         new TopicFlow[IO] {
-          def apply(records: ConsRecords) = IO.unit
+          def apply(records: ConsumerRecords[String, ByteVector]) = IO.unit
           def add(partitionsAndOffsets: NonEmptySet[(Partition, Offset)]) = {
             val partitions = partitionsAndOffsets map (_._1)
             state update (_ ++ partitions.toList)

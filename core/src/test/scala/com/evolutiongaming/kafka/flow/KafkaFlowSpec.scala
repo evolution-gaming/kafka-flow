@@ -6,17 +6,17 @@ import cats.effect.{Ref, Resource, SyncIO}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.kafka.Consumer
-import com.evolutiongaming.kafka.journal.{ConsRecord, ConsRecords}
 import com.evolutiongaming.retry.{OnError, Retry, Sleep, Strategy}
 import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.{
   ConsumerRecord,
   ConsumerRecords,
-  WithSize,
-  RebalanceListener1 => SRebalanceListener
+  RebalanceListener1 => SRebalanceListener,
+  WithSize
 }
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
@@ -151,7 +151,7 @@ object KafkaFlowSpec {
 
   class ConstFixture(val state: Ref[F, State]) {
 
-    def kafkaFlow: Stream[F, ConsRecords] = KafkaFlow.stream(
+    def kafkaFlow: Stream[F, ConsumerRecords[String, ByteVector]] = KafkaFlow.stream(
       consumer = consumer(state),
       flowOf = ConsumerFlowOf(
         topic = topic,
@@ -161,7 +161,7 @@ object KafkaFlowSpec {
             val release = state update (_ + Action.ReleaseTopicFlow)
             val topicFlow: TopicFlow[F] = new TopicFlow[F] {
 
-              def apply(consumerRecords: ConsRecords) =
+              def apply(consumerRecords: ConsumerRecords[String, ByteVector]) =
                 state update (_ + Action.Poll(consumerRecords))
 
               def remove(partitions: NonEmptySet[Partition]) =
@@ -192,10 +192,10 @@ object KafkaFlowSpec {
             case state @ State(Nil, _)          => (state, none[Command])
             case state @ State(head :: tail, _) => (state.copy(commands = tail), Some(head))
           } flatMap {
-            case None                                       => ConsRecords.empty.pure[F]
+            case None                                       => ConsumerRecords.empty.pure[F]
             case Some(Command.ProduceRecords(records))      => records.pure[F]
             case Some(Command.RemovePartitions(partitions)) => revoke(partitions) *> poll(timeout)
-            case Some(Command.Fail(error))                  => error.raiseError[F, ConsRecords]
+            case Some(Command.Fail(error))                  => error.raiseError[F, ConsumerRecords[String, ByteVector]]
           }
 
         def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) =
@@ -244,7 +244,7 @@ object KafkaFlowSpec {
     def of(state: State): F[ConstFixture] = Ref.of[F, State](state) map (new ConstFixture(_))
   }
 
-  def consumerRecord(partition: Int, offset: Long): ConsRecord = {
+  def consumerRecord(partition: Int, offset: Long): ConsumerRecord[String, ByteVector] = {
     ConsumerRecord(
       topicPartition   = TopicPartition(topic = topic, partition = Partition.unsafe(partition)),
       offset           = Offset.unsafe(offset),
@@ -255,10 +255,10 @@ object KafkaFlowSpec {
     )
   }
 
-  def consumerRecords(records: ConsRecord*): ConsRecords = {
+  def consumerRecords(records: ConsumerRecord[String, ByteVector]*): ConsumerRecords[String, ByteVector] = {
     NonEmptyList
       .fromList(records.toList)
-      .fold(ConsRecords.empty) { records =>
+      .fold(ConsumerRecords.empty[String, ByteVector]) { records =>
         ConsumerRecords(records.groupBy(_.topicPartition))
       }
   }
@@ -266,7 +266,7 @@ object KafkaFlowSpec {
   sealed abstract class Command
 
   object Command {
-    final case class ProduceRecords(consumerRecords: ConsRecords) extends Command
+    final case class ProduceRecords(consumerRecords: ConsumerRecords[String, ByteVector]) extends Command
     final case class RemovePartitions(partitions: NonEmptySet[Partition]) extends Command
     final case class Fail(error: Throwable) extends Command
   }
@@ -281,7 +281,7 @@ object KafkaFlowSpec {
     final case class RemovePartitions(partitions: NonEmptySet[Partition]) extends Action
     final case class AddPartitions(partitions: NonEmptySet[(Partition, Offset)]) extends Action
     final case class Subscribe(topics: NonEmptySet[Topic])(val listener: SRebalanceListener[F]) extends Action
-    final case class Poll(consumerRecords: ConsRecords) extends Action
+    final case class Poll(consumerRecords: ConsumerRecords[String, ByteVector]) extends Action
     final case class Commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) extends Action
     final case class RetryOnError(error: Throwable, decision: OnError.Decision) extends Action
   }

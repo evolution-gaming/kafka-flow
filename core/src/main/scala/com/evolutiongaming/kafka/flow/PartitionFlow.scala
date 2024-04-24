@@ -12,8 +12,9 @@ import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.PartitionFlowConfig.ParallelismMode._
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
-import com.evolutiongaming.kafka.journal.ConsRecord
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
+import scodec.bits.ByteVector
 
 import java.time.Instant
 
@@ -24,29 +25,29 @@ trait PartitionFlow[F[_]] {
     * It is possible for `records` parameter to come empty (for an empty poll). In this case only the timers will be
     * called.
     */
-  def apply(records: List[ConsRecord]): F[Unit]
+  def apply(records: List[ConsumerRecord[String, ByteVector]]): F[Unit]
 
 }
 
 object PartitionFlow {
 
-  final case class PartitionKey[F[_]](state: KeyState[F, ConsRecord], context: KeyContext[F]) {
-    def flow: KeyFlow[F, ConsRecord] = state.flow
-    def timers: TimerContext[F]      = state.timers
+  final case class PartitionKey[F[_]](state: KeyState[F, ConsumerRecord[String, ByteVector]], context: KeyContext[F]) {
+    def flow: KeyFlow[F, ConsumerRecord[String, ByteVector]] = state.flow
+    def timers: TimerContext[F]                              = state.timers
   }
 
   trait FilterRecord[F[_]] {
-    def apply(consRecord: ConsRecord): F[Boolean]
+    def apply(consRecord: ConsumerRecord[String, ByteVector]): F[Boolean]
   }
 
   object FilterRecord {
     def empty[F[_]: Applicative]: FilterRecord[F] =
       _ => true.pure[F]
 
-    def of[F[_]](f: ConsRecord => F[Boolean]): FilterRecord[F] =
+    def of[F[_]](f: ConsumerRecord[String, ByteVector] => F[Boolean]): FilterRecord[F] =
       record => f(record)
 
-    def of[F[_]: Applicative](f: ConsRecord => Boolean): FilterRecord[F] =
+    def of[F[_]: Applicative](f: ConsumerRecord[String, ByteVector] => Boolean): FilterRecord[F] =
       record => f(record).pure[F]
   }
 
@@ -139,7 +140,7 @@ object PartitionFlow {
       _ <- log.info(s"partition recovery finished, $count keys recovered")
     } yield ()
 
-    def processRecords(records: NonEmptyList[ConsRecord]) = for {
+    def processRecords(records: NonEmptyList[ConsumerRecord[String, ByteVector]]) = for {
       _ <- log.debug(s"processing ${records.size} records")
 
       clock <- Clock[F].instant

@@ -9,7 +9,6 @@ import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
-import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.kafka.journal.FromAttempt
 import com.evolutiongaming.kafka.journal.conversions.HeaderToTuple
 import com.evolutiongaming.kafka.journal.conversions.TupleToHeader
@@ -29,20 +28,21 @@ import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 
 import java.time.Instant
 import scodec.bits.ByteVector
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
 
 class CassandraJournals[F[_]: MonadThrow: Clock](
   session: CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
-) extends JournalDatabase[F, KafkaKey, ConsRecord] {
+) extends JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]] {
 
-  def persist(key: KafkaKey, event: ConsRecord): F[Unit] =
+  def persist(key: KafkaKey, event: ConsumerRecord[String, ByteVector]): F[Unit] =
     for {
       boundStatement <- Statements.persist(session, key, event)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).first.void
     } yield ()
 
-  def get(key: KafkaKey): Stream[F, ConsRecord] = {
+  def get(key: KafkaKey): Stream[F, ConsumerRecord[String, ByteVector]] = {
     val boundStatement = Statements
       .get(session, key)
       .map(_.withConsistencyLevel(consistencyOverrides.read))
@@ -71,7 +71,7 @@ object CassandraJournals {
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
-  ): F[JournalDatabase[F, KafkaKey, ConsRecord]] =
+  ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
     JournalSchema(session, sync).create as new CassandraJournals(session, consistencyOverrides)
 
   def truncate[F[_]: Monad](
@@ -80,7 +80,7 @@ object CassandraJournals {
   ): F[Unit] = JournalSchema(session, sync).truncate
 
   // we cannot use DecodeRow here because TupleToHeader is effectful
-  protected def decode[F[_]: MonadThrow](key: KafkaKey, row: Row): F[ConsRecord] = {
+  protected def decode[F[_]: MonadThrow](key: KafkaKey, row: Row): F[ConsumerRecord[String, ByteVector]] = {
     val headers = row.decode[Map[String, String]]("headers")
     val value   = row.decode[Option[ByteVector]]("value")
     for {
@@ -88,7 +88,7 @@ object CassandraJournals {
         case (key, value) =>
           TupleToHeader[F].apply(key, value)
       }
-    } yield ConsRecord(
+    } yield ConsumerRecord[String, ByteVector](
       topicPartition = key.topicPartition,
       key            = Some(WithSize(key.key)),
       offset         = row.decode[Offset]("offset"),
@@ -136,7 +136,7 @@ object CassandraJournals {
     def persist[F[_]: MonadThrow: Clock](
       session: CassandraSession[F],
       key: KafkaKey,
-      event: ConsRecord
+      event: ConsumerRecord[String, ByteVector]
     ): F[BoundStatement] = for {
       preparedStatement <- session.prepare(
         """ UPDATE

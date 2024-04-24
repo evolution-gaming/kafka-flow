@@ -9,7 +9,7 @@ import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
-import com.evolutiongaming.kafka.journal.ConsRecord
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.sstream.{FoldWhile, Stream}
 import scodec.bits.ByteVector
@@ -60,7 +60,7 @@ package object kafkapersistence {
     groupId: String,
     timersOf: TimersOf[F, KafkaKey],
     timerFlowOf: TimerFlowOf[F],
-    fold: FoldOption[F, S, ConsRecord],
+    fold: FoldOption[F, S, ConsumerRecord[String, ByteVector]],
     tick: TickOption[F, S],
     partitionFlowConfig: PartitionFlowConfig,
     metrics: FlowMetrics[F]         = FlowMetrics.empty[F],
@@ -126,7 +126,7 @@ package object kafkapersistence {
     groupId: String,
     timersOf: TimersOf[F, KafkaKey],
     timerFlowOf: TimerFlowOf[F],
-    fold: EnhancedFold[F, S, ConsRecord],
+    fold: EnhancedFold[F, S, ConsumerRecord[String, ByteVector]],
     tick: TickOption[F, S],
     partitionFlowConfig: PartitionFlowConfig,
     metrics: FlowMetrics[F],

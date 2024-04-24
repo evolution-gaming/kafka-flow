@@ -1,8 +1,8 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
-import cats.effect.{IO, Ref, Resource}
 import cats.effect.unsafe.IORuntime
+import cats.effect.{IO, Ref, Resource}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.{CassandraPersistence, ConsistencyOverrides}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
@@ -10,10 +10,10 @@ import com.evolutiongaming.kafka.flow.key.CassandraKeys
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
-import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.retry.Retry
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, WithSize}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
-import com.evolutiongaming.skafka.consumer.{ConsumerRecords, WithSize}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -41,7 +41,7 @@ class FlowSpec extends CassandraSpec {
           maxIdle       = 30.minutes,
           flushOnRevoke = true
         ),
-        fold     = FoldOption.empty[IO, KafkaSnapshot[String], ConsRecord],
+        fold     = FoldOption.empty[IO, KafkaSnapshot[String], ConsumerRecord[String, ByteVector]],
         tick     = TickOption.id[IO, KafkaSnapshot[String]],
         registry = EntityRegistry.empty[IO, KafkaKey, KafkaSnapshot[String]]
       )
@@ -54,7 +54,7 @@ class FlowSpec extends CassandraSpec {
       )
       topicFlowOf = TopicFlowOf(partitionFlowOf)
       records = NonEmptyList.of(
-        ConsRecord(
+        ConsumerRecord[String, ByteVector](
           topicPartition   = TopicPartition.empty,
           offset           = Offset.min,
           timestampAndType = None,

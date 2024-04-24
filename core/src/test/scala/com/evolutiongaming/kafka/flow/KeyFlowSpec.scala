@@ -1,8 +1,8 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
-import cats.effect.{Ref, SyncIO}
 import cats.effect.syntax.resource._
+import cats.effect.{Ref, SyncIO}
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.KeyFlowSpec._
@@ -10,9 +10,8 @@ import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlow, TimerFlowOf, Timestamp}
-import com.evolutiongaming.kafka.journal.ConsRecord
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
-import com.evolutiongaming.skafka.consumer.WithSize
 import munit.FunSuite
 import scodec.bits.ByteVector
 
@@ -27,8 +26,8 @@ class KeyFlowSpec extends FunSuite {
 
     // Given("writer that counts messages")
     val messagesSent = Ref.unsafe[SyncIO, Int](0)
-    val persistence = new Persistence[SyncIO, State, ConsRecord] {
-      def appendEvent(event: ConsRecord) =
+    val persistence = new Persistence[SyncIO, State, ConsumerRecord[String, ByteVector]] {
+      def appendEvent(event: ConsumerRecord[String, ByteVector]) =
         for {
           _         <- messagesSent update (_ + 1)
           messageNr <- messagesSent.get
@@ -73,15 +72,15 @@ class KeyFlowSpec extends FunSuite {
     // Given("writer that records if delete was called")
     val deleteCalled = Ref.unsafe[SyncIO, Boolean](false)
     val removeCalled = Ref.unsafe[SyncIO, Boolean](false)
-    val persistence = new Persistence[SyncIO, State, ConsRecord] {
-      def appendEvent(event: ConsRecord) = SyncIO.unit
-      def replaceState(state: State)     = SyncIO.unit
-      def delete                         = deleteCalled.set(true)
-      def flush                          = SyncIO.unit
-      def read                           = SyncIO.pure(Some((Offset.min, 0)))
+    val persistence = new Persistence[SyncIO, State, ConsumerRecord[String, ByteVector]] {
+      def appendEvent(event: ConsumerRecord[String, ByteVector]) = SyncIO.unit
+      def replaceState(state: State)                             = SyncIO.unit
+      def delete                                                 = deleteCalled.set(true)
+      def flush                                                  = SyncIO.unit
+      def read                                                   = SyncIO.pure(Some((Offset.min, 0)))
     }
     // And("fold that never completes")
-    val fold = FoldOption.set[SyncIO, State, ConsRecord] {
+    val fold = FoldOption.set[SyncIO, State, ConsumerRecord[String, ByteVector]] {
       Offset.unsafe(1) -> 7
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
@@ -124,15 +123,15 @@ class KeyFlowSpec extends FunSuite {
     // Given("writer that records if delete was called")
     val deleteCalled = Ref.unsafe[SyncIO, Boolean](false)
     val removeCalled = Ref.unsafe[SyncIO, Boolean](false)
-    val persistence = new Persistence[SyncIO, State, ConsRecord] {
-      def appendEvent(event: ConsRecord) = SyncIO.unit
-      def replaceState(state: State)     = SyncIO.unit
-      def delete                         = deleteCalled.set(true)
-      def flush                          = SyncIO.unit
-      def read                           = SyncIO.pure(Some((Offset.min, 0)))
+    val persistence = new Persistence[SyncIO, State, ConsumerRecord[String, ByteVector]] {
+      def appendEvent(event: ConsumerRecord[String, ByteVector]) = SyncIO.unit
+      def replaceState(state: State)                             = SyncIO.unit
+      def delete                                                 = deleteCalled.set(true)
+      def flush                                                  = SyncIO.unit
+      def read                                                   = SyncIO.pure(Some((Offset.min, 0)))
     }
     // And("fold that completes immediately")
-    val fold        = FoldOption.empty[SyncIO, State, ConsRecord]
+    val fold        = FoldOption.empty[SyncIO, State, ConsumerRecord[String, ByteVector]]
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 
     implicit val context = new KeyContext[SyncIO] {
@@ -174,8 +173,8 @@ class KeyFlowSpec extends FunSuite {
     // Given("writer that counts messages")
     // And("reader that restores a single message")
     val messagesSent = Ref.unsafe[SyncIO, Int](0)
-    val persistence = new Persistence[SyncIO, State, ConsRecord] {
-      def appendEvent(event: ConsRecord) =
+    val persistence = new Persistence[SyncIO, State, ConsumerRecord[String, ByteVector]] {
+      def appendEvent(event: ConsumerRecord[String, ByteVector]) =
         for {
           _         <- messagesSent update (_ + 1)
           messageNr <- messagesSent.get
@@ -257,7 +256,7 @@ object KeyFlowSpec {
       clock     = Instant.parse("2020-03-02T00:00:00.000Z")
     )
 
-    def fold: FoldOption[SyncIO, State, ConsRecord] =
+    def fold: FoldOption[SyncIO, State, ConsumerRecord[String, ByteVector]] =
       FoldOption.of { (state, record) =>
         SyncIO.pure {
           // return number of records processed as a state
@@ -272,11 +271,11 @@ object KeyFlowSpec {
 
     def tick: TickOption[SyncIO, State] = TickOption.id
 
-    def records(key: String, offset: Int, events: List[String]): NonEmptyList[ConsRecord] =
+    def records(key: String, offset: Int, events: List[String]): NonEmptyList[ConsumerRecord[String, ByteVector]] =
       NonEmptyList.fromListUnsafe {
         events.toList.zipWithIndex map {
           case (event, index) =>
-            ConsRecord(
+            ConsumerRecord[String, ByteVector](
               topicPartition   = TopicPartition.empty,
               timestampAndType = None,
               offset           = Offset.unsafe(offset + index.toLong),

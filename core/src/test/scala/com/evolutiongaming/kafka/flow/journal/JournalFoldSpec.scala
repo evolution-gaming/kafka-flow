@@ -4,26 +4,14 @@ import cats.syntax.option._
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.FoldOption
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
-import com.evolutiongaming.kafka.journal.ActionHeader
-import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.kafka.journal.HeaderMetadata
-import com.evolutiongaming.kafka.journal.JsonCodec
-import com.evolutiongaming.kafka.journal.PayloadType
-import com.evolutiongaming.kafka.journal.SeqNr
-import com.evolutiongaming.kafka.journal.SeqRange
-import com.evolutiongaming.kafka.journal.ToBytes
-import com.evolutiongaming.kafka.journal.Version
-import com.evolutiongaming.skafka.Header
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.TimestampAndType
-import com.evolutiongaming.skafka.TimestampType
-import com.evolutiongaming.skafka.TopicPartition
-import com.evolutiongaming.skafka.consumer.WithSize
-import java.time.Instant
+import com.evolutiongaming.kafka.journal._
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
+import com.evolutiongaming.skafka.{Header, Offset, TimestampAndType, TimestampType, TopicPartition}
 import munit.FunSuite
-import scala.util.Success
-import scala.util.Try
 import scodec.bits.ByteVector
+
+import java.time.Instant
+import scala.util.{Success, Try}
 
 import JournalFoldSpec._
 
@@ -127,7 +115,7 @@ object JournalFoldSpec {
           metadata    = HeaderMetadata.empty
         )
       )
-      record = ConsRecord(
+      record = ConsumerRecord[String, ByteVector](
         topicPartition = TopicPartition.empty,
         offset         = offset,
         timestampAndType = Some(

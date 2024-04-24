@@ -5,14 +5,12 @@ import cats.data.NonEmptySet
 import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._
-import com.evolutiongaming.kafka.journal.ConsRecords
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.Partition
-import com.evolutiongaming.smetrics.LabelNames
+import com.evolutiongaming.skafka.consumer.ConsumerRecords
+import com.evolutiongaming.skafka.{Offset, Partition, Topic}
 import com.evolutiongaming.smetrics.MetricsHelper._
-import com.evolutiongaming.smetrics.Quantile
-import com.evolutiongaming.smetrics.Quantiles
-import com.evolutiongaming.skafka.Topic
+import com.evolutiongaming.smetrics.{LabelNames, Quantile, Quantiles}
+import scodec.bits.ByteVector
+
 import kafka.Consumer
 
 object TopicFlowMetrics {
@@ -33,7 +31,7 @@ object TopicFlowMetrics {
       )
     } yield { topicFlow =>
       new TopicFlow[F] {
-        def apply(records: ConsRecords) =
+        def apply(records: ConsumerRecords[String, ByteVector]) =
           topicFlow.apply(records) measureDuration { duration =>
             applySummary.observe(duration.toNanos.nanosToSeconds)
           }

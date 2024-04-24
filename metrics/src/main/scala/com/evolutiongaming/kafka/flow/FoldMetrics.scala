@@ -5,24 +5,26 @@ import cats.arrow.FunctionK
 import cats.effect.Resource
 import cats.syntax.all._
 import com.evolutiongaming.catshelper.MeasureDuration
-import com.evolutiongaming.kafka.flow.metrics.MetricsK
-import com.evolutiongaming.kafka.flow.metrics.MetricsKOf
-import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.smetrics.{CollectorRegistry, LabelNames, Quantile, Quantiles}
+import com.evolutiongaming.kafka.flow.metrics.{MetricsK, MetricsKOf}
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.smetrics.MetricsHelper._
+import com.evolutiongaming.smetrics.{CollectorRegistry, LabelNames, Quantile, Quantiles}
+import scodec.bits.ByteVector
+
 import metrics.syntax._
 
 object FoldMetrics {
 
-  implicit def foldMetricsKOf[F[_]: Monad: MeasureDuration]: MetricsKOf[F, Fold[F, *, ConsRecord]] = { registry =>
+  implicit def foldMetricsKOf[F[_]: Monad: MeasureDuration]
+    : MetricsKOf[F, Fold[F, *, ConsumerRecord[String, ByteVector]]] = { registry =>
     registry.summary(
       name      = "fold_apply_duration_seconds",
       help      = "Time required to apply fold",
       quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
       labels    = LabelNames("topic", "partition")
     ) map { foldSummary =>
-      new MetricsK[Fold[F, *, ConsRecord]] {
-        def withMetrics[S](fold: Fold[F, S, ConsRecord]) = Fold { (s, record) =>
+      new MetricsK[Fold[F, *, ConsumerRecord[String, ByteVector]]] {
+        def withMetrics[S](fold: Fold[F, S, ConsumerRecord[String, ByteVector]]) = Fold { (s, record) =>
           val topicPartition = record.topicPartition
           fold.run(s, record) measureDuration { duration =>
             foldSummary
@@ -34,10 +36,14 @@ object FoldMetrics {
     }
   }
 
-  implicit def foldOptionMetricsKOf[F[_]: Monad: MeasureDuration]: MetricsKOf[F, FoldOption[F, *, ConsRecord]] =
-    foldMetricsKOf[F].transform[FoldOption[F, *, ConsRecord]] { implicit metrics =>
-      new FunctionK[FoldOption[F, *, ConsRecord], FoldOption[F, *, ConsRecord]] {
-        def apply[S](fold: FoldOption[F, S, ConsRecord]) =
+  implicit def foldOptionMetricsKOf[F[_]: Monad: MeasureDuration]
+    : MetricsKOf[F, FoldOption[F, *, ConsumerRecord[String, ByteVector]]] =
+    foldMetricsKOf[F].transform[FoldOption[F, *, ConsumerRecord[String, ByteVector]]] { implicit metrics =>
+      new FunctionK[
+        FoldOption[F, *, ConsumerRecord[String, ByteVector]],
+        FoldOption[F, *, ConsumerRecord[String, ByteVector]]
+      ] {
+        def apply[S](fold: FoldOption[F, S, ConsumerRecord[String, ByteVector]]) =
           FoldOption(metrics.withMetrics(fold.value))
       }
     }
@@ -52,25 +58,33 @@ object FoldMetrics {
       )
       .map { foldSummary =>
         new FoldMetrics[F] {
-          val foldMetrics: MetricsK[Fold[F, *, ConsRecord]] = new MetricsK[Fold[F, *, ConsRecord]] {
-            def withMetrics[S](fold: Fold[F, S, ConsRecord]): Fold[F, S, ConsRecord] = Fold { (s, record) =>
-              val topicPartition = record.topicPartition
-              fold.run(s, record).measureDuration { duration =>
-                foldSummary
-                  .labels(topicPartition.topic, topicPartition.partition.show)
-                  .observe(duration.toNanos.nanosToSeconds)
+          val foldMetrics: MetricsK[Fold[F, *, ConsumerRecord[String, ByteVector]]] =
+            new MetricsK[Fold[F, *, ConsumerRecord[String, ByteVector]]] {
+              def withMetrics[S](
+                fold: Fold[F, S, ConsumerRecord[String, ByteVector]]
+              ): Fold[F, S, ConsumerRecord[String, ByteVector]] = Fold { (s, record) =>
+                val topicPartition = record.topicPartition
+                fold.run(s, record).measureDuration { duration =>
+                  foldSummary
+                    .labels(topicPartition.topic, topicPartition.partition.show)
+                    .observe(duration.toNanos.nanosToSeconds)
+                }
               }
             }
-          }
 
-          val foldOptionMetrics: MetricsK[FoldOption[F, *, ConsRecord]] = new MetricsK[FoldOption[F, *, ConsRecord]] {
-            def withMetrics[A](fold: FoldOption[F, A, ConsRecord]): FoldOption[F, A, ConsRecord] =
-              FoldOption(foldMetrics.withMetrics(fold.value))
-          }
+          val foldOptionMetrics: MetricsK[FoldOption[F, *, ConsumerRecord[String, ByteVector]]] =
+            new MetricsK[FoldOption[F, *, ConsumerRecord[String, ByteVector]]] {
+              def withMetrics[A](
+                fold: FoldOption[F, A, ConsumerRecord[String, ByteVector]]
+              ): FoldOption[F, A, ConsumerRecord[String, ByteVector]] =
+                FoldOption(foldMetrics.withMetrics(fold.value))
+            }
 
-          val enhancedFoldMetrics: MetricsK[EnhancedFold[F, *, ConsRecord]] =
-            new MetricsK[EnhancedFold[F, *, ConsRecord]] {
-              def withMetrics[A](fold: EnhancedFold[F, A, ConsRecord]): EnhancedFold[F, A, ConsRecord] =
+          val enhancedFoldMetrics: MetricsK[EnhancedFold[F, *, ConsumerRecord[String, ByteVector]]] =
+            new MetricsK[EnhancedFold[F, *, ConsumerRecord[String, ByteVector]]] {
+              def withMetrics[A](
+                fold: EnhancedFold[F, A, ConsumerRecord[String, ByteVector]]
+              ): EnhancedFold[F, A, ConsumerRecord[String, ByteVector]] =
                 EnhancedFold.of { (extras, s, record) =>
                   val topicPartition = record.topicPartition
                   fold.apply(extras, s, record).measureDuration { duration =>
@@ -86,7 +100,7 @@ object FoldMetrics {
 }
 
 trait FoldMetrics[F[_]] {
-  def foldMetrics: MetricsK[Fold[F, *, ConsRecord]]
-  def foldOptionMetrics: MetricsK[FoldOption[F, *, ConsRecord]]
-  def enhancedFoldMetrics: MetricsK[EnhancedFold[F, *, ConsRecord]]
+  def foldMetrics: MetricsK[Fold[F, *, ConsumerRecord[String, ByteVector]]]
+  def foldOptionMetrics: MetricsK[FoldOption[F, *, ConsumerRecord[String, ByteVector]]]
+  def enhancedFoldMetrics: MetricsK[EnhancedFold[F, *, ConsumerRecord[String, ByteVector]]]
 }

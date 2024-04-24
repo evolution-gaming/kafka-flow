@@ -10,18 +10,18 @@ import com.evolutiongaming.kafka.flow.metrics.syntax._
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey}
-import com.evolutiongaming.kafka.journal.ConsRecord
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf}
 import com.evolutiongaming.skafka.{FromBytes, ToBytes, TopicPartition}
 import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
 
 /** A module, necessary to create a Kafka snapshot persistence.
   */
 trait KafkaPersistenceModule[F[_], S] {
   def keysOf: KeysOf[F, KafkaKey]
-  def persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord]
+  def persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]]
 }
 
 object KafkaPersistenceModule {
@@ -147,7 +147,7 @@ object KafkaPersistenceModule {
       keysOf: KeysOf[F, KafkaKey],
       cache: Cache[F, String, ByteVector],
       producer: Producer[F]
-    ): F[SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord]] = {
+    ): F[SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]]] = {
       LogOf[F].apply(classOf[KafkaPersistenceModule[F, S]]).map { implicit log =>
         val read =
           KafkaSnapshotReadDatabase.of[F, S](snapshotTopicPartition.topic, getState = key => cache.remove(key).flatten)
@@ -157,7 +157,7 @@ object KafkaPersistenceModule {
           write = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition, producer)
         ).withMetricsK(metrics.snapshotDatabaseMetrics)
 
-        PersistenceOf.snapshotsOnly[F, KafkaKey, S, ConsRecord](
+        PersistenceOf.snapshotsOnly[F, KafkaKey, S, ConsumerRecord[String, ByteVector]](
           keysOf      = keysOf,
           snapshotsOf = SnapshotsOf.backedBy[F, KafkaKey, S](snapshotDatabase)
         )
@@ -171,7 +171,8 @@ object KafkaPersistenceModule {
     } yield new KafkaPersistenceModule[F, S] {
       override def keysOf: KeysOf[F, KafkaKey] = keysOf_
 
-      override def persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsRecord] = persistence_
+      override def persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]] =
+        persistence_
     }
   }
 }

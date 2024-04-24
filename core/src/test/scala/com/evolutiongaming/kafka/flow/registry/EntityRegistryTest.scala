@@ -9,8 +9,7 @@ import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
-import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.skafka.consumer.WithSize
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import munit.FunSuite
 import scodec.bits.ByteVector
@@ -24,7 +23,7 @@ class EntityRegistryTest extends FunSuite {
   val key1 = KafkaKey("test", "test", TopicPartition.empty, "key1")
   val key2 = KafkaKey("test", "test", TopicPartition.empty, "key2")
 
-  val fold: FoldOption[IO, Int, ConsRecord] = FoldOption.of { (state, event) =>
+  val fold: FoldOption[IO, Int, ConsumerRecord[String, ByteVector]] = FoldOption.of { (state, event) =>
     for {
       bytes  <- IO.fromOption(event.value.map(_.value))(new Exception("No value in consumer record"))
       number <- IO.delay(Integer.parseInt(new String(bytes.toArray, StandardCharsets.UTF_8)))
@@ -35,8 +34,8 @@ class EntityRegistryTest extends FunSuite {
     } yield newState
   }
 
-  private def makeRecord(key: String, value: Int): ConsRecord =
-    ConsRecord(
+  private def makeRecord(key: String, value: Int): ConsumerRecord[String, ByteVector] =
+    ConsumerRecord[String, ByteVector](
       topicPartition   = TopicPartition.empty,
       offset           = Offset.unsafe(1L),
       timestampAndType = None,
@@ -54,7 +53,7 @@ class EntityRegistryTest extends FunSuite {
         groupId       = "test",
         keysOf        = keysOf,
         timersOf      = timersOf,
-        persistenceOf = PersistenceOf.empty[IO, KafkaKey, Int, ConsRecord],
+        persistenceOf = PersistenceOf.empty[IO, KafkaKey, Int, ConsumerRecord[String, ByteVector]],
         timerFlowOf   = TimerFlowOf.flushOnCancel[IO],
         fold          = fold,
         registry      = registry

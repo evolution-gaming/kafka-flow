@@ -6,13 +6,11 @@ import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.metrics.syntax._
-import com.evolutiongaming.kafka.journal.ConsRecord
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.TopicPartition
-import com.evolutiongaming.smetrics.LabelNames
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
+import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.smetrics.MetricsHelper._
-import com.evolutiongaming.smetrics.Quantile
-import com.evolutiongaming.smetrics.Quantiles
+import com.evolutiongaming.smetrics.{LabelNames, Quantile, Quantiles}
+import scodec.bits.ByteVector
 
 object PartitionFlowMetrics {
 
@@ -32,7 +30,7 @@ object PartitionFlowMetrics {
       )
     } yield { partitionFlow =>
       new PartitionFlow[F] {
-        def apply(records: List[ConsRecord]) = {
+        def apply(records: List[ConsumerRecord[String, ByteVector]]) = {
           val processRecords = partitionFlow(records)
           // if there are no records incoming, we are triggering timers
           records.headOption map { head =>
