@@ -1,14 +1,12 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
 import com.datastax.driver.core.SettableData
-import com.evolutiongaming.scassandra.DecodeByName
-import com.evolutiongaming.scassandra.EncodeByName
-import com.evolutiongaming.skafka.TimestampType
-import scala.jdk.CollectionConverters._
+import com.evolutiongaming.scassandra.{DecodeByName, EncodeByName}
+import com.evolutiongaming.skafka.{Offset, Partition, TimestampType}
 import scodec.bits.ByteVector
-import com.evolutiongaming.skafka.Partition
+
+import scala.jdk.CollectionConverters._
 import scala.util.Try
-import com.evolutiongaming.skafka.Offset
 
 private[flow] object CassandraCodecs {
 
