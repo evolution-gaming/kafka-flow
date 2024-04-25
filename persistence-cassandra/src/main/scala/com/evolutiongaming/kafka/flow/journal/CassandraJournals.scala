@@ -15,7 +15,6 @@ import com.evolutiongaming.kafka.journal.conversions.TupleToHeader
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraHelper._
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.kafka.journal.util.Fail
-import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.skafka.TimestampAndType

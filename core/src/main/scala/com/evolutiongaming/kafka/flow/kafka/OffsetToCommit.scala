@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow.kafka
 
 import cats.ApplicativeThrow
-import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
 import com.evolutiongaming.skafka.Offset
 
 /** Constructs an offset to commit to Kafka.
@@ -11,6 +10,5 @@ import com.evolutiongaming.skafka.Offset
   */
 object OffsetToCommit {
 
-  def apply[F[_]: ApplicativeThrow](offset: Offset): F[Offset] = offset.inc[F]
-
+  def apply[F[_]: ApplicativeThrow](offset: Offset): F[Offset] = Offset.of[F](offset.value + 1)
 }

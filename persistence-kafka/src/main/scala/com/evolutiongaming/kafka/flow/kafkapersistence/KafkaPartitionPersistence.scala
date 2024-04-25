@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.kafkapersistence
 import cats.implicits._
 import cats.{FlatMap, Monad, data}
 import com.evolutiongaming.catshelper.{BracketThrowable, Log}
-import com.evolutiongaming.kafka.journal.util.SkafkaHelper._
+import com.evolutiongaming.kafka.flow.kafka.Codecs._
 import com.evolutiongaming.skafka._
 import com.evolutiongaming.skafka.consumer.AutoOffsetReset.Earliest
 import com.evolutiongaming.skafka.consumer.{
