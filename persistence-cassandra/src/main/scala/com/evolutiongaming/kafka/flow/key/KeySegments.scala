@@ -4,21 +4,13 @@ import cats.Show
 import cats.kernel.{Eq, Order}
 import cats.syntax.all._
 
-/** The maximum number of segments in Cassandra table.
+/** A maximum number of segments in Cassandra table.
   *
-  * When [[KeySegments]] is used then the segment column value is determined by consistent hashing of the key column.
+  * When [[KeySegments]] is used, the value of 'segment' column is determined by consistent hashing of the key column.
   * I.e. there always no more than [[KeySegments#value]] different values.
   *
-  * The logic itself could be found in [[SegmentNr]] class constructors (apply methods).
-  *
-  * The only place where such approach is used right now is a metajournal specified by
-  * [[SchemaConfig#metaJournalTable]]. This allows the fair distribution of the journal keys between the Cassandra
-  * partitions.
-  *
-  * The value is not end-user configurable and, currently, set in [[EventualCassandra]].
-  *
-  * @see
-  *   [[SegmentSize]] for alternative way used for some other tables.
+  * The only place where such approach is used right now is [[com.evolutiongaming.kafka.flow.key.CassandraKeys]]. This
+  * allows fair distribution of 'key' records between the Cassandra partitions.
   */
 sealed abstract case class KeySegments(value: Int) {
 
@@ -30,8 +22,6 @@ object KeySegments {
   val min: KeySegments = new KeySegments(1) {}
 
   val max: KeySegments = new KeySegments(Int.MaxValue) {}
-
-  val old: KeySegments = new KeySegments(100) {}
 
   val default: KeySegments = new KeySegments(10000) {}
 
