@@ -18,6 +18,7 @@ import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 
 import java.time.{LocalDate, ZoneOffset}
+import com.evolutiongaming.scassandra
 
 /** `KeyDatabase` that uses a Cassandra table to store instances of `KafkaKey`.
   *
@@ -40,18 +41,22 @@ import java.time.{LocalDate, ZoneOffset}
 private class CassandraKeys[F[_]: Monad: Fail: Clock](
   session: CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides,
-  segments: Segments
+  segments: KeySegments
 ) extends KeyDatabase[F, KafkaKey] {
 
+  // This is the old constructor that uses both CassandraSession and Segments from kafka-journal
+  // TODO: deprecate and then remove this constructor in a major version update when the primary one
+  // doesn't have any dependencies on kafka-journal
+  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides, segments: Segments) =
+    this(session, consistencyOverrides, KeySegments.unsafe(segments.value))
+
+  // TODO: deprecate and then remove this constructor in a major version update when the primary one
+  // doesn't have any dependencies on kafka-journal
   def this(session: CassandraSession[F], segments: Segments) =
     this(session, consistencyOverrides = ConsistencyOverrides.none, segments)
 
-  /** Uses a default number of Segments (10000). Consider using one of the main constructors with an explicit Segments
-    * argument as this one will be removed in future releases.
-    */
-  @deprecated("Use one of constructors with an explicit Segments argument", since = "0.6.6")
-  def this(session: CassandraSession[F]) =
-    this(session, consistencyOverrides = ConsistencyOverrides.none, CassandraKeys.DefaultSegments)
+  def this(session: CassandraSession[F], segments: KeySegments) =
+    this(session, consistencyOverrides = ConsistencyOverrides.none, segments)
 
   def persist(key: KafkaKey): F[Unit] =
     for {
@@ -92,19 +97,11 @@ private class CassandraKeys[F[_]: Monad: Fail: Clock](
 }
 object CassandraKeys {
 
-  val DefaultSegments: Segments = Segments.unsafe(10000)
-
-  /** Creates schema in Cassandra if not there yet. Uses a default number of segments (10000).
-    */
-  @deprecated("Use the alternative with an explicit passing of segments number", since = "0.6.6")
-  def withSchema[F[_]: MonadThrow: Clock](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
-  ): F[KeyDatabase[F, KafkaKey]] =
-    withSchema(session, sync, consistencyOverrides, DefaultSegments)
+  val DefaultSegments: KeySegments = KeySegments.unsafe(10000)
 
   /** Creates schema in Cassandra if not there yet */
+  // TODO: deprecate and then remove this method in a major version update when
+  // other components are ready
   def withSchema[F[_]: MonadThrow: Clock](
     session: CassandraSession[F],
     sync: CassandraSync[F],
@@ -112,13 +109,30 @@ object CassandraKeys {
     keySegments: Segments
   ): F[KeyDatabase[F, KafkaKey]] = {
     implicit val fail = Fail.lift
-    KeySchema(session, sync).create as new CassandraKeys(session, consistencyOverrides, keySegments)
+    KeySchema(session, sync).create.as(new CassandraKeys(session, consistencyOverrides, keySegments))
   }
 
+  /** Creates schema in Cassandra if not there yet */
+  def withSchema[F[_]: MonadThrow: Clock](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides,
+    keySegments: KeySegments,
+  ): F[KeyDatabase[F, KafkaKey]] = {
+    implicit val fail = Fail.lift
+    KeySchema(session, sync).create.as(new CassandraKeys(session, consistencyOverrides, keySegments))
+  }
+
+  // TODO: deprecate and remove this when all other components are ready
   def truncate[F[_]: Monad](
     session: CassandraSession[F],
     sync: CassandraSync[F]
   ): F[Unit] = KeySchema(session, sync).truncate
+
+  def truncate[F[_]: Monad](
+    session: scassandra.CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[Unit] = KeySchema.of(session, sync).truncate
 
   protected def rowToKey(row: Row, appId: String, groupId: String, topicPartition: TopicPartition): KafkaKey =
     KafkaKey(
@@ -193,7 +207,7 @@ object CassandraKeys {
     def persist[F[_]: Monad: Clock](
       session: CassandraSession[F],
       key: KafkaKey,
-      segments: Segments
+      segments: KeySegments
     ): F[BoundStatement] =
       for {
         preparedStatement <- session.prepare(
@@ -219,7 +233,7 @@ object CassandraKeys {
           .bind()
           .encode("application_id", key.applicationId)
           .encode("group_id", key.groupId)
-          .encode("segment", SegmentNr(key.key.hashCode, segments))
+          .encode("segment", calculateSegment(key, segments))
           .encode("topic", key.topicPartition.topic)
           .encode("partition", key.topicPartition.partition)
           .encode("key", key.key)
@@ -228,7 +242,7 @@ object CassandraKeys {
           .encode("metadata", "")
       }
 
-    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, segments: Segments): F[BoundStatement] =
+    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, segments: KeySegments): F[BoundStatement] =
       session
         .prepare(
           """ DELETE FROM
@@ -246,10 +260,14 @@ object CassandraKeys {
           _.bind()
             .encode("application_id", key.applicationId)
             .encode("group_id", key.groupId)
-            .encode("segment", SegmentNr(key.key.hashCode, segments))
+            .encode("segment", calculateSegment(key, segments))
             .encode("topic", key.topicPartition.topic)
             .encode("partition", key.topicPartition.partition)
             .encode("key", key.key)
         )
+
+    private def calculateSegment(key: KafkaKey, segments: KeySegments): Long =
+      math.abs(key.key.hashCode.toLong % segments.value)
+
   }
 }
