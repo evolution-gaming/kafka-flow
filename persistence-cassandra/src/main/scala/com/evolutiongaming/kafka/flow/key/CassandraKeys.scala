@@ -11,7 +11,7 @@ import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.kafka.flow.key.CassandraKeys.{Statements, rowToKey}
-import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession, SegmentNr, Segments}
+import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession, Segments}
 import com.evolutiongaming.kafka.journal.util.Fail
 import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.TopicPartition
@@ -75,7 +75,7 @@ private class CassandraKeys[F[_]: Monad: Fail: Clock](
   def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, KafkaKey] =
     for {
       segment <- Stream.from[F, List, Int]((0 until segments.value).toList)
-      segment <- Stream.lift(SegmentNr.of[F](segment.toLong))
+      segment <- Stream.lift(SegmentNr.of(segment.toLong).fold(err => Fail[F].fail(err), _.pure[F]))
       key     <- all(applicationId, groupId, segment, topicPartition)
     } yield key
 
