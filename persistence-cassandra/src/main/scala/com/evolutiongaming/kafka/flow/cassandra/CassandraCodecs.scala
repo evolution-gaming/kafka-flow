@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
-import com.datastax.driver.core.SettableData
+import com.datastax.driver.core.{GettableByNameData, SettableData}
 import com.evolutiongaming.scassandra.{DecodeByName, EncodeByName}
 import com.evolutiongaming.skafka.{Offset, Partition, TimestampType}
 import scodec.bits.ByteVector
@@ -39,6 +39,22 @@ private[flow] object CassandraCodecs {
       def apply[B <: SettableData[B]](data: B, name: String, values: List[String]) = {
         data.setList(name, values.asJava, classOf[String])
       }
+    }
+  }
+
+  implicit val mapTextEncodeByName: EncodeByName[Map[String, String]] = {
+    val text = classOf[String]
+    new EncodeByName[Map[String, String]] {
+      def apply[B <: SettableData[B]](data: B, name: String, value: Map[String, String]) = {
+        data.setMap(name, value.asJava, text, text)
+      }
+    }
+  }
+
+  implicit val mapTextDecodeByName: DecodeByName[Map[String, String]] = {
+    val text = classOf[String]
+    (data: GettableByNameData, name: String) => {
+      data.getMap(name, text, text).asScala.toMap
     }
   }
 

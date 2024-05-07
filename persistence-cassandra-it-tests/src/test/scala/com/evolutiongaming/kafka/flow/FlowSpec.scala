@@ -25,7 +25,12 @@ class FlowSpec extends CassandraSpec {
       session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
       storage <- Resource.eval(
         CassandraPersistence
-          .withSchema[IO, String](session, cassandra().sync, ConsistencyOverrides.none, CassandraKeys.DefaultSegments)
+          .withSchema[IO, String](
+            session.unsafe,
+            cassandra().sync,
+            ConsistencyOverrides.none,
+            CassandraKeys.DefaultSegments
+          )
       )
       timersOf      <- Resource.eval(TimersOf.memory[IO, KafkaKey])
       keysOf        <- Resource.eval(storage.keys.keysOf)

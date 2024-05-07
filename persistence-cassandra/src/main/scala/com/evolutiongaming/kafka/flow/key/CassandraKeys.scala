@@ -1,8 +1,8 @@
 package com.evolutiongaming.kafka.flow.key
 
-import cats.effect.Clock
+import cats.Monad
+import cats.effect.{Async, Clock}
 import cats.syntax.all._
-import cats.{Monad, MonadThrow}
 import com.datastax.driver.core.{BoundStatement, Row}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
@@ -12,13 +12,13 @@ import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.kafka.flow.key.CassandraKeys.{Statements, rowToKey}
 import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession, Segments}
-import com.evolutiongaming.kafka.journal.util.Fail
+import com.evolutiongaming.scassandra
+import com.evolutiongaming.scassandra.StreamingCassandraSession._
 import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 
 import java.time.{LocalDate, ZoneOffset}
-import com.evolutiongaming.scassandra
 
 /** `KeyDatabase` that uses a Cassandra table to store instances of `KafkaKey`.
   *
@@ -38,45 +38,44 @@ import com.evolutiongaming.scassandra
   * @see
   *   See `com.evolutiongaming.kafka.flow.key.KeySchema` for a schema description
   */
-private class CassandraKeys[F[_]: Monad: Fail: Clock](
-  session: CassandraSession[F],
+private class CassandraKeys[F[_]: Async](
+  session: scassandra.CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides,
   segments: KeySegments
 ) extends KeyDatabase[F, KafkaKey] {
 
-  // This is the old constructor that uses both CassandraSession and Segments from kafka-journal
-  // TODO: deprecate and then remove this constructor in a major version update when the primary one
-  // doesn't have any dependencies on kafka-journal
+  def this(session: scassandra.CassandraSession[F], segments: KeySegments) =
+    this(session, ConsistencyOverrides.none, segments)
+
+  @deprecated("Use the primary constructor instead", "4.3.0")
   def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides, segments: Segments) =
-    this(session, consistencyOverrides, KeySegments.unsafe(segments.value))
+    this(session.unsafe, consistencyOverrides, KeySegments.unsafe(segments.value))
 
-  // TODO: deprecate and then remove this constructor in a major version update when the primary one
-  // doesn't have any dependencies on kafka-journal
+  @deprecated("Use the primary constructor instead", "4.3.0")
   def this(session: CassandraSession[F], segments: Segments) =
-    this(session, consistencyOverrides = ConsistencyOverrides.none, segments)
-
-  def this(session: CassandraSession[F], segments: KeySegments) =
     this(session, consistencyOverrides = ConsistencyOverrides.none, segments)
 
   def persist(key: KafkaKey): F[Unit] =
     for {
       boundStatement <- Statements.persist(session, key, segments)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _              <- session.execute(statement).first.void
+      _              <- session.execute(statement).void
     } yield ()
 
   def delete(key: KafkaKey): F[Unit] =
     for {
       boundStatement <- Statements.delete(session, key, segments)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _              <- session.execute(statement).first.void
+      _              <- session.execute(statement).void
     } yield ()
 
   def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, KafkaKey] =
     for {
       segment <- Stream.from[F, List, Int]((0 until segments.value).toList)
-      segment <- Stream.lift(SegmentNr.of(segment.toLong).fold(err => Fail[F].fail(err), _.pure[F]))
-      key     <- all(applicationId, groupId, segment, topicPartition)
+      segment <- Stream.lift(
+        SegmentNr.of(segment.toLong).fold(err => Async[F].raiseError(new RuntimeException(err)), _.pure[F])
+      )
+      key <- all(applicationId, groupId, segment, topicPartition)
     } yield key
 
   private def all(
@@ -91,7 +90,7 @@ private class CassandraKeys[F[_]: Monad: Fail: Clock](
 
     Stream
       .lift(boundStatement)
-      .flatMap(session.execute)
+      .flatMap(session.executeStream(_))
       .map(rowToKey(_, applicationId, groupId, topicPartition))
   }
 }
@@ -100,30 +99,27 @@ object CassandraKeys {
   val DefaultSegments: KeySegments = KeySegments.unsafe(10000)
 
   /** Creates schema in Cassandra if not there yet */
-  // TODO: deprecate and then remove this method in a major version update when
-  // other components are ready
-  def withSchema[F[_]: MonadThrow: Clock](
+  @deprecated("Use the alternative taking scassandra classes", "4.3.0")
+  def withSchema[F[_]: Async](
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
     keySegments: Segments
   ): F[KeyDatabase[F, KafkaKey]] = {
-    implicit val fail = Fail.lift
     KeySchema(session, sync).create.as(new CassandraKeys(session, consistencyOverrides, keySegments))
   }
 
   /** Creates schema in Cassandra if not there yet */
-  def withSchema[F[_]: MonadThrow: Clock](
-    session: CassandraSession[F],
+  def withSchema[F[_]: Async](
+    session: scassandra.CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
     keySegments: KeySegments,
   ): F[KeyDatabase[F, KafkaKey]] = {
-    implicit val fail = Fail.lift
-    KeySchema(session, sync).create.as(new CassandraKeys(session, consistencyOverrides, keySegments))
+    KeySchema.of(session, sync).create.as(new CassandraKeys(session, consistencyOverrides, keySegments))
   }
 
-  // TODO: deprecate and remove this when all other components are ready
+  @deprecated("Use the alternative taking `scassandra.CassandraSession`", "4.3.0")
   def truncate[F[_]: Monad](
     session: CassandraSession[F],
     sync: CassandraSync[F]
@@ -144,7 +140,7 @@ object CassandraKeys {
 
   protected object Statements {
     def all[F[_]: Monad](
-      session: CassandraSession[F],
+      session: scassandra.CassandraSession[F],
       applicationId: String,
       groupId: String,
       segment: SegmentNr
@@ -173,7 +169,7 @@ object CassandraKeys {
         )
 
     def all[F[_]: Monad](
-      session: CassandraSession[F],
+      session: scassandra.CassandraSession[F],
       applicationId: String,
       groupId: String,
       segment: SegmentNr,
@@ -205,7 +201,7 @@ object CassandraKeys {
         )
 
     def persist[F[_]: Monad: Clock](
-      session: CassandraSession[F],
+      session: scassandra.CassandraSession[F],
       key: KafkaKey,
       segments: KeySegments
     ): F[BoundStatement] =
@@ -242,7 +238,11 @@ object CassandraKeys {
           .encode("metadata", "")
       }
 
-    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, segments: KeySegments): F[BoundStatement] =
+    def delete[F[_]: Monad](
+      session: scassandra.CassandraSession[F],
+      key: KafkaKey,
+      segments: KeySegments
+    ): F[BoundStatement] =
       session
         .prepare(
           """ DELETE FROM

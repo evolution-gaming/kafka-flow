@@ -6,7 +6,8 @@ import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.{AutoCreate, CassandraSync}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.LogResource
-import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraHealthCheck, CassandraSession => SafeSession}
+import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession => SafeSession}
+import com.evolutiongaming.kafka.journal.cassandra.CassandraHealthCheck
 import com.evolutiongaming.scassandra.CassandraClusterOf
 import com.evolutiongaming.scassandra.util.FromGFuture
 import com.google.common.util.concurrent.ListenableFuture

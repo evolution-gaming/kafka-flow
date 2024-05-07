@@ -45,7 +45,7 @@ object JournalParser {
     implicit val parsePayload: KafkaRead[F, Payload] = KafkaRead.payloadKafkaRead[F]
 
     def toAppend(record: ConsumerRecord[String, ByteVector]) = {
-      parseAction(record).value map { record =>
+      parseAction(record).map { record =>
         for {
           record <- record
           append <- record.action match {

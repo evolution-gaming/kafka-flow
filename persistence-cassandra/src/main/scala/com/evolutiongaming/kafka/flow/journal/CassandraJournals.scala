@@ -1,36 +1,33 @@
 package com.evolutiongaming.kafka.flow.journal
 
-import cats.Monad
-import cats.MonadThrow
-import cats.effect.Clock
+import cats.effect.{Async, Clock}
 import cats.syntax.all._
+import cats.{Monad, MonadThrow}
 import com.datastax.driver.core.{BoundStatement, Row}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper._
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
-import com.evolutiongaming.kafka.journal.FromAttempt
-import com.evolutiongaming.kafka.journal.conversions.HeaderToTuple
-import com.evolutiongaming.kafka.journal.conversions.TupleToHeader
-import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraHelper._
-import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
-import com.evolutiongaming.kafka.journal.util.Fail
-import com.evolutiongaming.scassandra.syntax._
-import com.evolutiongaming.skafka.Offset
-import com.evolutiongaming.skafka.TimestampAndType
-import com.evolutiongaming.skafka.TimestampType
-import com.evolutiongaming.skafka.consumer.WithSize
-import com.evolutiongaming.sstream.Stream
-import CassandraJournals._
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
+import com.evolutiongaming.kafka.journal.FromAttempt
+import com.evolutiongaming.kafka.journal.conversions.{HeaderToTuple, TupleToHeader}
+import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
+import com.evolutiongaming.kafka.journal.util.Fail
+import com.evolutiongaming.scassandra
+import com.evolutiongaming.scassandra.StreamingCassandraSession._
+import com.evolutiongaming.scassandra.syntax._
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
+import com.evolutiongaming.skafka.{Offset, TimestampAndType, TimestampType}
+import com.evolutiongaming.sstream.Stream
+import scodec.bits.ByteVector
 
 import java.time.Instant
-import scodec.bits.ByteVector
-import com.evolutiongaming.skafka.consumer.ConsumerRecord
 
-class CassandraJournals[F[_]: MonadThrow: Clock](
-  session: CassandraSession[F],
+import CassandraJournals._
+
+class CassandraJournals[F[_]: Async](
+  session: scassandra.CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
 ) extends JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]] {
 
@@ -38,7 +35,7 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
     for {
       boundStatement <- Statements.persist(session, key, event)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _              <- session.execute(statement).first.void
+      _              <- session.execute(statement).void
     } yield ()
 
   def get(key: KafkaKey): Stream[F, ConsumerRecord[String, ByteVector]] = {
@@ -46,7 +43,7 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
       .get(session, key)
       .map(_.withConsistencyLevel(consistencyOverrides.read))
 
-    Stream.lift(boundStatement).flatMap(session.execute).mapM { row =>
+    Stream.lift(boundStatement).flatMap(session.executeStream(_)).mapM { row =>
       decode(key, row)
     }
   }
@@ -55,7 +52,7 @@ class CassandraJournals[F[_]: MonadThrow: Clock](
     for {
       boundStatement <- Statements.delete(session, key)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _              <- session.execute(statement).first.void
+      _              <- session.execute(statement).void
     } yield ()
 
 }
@@ -66,17 +63,37 @@ object CassandraJournals {
   }
 
   /** Creates schema in Cassandra if not there yet */
-  def withSchema[F[_]: MonadThrow: Clock](
+  @deprecated("Use an alternative taking `scassandra.CassandraSession`", "4.3.0")
+  def withSchema[F[_]: Async](
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
   ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
-    JournalSchema(session, sync).create as new CassandraJournals(session, consistencyOverrides)
+    JournalSchema(session, sync).create as new CassandraJournals(session.unsafe, consistencyOverrides)
 
+  def withSchema[F[_]: Async](
+    session: scassandra.CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides
+  ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
+    JournalSchema.of(session, sync).create as new CassandraJournals(session, consistencyOverrides)
+
+  def withSchema[F[_]: Async](
+    session: scassandra.CassandraSession[F],
+    sync: CassandraSync[F],
+  ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
+    withSchema(session, sync, ConsistencyOverrides.none)
+
+  @deprecated("Use an alternative taking `scassandra.CassandraSession`", "4.3.0")
   def truncate[F[_]: Monad](
     session: CassandraSession[F],
     sync: CassandraSync[F]
-  ): F[Unit] = JournalSchema(session, sync).truncate
+  ): F[Unit] = truncate(session.unsafe, sync)
+
+  def truncate[F[_]: Monad](
+    session: scassandra.CassandraSession[F],
+    sync: CassandraSync[F]
+  ): F[Unit] = JournalSchema.of(session, sync).truncate
 
   // we cannot use DecodeRow here because TupleToHeader is effectful
   protected def decode[F[_]: MonadThrow](key: KafkaKey, row: Row): F[ConsumerRecord[String, ByteVector]] = {
@@ -101,7 +118,7 @@ object CassandraJournals {
   }
 
   protected object Statements {
-    def get[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    def get[F[_]: Monad](session: scassandra.CassandraSession[F], key: KafkaKey): F[BoundStatement] =
       session
         .prepare(
           """ SELECT
@@ -133,7 +150,7 @@ object CassandraJournals {
         )
 
     def persist[F[_]: MonadThrow: Clock](
-      session: CassandraSession[F],
+      session: scassandra.CassandraSession[F],
       key: KafkaKey,
       event: ConsumerRecord[String, ByteVector]
     ): F[BoundStatement] = for {
@@ -176,7 +193,7 @@ object CassandraJournals {
         .encodeSome("value", event.value map (_.value))
     }
 
-    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    def delete[F[_]: Monad](session: scassandra.CassandraSession[F], key: KafkaKey): F[BoundStatement] =
       session
         .prepare(
           """ DELETE FROM

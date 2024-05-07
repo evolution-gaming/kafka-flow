@@ -1,7 +1,6 @@
 package com.evolutiongaming.kafka.flow.registry
 
 import cats.effect.IO
-import cats.effect.syntax.resource._
 import cats.effect.unsafe.implicits.global
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow._
