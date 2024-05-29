@@ -7,7 +7,7 @@ import cats.{Monad, MonadThrow}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.kafka.flow.journal.CassandraJournals
 import com.evolutiongaming.kafka.flow.key.{CassandraKeys, KeySegments}
-import com.evolutiongaming.kafka.flow.migration.migration._
+import com.evolutiongaming.kafka.flow.migration._
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
 import com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots
 import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession, Segments}

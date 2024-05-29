@@ -10,7 +10,7 @@ class SnapshotSpec extends CassandraSpec {
     val key      = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "queries")
     val snapshot = KafkaSnapshot(offset = Offset.min, value = "snapshot-contents")
     val test: IO[Unit] = for {
-      snapshots            <- CassandraSnapshots.withSchema[IO, String](cassandra().session.unsafe, cassandra().sync)
+      snapshots            <- CassandraSnapshots.withSchema[IO, String](cassandra().session, cassandra().sync)
       snapshotBeforeTest   <- snapshots.get(key)
       _                    <- snapshots.persist(key, snapshot)
       snapshotAfterPersist <- snapshots.get(key)
@@ -30,7 +30,7 @@ class SnapshotSpec extends CassandraSpec {
     val test: IO[Unit] = for {
       failAfter <- Ref.of[IO, Int](100)
       session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
-      snapshots <- CassandraSnapshots.withSchema[IO, String](session.unsafe, cassandra().sync)
+      snapshots <- CassandraSnapshots.withSchema[IO, String](session, cassandra().sync)
       _         <- failAfter.set(1)
       snapshots <- snapshots.get(key).attempt
     } yield assert(clue(snapshots.isLeft))
