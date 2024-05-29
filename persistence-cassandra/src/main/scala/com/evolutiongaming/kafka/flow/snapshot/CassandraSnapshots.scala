@@ -10,7 +10,7 @@ import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
-import com.evolutiongaming.kafka.flow.migration.migration._
+import com.evolutiongaming.kafka.flow.migration._
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.kafka.journal.{FromBytes, ToBytes}
 import com.evolutiongaming.scassandra.StreamingCassandraSession._
