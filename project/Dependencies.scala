@@ -10,7 +10,7 @@ object Dependencies {
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.0.1"
 
   object Cats {
-    private val version       = "2.10.0"
+    private val version       = "2.12.0"
     private val effectVersion = "3.4.11"
     val core                  = "org.typelevel" %% "cats-core"           % version
     val mtl                   = "org.typelevel" %% "cats-mtl"            % "1.3.1"
