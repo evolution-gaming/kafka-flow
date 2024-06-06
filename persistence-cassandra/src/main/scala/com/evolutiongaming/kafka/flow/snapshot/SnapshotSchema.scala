@@ -6,14 +6,15 @@ import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.scassandra
 
-private[snapshot] trait SnapshotSchema[F[_]] {
+trait SnapshotSchema[F[_]] {
   def create: F[Unit]
 
   def truncate: F[Unit]
 }
 
-private[snapshot] object SnapshotSchema {
+object SnapshotSchema {
 
+  @deprecated("Use `of` taking `scassandra.CassandraSession`", "4.3.0")
   def apply[F[_]: Monad](
     session: CassandraSession[F],
     synchronize: CassandraSync[F]

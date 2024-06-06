@@ -1,4 +1,4 @@
-package com.evolutiongaming.kafka.flow.cassandra
+package com.evolution.kafka.flow.cassandra
 
 import cats.Parallel
 import cats.effect.{Async, Resource, Sync}
@@ -6,19 +6,16 @@ import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.{AutoCreate, CassandraSync}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.LogResource
-import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession => SafeSession}
-import com.evolutiongaming.kafka.journal.cassandra.CassandraHealthCheck
-import com.evolutiongaming.scassandra.CassandraClusterOf
+import com.evolutiongaming.kafka.flow.cassandra.CassandraConfig
 import com.evolutiongaming.scassandra.util.FromGFuture
+import com.evolutiongaming.scassandra.{CassandraClusterOf, CassandraHealthCheck, CassandraSession}
 import com.google.common.util.concurrent.ListenableFuture
 
-@deprecated("Use com.evolution.kafka.flow.cassandra.CassandraModule", "4.3.0")
 trait CassandraModule[F[_]] {
-  def session: SafeSession[F]
+  def session: CassandraSession[F]
   def sync: CassandraSync[F]
   def healthCheck: CassandraHealthCheck[F]
 }
-
 object CassandraModule {
 
   def log[F[_]: LogOf]: F[Log[F]] = LogOf[F].apply(CassandraModule.getClass)
@@ -35,10 +32,10 @@ object CassandraModule {
     * @param config
     *   Connection parameters.
     */
-  @deprecated("Use com.evolution.kafka.flow.cassandra.CassandraModule.of", "4.3.0")
   def of[F[_]: Async: Parallel: LogOf](
     config: CassandraConfig
   ): Resource[F, CassandraModule[F]] = {
+    import com.evolutiongaming.kafka.flow.cassandra.SessionHelper._
     for {
       log <- Resource.eval(log[F])
       // this is required to log all Cassandra errors before popping them up,
@@ -48,10 +45,7 @@ object CassandraModule {
       fromGFuture = new FromGFuture[F] {
         val self = FromGFuture.lift1[F]
         def apply[A](future: => ListenableFuture[A]) = {
-          self(future) onError {
-            case e =>
-              log.error("Cassandra request failed", e)
-          }
+          self(future).onError { case e => log.error("Cassandra request failed", e) }
         }
       }
       clusterOf <- Resource.eval(clusterOf[F](fromGFuture))
@@ -77,8 +71,9 @@ object CassandraModule {
       // `syncSession` is `keyspaceSession` if `autoCreate` was disabled,
       // no need to reconnect
       unsafeSession <- if (keyspace.autoCreate) keyspaceSession else Resource.eval(syncSession.pure[F])
-      _session      <- SafeSession.of(unsafeSession)
-      _healthCheck  <- CassandraHealthCheckOf(unsafeSession, config)
+
+      _session     <- unsafeSession.enhanceError.cachePrepared
+      _healthCheck <- CassandraHealthCheckOf(unsafeSession, config)
     } yield new CassandraModule[F] {
       def session     = _session
       def sync        = _sync

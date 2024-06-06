@@ -9,6 +9,7 @@ import com.evolutiongaming.kafka.journal.cassandra.CassandraConsistencyConfig
 import com.evolutiongaming.scassandra.CassandraSession
 import com.evolutiongaming.scassandra.util.FromGFuture
 
+@deprecated("Use com.evolution.kafka.flow.cassandra.CassandraHealthCheckOf", "4.3.0")
 private[cassandra] object CassandraHealthCheckOf {
 
   def apply[F[_]: Async: FromGFuture: Parallel: LogOf](

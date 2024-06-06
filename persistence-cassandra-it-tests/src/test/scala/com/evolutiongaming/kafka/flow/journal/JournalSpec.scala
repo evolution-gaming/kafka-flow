@@ -11,7 +11,7 @@ class JournalSpec extends CassandraSpec {
   test("queries") {
     val key = KafkaKey("JournalSpec", "integration-tests-1", TopicPartition.empty, "queries")
     val test: IO[Unit] = for {
-      journals <- CassandraJournals.withSchema(cassandra().session.unsafe, cassandra().sync)
+      journals <- CassandraJournals.withSchema(cassandra().session, cassandra().sync)
       contents <- IO.fromEither(ByteVector.encodeUtf8("record-contents"))
       record = ConsumerRecord[String, ByteVector](
         topicPartition   = TopicPartition.empty,
@@ -39,7 +39,7 @@ class JournalSpec extends CassandraSpec {
     val test: IO[Unit] = for {
       failAfter <- Ref.of[IO, Int](100)
       session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
-      journals  <- CassandraJournals.withSchema(session.unsafe, cassandra().sync)
+      journals  <- CassandraJournals.withSchema(session, cassandra().sync)
       _         <- failAfter.set(1)
       records   <- journals.get(key).toList.attempt
       _          = assert(clue(records.isLeft))

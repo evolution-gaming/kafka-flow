@@ -26,7 +26,7 @@ class FlowSpec extends CassandraSpec {
       storage <- Resource.eval(
         CassandraPersistence
           .withSchema[IO, String](
-            session.unsafe,
+            session,
             cassandra().sync,
             ConsistencyOverrides.none,
             CassandraKeys.DefaultSegments

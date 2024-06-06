@@ -1,21 +1,19 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
-import cats.MonadThrow
 import cats.effect.{Concurrent, Resource}
-import cats.Parallel
 import cats.syntax.all._
-import com.datastax.driver.core.{PreparedStatement, RegularStatement, ResultSet, Statement}
-import com.evolutiongaming.scassandra.CassandraSession
-import com.evolutiongaming.catshelper.Runtime
-import com.evolution.scache.Cache
+import cats.{MonadThrow, Parallel}
 import com.datastax.driver.core.policies.LoggingRetryPolicy
-import com.evolutiongaming.scassandra.NextHostRetryPolicy
+import com.datastax.driver.core.{PreparedStatement, RegularStatement, ResultSet, Statement}
+import com.evolution.scache.Cache
+import com.evolutiongaming.catshelper.Runtime
+import com.evolutiongaming.scassandra.{CassandraSession, NextHostRetryPolicy}
 
 object SessionHelper {
   implicit final class SessionOps[F[_]](val self: CassandraSession[F]) extends AnyVal {
     def enhanceError(implicit F: MonadThrow[F]): CassandraSession[F] = {
 
-      def error[A](msg: String, cause: Throwable) = {
+      def error[A](msg: String, cause: Throwable): F[A] = {
         new RuntimeException(s"CassandraSession.$msg failed with $cause", cause).raiseError[F, A]
       }
 
@@ -67,17 +65,14 @@ object SessionHelper {
 
   // A delegate class allowing to override only specific methods of the original session
   private class Delegate[F[_]](self: CassandraSession[F]) extends CassandraSession[F] {
-    override def loggedKeyspace: F[Option[String]] = self.loggedKeyspace
-    override def init: F[Unit]                     = self.init
-    override def execute(query: String): F[ResultSet] =
-      self.execute(query)
-    override def execute(query: String, values: Any*): F[ResultSet] =
-      self.execute(query, values: _*)
-    override def execute(query: String, values: Map[String, AnyRef]): F[ResultSet] =
-      self.execute(query, values)
-    override def execute(statement: Statement): F[ResultSet]                = self.execute(statement)
-    override def prepare(query: String): F[PreparedStatement]               = self.prepare(query)
-    override def prepare(statement: RegularStatement): F[PreparedStatement] = self.prepare(statement)
-    override def state: CassandraSession.State[F]                           = self.state
+    def loggedKeyspace: F[Option[String]]                                 = self.loggedKeyspace
+    def init: F[Unit]                                                     = self.init
+    def execute(query: String): F[ResultSet]                              = self.execute(query)
+    def execute(query: String, values: Any*): F[ResultSet]                = self.execute(query, values: _*)
+    def execute(query: String, values: Map[String, AnyRef]): F[ResultSet] = self.execute(query, values)
+    def execute(statement: Statement): F[ResultSet]                       = self.execute(statement)
+    def prepare(query: String): F[PreparedStatement]                      = self.prepare(query)
+    def prepare(statement: RegularStatement): F[PreparedStatement]        = self.prepare(statement)
+    def state: CassandraSession.State[F]                                  = self.state
   }
 }

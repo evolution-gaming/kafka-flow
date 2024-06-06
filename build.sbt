@@ -89,6 +89,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
     name := "kafka-flow-persistence-cassandra",
     libraryDependencies ++= Seq(
       KafkaJournal.cassandra,
+      scassandra,
     ),
   )
 

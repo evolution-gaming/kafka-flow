@@ -20,7 +20,7 @@ class KeySpec extends CassandraSpec {
     val key3       = KafkaKey("KeySpec", "integration-tests-1", partition2, "queries.key3")
     val test: IO[Unit] = for {
       keys <- CassandraKeys.withSchema(
-        cassandra().session.unsafe,
+        cassandra().session,
         cassandra().sync,
         ConsistencyOverrides.none,
         CassandraKeys.DefaultSegments
@@ -50,7 +50,7 @@ class KeySpec extends CassandraSpec {
       failAfter <- Ref.of[IO, Int](100)
       session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
       keys <- CassandraKeys.withSchema(
-        session.unsafe,
+        session,
         cassandra().sync,
         ConsistencyOverrides.none,
         CassandraKeys.DefaultSegments

@@ -38,7 +38,7 @@ import java.time.{LocalDate, ZoneOffset}
   * @see
   *   See `com.evolutiongaming.kafka.flow.key.KeySchema` for a schema description
   */
-private class CassandraKeys[F[_]: Async](
+class CassandraKeys[F[_]: Async](
   session: scassandra.CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides,
   segments: KeySegments
