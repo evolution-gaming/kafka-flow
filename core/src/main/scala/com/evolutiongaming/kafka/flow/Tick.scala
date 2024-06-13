@@ -4,6 +4,11 @@ import cats.Applicative
 import cats.syntax.all._
 import cats.Functor
 
+/**
+  * Updates an aggregate. Tick is similar to [[com.evolutiongaming.kafka.flow.EnhancedFold]],
+  * but gets triggered by timers instead of incoming events.
+  * For example, you may want to regularly delete aggregates that haven't been updated for N minutes.
+  */
 case class Tick[F[_], S](run: S => F[S]) {
 
   /** Alias for `run` */
