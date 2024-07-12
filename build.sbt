@@ -134,3 +134,5 @@ lazy val docs = (project in file("kafka-flow-docs"))
   .settings(commonSettings)
   .enablePlugins(MdocPlugin, DocusaurusPlugin)
   .settings(scalacOptions -= "-Xfatal-warnings")
+
+addCommandAlias("check", "show version")
