@@ -34,6 +34,10 @@ libraryDependencies ++= Seq(
 ```
 
 ## Release process
+The release process makes use of https://github.com/evolution-gaming/scala-github-actions that runs 
+tests and ensures proper publishing with the required credentials via GitHub Actions. 
+The flow is defined in `.github/workflows/release.yml`.  
+A typical release process is as follows:
 1. Update version in `version.sbt` to the target one. Example: current version is `4.0.0` and you 
 want to publish `4.1.0`. Update `version.sbt` to `4.1.0`.
 2. Push changes to the repository. Do not make a new tag manually.
