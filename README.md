@@ -32,3 +32,12 @@ libraryDependencies ++= Seq(
   "com.evolutiongaming" %% "kafka-flow-metrics" % version
 )
 ```
+
+## Release process
+1. Update version in `version.sbt` to the target one. Example: current version is `4.0.0` and you 
+want to publish `4.1.0`. Update `version.sbt` to `4.1.0`.
+2. Push changes to the repository. Do not make a new tag manually.
+3. Create a new release in GitHub. Go to the `Releases` page, click `Draft a new release`, select 
+"Choose a tag", enter the target version in a format `vX.Y.Z` (example: `v4.1.0`).
+4. Press `Generate release notes`. Release title will be automatically filled with the tag name. Change the description if needed.
+5. Press `Publish release`. The build will be triggered automatically, it will run the tests and publish the target release.
