@@ -5,7 +5,7 @@ libraryDependencySchemes ++= Seq(
 
 addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.0.9")
 
-addSbtPlugin("org.scoverage" % "sbt-coveralls" % "1.3.11")
+addSbtPlugin("org.scoverage" % "sbt-coveralls" % "1.3.12")
 
 addSbtPlugin("com.github.sbt" % "sbt-release" % "1.0.15")
 
