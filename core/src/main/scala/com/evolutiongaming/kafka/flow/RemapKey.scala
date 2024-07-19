@@ -1,9 +1,9 @@
 package com.evolutiongaming.kafka.flow
 
-import com.evolutiongaming.skafka.consumer.ConsumerRecord
-import scodec.bits.ByteVector
 import cats.Applicative
 import cats.syntax.applicative._
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
+import scodec.bits.ByteVector
 
 trait RemapKey[F[_]] {
 

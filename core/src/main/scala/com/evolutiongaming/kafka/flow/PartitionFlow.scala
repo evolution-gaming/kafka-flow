@@ -12,12 +12,11 @@ import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.PartitionFlowConfig.ParallelismMode._
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
-import com.evolutiongaming.skafka.consumer.ConsumerRecord
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import scodec.bits.ByteVector
 
 import java.time.Instant
-import com.evolutiongaming.skafka.consumer.WithSize
 
 trait PartitionFlow[F[_]] {
 

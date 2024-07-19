@@ -3,29 +3,25 @@ package com.evolutiongaming.kafka.flow
 import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all._
+import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
+import com.evolutiongaming.kafka.flow.PartitionFlow.{FilterRecord, PartitionKey}
 import com.evolutiongaming.kafka.flow.PartitionFlowSpec._
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.kafka.flow.journal.JournalsOf
 import com.evolutiongaming.kafka.flow.kafka.{ScheduleCommit, ToOffset}
-import com.evolutiongaming.kafka.flow.key.KeysOf
+import com.evolutiongaming.kafka.flow.key.{KeyDatabase, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
-import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf, Timestamp}
+import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf, TimersOf, Timestamp}
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
-import com.evolutiongaming.skafka.{Offset, TopicPartition}
+import com.evolutiongaming.skafka.{Offset, Partition, TopicPartition}
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
-import com.evolutiongaming.skafka.Partition
-import com.evolutiongaming.kafka.flow.key.KeyDatabase
-import com.evolutiongaming.kafka.flow.timer.TimersOf
-import com.evolution.scache.Cache
-import com.evolutiongaming.kafka.flow.PartitionFlow.PartitionKey
 
 class PartitionFlowSpec extends FunSuite {
   import PartitionFlowSpec.RemapKeyState

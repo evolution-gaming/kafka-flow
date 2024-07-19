@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.effect.kernel.Async
 import cats.effect.Resource
+import cats.effect.kernel.Async
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
