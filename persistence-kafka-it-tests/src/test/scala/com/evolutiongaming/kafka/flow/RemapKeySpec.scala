@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 import com.evolutiongaming.skafka.Partition
+import scala.util.Random
 
 class RemapKeySpec extends ForAllKafkaSuite {
   implicit val ioRuntime: IORuntime = IORuntime.global
@@ -109,7 +110,7 @@ class RemapKeySpec extends ForAllKafkaSuite {
         common          = producerConfig.common,
         autoCommit      = false,
         autoOffsetReset = AutoOffsetReset.Earliest,
-        groupId         = testGroupId.some
+        groupId         = Random.alphanumeric.take(10).mkString.some
       )
     ConsumerOf.apply1[IO]().apply[String, String](config).use { consumer =>
       consumer.subscribe(NonEmptySet.one(inputTopic)).flatMap { _ =>
@@ -121,7 +122,7 @@ class RemapKeySpec extends ForAllKafkaSuite {
             } else IO.pure(records)
           }
 
-        poll(List.empty).timeout(10.seconds)
+        poll(List.empty).timeout(30.seconds)
       }
     }
   }
