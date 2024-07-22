@@ -116,11 +116,11 @@ class RemapKeySpec extends ForAllKafkaSuite {
       consumer.subscribe(NonEmptySet.one(inputTopic)).flatMap { _ =>
         def poll(acc: List[ConsumerRecord[String, String]]): IO[List[ConsumerRecord[String, String]]] =
           consumer.poll(1.second).flatMap { consumerRecords =>
-            val records = consumerRecords.values.values.map(_.toList).flatten.toList
-            println(s"Received $records")
-            if (records.size < n) {
-              poll(acc ++ records)
-            } else IO.pure(records)
+            val newRecords = acc ++ consumerRecords.values.values.map(_.toList).flatten.toList
+            println(s"Received $newRecords")
+            if (newRecords.size < n) {
+              poll(newRecords)
+            } else IO.pure(newRecords)
           }
 
         poll(List.empty).timeout(30.seconds)
