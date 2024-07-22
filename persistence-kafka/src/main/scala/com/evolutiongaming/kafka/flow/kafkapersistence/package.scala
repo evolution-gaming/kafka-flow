@@ -53,6 +53,8 @@ package object kafkapersistence {
     *   enhances framework with metrics
     * @param filter
     *   optional function to pre-filter incoming events before they are processed by `fold`
+    * @param remapKey
+    *   optional function to remap keys before they are processed by `fold`
     */
   def kafkaEagerRecovery[F[_]: Async: LogOf, S](
     kafkaPersistenceModuleOf: KafkaPersistenceModuleOf[F, S],
@@ -65,6 +67,7 @@ package object kafkapersistence {
     partitionFlowConfig: PartitionFlowConfig,
     metrics: FlowMetrics[F]         = FlowMetrics.empty[F],
     filter: Option[FilterRecord[F]] = None,
+    remapKey: Option[RemapKey[F]]   = None,
     registry: EntityRegistry[F, KafkaKey, S]
   ): PartitionFlowOf[F] =
     kafkaEagerRecovery(
@@ -78,6 +81,7 @@ package object kafkapersistence {
       partitionFlowConfig      = partitionFlowConfig,
       metrics                  = metrics,
       filter                   = filter,
+      remapKey                 = remapKey,
       additionalPersistOf      = AdditionalStatePersistOf.empty[F, S],
       registry                 = registry
     )
@@ -131,6 +135,7 @@ package object kafkapersistence {
     partitionFlowConfig: PartitionFlowConfig,
     metrics: FlowMetrics[F],
     filter: Option[FilterRecord[F]],
+    remapKey: Option[RemapKey[F]],
     additionalPersistOf: AdditionalStatePersistOf[F, S],
     registry: EntityRegistry[F, KafkaKey, S]
   ): PartitionFlowOf[F] =
@@ -159,8 +164,9 @@ package object kafkapersistence {
               additionalPersistOf = additionalPersistOf,
               registry            = registry
             ) withMetrics metrics.keyStateOfMetrics,
-            config = partitionFlowConfig,
-            filter = filter
+            config   = partitionFlowConfig,
+            filter   = filter,
+            remapKey = remapKey,
           )
           partitionFlow <- partitionFlowOf(topicPartition, assignedAt, scheduleCommit)
         } yield partitionFlow
