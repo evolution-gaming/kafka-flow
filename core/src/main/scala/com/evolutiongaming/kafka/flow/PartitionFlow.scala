@@ -12,7 +12,7 @@ import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.PartitionFlowConfig.ParallelismMode._
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
-import com.evolutiongaming.skafka.consumer.ConsumerRecord
+import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import scodec.bits.ByteVector
 
@@ -57,11 +57,12 @@ object PartitionFlow {
     keyStateOf: KeyStateOf[F],
     config: PartitionFlowConfig,
     filter: Option[FilterRecord[F]] = None,
+    remapKey: Option[RemapKey[F]]   = None,
     scheduleCommit: ScheduleCommit[F]
   ): Resource[F, PartitionFlow[F]] =
     LogResource[F](getClass, topicPartition.toString) flatMap { implicit log =>
       Cache.loading[F, String, PartitionKey[F]] flatMap { cache =>
-        of(topicPartition, assignedAt, keyStateOf, cache, config, filter, scheduleCommit)
+        of(topicPartition, assignedAt, keyStateOf, cache, config, filter, remapKey, scheduleCommit)
       }
     }
 
@@ -72,6 +73,7 @@ object PartitionFlow {
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig,
     filter: Option[FilterRecord[F]] = None,
+    remapKey: Option[RemapKey[F]]   = None,
     scheduleCommit: ScheduleCommit[F]
   )(implicit log: Log[F]): Resource[F, PartitionFlow[F]] = for {
     clock           <- Resource.eval(Clock[F].instant)
@@ -89,6 +91,7 @@ object PartitionFlow {
       cache           = cache,
       config          = config,
       filter          = filter,
+      remapKey        = remapKey,
       scheduleCommit  = scheduleCommit
     )
   } yield flow
@@ -104,6 +107,7 @@ object PartitionFlow {
     cache: Cache[F, String, PartitionKey[F]],
     config: PartitionFlowConfig,
     filter: Option[FilterRecord[F]],
+    remapKey: Option[RemapKey[F]],
     scheduleCommit: ScheduleCommit[F]
   )(implicit log: Log[F]): Resource[F, PartitionFlow[F]] = {
 
@@ -144,7 +148,16 @@ object PartitionFlow {
       _ <- log.debug(s"processing ${records.size} records")
 
       clock <- Clock[F].instant
-      keys = records groupBy (_.key map (_.value)) collect {
+      remappedRecords <- remapKey.fold(records.pure[F])(remapKey =>
+        records.traverse { record =>
+          record.key match {
+            case Some(WithSize(key, _)) =>
+              remapKey.remap(key, record).map(newKey => record.copy(key = WithSize(newKey).some))
+            case None => record.pure[F]
+          }
+        }
+      )
+      keys = remappedRecords.groupBy(_.key map (_.value)).collect {
         // we deliberately ignore records without a key to simplify the code
         // we might return the support in future if such will be required
         case (Some(key), records) => (key, records)

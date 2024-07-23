@@ -3,19 +3,20 @@ package com.evolutiongaming.kafka.flow
 import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all._
+import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
+import com.evolutiongaming.kafka.flow.PartitionFlow.{FilterRecord, PartitionKey}
 import com.evolutiongaming.kafka.flow.PartitionFlowSpec._
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.kafka.flow.journal.JournalsOf
 import com.evolutiongaming.kafka.flow.kafka.{ScheduleCommit, ToOffset}
-import com.evolutiongaming.kafka.flow.key.KeysOf
+import com.evolutiongaming.kafka.flow.key.{KeyDatabase, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
-import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf, Timestamp}
+import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf, TimersOf, Timestamp}
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
-import com.evolutiongaming.skafka.{Offset, TopicPartition}
+import com.evolutiongaming.skafka.{Offset, Partition, TopicPartition}
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 import scodec.bits.ByteVector
@@ -23,6 +24,7 @@ import scodec.bits.ByteVector
 import scala.concurrent.duration._
 
 class PartitionFlowSpec extends FunSuite {
+  import PartitionFlowSpec.RemapKeyState
 
   implicit val ioRuntime: IORuntime = IORuntime.global
 
@@ -266,8 +268,120 @@ class PartitionFlowSpec extends FunSuite {
     flow.unsafeRunSync()
   }
 
+  test("RemapKeys derives keys correctly and updates them before applying filters and folds") {
+    val remap = RemapKey.of[IO] { (key, _) => IO.pure(s"$key-derived") }
+
+    // Set up some data to be eagerly read on PartitionFlow creation
+    val initialKey  = KafkaKey("appId", "groupId", TopicPartition("topic", Partition.min), "key1-derived")
+    val initialData = Map(initialKey -> "initial")
+
+    val newKey = KafkaKey("appId", "groupId", TopicPartition("topic", Partition.min), "key2-derived")
+
+    val test: IO[Unit] = setupRemapKeyTest(remap, initialData).use {
+      case RemapKeyState(cache, keys, snapshots, committedOffset, partitionFlow) =>
+        val key1Record = ConsumerRecord(
+          TopicPartition("topic", Partition.min),
+          Offset.unsafe(1L),
+          None,
+          WithSize("key1").some,
+          WithSize(ByteVector("value1".getBytes)).some
+        )
+
+        val key2Record = key1Record.copy(
+          key    = WithSize("key2").some,
+          value  = WithSize(ByteVector("value2".getBytes)).some,
+          offset = Offset.unsafe(2L)
+        )
+
+        for {
+          // Ensure pre-existing data is loaded correctly from the storage
+          _ <- cache.keys.map(keys => assertEquals(keys.size, 1))
+          _ <- keys.get.map(keys => assertEquals(keys, Set(initialKey)))
+          _ <- snapshots.get.map(snapshots => assertEquals(snapshots, initialData))
+          _ <- committedOffset.get.map(offset => assertEquals(offset, Offset.min))
+
+          // Handle a record for the existing key and check that the key was correctly derived and fold applied
+          _ <- partitionFlow.apply(List(key1Record))
+          _ <- cache.keys.map(keys => assertEquals(keys, Set(initialKey.key)))
+          _ <- keys.get.map(keys => assertEquals(keys, Set(initialKey)))
+          _ <- snapshots.get.map(snapshots => assertEquals(snapshots, Map(initialKey -> "initial+value1")))
+          _ <- committedOffset.get.map(offset => assertEquals(offset, Offset.unsafe(2L)))
+
+          // Handle a record for a new key and check that the key was correctly derived and fold applied
+          _ <- partitionFlow.apply(List(key2Record))
+          _ <- cache.keys.map(keys => assertEquals(keys, Set(initialKey.key, newKey.key)))
+          _ <- keys.get.map(keys => assertEquals(keys, Set(initialKey, newKey)))
+          _ <- snapshots
+            .get
+            .map(snapshots => assertEquals(snapshots, Map(initialKey -> "initial+value1", newKey -> "value2")))
+          _ <- committedOffset.get.map(offset => assertEquals(offset, Offset.unsafe(3L)))
+        } yield ()
+
+    }
+
+    test.unsafeRunSync()
+  }
+
+  private def setupRemapKeyTest(remapKey: RemapKey[IO], initialData: Map[KafkaKey, String]) = {
+    import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+    implicit val logOf = LogOf.empty[IO]
+    logOf.apply(classOf[PartitionFlowSpec]).toResource.flatMap { implicit log =>
+      val committedOffset  = Ref.unsafe[IO, Offset](Offset.min)
+      val keyStorage       = Ref.unsafe[IO, Set[KafkaKey]](initialData.keySet)
+      val keysOf           = KeysOf.apply[IO, KafkaKey](KeyDatabase.memory[IO, KafkaKey](keyStorage.stateInstance))
+      val snapshotsStorage = Ref.unsafe[IO, Map[KafkaKey, String]](initialData)
+      val persistenceOf =
+        PersistenceOf
+          .snapshotsOnly[IO, KafkaKey, String, ConsumerRecord[String, ByteVector]](
+            keysOf,
+            SnapshotsOf.backedBy(SnapshotDatabase.memory(snapshotsStorage.stateInstance))
+          )
+      val fold = FoldOption.of[IO, String, ConsumerRecord[String, ByteVector]] { (state, record) =>
+        IO {
+          val event = new String(record.value.get.value.toArray)
+          state.fold(event)(_ + "+" + event).some
+        }
+      }
+      val timerFlowOf = TimerFlowOf.persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds)
+      for {
+        timersOf <- TimersOf.memory[IO, KafkaKey].toResource
+        keyFlowOf = KeyFlowOf.apply(timerFlowOf, fold, TickOption.id[IO, String])
+        keyStateOf = KeyStateOf.eagerRecovery[IO, String](
+          applicationId = "appId",
+          groupId       = "groupId",
+          keysOf        = keysOf,
+          timersOf      = timersOf,
+          persistenceOf = persistenceOf,
+          keyFlowOf     = keyFlowOf,
+          registry      = EntityRegistry.empty[IO, KafkaKey, String]
+        )
+        cache <- Cache.loading[IO, String, PartitionKey[IO]]
+        partitionFlow <- PartitionFlow.of(
+          topicPartition = TopicPartition("topic", Partition.min),
+          assignedAt     = Offset.min,
+          keyStateOf     = keyStateOf,
+          cache          = cache,
+          config         = PartitionFlowConfig(triggerTimersInterval = 0.seconds, commitOffsetsInterval = 0.seconds),
+          filter         = none,
+          remapKey       = remapKey.some,
+          scheduleCommit = new ScheduleCommit[IO] {
+            def schedule(offset: Offset) = committedOffset.set(offset)
+          }
+        )
+      } yield RemapKeyState(cache, keyStorage, snapshotsStorage, committedOffset, partitionFlow)
+    }
+  }
+
 }
 object PartitionFlowSpec {
+
+  case class RemapKeyState(
+    cache: Cache[IO, String, PartitionKey[IO]],
+    keys: Ref[IO, Set[KafkaKey]],
+    snapshots: Ref[IO, Map[KafkaKey, String]],
+    committedOffset: Ref[IO, Offset],
+    partitionFlow: PartitionFlow[IO],
+  )
 
   class ConstFixture(waitForN: Int) {
     implicit val logOf: LogOf[IO] = LogOf.empty
@@ -315,7 +429,8 @@ object PartitionFlowSpec {
     def makeFlow(
       timerFlowOf: TimerFlowOf[IO],
       persistenceOf: PersistenceOf[IO, String, State, ConsumerRecord[String, ByteVector]],
-      filter: Option[FilterRecord[IO]] = none
+      filter: Option[FilterRecord[IO]] = none,
+      remapKey: Option[RemapKey[IO]]   = none,
     ): Resource[IO, PartitionFlow[IO]] = {
       val keyStateOf: KeyStateOf[IO] = new KeyStateOf[IO] {
         def apply(
@@ -352,7 +467,8 @@ object PartitionFlowSpec {
           commitOffsetsInterval = 0.seconds
         ),
         filter         = filter,
-        scheduleCommit = scheduleCommit
+        scheduleCommit = scheduleCommit,
+        remapKey       = remapKey,
       )
     }
 
