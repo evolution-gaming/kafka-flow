@@ -9,7 +9,7 @@ trait RemapKey[F[_]] {
 
   /** Derive a new key for the consumer record based on the current key (if there is one) and the record itself.
     * Deriving is done before the record is processed by the flow. Thus, the next steps in the flow (such as
-    * [[FilterRecord]] and [[FoldOption]]) will see the remapped key in the consumer record.
+    * `FilterRecord` and `FoldOption`) will see the remapped key in the consumer record.
     */
   def remap(key: String, record: ConsumerRecord[String, ByteVector]): F[String]
 }

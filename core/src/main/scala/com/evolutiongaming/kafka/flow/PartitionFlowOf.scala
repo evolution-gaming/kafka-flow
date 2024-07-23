@@ -28,8 +28,8 @@ object PartitionFlowOf {
     *   committed if necessary
     * @param remapKey
     *   allows to remap the key of a record before it is processed by the flow. Remapping is done before the record is
-    *   processed by the flow. Thus, the next steps in the flow (such as [[FilterRecord]] and [[FoldOption]]) will see
-    *   the remapped key
+    *   processed by the flow. Thus, the next steps in the flow (such as `FilterRecord` and `FoldOption`) will see the
+    *   remapped key
     */
   def apply[F[_]: Async: LogOf](
     keyStateOf: KeyStateOf[F],
