@@ -1,5 +1,9 @@
 import Dependencies._
 
+ThisBuild / versionScheme := Some("early-semver")
+ThisBuild / evictionErrorLevel := Level.Warn
+ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
+
 lazy val commonSettings = Seq(
   organization := "com.evolutiongaming",
   homepage := Some(new URL("https://github.com/evolution-gaming/kafka-flow")),
