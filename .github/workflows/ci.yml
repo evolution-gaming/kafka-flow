@@ -33,7 +33,7 @@ jobs:
 
     - name: Run tests ${{ matrix.scala }}
       if: success() 
-      run: sbt ++${{ matrix.scala }} clean coverage test
+      run: sbt ++${{ matrix.scala }} clean coverage test versionPolicyCheck
 
     - name: Report test coverage
       if: success() && github.repository == 'evolution-gaming/kafka-flow'
