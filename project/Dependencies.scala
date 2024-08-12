@@ -27,9 +27,9 @@ object Dependencies {
   }
 
   object Monocle {
-    private val version = "2.1.0"
-    val core            = "com.github.julien-truffaut" %% "monocle-core"  % version
-    val `macro`         = "com.github.julien-truffaut" %% "monocle-macro" % version
+    private val version = "3.3.0"
+    val core            = "dev.optics" %% "monocle-core"  % version
+    val `macro`         = "dev.optics" %% "monocle-macro" % version
   }
 
   object Testing {
