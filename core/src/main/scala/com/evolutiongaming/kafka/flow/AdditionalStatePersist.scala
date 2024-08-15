@@ -52,12 +52,13 @@ object AdditionalStatePersist {
   def of[F[_]: MonadCancelThrow: Ref.Make: Clock, S](
     persistence: Persistence[F, S, ConsumerRecord[String, ByteVector]],
     keyContext: KeyContext[F],
-    cooldown: FiniteDuration
+    cooldown: FiniteDuration,
+    ignorePersistErrors: Boolean = false,
   ): F[AdditionalStatePersist[F, S, ConsumerRecord[String, ByteVector]]] = {
     for {
       requestedRef     <- Ref.of(false)
       lastPersistedRef <- Ref.of(none[Instant])
-    } yield of(persistence, keyContext, cooldown, requestedRef, lastPersistedRef)
+    } yield of(persistence, keyContext, cooldown, requestedRef, lastPersistedRef, ignorePersistErrors)
   }
 
   private[flow] def of[F[_]: MonadCancelThrow: Clock, S](
@@ -65,7 +66,8 @@ object AdditionalStatePersist {
     keyContext: KeyContext[F],
     cooldown: FiniteDuration,
     requestedRef: Ref[F, Boolean],
-    lastPersistedRef: Ref[F, Option[Instant]]
+    lastPersistedRef: Ref[F, Option[Instant]],
+    ignorePersistErrors: Boolean,
   ): AdditionalStatePersist[F, S, ConsumerRecord[String, ByteVector]] =
     new AdditionalStatePersist[F, S, ConsumerRecord[String, ByteVector]] {
       private val F          = MonadCancel[F, Throwable]
@@ -85,19 +87,30 @@ object AdditionalStatePersist {
               lastPersisted <- lastPersistedRef.get
               _ <- F.whenA(lastPersisted.forall(ts => now - ts.toEpochMilli > cooldownMs)) {
                 for {
-                  _ <- persistence.flush.onError {
-                    case e =>
+                  _ <- persistence.flush.attempt.flatMap {
+                    case Left(e) if ignorePersistErrors =>
+                      val trimmedState = state.toString.take(charsToPrint)
+                      keyContext
+                        .log
+                        .warn(
+                          s"Additional persisting failed, error ignored, error: $e, first $charsToPrint chars of state: $trimmedState",
+                          e
+                        )
+                    case Left(e) =>
                       val trimmedState = state.toString.take(charsToPrint)
                       keyContext
                         .log
                         .error(
                           s"Additional persisting failed, error: $e, first $charsToPrint chars of state: $trimmedState",
                           e
-                        )
+                        ) *> e.raiseError[F, Unit]
+                    case Right(_) =>
+                      for {
+                        _ <- OffsetToCommit[F](record.offset).flatMap(keyContext.hold)
+                        _ <- lastPersistedRef.set(Instant.ofEpochMilli(now).some)
+                        _ <- keyContext.log.info("Additional persisting success")
+                      } yield ()
                   }
-                  _ <- OffsetToCommit[F](record.offset).flatMap(keyContext.hold)
-                  _ <- lastPersistedRef.set(Instant.ofEpochMilli(now).some)
-                  _ <- keyContext.log.info("Additional persisting success")
                 } yield ()
               }
             } yield ()).guarantee(requestedRef.set(false))

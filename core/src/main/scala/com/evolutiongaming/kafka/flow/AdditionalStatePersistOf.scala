@@ -31,13 +31,16 @@ object AdditionalStatePersistOf {
         Applicative[F].pure(AdditionalStatePersist.empty[F, S, ConsumerRecord[String, ByteVector]])
     }
 
-  def of[F[_]: MonadCancelThrow: Ref.Make: Clock, S](cooldown: FiniteDuration): AdditionalStatePersistOf[F, S] = {
+  def of[F[_]: MonadCancelThrow: Ref.Make: Clock, S](
+    cooldown: FiniteDuration,
+    ignorePersistErrors: Boolean = false,
+  ): AdditionalStatePersistOf[F, S] = {
     new AdditionalStatePersistOf[F, S] {
       def apply(
         persistence: Persistence[F, S, ConsumerRecord[String, ByteVector]],
         keyContext: KeyContext[F]
       ): F[AdditionalStatePersist[F, S, ConsumerRecord[String, ByteVector]]] = {
-        AdditionalStatePersist.of(persistence, keyContext, cooldown)
+        AdditionalStatePersist.of(persistence, keyContext, cooldown, ignorePersistErrors)
       }
     }
   }
