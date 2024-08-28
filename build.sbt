@@ -1,4 +1,4 @@
-import Dependencies._
+import Dependencies.*
 
 lazy val commonSettings = Seq(
   organization := "com.evolutiongaming",
@@ -7,7 +7,8 @@ lazy val commonSettings = Seq(
   organizationName := "Evolution Gaming",
   organizationHomepage := Some(url("https://evolution.com/")),
   publishTo := Some(Resolver.evolutionReleases),
-  scalaVersion := "2.13.12",
+  scalaVersion := crossScalaVersions.value.head,
+  crossScalaVersions := List("2.13.14", "3.3.3"),
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   testFrameworks += new TestFramework("munit.Framework"),
   testOptions += Tests.Argument(new TestFramework("munit.Framework"), "+l"),
@@ -16,7 +17,15 @@ lazy val commonSettings = Seq(
   libraryDependencySchemes ++= Seq(
     "org.scala-lang.modules" %% "scala-java8-compat" % "always"
   ),
-  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.2" cross CrossVersion.full),
+  libraryDependencies ++= {
+    CrossVersion.partialVersion(scalaVersion.value) match {
+      case Some((2, _)) =>
+        Seq(
+          compilerPlugin("org.typelevel" %% "kind-projector" % "0.13.3" cross CrossVersion.full)
+        )
+      case _ => Seq.empty
+    }
+  },
   coverageScalacPluginVersion := "2.0.11",
 )
 
