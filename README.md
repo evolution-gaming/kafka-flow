@@ -34,14 +34,9 @@ libraryDependencies ++= Seq(
 ```
 
 ## Release process
-The release process makes use of https://github.com/evolution-gaming/scala-github-actions that runs 
-tests and ensures proper publishing with the required credentials via GitHub Actions. 
-The flow is defined in `.github/workflows/release.yml`.  
+The release process is based on Git tags and makes use of [sbt-dynver](https://github.com/sbt/sbt-dynver) to automatically obtain the version from the latest Git tag. The flow is defined in `.github/workflows/release.yml`.  
 A typical release process is as follows:
-1. Update version in `version.sbt` to the target one. Example: current version is `4.0.0` and you 
-want to publish `4.1.0`. Update `version.sbt` to `4.1.0`.
-2. Push changes to the repository. Do not make a new tag manually.
-3. Create a new release in GitHub. Go to the `Releases` page, click `Draft a new release`, select 
-"Choose a tag", enter the target version in a format `vX.Y.Z` (example: `v4.1.0`).
-4. Press `Generate release notes`. Release title will be automatically filled with the tag name. Change the description if needed.
-5. Press `Publish release`. The build will be triggered automatically, it will run the tests and publish the target release.
+1. Create and push a new Git tag. The version should be in the format `vX.Y.Z` (example: `v4.1.0`). Example: `git tag v4.1.0 && git push origin v4.1.0`
+2. Create a new release in GitHub. Go to the `Releases` page, click `Draft a new release`, select `Choose a tag`, pick the tag you just created
+3. Press `Generate release notes`. Release title will be automatically filled with the tag name. Change the description if needed
+4. Press `Publish release`
