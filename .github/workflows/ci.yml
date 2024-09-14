@@ -10,18 +10,18 @@ jobs:
     strategy:
       matrix:
         scala:
-          - 2.13.12
+          - 2.13.14
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - uses: coursier/cache-action@v6
 
     - name: Setup Java
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         java-version: "17"
-        distribution: "temurin"
+        distribution: "oracle"
         cache: "sbt"
 
     - name: Check formatting
@@ -29,11 +29,7 @@ jobs:
 
     - name: Run tests ${{ matrix.scala }}
       if: success() 
-      run: sbt ++${{ matrix.scala }} clean coverage test docs/mdoc
-
-    - name: Run tests ${{ matrix.scala }}
-      if: success() 
-      run: sbt ++${{ matrix.scala }} clean coverage test versionPolicyCheck
+      run: sbt ++${{ matrix.scala }} clean coverage test docs/mdoc versionPolicyCheck
 
     - name: Report test coverage
       if: success() && github.repository == 'evolution-gaming/kafka-flow'
