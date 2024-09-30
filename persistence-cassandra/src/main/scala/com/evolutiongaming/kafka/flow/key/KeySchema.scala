@@ -39,6 +39,7 @@ object KeySchema {
           |metadata TEXT,
           |PRIMARY KEY((application_id, group_id, segment), topic, partition, key)
           |)
+          |WITH compaction = {'class': 'org.apache.cassandra.db.compaction.LeveledCompactionStrategy'}
           |""".stripMargin
         ) >>
         session
