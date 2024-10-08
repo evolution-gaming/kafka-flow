@@ -12,7 +12,6 @@ import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.kafka.flow.journal.conversions.{HeaderToTuple, TupleToHeader}
 import com.evolutiongaming.kafka.journal.FromAttempt
-import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.kafka.journal.util.Fail
 import com.evolutiongaming.scassandra
 import com.evolutiongaming.scassandra.StreamingCassandraSession._
@@ -62,15 +61,6 @@ object CassandraJournals {
     FromAttempt.lift[F]
   }
 
-  /** Creates schema in Cassandra if not there yet */
-  @deprecated("Use an alternative taking `scassandra.CassandraSession`", "4.3.0")
-  def withSchema[F[_]: Async](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
-  ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
-    JournalSchema(session, sync).create as new CassandraJournals(session.unsafe, consistencyOverrides)
-
   def withSchema[F[_]: Async](
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F],
@@ -83,12 +73,6 @@ object CassandraJournals {
     sync: CassandraSync[F],
   ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
     withSchema(session, sync, ConsistencyOverrides.none)
-
-  @deprecated("Use an alternative taking `scassandra.CassandraSession`", "4.3.0")
-  def truncate[F[_]: Monad](
-    session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] = truncate(session.unsafe, sync)
 
   def truncate[F[_]: Monad](
     session: scassandra.CassandraSession[F],

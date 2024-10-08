@@ -11,7 +11,7 @@ import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersis
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey}
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
-import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf}
+import com.evolutiongaming.skafka.producer.Producer
 import com.evolutiongaming.skafka.{FromBytes, ToBytes, TopicPartition}
 import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
@@ -37,33 +37,6 @@ object KafkaPersistenceModule {
     toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] =
     caching(consumerOf, producer, consumerConfig, snapshotTopicPartition, FlowMetrics.empty[F])
-
-  @deprecated("Use `caching` with passing a Producer to avoid per-partition Producer creation", since = "2.2.0")
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
-    consumerOf: ConsumerOf[F],
-    producerOf: ProducerOf[F],
-    consumerConfig: ConsumerConfig,
-    producerConfig: ProducerConfig,
-    snapshotTopicPartition: TopicPartition,
-    metrics: FlowMetrics[F] = FlowMetrics.empty[F]
-  )(
-    implicit fromBytesKey: FromBytes[F, String],
-    fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S]
-  ): Resource[F, KafkaPersistenceModule[F, S]] = {
-    for {
-      producer <- producerOf.apply(
-        producerConfig.copy(common = producerConfig.common.copy(clientId = s"$snapshotTopicPartition-producer".some))
-      )
-      persistenceModule <- caching[F, S](
-        consumerOf             = consumerOf,
-        producer               = producer,
-        consumerConfig         = consumerConfig,
-        snapshotTopicPartition = snapshotTopicPartition,
-        metrics                = metrics
-      )
-    } yield persistenceModule
-  }
 
   /** Creates an instance of [[KafkaPersistenceModule]] for state recovery from a specific partition of a snapshot Kafka
     * 'compacted' ([[https://kafka.apache.org/documentation/#compaction official documentation]]) topic. The exposed

@@ -11,7 +11,6 @@ import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.kafka.flow.key.CassandraKeys.{Statements, rowToKey}
-import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.scassandra
 import com.evolutiongaming.scassandra.StreamingCassandraSession._
 import com.evolutiongaming.scassandra.syntax._
@@ -99,12 +98,6 @@ object CassandraKeys {
   ): F[KeyDatabase[F, KafkaKey]] = {
     KeySchema.of(session, sync).create.as(new CassandraKeys(session, consistencyOverrides, keySegments))
   }
-
-  @deprecated("Use the alternative taking `scassandra.CassandraSession`", "4.3.0")
-  def truncate[F[_]: Monad](
-    session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] = KeySchema(session, sync).truncate
 
   def truncate[F[_]: Monad](
     session: scassandra.CassandraSession[F],

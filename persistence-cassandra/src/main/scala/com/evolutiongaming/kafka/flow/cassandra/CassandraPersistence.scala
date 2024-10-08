@@ -9,7 +9,6 @@ import com.evolutiongaming.kafka.flow.journal.CassandraJournals
 import com.evolutiongaming.kafka.flow.key.{CassandraKeys, KeySegments}
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
 import com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots
-import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.{scassandra, skafka}
 
 import scala.util.Try
@@ -50,14 +49,6 @@ object CassandraPersistence {
     implicit val _toBytes   = toBytes mapK fromTry
     withSchemaF(session, sync, consistencyOverrides, keysSegments)
   }
-
-  /** Deletes all data in Cassandra */
-  @deprecated("Use the alternative taking `scassandra.CassandraSession`", "4.3.0")
-  def truncate[F[_]: Monad](
-    session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] =
-    truncate(session.unsafe, sync)
 
   /** Deletes all data in Cassandra */
   def truncate[F[_]: Monad](
