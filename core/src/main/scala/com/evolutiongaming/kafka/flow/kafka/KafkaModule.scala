@@ -2,24 +2,28 @@ package com.evolutiongaming.kafka.flow.kafka
 
 import cats.effect.{Async, Clock, Resource}
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.{FromTry, LogOf, MeasureDuration, ToFuture, ToTry}
+import com.evolutiongaming.catshelper._
 import com.evolutiongaming.kafka.flow.LogResource
 import com.evolutiongaming.kafka.flow.kafka.Codecs._
+import com.evolutiongaming.skafka.KafkaHealthCheck
 import com.evolutiongaming.skafka.consumer.{
   AutoOffsetReset,
   ConsumerConfig,
   ConsumerMetrics,
   ConsumerOf => RawConsumerOf
 }
-import com.evolutiongaming.skafka.producer.{ProducerMetrics, ProducerOf => RawProducerOf}
+import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerMetrics, ProducerOf => RawProducerOf}
 import com.evolutiongaming.smetrics.CollectorRegistry
 import scodec.bits.ByteVector
 
 trait KafkaModule[F[_]] {
+
+  def healthCheck: KafkaHealthCheck[F]
+
   def consumerOf: ConsumerOf[F]
   def producerOf: RawProducerOf[F]
-
 }
+
 object KafkaModule {
 
   def of[F[_]: Async: FromTry: ToTry: ToFuture: LogOf](
@@ -33,7 +37,24 @@ object KafkaModule {
       consumerMetrics <- ConsumerMetrics.of(registry)
       _producerOf      = RawProducerOf.apply1[F](producerMetrics(applicationId).some)
       _consumerOf      = RawConsumerOf.apply1[F](consumerMetrics(applicationId).some)
+
+      _healthCheck <- {
+        implicit val randomIdOf = RandomIdOf.uuid[F]
+        implicit val consumerOf = _consumerOf
+        implicit val producerOf = _producerOf
+
+        val commonConfig = config.common.copy(clientId = config.common.clientId.map(id => s"$id-HealthCheck"))
+
+        val healthCheck = KafkaHealthCheck.of(
+          KafkaHealthCheck.Config.default,
+          ConsumerConfig(common = commonConfig),
+          ProducerConfig(common = commonConfig, saslSupport = config.saslSupport, sslSupport = config.sslSupport)
+        )
+        LogResource[F](KafkaModule.getClass, "KafkaHealthCheck") *> healthCheck
+      }
     } yield new KafkaModule[F] {
+
+      def healthCheck = _healthCheck
 
       def consumerOf = { groupId: String =>
         LogResource[F](KafkaModule.getClass, s"Consumer($groupId)") *>
