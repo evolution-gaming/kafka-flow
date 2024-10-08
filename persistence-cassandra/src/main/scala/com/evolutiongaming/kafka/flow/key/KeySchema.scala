@@ -3,7 +3,6 @@ package com.evolutiongaming.kafka.flow.key
 import cats.Monad
 import cats.syntax.all._
 import com.evolutiongaming.cassandra.sync.CassandraSync
-import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.scassandra
 
 trait KeySchema[F[_]] {
@@ -13,12 +12,6 @@ trait KeySchema[F[_]] {
 }
 
 object KeySchema {
-
-  @deprecated("Use `of` taking `scassandra.CassandraSession`", "4.3.0")
-  def apply[F[_]: Monad](
-    session: CassandraSession[F],
-    synchronize: CassandraSync[F]
-  ): KeySchema[F] = of(session.unsafe, synchronize)
 
   def of[F[_]: Monad](
     session: scassandra.CassandraSession[F],

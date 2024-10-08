@@ -5,7 +5,6 @@ import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.scassandra.CassandraSession
 
 import scala.concurrent.duration._
-import scala.annotation.nowarn
 
 class SnapshotSchemaSpec extends CassandraSpec {
   override def munitTimeout: Duration = 2.minutes
@@ -23,20 +22,6 @@ class SnapshotSchemaSpec extends CassandraSpec {
     test.unsafeRunSync()
   }
 
-  test("table is created using kafka-journal session API") {
-    val session = cassandraJournal().session
-    val sync    = cassandraJournal().sync
-    @nowarn("msg=deprecated")
-    val schema = SnapshotSchema.apply(session, sync)
-
-    val test = for {
-      _ <- schema.create
-      _ <- validateTableExists(session.unsafe)
-    } yield ()
-
-    test.unsafeRunSync()
-  }
-
   test("table is truncated using scassandra session API") {
     val session = cassandra().session
     val sync    = cassandra().sync
@@ -48,23 +33,6 @@ class SnapshotSchemaSpec extends CassandraSpec {
       _ <- insertSnapshot(session)
       _ <- schema.truncate
       _ <- validateTableIsEmpty(session)
-    } yield ()
-
-    test.unsafeRunSync()
-  }
-
-  test("table is truncated using kafka-journal session API") {
-    val session = cassandraJournal().session
-    val sync    = cassandraJournal().sync
-
-    @nowarn("msg=deprecated")
-    val schema = SnapshotSchema.apply(session, sync)
-
-    val test = for {
-      _ <- schema.create
-      _ <- insertSnapshot(session.unsafe)
-      _ <- schema.truncate
-      _ <- validateTableIsEmpty(session.unsafe)
     } yield ()
 
     test.unsafeRunSync()

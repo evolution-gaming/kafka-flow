@@ -11,7 +11,6 @@ import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.kafka.flow.key.CassandraKeys.{Statements, rowToKey}
-import com.evolutiongaming.kafka.journal.eventual.cassandra.{CassandraSession, Segments}
 import com.evolutiongaming.scassandra
 import com.evolutiongaming.scassandra.StreamingCassandraSession._
 import com.evolutiongaming.scassandra.syntax._
@@ -46,14 +45,6 @@ class CassandraKeys[F[_]: Async](
 
   def this(session: scassandra.CassandraSession[F], segments: KeySegments) =
     this(session, ConsistencyOverrides.none, segments)
-
-  @deprecated("Use the primary constructor instead", "4.3.0")
-  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides, segments: Segments) =
-    this(session.unsafe, consistencyOverrides, KeySegments.unsafe(segments.value))
-
-  @deprecated("Use the primary constructor instead", "4.3.0")
-  def this(session: CassandraSession[F], segments: Segments) =
-    this(session, consistencyOverrides = ConsistencyOverrides.none, segments)
 
   def persist(key: KafkaKey): F[Unit] =
     for {
@@ -99,17 +90,6 @@ object CassandraKeys {
   val DefaultSegments: KeySegments = KeySegments.unsafe(10000)
 
   /** Creates schema in Cassandra if not there yet */
-  @deprecated("Use the alternative taking scassandra classes", "4.3.0")
-  def withSchema[F[_]: Async](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides,
-    keySegments: Segments
-  ): F[KeyDatabase[F, KafkaKey]] = {
-    KeySchema(session, sync).create.as(new CassandraKeys(session, consistencyOverrides, keySegments))
-  }
-
-  /** Creates schema in Cassandra if not there yet */
   def withSchema[F[_]: Async](
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F],
@@ -118,12 +98,6 @@ object CassandraKeys {
   ): F[KeyDatabase[F, KafkaKey]] = {
     KeySchema.of(session, sync).create.as(new CassandraKeys(session, consistencyOverrides, keySegments))
   }
-
-  @deprecated("Use the alternative taking `scassandra.CassandraSession`", "4.3.0")
-  def truncate[F[_]: Monad](
-    session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] = KeySchema(session, sync).truncate
 
   def truncate[F[_]: Monad](
     session: scassandra.CassandraSession[F],

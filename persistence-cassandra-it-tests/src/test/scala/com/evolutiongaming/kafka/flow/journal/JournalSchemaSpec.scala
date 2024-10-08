@@ -4,7 +4,6 @@ import cats.effect.IO
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.scassandra.CassandraSession
 
-import scala.annotation.nowarn
 import scala.concurrent.duration._
 
 class JournalSchemaSpec extends CassandraSpec {
@@ -23,20 +22,6 @@ class JournalSchemaSpec extends CassandraSpec {
     test.unsafeRunSync()
   }
 
-  test("table is created using kafka-journal session API") {
-    val session = cassandraJournal().session
-    val sync    = cassandraJournal().sync
-    @nowarn("msg=deprecated")
-    val schema = JournalSchema.apply(session, sync)
-
-    val test = for {
-      _ <- schema.create
-      _ <- validateTableExists(session.unsafe)
-    } yield ()
-
-    test.unsafeRunSync()
-  }
-
   test("table is truncated using scassandra session API") {
     val session = cassandra().session
     val sync    = cassandra().sync
@@ -48,23 +33,6 @@ class JournalSchemaSpec extends CassandraSpec {
       _ <- insertRecord(session)
       _ <- schema.truncate
       _ <- validateTableIsEmpty(session)
-    } yield ()
-
-    test.unsafeRunSync()
-  }
-
-  test("table is truncated using kafka-journal session API") {
-    val session = cassandraJournal().session
-    val sync    = cassandraJournal().sync
-
-    @nowarn("msg=deprecated")
-    val schema = JournalSchema.apply(session, sync)
-
-    val test = for {
-      _ <- schema.create
-      _ <- insertRecord(session.unsafe)
-      _ <- schema.truncate
-      _ <- validateTableIsEmpty(session.unsafe)
     } yield ()
 
     test.unsafeRunSync()

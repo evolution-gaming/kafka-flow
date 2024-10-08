@@ -10,9 +10,8 @@ import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
+import com.evolutiongaming.kafka.flow.journal.conversions.{HeaderToTuple, TupleToHeader}
 import com.evolutiongaming.kafka.journal.FromAttempt
-import com.evolutiongaming.kafka.journal.conversions.{HeaderToTuple, TupleToHeader}
-import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
 import com.evolutiongaming.kafka.journal.util.Fail
 import com.evolutiongaming.scassandra
 import com.evolutiongaming.scassandra.StreamingCassandraSession._
@@ -62,15 +61,6 @@ object CassandraJournals {
     FromAttempt.lift[F]
   }
 
-  /** Creates schema in Cassandra if not there yet */
-  @deprecated("Use an alternative taking `scassandra.CassandraSession`", "4.3.0")
-  def withSchema[F[_]: Async](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
-  ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
-    JournalSchema(session, sync).create as new CassandraJournals(session.unsafe, consistencyOverrides)
-
   def withSchema[F[_]: Async](
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F],
@@ -84,12 +74,6 @@ object CassandraJournals {
   ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
     withSchema(session, sync, ConsistencyOverrides.none)
 
-  @deprecated("Use an alternative taking `scassandra.CassandraSession`", "4.3.0")
-  def truncate[F[_]: Monad](
-    session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] = truncate(session.unsafe, sync)
-
   def truncate[F[_]: Monad](
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F]
@@ -102,7 +86,7 @@ object CassandraJournals {
     for {
       headers <- headers.toList traverse {
         case (key, value) =>
-          TupleToHeader[F].apply(key, value)
+          TupleToHeader.convert[F](key, value)
       }
     } yield ConsumerRecord[String, ByteVector](
       topicPartition = key.topicPartition,
@@ -174,7 +158,7 @@ object CassandraJournals {
         """.stripMargin
       )
 
-      headers <- event.headers traverse HeaderToTuple[F].apply
+      headers <- event.headers traverse HeaderToTuple.convert[F]
       created <- Clock[F].instant
     } yield {
       preparedStatement

@@ -10,9 +10,6 @@ import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
-import com.evolutiongaming.kafka.flow.migration._
-import com.evolutiongaming.kafka.journal.eventual.cassandra.CassandraSession
-import com.evolutiongaming.kafka.journal.{FromBytes, ToBytes}
 import com.evolutiongaming.scassandra.StreamingCassandraSession._
 import com.evolutiongaming.scassandra.syntax._
 import com.evolutiongaming.skafka.Offset
@@ -26,13 +23,6 @@ class CassandraSnapshots[F[_]: Async, T](
   consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
 )(implicit fromBytes: skafka.FromBytes[F, T], toBytes: skafka.ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
-
-  @deprecated("Use the primary constructor instead", "4.3.0")
-  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides)(
-    implicit fb: FromBytes[F, T],
-    tb: ToBytes[F, T]
-  ) =
-    this(session.unsafe, consistencyOverrides)(Async[F], journalFromBytesToSkafka(fb), journalToBytesToSkafka(tb))
 
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
@@ -60,15 +50,6 @@ class CassandraSnapshots[F[_]: Async, T](
 object CassandraSnapshots {
 
   /** Creates schema in Cassandra if not there yet */
-  @deprecated("Use an alternative taking `scassandra.CassandraSession`", "4.3.0")
-  def withSchema[F[_]: Async, T](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
-  )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T]): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
-    SnapshotSchema(session, sync).create as new CassandraSnapshots(session, consistencyOverrides)
-
-  /** Creates schema in Cassandra if not there yet */
   def withSchema[F[_]: Async, T](
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F],
@@ -88,12 +69,6 @@ object CassandraSnapshots {
     toBytes: skafka.ToBytes[F, T]
   ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
     withSchema(session, sync, ConsistencyOverrides.none)
-
-  @deprecated("Use an alternative taking `scassandra.CassandraSession`", "4.3.0")
-  def truncate[F[_]: Monad](
-    session: CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] = truncate(session.unsafe, sync)
 
   def truncate[F[_]: Monad](
     session: scassandra.CassandraSession[F],

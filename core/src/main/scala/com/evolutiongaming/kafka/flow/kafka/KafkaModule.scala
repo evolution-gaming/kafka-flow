@@ -2,16 +2,10 @@ package com.evolutiongaming.kafka.flow.kafka
 
 import cats.effect.{Async, Clock, Resource}
 import cats.syntax.all._
-import com.evolutiongaming.catshelper.{FromTry, LogOf, MeasureDuration, ToFuture, ToTry}
+import com.evolutiongaming.catshelper._
 import com.evolutiongaming.kafka.flow.LogResource
 import com.evolutiongaming.kafka.flow.kafka.Codecs._
-import com.evolutiongaming.kafka.journal.{
-  KafkaConfig,
-  KafkaConsumerOf => JournalConsumerOf,
-  KafkaHealthCheck,
-  KafkaProducerOf => JournalProducerOf,
-  RandomIdOf
-}
+import com.evolutiongaming.skafka.KafkaHealthCheck
 import com.evolutiongaming.skafka.consumer.{
   AutoOffsetReset,
   ConsumerConfig,
@@ -28,8 +22,8 @@ trait KafkaModule[F[_]] {
 
   def consumerOf: ConsumerOf[F]
   def producerOf: RawProducerOf[F]
-
 }
+
 object KafkaModule {
 
   def of[F[_]: Async: FromTry: ToTry: ToFuture: LogOf](
@@ -43,17 +37,18 @@ object KafkaModule {
       consumerMetrics <- ConsumerMetrics.of(registry)
       _producerOf      = RawProducerOf.apply1[F](producerMetrics(applicationId).some)
       _consumerOf      = RawConsumerOf.apply1[F](consumerMetrics(applicationId).some)
+
       _healthCheck <- {
-        implicit val randomIdOf        = RandomIdOf.uuid[F]
-        implicit val journalProducerOf = JournalProducerOf[F](_producerOf)
-        implicit val journalConsumerOf = JournalConsumerOf[F](_consumerOf)
+        implicit val randomIdOf = RandomIdOf.uuid[F]
+        implicit val consumerOf = _consumerOf
+        implicit val producerOf = _producerOf
+
         val commonConfig = config.common.copy(clientId = config.common.clientId.map(id => s"$id-HealthCheck"))
-        val healthCheck = KafkaHealthCheck.of[F](
-          config = KafkaHealthCheck.Config.default,
-          kafkaConfig = KafkaConfig(
-            ProducerConfig(common = commonConfig, saslSupport = config.saslSupport, sslSupport = config.sslSupport),
-            config.copy(common    = commonConfig)
-          )
+
+        val healthCheck = KafkaHealthCheck.of(
+          KafkaHealthCheck.Config.default,
+          ConsumerConfig(common = commonConfig),
+          ProducerConfig(common = commonConfig, saslSupport = config.saslSupport, sslSupport = config.sslSupport)
         )
         LogResource[F](KafkaModule.getClass, "KafkaHealthCheck") *> healthCheck
       }
