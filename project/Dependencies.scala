@@ -7,7 +7,7 @@ object Dependencies {
   val smetrics          = "com.evolutiongaming" %% "smetrics"            % "2.1.0"
   val scache            = "com.evolution"       %% "scache"              % "5.1.2"
   val skafka            = "com.evolutiongaming" %% "skafka"              % "17.1.2"
-  val sstream           = "com.evolutiongaming" %% "sstream"             % "1.0.1"
+  val sstream           = "com.evolutiongaming" %% "sstream"             % "1.0.2"
   val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.2.1"
 
   object Cats {
