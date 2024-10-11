@@ -229,15 +229,19 @@ object PartitionFlow {
       _ <- log.debug("done triggering timers")
     } yield ()
 
-    def offsetToCommit: F[Option[Offset]] = for {
-      _ <- log.debug("computing offset to commit")
-
-      // find minimum offset if any
-      minimumOffset <- cache.foldMap[Option[Offset]] {
+    def offsetToCommitFromKeys: F[Option[Offset]] = {
+      offsetToCommit(cache.foldMap[Option[Offset]] {
         case (_, Right(value)) => value.context.holding
         case (key, Left(_)) =>
           log.error(s"trying to compute offset to commit but value for key $key is not ready").as(none[Offset])
-      }(pickMinOffset)
+      }(pickMinOffset))
+    }
+
+    def offsetToCommit(getMinOffset: F[Option[Offset]]): F[Option[Offset]] = for {
+      _ <- log.debug("computing offset to commit")
+
+      // find minimum offset if any
+      minimumOffset <- getMinOffset
 
       // maximum offset to commit is the offset of last record
       timestamp    <- timestamp.get
@@ -272,7 +276,7 @@ object PartitionFlow {
 
         clock           <- Clock[F].instant
         commitOffsetsAt <- commitOffsetsAt.get
-        offsetToCommit  <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
+        offsetToCommit  <- if (clock isAfter commitOffsetsAt) offsetToCommitFromKeys else none[Offset].pure[F]
 
         _ <- log.debug(s"offset to commit: ${offsetToCommit.show}")
 
@@ -283,9 +287,31 @@ object PartitionFlow {
     }
 
     val release: F[Unit] = if (config.commitOnRevoke) {
-      offsetToCommit.flatMap { offset =>
-        offset.traverse_ { offset =>
-          log.info(s"committing on revoke: $offset") *> scheduleCommit.schedule(offset)
+
+      // Outside F is about collecting handles to the offsets held by existing cache entries;
+      // Inside F is about calling and aggregating those handles, which can be done even after cache was cleared;
+      def offsetsHeldByCurrentKeys: F[F[Option[Offset]]] =
+        cache.values1.flatMap { map =>
+          map
+            .toSeq
+            .traverse {
+              case (_, Right(value)) => value.context.holding.pure[F]
+              case (key, Left(_)) =>
+                log
+                  .error(s"trying to compute offset to commit but value for key $key is not ready")
+                  .as(none[Offset].pure[F])
+            }
+            .map(_.foldMapM(identity)(Async[F], pickMinOffset))
+        }
+
+      // We first gather "holding" handles for existing keys, then we clear the cache, forcing the entries to flush
+      // the state and remove the offset hold if they are configured to do that,
+      // and then we calculate the offset that can be committed, based on the remaining hold
+      offsetsHeldByCurrentKeys.flatMap { getMinOffsets =>
+        cache.clear.flatten *> offsetToCommit(getMinOffsets).flatMap { offset =>
+          offset.traverse_ { offset =>
+            log.info(s"committing on revoke: $offset") *> scheduleCommit.schedule(offset)
+          }
         }
       }
     } else {
