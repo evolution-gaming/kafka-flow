@@ -322,7 +322,77 @@ class PartitionFlowSpec extends FunSuite {
     test.unsafeRunSync()
   }
 
-  private def setupRemapKeyTest(remapKey: RemapKey[IO], initialData: Map[KafkaKey, String]) = {
+  test(
+    "PartitionFlow commits latest consumed offset on release when commitOnRevoke=true, " +
+      "a TimerFlow with flushOnRevoke=true is used, and all keys successfully persisted their state on release"
+  ) {
+
+    // Waiting for 100 events to represents a long-living flow that doesn't unload the state during its lifetime
+    val f = new ConstFixture(waitForN = 100)
+
+    val flow = f.flow.use { flow =>
+      for {
+        _      <- flow(f.records("key1", 100, List("event1", "event2")))
+        _      <- flow(f.records("key2", 102, List("event1", "event2")))
+        _      <- flow(f.records("key3", 104, List("event1", "event2")))
+        offset <- f.pendingOffset.get
+        // No commits expected to be scheduled yet
+        _ <- IO { assert(clue(offset).isEmpty) }
+      } yield ()
+    } >>
+      // Commit to the last consumed offset should be scheduled during the flow release
+      f.pendingOffset.get.map(offset => assertEquals(offset, Some(Offset.unsafe(106))))
+    flow.unsafeRunSync()
+
+  }
+
+  test(
+    "PartitionFlow commits an offset corresponding to the oldest successfully persisted key on release" +
+      "when commitOnRevoke=true, a TimerFlow with flushOnRevoke=true is used," +
+      "and some keys failed to persist their state on release"
+  ) {
+
+    val key1 = "key1"
+    val key2 = "key2"
+    val key3 = "key3"
+
+    // Waiting for 100 events to represents a long-living flow that doesn't unload the state during its lifetime
+    class LocalFixture extends ConstFixture(100) {
+      private val snapshotDatabase = new SnapshotDatabase[IO, String, State] {
+        def get(key: String): IO[Option[(Offset, Int)]] = IO.pure(none)
+        // Fail snapshot persistence for the second key
+        def persist(key: String, snapshot: (Offset, Int)): IO[Unit] =
+          IO.raiseError(new Exception("Test error")).whenA(key == key2)
+        def delete(key: String): IO[Unit] = IO.unit
+      }
+
+      override def flow: Resource[IO, PartitionFlow[IO]] = makeFlow(
+        timerFlowOf = TimerFlowOf.unloadOrphaned(flushOnRevoke = true),
+        persistenceOf =
+          PersistenceOf.snapshotsOnly(keysOf = keysOf, snapshotsOf = SnapshotsOf.backedBy(snapshotDatabase))
+      )
+    }
+
+    val f = new LocalFixture
+
+    val flow = f.flow.use { flow =>
+      for {
+        // 6 events for 2 different keys are consumed
+        _      <- flow(f.records(key1, 100, List("event1", "event2")))
+        _      <- flow(f.records(key2, 102, List("event1", "event2")))
+        _      <- flow(f.records(key3, 104, List("event1", "event2")))
+        offset <- f.pendingOffset.get
+        // No commits expected to be scheduled yet
+        _ <- IO { assert(clue(offset).isEmpty) }
+      } yield ()
+    } >>
+      // Commit to the first offset corresponding to key2 should be scheduled during the flow release
+      f.pendingOffset.get.map(offset => assertEquals(offset, Some(Offset.unsafe(102))))
+    flow.unsafeRunSync()
+
+  }
+
+  def setupRemapKeyTest(remapKey: RemapKey[IO], initialData: Map[KafkaKey, String]) = {
     import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
     implicit val logOf = LogOf.empty[IO]
     logOf.apply(classOf[PartitionFlowSpec]).toResource.flatMap { implicit log =>
@@ -424,7 +494,7 @@ object PartitionFlowSpec {
     }
 
     def flow: Resource[IO, PartitionFlow[IO]] =
-      makeFlow(TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes), persistenceOf)
+      makeFlow(TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, flushOnRevoke = true), persistenceOf)
 
     def makeFlow(
       timerFlowOf: TimerFlowOf[IO],
@@ -464,7 +534,8 @@ object PartitionFlowSpec {
         keyStateOf,
         PartitionFlowConfig(
           triggerTimersInterval = 0.seconds,
-          commitOffsetsInterval = 0.seconds
+          commitOffsetsInterval = 0.seconds,
+          commitOnRevoke        = true,
         ),
         filter         = filter,
         scheduleCommit = scheduleCommit,
