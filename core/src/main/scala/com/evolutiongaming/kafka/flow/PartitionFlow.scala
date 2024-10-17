@@ -229,15 +229,19 @@ object PartitionFlow {
       _ <- log.debug("done triggering timers")
     } yield ()
 
-    def offsetToCommit: F[Option[Offset]] = for {
-      _ <- log.debug("computing offset to commit")
-
-      // find minimum offset if any
-      minimumOffset <- cache.foldMap[Option[Offset]] {
+    def offsetToCommitFromKeys: F[Option[Offset]] = {
+      offsetToCommit(cache.foldMap[Option[Offset]] {
         case (_, Right(value)) => value.context.holding
         case (key, Left(_)) =>
           log.error(s"trying to compute offset to commit but value for key $key is not ready").as(none[Offset])
-      }(pickMinOffset)
+      }(pickMinOffset))
+    }
+
+    def offsetToCommit(getMinOffset: F[Option[Offset]]): F[Option[Offset]] = for {
+      _ <- log.debug("computing offset to commit")
+
+      // find minimum offset if any
+      minimumOffset <- getMinOffset
 
       // maximum offset to commit is the offset of last record
       timestamp    <- timestamp.get
@@ -272,7 +276,7 @@ object PartitionFlow {
 
         clock           <- Clock[F].instant
         commitOffsetsAt <- commitOffsetsAt.get
-        offsetToCommit  <- if (clock isAfter commitOffsetsAt) offsetToCommit else none[Offset].pure[F]
+        offsetToCommit  <- if (clock isAfter commitOffsetsAt) offsetToCommitFromKeys else none[Offset].pure[F]
 
         _ <- log.debug(s"offset to commit: ${offsetToCommit.show}")
 
@@ -283,9 +287,47 @@ object PartitionFlow {
     }
 
     val release: F[Unit] = if (config.commitOnRevoke) {
-      offsetToCommit.flatMap { offset =>
-        offset.traverse_ { offset =>
-          log.info(s"committing on revoke: $offset") *> scheduleCommit.schedule(offset)
+
+      // Outside F is about collecting handles to the offsets held by existing cache entries;
+      // Inside F is about calling and aggregating those handles, which can be done even after cache was cleared;
+      def offsetsHeldByCurrentKeys: F[F[Option[Offset]]] =
+        cache.values1.flatMap { map =>
+          map
+            .toSeq
+            .traverse {
+              case (_, Right(value)) => value.context.holding.pure[F]
+              case (key, Left(_)) =>
+                log
+                  .error(s"trying to compute offset to commit but value for key $key is not ready")
+                  .as(none[Offset].pure[F])
+            }
+            .map(_.foldMapM(identity)(Async[F], pickMinOffset))
+        }
+
+      // We first gather "holding" handles for existing keys, which would be used to calculate the minimum offset that
+      // can be safely commited: either the smallest offset among the ones held by the keys, or the latest consumed one.
+      //
+      // We then clear the cache, which triggers release of the KeyFlow's and their underlying TimerFlow's.
+      // They have to be released before we proceed the release of this PartitionFlow in case if a TimerFlow is
+      // configured with `flushOnRevoke = true` (for out of the box implementations), or any custom TimerFlow
+      // implementation that would move/remove held offset on release.
+      //
+      // For out-of-the-box TimerFlow implementations the following scenarios can happen:
+      //
+      // 1. The flow is configured with `flushOnRevoke = false`; in that case after the keys are released with
+      //    cache.clear, their latest held offsets are still available through `getMinOffsets`, so we find the smallest
+      //    one among those, and commit that;
+      // 2. The flow is configured with `flushOnRevoke = true`, and on c`ache.clear` all keys successfully perform
+      //    `persistence.flush`, and remove held offsets; in that case no offset would be found in `getMinOffsets`, and
+      //    we will commit the latest consumed offset;
+      // 3. The flow is configured with `flushOnRevoke = true`, and on `cache.clear` some keys fail to perform release,
+      //    and subsequently don't remove their held offsets; in that case we will find the smallest offset that was
+      //    still held by any such key using `getMinOffsets`, and commit that;
+      offsetsHeldByCurrentKeys.flatMap { getMinOffsets =>
+        cache.clear.flatten *> offsetToCommit(getMinOffsets).flatMap { offset =>
+          offset.traverse_ { offset =>
+            log.info(s"committing on revoke: $offset") *> scheduleCommit.schedule(offset)
+          }
         }
       }
     } else {
