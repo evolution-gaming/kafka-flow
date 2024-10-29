@@ -11,7 +11,7 @@ lazy val commonSettings = Seq(
   organizationName := "Evolution Gaming",
   organizationHomepage := Some(url("https://evolution.com/")),
   publishTo := Some(Resolver.evolutionReleases),
-  scalaVersion := "2.13.14",
+  scalaVersion := "2.13.15",
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   testFrameworks += new TestFramework("munit.Framework"),
   testOptions += Tests.Argument(new TestFramework("munit.Framework"), "+l"),
@@ -21,7 +21,6 @@ lazy val commonSettings = Seq(
     "org.scala-lang.modules" %% "scala-java8-compat" % "always"
   ),
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.3" cross CrossVersion.full),
-  coverageScalacPluginVersion := "2.2.0",
 )
 
 lazy val root = (project in file("."))
