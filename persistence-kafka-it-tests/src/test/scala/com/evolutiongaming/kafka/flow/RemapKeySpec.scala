@@ -201,7 +201,7 @@ class RemapKeySpec extends ForAllKafkaSuite {
     FoldOption.of { (state, record) =>
       for {
         input   <- IO(record.value.get.value.decodeUtf8.toOption.get)
-        key      = record.key.get.value
+        _        = record.key.get.value
         newState = state.fold(input)(_ + input)
       } yield newState.some
     }
