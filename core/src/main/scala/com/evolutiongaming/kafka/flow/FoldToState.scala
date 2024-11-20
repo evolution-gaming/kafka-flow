@@ -8,7 +8,10 @@ import cats.syntax.all._
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 
-/** Applies records to a state stored inside and informs the listeners about the changes */
+/**
+  * Applies records to a state stored inside and performs the necessary updates,
+  * for example, it can persist the state and remove it from memory.
+  */
 trait FoldToState[F[_], E] {
 
   def apply(records: NonEmptyList[E]): F[Unit]
