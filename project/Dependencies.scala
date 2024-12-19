@@ -36,7 +36,7 @@ object Dependencies {
     val munit = "org.scalameta" %% "munit" % "1.0.0-M10"
 
     object Testcontainers {
-      private val version = "0.41.0"
+      private val version = "0.41.5"
       val munit           = "com.dimafeng" %% "testcontainers-scala-munit"     % version
       val kafka           = "com.dimafeng" %% "testcontainers-scala-kafka"     % version
       val cassandra       = "com.dimafeng" %% "testcontainers-scala-cassandra" % version
