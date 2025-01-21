@@ -47,7 +47,7 @@ object KafkaModule {
 
         val healthCheck = KafkaHealthCheck.of(
           KafkaHealthCheck.Config.default,
-          ConsumerConfig(common = commonConfig),
+          ConsumerConfig(common = commonConfig, saslSupport = config.saslSupport, sslSupport = config.sslSupport),
           ProducerConfig(common = commonConfig, saslSupport = config.saslSupport, sslSupport = config.sslSupport)
         )
         LogResource[F](KafkaModule.getClass, "KafkaHealthCheck") *> healthCheck
