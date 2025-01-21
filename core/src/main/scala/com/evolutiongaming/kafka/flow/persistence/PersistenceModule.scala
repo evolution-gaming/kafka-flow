@@ -23,7 +23,7 @@ trait PersistenceModule[F[_], S] {
     implicit F: Sync[F],
     logOf: LogOf[F]
   ): Resource[F, PersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsumerRecord[String, ByteVector]]] = for {
-    keysOf        <- Resource.eval(keys.keysOf)
+    keysOf        <- Resource.eval(keys.toKeysOf)
     journalsOf    <- Resource.eval(journals.journalsOf)
     snapshotsOf   <- Resource.eval(snapshots.snapshotsOf)
     persistenceOf <- PersistenceOf.restoreEvents(keysOf, journalsOf, snapshotsOf)
@@ -34,7 +34,7 @@ trait PersistenceModule[F[_], S] {
     implicit F: Sync[F],
     logOf: LogOf[F]
   ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsumerRecord[String, ByteVector]]] = for {
-    keysOf      <- keys.keysOf
+    keysOf      <- keys.toKeysOf
     journalsOf  <- journals.journalsOf
     snapshotsOf <- snapshots.snapshotsOf
   } yield PersistenceOf.restoreSnapshots(keysOf, journalsOf, snapshotsOf)
@@ -44,7 +44,7 @@ trait PersistenceModule[F[_], S] {
     implicit F: Sync[F],
     logOf: LogOf[F]
   ): F[SnapshotPersistenceOf[F, KafkaKey, KafkaSnapshot[S], ConsumerRecord[String, ByteVector]]] = for {
-    keysOf      <- keys.keysOf
+    keysOf      <- keys.toKeysOf
     snapshotsOf <- snapshots.snapshotsOf
   } yield PersistenceOf.snapshotsOnly(keysOf, snapshotsOf)
 

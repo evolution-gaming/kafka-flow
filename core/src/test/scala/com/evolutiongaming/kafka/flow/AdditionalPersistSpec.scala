@@ -299,7 +299,7 @@ object AdditionalPersistSpec {
 
     def partitionFlow: Resource[IO, PartitionFlow[IO]] =
       for {
-        keysOf   <- Resource.eval(KeysOf.memory[IO, KafkaKey])
+        keysOf   <- Resource.eval(KeysOf.memory1[IO, KafkaKey])
         timersOf <- Resource.eval(TimersOf.memory[IO, KafkaKey])
         partitionFlow <- PartitionFlow.resource(
           topicPartition = TopicPartition.empty,

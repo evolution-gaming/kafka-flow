@@ -33,7 +33,7 @@ class FlowSpec extends CassandraSpec {
           )
       )
       timersOf      <- Resource.eval(TimersOf.memory[IO, KafkaKey])
-      keysOf        <- Resource.eval(storage.keys.keysOf)
+      keysOf        <- Resource.eval(storage.keys.toKeysOf)
       persistenceOf <- storage.restoreEvents
       keyStateOf = KeyStateOf.eagerRecovery[IO, KafkaSnapshot[String]](
         applicationId = "FlowSpec",

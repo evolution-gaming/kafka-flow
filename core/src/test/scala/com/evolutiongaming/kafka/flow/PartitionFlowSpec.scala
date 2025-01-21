@@ -398,7 +398,7 @@ class PartitionFlowSpec extends FunSuite {
     logOf.apply(classOf[PartitionFlowSpec]).toResource.flatMap { implicit log =>
       val committedOffset  = Ref.unsafe[IO, Offset](Offset.min)
       val keyStorage       = Ref.unsafe[IO, Set[KafkaKey]](initialData.keySet)
-      val keysOf           = KeysOf.apply[IO, KafkaKey](KeyDatabase.memory[IO, KafkaKey](keyStorage.stateInstance))
+      val keysOf           = KeysOf.of[IO, KafkaKey](KeyDatabase.memory[IO, KafkaKey](keyStorage.stateInstance))
       val snapshotsStorage = Ref.unsafe[IO, Map[KafkaKey, String]](initialData)
       val persistenceOf =
         PersistenceOf
@@ -466,7 +466,7 @@ object PartitionFlowSpec {
 
     type State = (Offset, Int)
 
-    val keysOf     = KeysOf.memory[IO, String].unsafeRunSync()(IORuntime.global)
+    val keysOf     = KeysOf.memory1[IO, String].unsafeRunSync()(IORuntime.global)
     val journalsOf = JournalsOf.memory[IO, String, ConsumerRecord[String, ByteVector]].unsafeRunSync()(IORuntime.global)
     val snapshotsOf = SnapshotsOf.memory[IO, String, State].unsafeRunSync()(IORuntime.global)
     val (persistenceOf, _) =

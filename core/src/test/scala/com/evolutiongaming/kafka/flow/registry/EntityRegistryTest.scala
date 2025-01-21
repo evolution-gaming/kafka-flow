@@ -45,7 +45,7 @@ class EntityRegistryTest extends FunSuite {
     )
 
   val resource = for {
-    keysOf   <- KeysOf.memory[IO, KafkaKey].toResource
+    keysOf   <- KeysOf.memory1[IO, KafkaKey].toResource
     timersOf <- TimersOf.memory[IO, KafkaKey].toResource
     registry <- EntityRegistry.memory[IO, KafkaKey, Int].toResource
     partitionFlowOf = PartitionFlowOf.apply(

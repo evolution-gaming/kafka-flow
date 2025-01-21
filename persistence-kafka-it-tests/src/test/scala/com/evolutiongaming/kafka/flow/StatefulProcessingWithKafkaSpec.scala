@@ -67,7 +67,7 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
     val snapshotPersistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsumerRecord[String, ByteVector]] =
       PersistenceOf.snapshotsOnly(keysOf, snapshotsOf)
 
-    override def keysOf: KeysOf[IO, KafkaKey] = KeysOf.memory[IO, KafkaKey].unsafeRunSync()
+    override def keysOf: KeysOf[IO, KafkaKey] = KeysOf.memory1[IO, KafkaKey].unsafeRunSync()
     override def persistenceOf: SnapshotPersistenceOf[IO, KafkaKey, State, ConsumerRecord[String, ByteVector]] =
       snapshotPersistenceOf
   }

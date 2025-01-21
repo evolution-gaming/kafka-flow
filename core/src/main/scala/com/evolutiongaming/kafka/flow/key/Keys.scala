@@ -24,7 +24,24 @@ trait KeyWriter[F[_]] {
 object Keys {
 
   /** Creates a buffer for a given writer */
-  private[key] def apply[F[_]: Monad: Log, K: LogPrefix](
+  @deprecated("Use `of` instead", "5.0.6")
+  private[key] def apply[F[_]: Monad: Log, K](
+    key: K,
+    database: KeyDatabase[F, K]
+  ): Keys[F] = new Keys[F] {
+
+    def flush: F[Unit] = database.persist(key)
+
+    def delete(persist: Boolean): F[Unit] =
+      if (persist) {
+        database.delete(key) *> Log[F].info("deleted key")
+      } else {
+        ().pure[F]
+      }
+
+  }
+
+  private[key] def of[F[_]: Monad: Log, K: LogPrefix](
     key: K,
     database: KeyDatabase[F, K]
   ): Keys[F] = new Keys[F] {
