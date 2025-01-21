@@ -26,6 +26,10 @@ trait KafkaModule[F[_]] {
 
 object KafkaModule {
 
+  /** Creates kafka consumer and producer builders, and additionally launches kafka healthcheck mechanism which
+    * repeatedly sends and consumes messages to/from topic named 'healthcheck' (refer to
+    * [[KafkaHealthCheck.Config.default]])
+    */
   def of[F[_]: Async: FromTry: ToTry: ToFuture: LogOf](
     applicationId: String,
     config: ConsumerConfig,
@@ -47,7 +51,7 @@ object KafkaModule {
 
         val healthCheck = KafkaHealthCheck.of(
           KafkaHealthCheck.Config.default,
-          ConsumerConfig(common = commonConfig),
+          ConsumerConfig(common = commonConfig, saslSupport = config.saslSupport, sslSupport = config.sslSupport),
           ProducerConfig(common = commonConfig, saslSupport = config.saslSupport, sslSupport = config.sslSupport)
         )
         LogResource[F](KafkaModule.getClass, "KafkaHealthCheck") *> healthCheck
