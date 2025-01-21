@@ -28,7 +28,7 @@ object KafkaModule {
 
   /** Creates kafka consumer and producer builders, and additionally launches kafka healthcheck mechanism which
     * repeatedly sends and consumes messages to/from topic named 'healthcheck' (refer to
-    * [[KafkaHealthCheck.Config.default]])
+    * `KafkaHealthCheck.Config.default`)
     */
   def of[F[_]: Async: FromTry: ToTry: ToFuture: LogOf](
     applicationId: String,
