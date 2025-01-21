@@ -1,9 +1,9 @@
 package com.evolutiongaming.kafka.flow.key
 
-import cats.Applicative
-import cats.Monad
 import cats.syntax.all._
+import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.kafka.flow.LogPrefix
 
 trait Keys[F[_]] extends KeyWriter[F]
 
@@ -24,17 +24,18 @@ trait KeyWriter[F[_]] {
 object Keys {
 
   /** Creates a buffer for a given writer */
-  private[key] def apply[F[_]: Monad: Log, K](
+  private[key] def apply[F[_]: Monad: Log, K: LogPrefix](
     key: K,
     database: KeyDatabase[F, K]
   ): Keys[F] = new Keys[F] {
+
+    private val prefixedLog = Log[F].prefixed(s"[${LogPrefix[K].extract(key)}]")
 
     def flush: F[Unit] = database.persist(key)
 
     def delete(persist: Boolean): F[Unit] =
       if (persist) {
-        database.delete(key) *>
-          Log[F].info("deleted key")
+        database.delete(key) *> prefixedLog.info("deleted key")
       } else {
         ().pure[F]
       }

@@ -1,9 +1,10 @@
 package com.evolutiongaming.kafka.flow.key
 
+import cats.Monad
 import cats.effect.Sync
 import cats.syntax.all._
-import cats.Monad
 import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.kafka.flow.LogPrefix
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 
@@ -16,13 +17,13 @@ trait KeysOf[F[_], K] {
 }
 object KeysOf {
 
-  def memory[F[_]: Sync: Log, K]: F[KeysOf[F, K]] =
+  def memory[F[_]: Sync: Log, K: LogPrefix]: F[KeysOf[F, K]] =
     KeyDatabase.memory[F, K] map { database =>
       KeysOf(database)
     }
 
   /** Creates `KeysOf` with a passed logger */
-  def apply[F[_]: Monad: Log, K](
+  def apply[F[_]: Monad: Log, K: LogPrefix](
     database: KeyDatabase[F, K]
   ): KeysOf[F, K] = new KeysOf[F, K] {
     def apply(key: K) = Keys(key, database)
