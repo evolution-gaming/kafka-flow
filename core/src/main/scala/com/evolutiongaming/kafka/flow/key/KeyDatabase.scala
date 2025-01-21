@@ -5,6 +5,7 @@ import cats.mtl.Stateful
 import cats.syntax.all._
 import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.LogPrefix
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
@@ -19,7 +20,7 @@ trait KeyDatabase[F[_], K] {
 
   def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, K]
 
-  def keysOf(implicit F: Monad[F], logOf: LogOf[F]): F[KeysOf[F, K]] =
+  def keysOf(implicit F: Monad[F], logOf: LogOf[F], logPrefix: LogPrefix[K]): F[KeysOf[F, K]] =
     logOf(KeyDatabase.getClass) map { implicit log => KeysOf(this) }
 
 }
