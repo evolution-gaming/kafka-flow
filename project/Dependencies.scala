@@ -11,7 +11,7 @@ object Dependencies {
   val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.2.1"
 
   object Cats {
-    private val version       = "2.10.0"
+    private val version       = "2.13.0"
     private val effectVersion = "3.4.11"
     val core                  = "org.typelevel" %% "cats-core"           % version
     val mtl                   = "org.typelevel" %% "cats-mtl"            % "1.3.1"
