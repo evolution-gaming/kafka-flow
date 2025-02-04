@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow
 import cats.data.{NonEmptyList, NonEmptySet}
 import cats.effect.unsafe.IORuntime
 import cats.effect.{Deferred, IO, Ref, Resource}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
@@ -12,7 +12,7 @@ import com.evolutiongaming.skafka.{CommonConfig, Offset, Partition}
 import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 class ShutdownSpec extends ForAllKafkaSuite {
 

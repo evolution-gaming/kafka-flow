@@ -4,7 +4,7 @@ import cats.Applicative
 import cats.ApplicativeError
 import cats.Functor
 import cats.Monad
-import cats.syntax.all._
+import cats.syntax.all.*
 
 /** Convenience methods for using `Fold` with optional state */
 final case class FoldOption[F[_], S, A](value: Fold[F, Option[S], A]) {

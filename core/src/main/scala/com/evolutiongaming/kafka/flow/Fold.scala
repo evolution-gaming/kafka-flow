@@ -4,7 +4,7 @@ import cats.Applicative
 import cats.ApplicativeError
 import cats.Functor
 import cats.Monad
-import cats.syntax.all._
+import cats.syntax.all.*
 
 /** Reads a state and effectfully produces a new one.
   *

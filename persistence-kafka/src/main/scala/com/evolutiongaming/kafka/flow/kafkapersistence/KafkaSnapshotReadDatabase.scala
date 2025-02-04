@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
 import cats.Monad
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotReadDatabase
 import com.evolutiongaming.skafka.{FromBytes, Topic}

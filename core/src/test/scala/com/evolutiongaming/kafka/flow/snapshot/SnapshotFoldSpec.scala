@@ -7,7 +7,7 @@ import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import munit.FunSuite
 import scodec.bits.ByteVector
 
-import SnapshotFoldSpec._
+import SnapshotFoldSpec.*
 
 class SnapshotFoldSpec extends FunSuite {
 

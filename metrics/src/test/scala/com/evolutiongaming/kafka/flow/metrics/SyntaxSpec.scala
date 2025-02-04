@@ -2,14 +2,14 @@ package com.evolutiongaming.kafka.flow.metrics
 
 import cats.data.State
 import cats.effect.Resource
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.smetrics.CollectorRegistry
 import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 
 import scala.concurrent.duration.FiniteDuration
-import syntax._
+import syntax.*
 
 class SyntaxSpec extends FunSuite {
 

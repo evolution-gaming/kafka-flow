@@ -1,10 +1,10 @@
 package com.evolutiongaming.kafka.flow.kafka
 
 import cats.effect.{Async, Clock, Resource}
-import cats.syntax.all._
-import com.evolutiongaming.catshelper._
+import cats.syntax.all.*
+import com.evolutiongaming.catshelper.*
 import com.evolutiongaming.kafka.flow.LogResource
-import com.evolutiongaming.kafka.flow.kafka.Codecs._
+import com.evolutiongaming.kafka.flow.kafka.Codecs.*
 import com.evolutiongaming.skafka.KafkaHealthCheck
 import com.evolutiongaming.skafka.consumer.{
   AutoOffsetReset,
@@ -60,7 +60,8 @@ object KafkaModule {
 
       def healthCheck = _healthCheck
 
-      def consumerOf = { groupId: String =>
+      
+      def consumerOf = { (groupId: String) =>
         LogResource[F](KafkaModule.getClass, s"Consumer($groupId)") *>
           _consumerOf[String, ByteVector](
             config.copy(

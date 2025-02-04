@@ -2,8 +2,8 @@ package com.evolutiongaming.kafka.flow.journal
 
 import cats.data.State
 import cats.mtl.Stateful
-import cats.syntax.all._
-import com.evolutiongaming.kafka.flow.journal.JournalDatabaseSpec._
+import cats.syntax.all.*
+import com.evolutiongaming.kafka.flow.journal.JournalDatabaseSpec.*
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.skafka.Offset
 import munit.FunSuite

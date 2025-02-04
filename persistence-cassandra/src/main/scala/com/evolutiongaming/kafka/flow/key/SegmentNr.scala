@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.key
 
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.scassandra.EncodeByName
 
 private[flow] sealed abstract case class SegmentNr(value: Long) {

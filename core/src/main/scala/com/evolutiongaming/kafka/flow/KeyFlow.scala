@@ -2,12 +2,12 @@ package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
 import cats.effect.kernel.Resource
-import cats.effect.syntax.resource._
+import cats.effect.syntax.resource.*
 import cats.effect.{Ref, Sync}
 import cats.mtl.Stateful
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Applicative, Monad}
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{ReadTimestamps, TimerFlow}

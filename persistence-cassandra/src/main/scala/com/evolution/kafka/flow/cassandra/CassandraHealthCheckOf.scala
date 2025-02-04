@@ -5,7 +5,7 @@ import cats.effect.{Async, Resource}
 import com.datastax.driver.core.ConsistencyLevel
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.cassandra.CassandraConfig
-import com.evolutiongaming.kafka.flow.cassandra.SessionHelper._
+import com.evolutiongaming.kafka.flow.cassandra.SessionHelper.*
 import com.evolutiongaming.scassandra.{CassandraHealthCheck, CassandraSession}
 
 private[cassandra] object CassandraHealthCheckOf {

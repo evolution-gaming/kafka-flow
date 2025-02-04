@@ -3,11 +3,11 @@ package com.evolutiongaming.kafka.flow.timer
 import cats.{Applicative, Monad, MonadThrow}
 import cats.effect.Resource
 import cats.effect.kernel.Resource.ExitCase
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.kafka.flow.KeyContext
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 trait TimerFlowOf[F[_]] {
 

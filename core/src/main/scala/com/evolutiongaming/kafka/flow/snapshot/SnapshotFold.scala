@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.Applicative
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.kafka.flow.FoldOption
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import scodec.bits.ByteVector

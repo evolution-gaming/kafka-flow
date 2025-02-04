@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow
 import cats.MonadThrow
 import cats.data.NonEmptySet
 import cats.effect.Resource
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.skafka.Topic

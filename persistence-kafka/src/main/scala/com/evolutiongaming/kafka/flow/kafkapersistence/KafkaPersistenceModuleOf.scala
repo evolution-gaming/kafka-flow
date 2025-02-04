@@ -6,7 +6,7 @@ import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.FlowMetrics
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
 import com.evolutiongaming.skafka.producer.Producer
-import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.*
 
 /** Convenience factory trait to create an instance of [[KafkaPersistenceModule]] for an assigned partition */
 trait KafkaPersistenceModuleOf[F[_], S] {

@@ -1,14 +1,14 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.Monad
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.metrics.MetricsK
 import com.evolutiongaming.kafka.flow.metrics.MetricsKOf
-import com.evolutiongaming.kafka.flow.metrics.syntax._
+import com.evolutiongaming.kafka.flow.metrics.syntax.*
 import com.evolutiongaming.smetrics.LabelNames
-import com.evolutiongaming.smetrics.MetricsHelper._
+import com.evolutiongaming.smetrics.MetricsHelper.*
 import com.evolutiongaming.smetrics.Quantile
 import com.evolutiongaming.smetrics.Quantiles
 

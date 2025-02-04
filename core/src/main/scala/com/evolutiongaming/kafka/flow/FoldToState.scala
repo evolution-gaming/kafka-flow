@@ -4,8 +4,8 @@ import cats.Monad
 import cats.data.NonEmptyList
 import cats.effect.{Ref, Sync}
 import cats.mtl.Stateful
-import cats.syntax.all._
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import cats.syntax.all.*
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 
 /** Applies records to a state stored inside and informs the listeners about the changes */

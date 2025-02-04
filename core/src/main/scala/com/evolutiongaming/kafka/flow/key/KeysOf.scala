@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.key
 
 import cats.Monad
 import cats.effect.Sync
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.LogPrefix
 import com.evolutiongaming.skafka.TopicPartition

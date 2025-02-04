@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.journal
 
 import cats.Monad
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.FoldOption
 import com.evolutiongaming.kafka.flow.snapshot.{KafkaSnapshot, SnapshotFold}

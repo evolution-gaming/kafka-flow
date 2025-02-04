@@ -2,11 +2,11 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Monad
 import cats.data.NonEmptySet
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.ConsumerFlow.log
-import com.evolutiongaming.skafka.consumer.RebalanceCallback._
-import com.evolutiongaming.skafka.consumer.RebalanceCallback.syntax._
+import com.evolutiongaming.skafka.consumer.RebalanceCallback.*
+import com.evolutiongaming.skafka.consumer.RebalanceCallback.syntax.*
 import com.evolutiongaming.skafka.consumer.{
   RebalanceCallback,
   RebalanceListener1 => SRebalanceListener1,

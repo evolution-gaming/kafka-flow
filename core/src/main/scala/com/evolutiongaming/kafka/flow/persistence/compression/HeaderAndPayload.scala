@@ -1,10 +1,10 @@
 package com.evolutiongaming.kafka.flow.persistence.compression
 
 import cats.MonadThrow
-import cats.syntax.all._
+import cats.syntax.all.*
 import scodec.Attempt
 import scodec.bits.ByteVector
-import scodec.codecs._
+import scodec.codecs.*
 
 private[compression] object HeaderAndPayload {
 

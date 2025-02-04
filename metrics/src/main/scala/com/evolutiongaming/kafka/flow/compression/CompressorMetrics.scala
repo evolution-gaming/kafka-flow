@@ -2,10 +2,10 @@ package com.evolutiongaming.kafka.flow.compression
 
 import cats.Monad
 import cats.effect.Resource
-import cats.implicits._
+import cats.implicits.*
 import com.evolutiongaming.kafka.flow.metrics.Metrics
 import com.evolutiongaming.kafka.flow.persistence.compression.Compressor
-import com.evolutiongaming.smetrics._
+import com.evolutiongaming.smetrics.*
 import scodec.bits.ByteVector
 
 object CompressorMetrics {

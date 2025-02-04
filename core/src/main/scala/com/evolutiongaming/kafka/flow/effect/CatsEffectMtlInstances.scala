@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.effect
 import cats.Monad
 import cats.effect.Ref
 import cats.mtl.Stateful
-import cats.syntax.functor._
+import cats.syntax.functor.*
 
 /** meow-mtl library is not updated and supported anymore, this is just a straight copypasta from there */
 private[flow] object CatsEffectMtlInstances {

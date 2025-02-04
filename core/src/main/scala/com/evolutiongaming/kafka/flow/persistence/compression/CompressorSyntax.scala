@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.persistence.compression
 
 import cats.Monad
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.skafka.{Bytes, FromBytes, ToBytes, Topic}
 import scodec.bits.ByteVector
 

@@ -3,11 +3,11 @@ package com.evolutiongaming.kafka.flow
 import cats.Applicative
 import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
 import cats.effect.{Ref, Resource, SyncIO}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.retry.{OnError, Retry, Sleep, Strategy}
-import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.*
 import com.evolutiongaming.skafka.consumer.{
   ConsumerRecord,
   ConsumerRecords,
@@ -18,11 +18,11 @@ import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 import scodec.bits.ByteVector
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 import scala.util.control.NoStackTrace
 
 class KafkaFlowSpec extends FunSuite {
-  import KafkaFlowSpec._
+  import KafkaFlowSpec.*
 
   test("happy path") {
 

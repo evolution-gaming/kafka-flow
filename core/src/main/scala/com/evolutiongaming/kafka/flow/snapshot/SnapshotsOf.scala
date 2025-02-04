@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.Monad
 import cats.effect.Ref
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.LogPrefix
 

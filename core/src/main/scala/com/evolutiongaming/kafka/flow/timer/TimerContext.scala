@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.timer
 
 import cats.Monad
 import cats.effect.Ref
-import cats.syntax.all._
+import cats.syntax.all.*
 
 import java.time.Instant
 

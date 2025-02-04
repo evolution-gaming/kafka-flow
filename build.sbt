@@ -1,4 +1,4 @@
-import Dependencies._
+import Dependencies.*
 
 ThisBuild / versionScheme := Some("early-semver")
 ThisBuild / evictionErrorLevel := Level.Warn
@@ -21,6 +21,7 @@ lazy val commonSettings = Seq(
     "org.scala-lang.modules" %% "scala-java8-compat" % "always"
   ),
   addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.3" cross CrossVersion.full),
+  scalacOptions ++= Seq("-Xsource:3"),
 )
 
 lazy val root = (project in file("."))

@@ -1,10 +1,10 @@
 package com.evolutiongaming.kafka.flow.timer
 
 import cats.ApplicativeThrow
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.skafka.{Offset => KafkaOffset}
 import java.time.Instant
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 sealed trait KafkaTimer {
   def valueType: String

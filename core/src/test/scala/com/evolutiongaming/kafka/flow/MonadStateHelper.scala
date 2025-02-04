@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Functor
 import cats.mtl.Stateful
-import cats.syntax.all._
+import cats.syntax.all.*
 import monocle.Lens
 
 object MonadStateHelper {

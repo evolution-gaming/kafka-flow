@@ -1,21 +1,21 @@
 package com.evolutiongaming.kafka.flow.journal
 
 import cats.effect.{Async, Clock}
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Monad, MonadThrow}
 import com.datastax.driver.core.{BoundStatement, Row}
 import com.evolutiongaming.cassandra.sync.CassandraSync
-import com.evolutiongaming.catshelper.ClockHelper._
+import com.evolutiongaming.catshelper.ClockHelper.*
 import com.evolutiongaming.kafka.flow.KafkaKey
-import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs._
+import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs.*
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.kafka.flow.journal.conversions.{HeaderToTuple, TupleToHeader}
 import com.evolutiongaming.kafka.journal.FromAttempt
 import com.evolutiongaming.kafka.journal.util.Fail
 import com.evolutiongaming.scassandra
-import com.evolutiongaming.scassandra.StreamingCassandraSession._
-import com.evolutiongaming.scassandra.syntax._
+import com.evolutiongaming.scassandra.StreamingCassandraSession.*
+import com.evolutiongaming.scassandra.syntax.*
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Offset, TimestampAndType, TimestampType}
 import com.evolutiongaming.sstream.Stream
@@ -23,7 +23,7 @@ import scodec.bits.ByteVector
 
 import java.time.Instant
 
-import CassandraJournals._
+import CassandraJournals.*
 
 class CassandraJournals[F[_]: Async](
   session: scassandra.CassandraSession[F],

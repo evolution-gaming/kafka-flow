@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.persistence
 
 import cats.Applicative
 import cats.effect.{Resource, Sync}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.journal.JournalDatabase

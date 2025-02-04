@@ -2,12 +2,12 @@ package com.evolutiongaming.kafka.flow
 
 import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.PartitionFlow.{FilterRecord, PartitionKey}
-import com.evolutiongaming.kafka.flow.PartitionFlowSpec._
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import com.evolutiongaming.kafka.flow.PartitionFlowSpec.*
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.journal.JournalsOf
 import com.evolutiongaming.kafka.flow.kafka.{ScheduleCommit, ToOffset}
 import com.evolutiongaming.kafka.flow.key.{KeyDatabase, KeysOf}
@@ -21,7 +21,7 @@ import com.evolutiongaming.sstream.Stream
 import munit.FunSuite
 import scodec.bits.ByteVector
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 class PartitionFlowSpec extends FunSuite {
   import PartitionFlowSpec.RemapKeyState
@@ -393,7 +393,7 @@ class PartitionFlowSpec extends FunSuite {
   }
 
   def setupRemapKeyTest(remapKey: RemapKey[IO], initialData: Map[KafkaKey, String]) = {
-    import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+    import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
     implicit val logOf = LogOf.empty[IO]
     logOf.apply(classOf[PartitionFlowSpec]).toResource.flatMap { implicit log =>
       val committedOffset  = Ref.unsafe[IO, Offset](Offset.min)

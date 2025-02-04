@@ -2,11 +2,11 @@ package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.effect.{Ref, Sync}
 import cats.mtl.Stateful
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Applicative, Functor, Monad}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.LogPrefix
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 
 trait SnapshotDatabase[F[_], K, S] extends SnapshotReadDatabase[F, K, S] with SnapshotWriteDatabase[F, K, S]
 

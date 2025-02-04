@@ -15,7 +15,7 @@ import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, Wit
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import scodec.bits.ByteVector
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 class FlowSpec extends CassandraSpec {
 

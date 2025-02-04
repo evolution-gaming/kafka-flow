@@ -1,11 +1,11 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.{NonEmptyMap, NonEmptySet, StateT}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.RebalanceListenerSpec._
+import com.evolutiongaming.kafka.flow.RebalanceListenerSpec.*
 import com.evolutiongaming.kafka.flow.kafka.Consumer
-import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.*
 import com.evolutiongaming.skafka.consumer.{ConsumerRecords, RebalanceListener1 => SRebalanceListener}
 import munit.FunSuite
 import scodec.bits.ByteVector

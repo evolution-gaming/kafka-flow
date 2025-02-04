@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import com.evolutiongaming.kafka.flow.PartitionFlowConfig.ParallelismMode
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 /** Configuration of `PartitionFlow`.
   *

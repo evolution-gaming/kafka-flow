@@ -2,11 +2,11 @@ package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.effect.Ref
 import cats.mtl.Stateful
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.LogPrefix
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 
 trait Snapshots[F[_], S] extends SnapshotReader[F, S] with SnapshotWriter[F, S]
 

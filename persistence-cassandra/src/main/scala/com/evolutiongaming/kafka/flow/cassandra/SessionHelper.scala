@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
 import cats.effect.{Concurrent, Resource}
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{MonadThrow, Parallel}
 import com.datastax.driver.core.policies.LoggingRetryPolicy
 import com.datastax.driver.core.{PreparedStatement, RegularStatement, ResultSet, Statement}
@@ -48,7 +48,7 @@ object SessionHelper {
     }
 
     def withRetries(retries: Int, trace: Boolean = false): CassandraSession[F] = {
-      import com.evolutiongaming.scassandra.syntax._
+      import com.evolutiongaming.scassandra.syntax.*
       val retryPolicy = new LoggingRetryPolicy(NextHostRetryPolicy(retries))
 
       new Delegate[F](self) {

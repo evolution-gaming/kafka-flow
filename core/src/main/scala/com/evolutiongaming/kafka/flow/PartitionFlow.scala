@@ -2,14 +2,14 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
 import cats.data.NonEmptyList
-import cats.effect._
-import cats.effect.implicits._
+import cats.effect.*
+import cats.effect.implicits.*
 import cats.kernel.CommutativeMonoid
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolution.scache.Cache
-import com.evolutiongaming.catshelper.ClockHelper._
+import com.evolutiongaming.catshelper.ClockHelper.*
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow.PartitionFlowConfig.ParallelismMode._
+import com.evolutiongaming.kafka.flow.PartitionFlowConfig.ParallelismMode.*
 import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}

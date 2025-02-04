@@ -6,8 +6,8 @@ import com.evolutiongaming.smetrics.CollectorRegistry
 import munit.FunSuite
 import scodec.bits.ByteVector
 
-import FoldMetrics._
-import metrics.syntax._
+import FoldMetrics.*
+import metrics.syntax.*
 
 class FoldMetricsSpec extends FunSuite {
 

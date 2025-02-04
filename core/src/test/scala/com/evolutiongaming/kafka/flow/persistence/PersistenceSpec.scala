@@ -1,10 +1,10 @@
 package com.evolutiongaming.kafka.flow.persistence
 
 import cats.data.State
-import cats.mtl._
-import cats.syntax.all._
-import com.evolutiongaming.kafka.flow.MonadStateHelper._
-import com.evolutiongaming.kafka.flow.persistence.PersistenceSpec._
+import cats.mtl.*
+import cats.syntax.all.*
+import com.evolutiongaming.kafka.flow.MonadStateHelper.*
+import com.evolutiongaming.kafka.flow.persistence.PersistenceSpec.*
 import com.evolutiongaming.kafka.flow.timer.{Timestamp, Timestamps}
 import com.evolutiongaming.kafka.flow.timer.Timestamps.TimestampState
 import com.evolutiongaming.skafka.Offset

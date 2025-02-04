@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
-import cats.syntax.applicative._
+import cats.syntax.applicative.*
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import scodec.bits.ByteVector
 

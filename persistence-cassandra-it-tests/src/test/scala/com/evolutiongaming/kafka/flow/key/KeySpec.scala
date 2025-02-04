@@ -1,16 +1,16 @@
 package com.evolutiongaming.kafka.flow.key
 
 import cats.effect.{IO, Ref}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.{CassandraSessionStub, CassandraSpec, KafkaKey}
 import com.evolutiongaming.skafka.{Partition, TopicPartition}
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 class KeySpec extends CassandraSpec {
 
-  override def munitTimeout = 2.minutes
+  override def munitTimeout: FiniteDuration = 2.minutes
 
   test("queries") {
     val partition1 = TopicPartition("topic1", Partition.unsafe(1))

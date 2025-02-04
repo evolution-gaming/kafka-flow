@@ -3,8 +3,8 @@ package com.evolutiongaming.kafka.flow
 import cats.data.{NonEmptyList, State}
 import cats.mtl.Stateful
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.kafka.flow.FoldToStateSpec._
-import com.evolutiongaming.kafka.flow.MonadStateHelper._
+import com.evolutiongaming.kafka.flow.FoldToStateSpec.*
+import com.evolutiongaming.kafka.flow.MonadStateHelper.*
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.skafka.Offset
 import monocle.macros.GenLens

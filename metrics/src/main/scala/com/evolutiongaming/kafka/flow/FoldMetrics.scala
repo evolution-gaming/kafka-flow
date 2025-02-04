@@ -3,15 +3,15 @@ package com.evolutiongaming.kafka.flow
 import cats.Monad
 import cats.arrow.FunctionK
 import cats.effect.Resource
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.metrics.{MetricsK, MetricsKOf}
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
-import com.evolutiongaming.smetrics.MetricsHelper._
+import com.evolutiongaming.smetrics.MetricsHelper.*
 import com.evolutiongaming.smetrics.{CollectorRegistry, LabelNames, Quantile, Quantiles}
 import scodec.bits.ByteVector
 
-import metrics.syntax._
+import metrics.syntax.*
 
 object FoldMetrics {
 

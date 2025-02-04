@@ -3,10 +3,10 @@ package com.evolutiongaming.kafka.flow
 import cats.data.NonEmptyList
 import cats.effect.unsafe.IORuntime
 import cats.effect.{Deferred, IO, Ref, Resource}
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Functor, Monad}
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec._
+import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec.*
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
 import com.evolutiongaming.kafka.flow.kafkapersistence.{
   KafkaPersistenceModule,
@@ -29,8 +29,8 @@ import scodec.bits.ByteVector
 
 import java.util.Properties
 import java.util.concurrent.TimeUnit
-import scala.concurrent.duration._
-import scala.jdk.CollectionConverters._
+import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
 
 /*
  Using embedded/real kafka:
@@ -99,7 +99,7 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
    * - oh actually it's not a Resource.release, as we're using the state store within scope of the Resource
    */
   private def kafkaPersistenceModuleOf: Resource[IO, KafkaPersistenceModuleOf[IO, State]] = {
-    import Boilerplate._
+    import Boilerplate.*
 
     val stateTopic = "state-topic-StatefulProcessingWithKafkaSpec"
 
