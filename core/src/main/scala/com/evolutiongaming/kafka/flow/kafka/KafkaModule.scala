@@ -60,7 +60,6 @@ object KafkaModule {
 
       def healthCheck = _healthCheck
 
-      
       def consumerOf = { (groupId: String) =>
         LogResource[F](KafkaModule.getClass, s"Consumer($groupId)") *>
           _consumerOf[String, ByteVector](

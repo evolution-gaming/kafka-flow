@@ -58,7 +58,9 @@ private[flow] object CassandraCodecs {
     }
   }
 
-  implicit val encodeByNamePartition: EncodeByName[Partition] = EncodeByName[Int].contramap { (a: Partition) => a.value }
+  implicit val encodeByNamePartition: EncodeByName[Partition] = EncodeByName[Int].contramap { (a: Partition) =>
+    a.value
+  }
 
   implicit val decodeByNamePartition: DecodeByName[Partition] = DecodeByName[Int].map { a => Partition.of[Try](a).get }
 
