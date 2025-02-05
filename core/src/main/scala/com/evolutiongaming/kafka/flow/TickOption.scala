@@ -3,6 +3,9 @@ package com.evolutiongaming.kafka.flow
 import cats.Applicative
 import cats.Functor
 
+/**
+  * Similar to [[com.evolutiongaming.kafka.flow.Tick]]
+  */
 case class TickOption[F[_], S](value: Tick[F, Option[S]]) {
 
   /** Alias for `value.run` */
