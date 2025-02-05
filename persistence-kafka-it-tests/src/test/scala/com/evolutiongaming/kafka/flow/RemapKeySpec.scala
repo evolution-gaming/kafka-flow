@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow
 import cats.data.{NonEmptyList, NonEmptySet}
 import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Resource}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
 import com.evolutiongaming.kafka.flow.kafkapersistence.{KafkaPersistenceModuleOf, kafkaEagerRecovery}
@@ -18,8 +18,8 @@ import scodec.bits.ByteVector
 
 import java.util.Properties
 import java.util.concurrent.TimeUnit
-import scala.concurrent.duration._
-import scala.jdk.CollectionConverters._
+import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
 import com.evolutiongaming.skafka.Partition
 import scala.util.Random
 

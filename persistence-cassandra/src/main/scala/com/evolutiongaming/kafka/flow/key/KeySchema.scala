@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.key
 
 import cats.Monad
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.scassandra
 

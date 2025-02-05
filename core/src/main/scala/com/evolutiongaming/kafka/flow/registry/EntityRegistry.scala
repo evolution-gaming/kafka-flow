@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.registry
 
 import cats.effect.Resource
 import cats.effect.kernel.Ref
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Applicative, Hash, Monad}
 import com.evolutiongaming.catshelper.{Partitions, Runtime}
 

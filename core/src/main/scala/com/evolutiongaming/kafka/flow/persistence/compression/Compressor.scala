@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.persistence.compression
 
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Applicative, MonadThrow}
 import com.evolutiongaming.skafka.{FromBytes, ToBytes}
 import scodec.bits.ByteVector

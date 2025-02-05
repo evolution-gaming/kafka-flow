@@ -1,10 +1,10 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
-import cats.implicits._
+import cats.implicits.*
 import cats.{FlatMap, Monad, data}
 import com.evolutiongaming.catshelper.{BracketThrowable, Log}
-import com.evolutiongaming.kafka.flow.kafka.Codecs._
-import com.evolutiongaming.skafka._
+import com.evolutiongaming.kafka.flow.kafka.Codecs.*
+import com.evolutiongaming.skafka.*
 import com.evolutiongaming.skafka.consumer.AutoOffsetReset.Earliest
 import com.evolutiongaming.skafka.consumer.{
   Consumer => SkafkaConsumer,
@@ -15,7 +15,7 @@ import com.evolutiongaming.skafka.consumer.{
 }
 import scodec.bits.ByteVector
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 import scala.util.control.NoStackTrace
 
 object KafkaPartitionPersistence {

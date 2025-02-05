@@ -3,12 +3,12 @@ package com.evolutiongaming.kafka.flow.timer
 import cats.effect.IO
 import cats.effect.kernel.Ref
 import cats.effect.unsafe.implicits.global
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.KeyContext
-import com.evolutiongaming.kafka.flow.MonadStateHelper._
+import com.evolutiongaming.kafka.flow.MonadStateHelper.*
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
-import com.evolutiongaming.kafka.flow.timer.TimerFlowSpec._
+import com.evolutiongaming.kafka.flow.timer.TimerFlowSpec.*
 import com.evolutiongaming.kafka.flow.timer.Timers.TimerState
 import com.evolutiongaming.kafka.flow.timer.Timestamps.TimestampState
 import com.evolutiongaming.skafka.Offset
@@ -16,7 +16,7 @@ import monocle.macros.GenLens
 import munit.FunSuite
 
 import java.time.Instant
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 class TimerFlowOfSpec extends FunSuite {
 
@@ -576,7 +576,7 @@ object TimerFlowSpec {
   }
 
   class ConstFixture {
-    import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+    import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 
     val timestamp: Timestamp = Timestamp(
       offset    = Offset.unsafe(100),

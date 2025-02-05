@@ -2,11 +2,11 @@ package com.evolutiongaming.kafka.flow.kafkapersistence
 
 import cats.Parallel
 import cats.effect.{Concurrent, Resource}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
-import com.evolutiongaming.kafka.flow.metrics.syntax._
+import com.evolutiongaming.kafka.flow.metrics.syntax.*
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey}

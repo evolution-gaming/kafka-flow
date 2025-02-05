@@ -2,10 +2,10 @@ package com.evolutiongaming.kafka.flow.journal
 
 import cats.data.State
 import cats.mtl.Stateful
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.kafka.flow.MonadStateHelper._
-import com.evolutiongaming.kafka.flow.journal.JournalsSpec._
+import com.evolutiongaming.kafka.flow.MonadStateHelper.*
+import com.evolutiongaming.kafka.flow.journal.JournalsSpec.*
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.skafka.Offset
 import monocle.macros.GenLens

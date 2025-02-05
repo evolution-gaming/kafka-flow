@@ -2,10 +2,10 @@ package com.evolutiongaming.kafka.flow
 
 import cats.effect.{Ref, Resource}
 import cats.mtl.Stateful
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.skafka.Offset
 
 /** Key specific metainformation inside of parititon.

@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.Monad
 import cats.effect.Resource
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.timer.Timestamp
 import com.evolutiongaming.skafka.TopicPartition

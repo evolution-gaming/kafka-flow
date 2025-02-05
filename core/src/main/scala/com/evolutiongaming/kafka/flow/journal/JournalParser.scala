@@ -2,8 +2,8 @@ package com.evolutiongaming.kafka.flow.journal
 
 import cats.MonadThrow
 import cats.arrow.FunctionK
-import cats.syntax.all._
-import com.evolutiongaming.kafka.journal._
+import cats.syntax.all.*
+import com.evolutiongaming.kafka.journal.*
 import com.evolutiongaming.kafka.journal.conversions.{ConsRecordToActionRecord, KafkaRead}
 import com.evolutiongaming.kafka.journal.util.Fail
 import com.evolutiongaming.skafka.consumer.ConsumerRecord

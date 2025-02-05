@@ -2,10 +2,10 @@ package com.evolutiongaming.kafka.flow.journal
 
 import cats.effect.{Ref, Sync}
 import cats.mtl.Stateful
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.sstream.Stream

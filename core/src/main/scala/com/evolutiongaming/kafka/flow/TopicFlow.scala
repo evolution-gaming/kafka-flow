@@ -3,14 +3,14 @@ package com.evolutiongaming.kafka.flow
 import cats.Parallel
 import cats.data.NonEmptySet
 import cats.effect.std.Semaphore
-import cats.effect.syntax.all._
+import cats.effect.syntax.all.*
 import cats.effect.{Concurrent, Ref, Resource}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolution.scache.Cache
-import com.evolutiongaming.catshelper.DataHelper._
+import com.evolutiongaming.catshelper.DataHelper.*
 import com.evolutiongaming.catshelper.{Log, LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.kafka.{Consumer, PendingCommits}
-import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.*
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import scodec.bits.ByteVector
 

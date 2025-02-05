@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.Functor
 
 case class Tick[F[_], S](run: S => F[S]) {

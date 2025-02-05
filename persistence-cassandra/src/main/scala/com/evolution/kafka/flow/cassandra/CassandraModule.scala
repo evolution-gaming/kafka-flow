@@ -2,7 +2,7 @@ package com.evolution.kafka.flow.cassandra
 
 import cats.Parallel
 import cats.effect.{Async, Resource, Sync}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.cassandra.sync.{AutoCreate, CassandraSync}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.LogResource
@@ -35,7 +35,7 @@ object CassandraModule {
   def of[F[_]: Async: Parallel: LogOf](
     config: CassandraConfig
   ): Resource[F, CassandraModule[F]] = {
-    import com.evolutiongaming.kafka.flow.cassandra.SessionHelper._
+    import com.evolutiongaming.kafka.flow.cassandra.SessionHelper.*
     for {
       log <- Resource.eval(log[F])
       // this is required to log all Cassandra errors before popping them up,

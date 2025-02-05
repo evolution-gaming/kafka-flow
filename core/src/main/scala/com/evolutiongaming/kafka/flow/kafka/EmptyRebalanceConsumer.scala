@@ -4,7 +4,7 @@ import java.time.Instant
 
 import cats.data.{NonEmptyMap, NonEmptySet}
 import com.evolutiongaming.skafka.consumer.{ConsumerGroupMetadata, OffsetAndTimestamp, RebalanceConsumer}
-import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.*
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.Try

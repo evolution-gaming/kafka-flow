@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.kafka
 
 import cats.Applicative
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.skafka.{FromBytes, ToBytes, Topic}
 import scodec.bits.ByteVector
 

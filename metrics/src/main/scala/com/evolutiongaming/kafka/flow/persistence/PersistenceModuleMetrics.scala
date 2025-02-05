@@ -6,7 +6,7 @@ import com.evolutiongaming.kafka.flow.journal.JournalDatabaseMetrics
 import com.evolutiongaming.kafka.flow.key.KeyDatabaseMetrics
 import com.evolutiongaming.kafka.flow.metrics.MetricsK
 import com.evolutiongaming.kafka.flow.metrics.MetricsKOf
-import com.evolutiongaming.kafka.flow.metrics.syntax._
+import com.evolutiongaming.kafka.flow.metrics.syntax.*
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabaseMetrics
 
 object PersistenceModuleMetrics {

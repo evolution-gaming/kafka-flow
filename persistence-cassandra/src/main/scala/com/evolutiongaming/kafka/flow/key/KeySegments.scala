@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.key
 
 import cats.Show
 import cats.kernel.{Eq, Order}
-import cats.syntax.all._
+import cats.syntax.all.*
 
 /** A maximum number of segments in Cassandra table.
   *

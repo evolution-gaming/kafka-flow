@@ -4,7 +4,7 @@ import cats.effect.testkit.TestControl
 import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
@@ -17,7 +17,7 @@ import munit.FunSuite
 import scodec.bits.ByteVector
 
 import java.nio.charset.StandardCharsets
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 class AdditionalPersistSpec extends FunSuite {
   import AdditionalPersistSpec.TestFixture

@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.journal
 
-import cats.syntax.option._
-import com.evolutiongaming.kafka.journal._
+import cats.syntax.option.*
+import com.evolutiongaming.kafka.journal.*
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Header, Offset, TimestampAndType, TimestampType, TopicPartition}
 import munit.FunSuite
@@ -11,7 +11,7 @@ import scodec.bits.ByteVector
 import java.time.Instant
 import scala.util.{Failure, Success, Try}
 
-import JournalParserSpec._
+import JournalParserSpec.*
 
 class JournalParserSpec extends FunSuite {
 

@@ -4,10 +4,10 @@ import cats.effect.IO
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.scassandra.CassandraSession
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 class KeySchemaSpec extends CassandraSpec {
-  override def munitTimeout = 2.minutes
+  override def munitTimeout: FiniteDuration = 2.minutes
 
   test("table is created using scassandra session API") {
     val session = cassandra().session

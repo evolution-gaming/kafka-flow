@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.cassandra
 
 import cats.arrow.FunctionK
 import cats.effect.Async
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Monad, MonadThrow}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.kafka.flow.journal.CassandraJournals

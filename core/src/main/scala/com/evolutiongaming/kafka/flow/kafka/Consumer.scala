@@ -3,8 +3,8 @@ package com.evolutiongaming.kafka.flow.kafka
 import cats.MonadThrow
 import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
 import cats.effect.Ref
-import cats.syntax.all._
-import com.evolutiongaming.skafka._
+import cats.syntax.all.*
+import com.evolutiongaming.skafka.*
 import com.evolutiongaming.skafka.consumer.{Consumer => KafkaConsumer, _}
 import scodec.bits.ByteVector
 

@@ -2,11 +2,11 @@ package com.evolutiongaming.kafka.flow.key
 
 import cats.effect.{Ref, Sync}
 import cats.mtl.Stateful
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.LogPrefix
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 

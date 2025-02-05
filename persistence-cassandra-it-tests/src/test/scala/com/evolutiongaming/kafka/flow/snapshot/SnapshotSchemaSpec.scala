@@ -4,7 +4,7 @@ import cats.effect.IO
 import com.evolutiongaming.kafka.flow.CassandraSpec
 import com.evolutiongaming.scassandra.CassandraSession
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 
 class SnapshotSchemaSpec extends CassandraSpec {
   override def munitTimeout: Duration = 2.minutes

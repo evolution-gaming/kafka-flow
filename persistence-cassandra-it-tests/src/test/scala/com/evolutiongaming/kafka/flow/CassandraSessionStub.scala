@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.MonadThrow
 import cats.effect.Ref
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.datastax.driver.core.{Host, PreparedStatement, RegularStatement, ResultSet, Statement}
 import com.evolutiongaming.scassandra.CassandraSession
 

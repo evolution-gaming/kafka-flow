@@ -3,19 +3,19 @@ package com.evolutiongaming.kafka.flow
 import cats.Monad
 import cats.effect.Resource
 import com.evolutiongaming.catshelper.MeasureDuration
-import com.evolutiongaming.kafka.flow.KeyStateMetrics._
-import com.evolutiongaming.kafka.flow.PartitionFlowMetrics._
-import com.evolutiongaming.kafka.flow.TopicFlowMetrics._
-import com.evolutiongaming.kafka.flow.compression.CompressorMetrics._
+import com.evolutiongaming.kafka.flow.KeyStateMetrics.*
+import com.evolutiongaming.kafka.flow.PartitionFlowMetrics.*
+import com.evolutiongaming.kafka.flow.TopicFlowMetrics.*
+import com.evolutiongaming.kafka.flow.compression.CompressorMetrics.*
 import com.evolutiongaming.kafka.flow.journal.JournalDatabase
-import com.evolutiongaming.kafka.flow.journal.JournalDatabaseMetrics._
+import com.evolutiongaming.kafka.flow.journal.JournalDatabaseMetrics.*
 import com.evolutiongaming.kafka.flow.key.KeyDatabase
-import com.evolutiongaming.kafka.flow.key.KeyDatabaseMetrics._
+import com.evolutiongaming.kafka.flow.key.KeyDatabaseMetrics.*
 import com.evolutiongaming.kafka.flow.metrics.{Metrics, MetricsK}
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
 import com.evolutiongaming.kafka.flow.persistence.compression.Compressor
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabase
-import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabaseMetrics._
+import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabaseMetrics.*
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.smetrics.CollectorRegistry
 import scodec.bits.ByteVector

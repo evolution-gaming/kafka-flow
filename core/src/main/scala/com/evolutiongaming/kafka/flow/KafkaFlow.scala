@@ -1,16 +1,16 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.effect.{Concurrent, Resource}
-import cats.effect.implicits._
+import cats.effect.implicits.*
 import cats.effect.kernel.Outcome
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{BracketThrowable, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.random.Random
 import com.evolutiongaming.retry.{OnError, Retry, Sleep, Strategy}
 import com.evolutiongaming.sstream.Stream
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 import scodec.bits.ByteVector
 import com.evolutiongaming.skafka.consumer.ConsumerRecords
 

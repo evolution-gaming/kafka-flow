@@ -1,11 +1,11 @@
 package com.evolutiongaming.kafka.flow.persistence.compression
 
 import cats.MonadThrow
-import cats.syntax.all._
+import cats.syntax.all.*
 import net.jpountz.lz4.LZ4Factory
 import scodec.Attempt
 import scodec.bits.ByteVector
-import scodec.codecs._
+import scodec.codecs.*
 
 import java.nio.ByteBuffer
 

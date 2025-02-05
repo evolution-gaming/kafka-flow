@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.key
 import cats.data.State
 import cats.mtl.Stateful
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.kafka.flow.key.KeysSpec._
+import com.evolutiongaming.kafka.flow.key.KeysSpec.*
 import munit.FunSuite
 
 class KeysSpec extends FunSuite {

@@ -8,7 +8,7 @@ import java.nio.charset.Charset
 import scala.util.Try
 
 class CompressorSpec extends FunSuite {
-  import scodec.codecs._
+  import scodec.codecs.*
 
   implicit val headerToBytes: ToBytes[Try, Header] =
     (h, _) => bool.encode(h.compressed).toTry.map(_.toByteArray)

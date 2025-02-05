@@ -1,9 +1,9 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.Applicative
-import cats.effect.syntax.all._
+import cats.effect.syntax.all.*
 import cats.effect.{Clock, MonadCancel, MonadCancelThrow, Ref}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.kafka.flow.kafka.OffsetToCommit
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.skafka.consumer.ConsumerRecord

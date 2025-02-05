@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Applicative, ApplicativeError, Monad}
 
 /** Given an optional state `S` and an incoming event `E`, produces a resulting optional state `S`. This is the main

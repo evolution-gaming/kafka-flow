@@ -3,8 +3,8 @@ package com.evolutiongaming.kafka.flow
 import cats.Monad
 import cats.effect.Ref
 import cats.mtl.Stateful
-import cats.syntax.all._
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import cats.syntax.all.*
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 
 /** Calls the stateful routine stored inside */

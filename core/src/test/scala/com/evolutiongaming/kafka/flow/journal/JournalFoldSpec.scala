@@ -1,10 +1,10 @@
 package com.evolutiongaming.kafka.flow.journal
 
-import cats.syntax.option._
+import cats.syntax.option.*
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.FoldOption
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
-import com.evolutiongaming.kafka.journal._
+import com.evolutiongaming.kafka.journal.*
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Header, Offset, TimestampAndType, TimestampType, TopicPartition}
 import munit.FunSuite
@@ -13,7 +13,7 @@ import scodec.bits.ByteVector
 import java.time.Instant
 import scala.util.{Success, Try}
 
-import JournalFoldSpec._
+import JournalFoldSpec.*
 
 class JournalFoldSpec extends FunSuite {
 

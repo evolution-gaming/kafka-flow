@@ -2,9 +2,9 @@ package com.evolutiongaming.kafka.flow.timer
 
 import cats.effect.Ref
 import cats.mtl.Stateful
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.{Applicative, Monad}
-import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances._
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 
 import java.time.Instant
 

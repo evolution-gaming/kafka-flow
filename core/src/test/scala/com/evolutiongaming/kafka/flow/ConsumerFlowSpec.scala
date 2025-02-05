@@ -1,11 +1,11 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.{NonEmptyMap, NonEmptySet, StateT}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.LogOf
-import com.evolutiongaming.kafka.flow.ConsumerFlowSpec._
+import com.evolutiongaming.kafka.flow.ConsumerFlowSpec.*
 import com.evolutiongaming.kafka.flow.kafka.Consumer
-import com.evolutiongaming.skafka._
+import com.evolutiongaming.skafka.*
 import com.evolutiongaming.skafka.consumer.{
   ConsumerRecords,
   RebalanceCallback,
@@ -14,7 +14,7 @@ import com.evolutiongaming.skafka.consumer.{
 import munit.FunSuite
 import scodec.bits.ByteVector
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.*
 import scala.util.{Success, Try}
 
 class ConsumerFlowSpec extends FunSuite {

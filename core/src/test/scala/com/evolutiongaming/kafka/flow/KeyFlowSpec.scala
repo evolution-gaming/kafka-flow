@@ -1,11 +1,11 @@
 package com.evolutiongaming.kafka.flow
 
 import cats.data.NonEmptyList
-import cats.effect.syntax.resource._
+import cats.effect.syntax.resource.*
 import cats.effect.{Ref, SyncIO}
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.kafka.flow.KeyFlowSpec._
+import com.evolutiongaming.kafka.flow.KeyFlowSpec.*
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -39,7 +39,7 @@ class KeyFlowSpec extends FunSuite {
       def replaceState(state: State) = SyncIO.unit
       def delete                     = SyncIO.unit
       def flush                      = SyncIO.unit
-      def read                       = SyncIO.pure(Some((Offset.min, 0)))
+      def read                       = SyncIO.pure((Offset.min, 0).some)
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
     val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
@@ -77,7 +77,7 @@ class KeyFlowSpec extends FunSuite {
       def replaceState(state: State)                             = SyncIO.unit
       def delete                                                 = deleteCalled.set(true)
       def flush                                                  = SyncIO.unit
-      def read                                                   = SyncIO.pure(Some((Offset.min, 0)))
+      def read                                                   = SyncIO.pure((Offset.min, 0).some)
     }
     // And("fold that never completes")
     val fold = FoldOption.set[SyncIO, State, ConsumerRecord[String, ByteVector]] {
@@ -128,7 +128,7 @@ class KeyFlowSpec extends FunSuite {
       def replaceState(state: State)                             = SyncIO.unit
       def delete                                                 = deleteCalled.set(true)
       def flush                                                  = SyncIO.unit
-      def read                                                   = SyncIO.pure(Some((Offset.min, 0)))
+      def read                                                   = SyncIO.pure((Offset.min, 0).some)
     }
     // And("fold that completes immediately")
     val fold        = FoldOption.empty[SyncIO, State, ConsumerRecord[String, ByteVector]]
@@ -187,7 +187,7 @@ class KeyFlowSpec extends FunSuite {
       def replaceState(state: State) = SyncIO.unit
       def delete                     = SyncIO.unit
       def flush                      = SyncIO.unit
-      def read                       = SyncIO.pure(Some(Offset.unsafe(1) -> 1))
+      def read                       = SyncIO.pure((Offset.unsafe(1) -> 1).some)
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 

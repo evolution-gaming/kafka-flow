@@ -2,11 +2,11 @@ package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.data.State
 import cats.mtl.Stateful
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
-import com.evolutiongaming.kafka.flow.MonadStateHelper._
+import com.evolutiongaming.kafka.flow.MonadStateHelper.*
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
-import com.evolutiongaming.kafka.flow.snapshot.SnapshotsSpec._
+import com.evolutiongaming.kafka.flow.snapshot.SnapshotsSpec.*
 import com.evolutiongaming.skafka.Offset
 import monocle.macros.GenLens
 import munit.FunSuite
@@ -147,7 +147,7 @@ object SnapshotsSpec {
 
   implicit val log: Log[F] = Log.empty[F]
 
-  implicit val withOffset: ToOffset[S] = Offset.unsafe
+  implicit val withOffset: ToOffset[S] = Offset.unsafe(_)
 
   trait SnapshotDatabaseWithPersistCount extends SnapshotDatabase[F, K, S] {
     def persistsCounted: Int

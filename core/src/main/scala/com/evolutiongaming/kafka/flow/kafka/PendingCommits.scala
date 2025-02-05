@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.kafka
 
-import cats.syntax.all._
+import cats.syntax.all.*
 import cats.data.NonEmptySet
 import cats.effect.Ref
 import com.evolutiongaming.skafka.{OffsetAndMetadata, Partition, TopicPartition}

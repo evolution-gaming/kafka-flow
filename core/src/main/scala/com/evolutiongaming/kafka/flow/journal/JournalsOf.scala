@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.journal
 
 import cats.effect.Sync
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 

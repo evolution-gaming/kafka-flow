@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.registry
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow._
+import com.evolutiongaming.kafka.flow.*
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf

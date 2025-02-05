@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.persistence
 import cats.Applicative
 import cats.Monad
 import cats.effect.Resource
-import cats.syntax.all._
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.FoldOption
 import com.evolutiongaming.kafka.flow.journal.Journals
