@@ -56,15 +56,14 @@ Saying that, the library is written and prepared for, so called, Tagless Final
 style of programming. One does not have to use `IO` directly. Actually, the
 main "dog food" application is written in Tagless Final style.
 ```scala mdoc:silent
-import cats.effect.{IO, MonadCancelThrow}
+import cats.effect.IO
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.catshelper.MeasureDuration
 
-implicit val MT = MonadCancelThrow[IO]
-implicit val measureDuration = MeasureDuration.empty[IO]
-implicit val logOf = LogOf.empty[IO]
-implicit val log = Log.empty[IO]
+implicit val measureDuration: MeasureDuration[IO] = MeasureDuration.empty[IO]
+implicit val logOf: LogOf[IO] = LogOf.empty[IO]
+implicit val log: Log[IO] = Log.empty[IO]
 ```
 
 ## KafkaFlow
