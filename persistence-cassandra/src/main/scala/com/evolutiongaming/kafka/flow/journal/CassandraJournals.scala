@@ -11,8 +11,6 @@ import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs.*
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.kafka.flow.journal.conversions.{HeaderToTuple, TupleToHeader}
-import com.evolutiongaming.kafka.journal.FromAttempt
-import com.evolutiongaming.kafka.journal.util.Fail
 import com.evolutiongaming.scassandra
 import com.evolutiongaming.scassandra.StreamingCassandraSession.*
 import com.evolutiongaming.scassandra.syntax.*
@@ -56,11 +54,6 @@ class CassandraJournals[F[_]: Async](
 
 }
 object CassandraJournals {
-  implicit def fromAttempt[F[_]: MonadThrow]: FromAttempt[F] = {
-    implicit val evidence = Fail.lift[F]
-    FromAttempt.lift[F]
-  }
-
   def withSchema[F[_]: Async](
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F],

@@ -1,10 +1,11 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.ApplicativeThrow
 import cats.data.NonEmptyList
 import cats.effect.unsafe.IORuntime
 import cats.effect.{Deferred, IO, Ref, Resource}
 import cats.syntax.all.*
-import cats.{Functor, Monad}
+import com.evolution.playjson.jsoniter.PlayJsonJsoniter
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec.*
 import com.evolutiongaming.kafka.flow.kafka.KafkaModule
@@ -18,19 +19,20 @@ import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersis
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
-import com.evolutiongaming.kafka.journal.{FromJsResult, JsonCodec}
 import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf, ConsumerRecord}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf, ProducerRecord, RecordMetadata}
 import com.evolutiongaming.skafka.{Bytes, CommonConfig, Partition}
 import org.apache.kafka.clients.admin.{AdminClient, AdminClientConfig, NewTopic}
-import play.api.libs.json.{Json, OFormat, OWrites, Reads}
+import play.api.libs.json.{JsResultException, Json, OFormat}
 import scodec.bits.ByteVector
 
+import java.nio.charset.StandardCharsets
 import java.util.Properties
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.*
 import scala.jdk.CollectionConverters.*
+import scala.util.{Failure, Success, Try}
 
 /*
  Using embedded/real kafka:
@@ -99,8 +101,6 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
    * - oh actually it's not a Resource.release, as we're using the state store within scope of the Resource
    */
   private def kafkaPersistenceModuleOf: Resource[IO, KafkaPersistenceModuleOf[IO, State]] = {
-    import Boilerplate.*
-
     val stateTopic = "state-topic-StatefulProcessingWithKafkaSpec"
 
     ProducerOf
@@ -303,35 +303,47 @@ object StatefulProcessingWithKafkaSpec {
      - reliable kafka producer with acks=all, idempotence=true
    */
 
-  object Boilerplate {
-    implicit val jsonCodec: JsonCodec[IO] = JsonCodec.default[IO]
-
-    implicit def fromWrites[F[_], A](
-      implicit writes: OWrites[A],
-      encode: JsonCodec.Encode[F]
-    ): com.evolutiongaming.kafka.journal.ToBytes[F, A] = com.evolutiongaming.kafka.journal.ToBytes.fromWrites
-
-    implicit def fromReads[F[_]: Monad: FromJsResult, A <: Product](
-      implicit writes: Reads[A],
-      decode: JsonCodec.Decode[F]
-    ): com.evolutiongaming.kafka.journal.FromBytes[F, A] = com.evolutiongaming.kafka.journal.FromBytes.fromReads
-
-    implicit def toBytesBridge[F[_]: Functor, A](
-      implicit toBytes: com.evolutiongaming.kafka.journal.ToBytes[F, A]
-    ): com.evolutiongaming.skafka.ToBytes[F, A] =
-      (a: A, _) => toBytes(a).map(_.toArray)
-
-    implicit def fromBytesBridge[F[_], A](
-      implicit fromBytes: com.evolutiongaming.kafka.journal.FromBytes[F, A]
-    ): com.evolutiongaming.skafka.FromBytes[F, A] =
-      (bytes: Bytes, _) => fromBytes(ByteVector(bytes))
-  }
-
   final case class Input(n: Int)
 
   final case class State(n: Int)
   object State {
     implicit val StateFormat: OFormat[State] = Json.format[State]
+
+    // Implementations for both toBytes and fromBytes are copied from kafka-journal by inlining some intermediate KJ's
+    // typeclass implementations to make the test closer to how it's going to be used in production.
+    implicit def fromBytes[F[_]: ApplicativeThrow]: com.evolutiongaming.skafka.FromBytes[F, State] =
+      (bytes: Bytes, _) => {
+        val toJsValue = PlayJsonJsoniter.deserialize(bytes).handleErrorWith {
+          case e =>
+            Try(Json.parse(bytes)).adaptErr { _ =>
+              val str =
+                ByteVector.view(bytes).decodeString(StandardCharsets.UTF_8).getOrElse(new String(bytes))
+              new RuntimeException(s"Failed to parse $str: $e", e)
+            }
+        }
+
+        ApplicativeThrow[F].fromTry(
+          toJsValue.flatMap(jsValue =>
+            StateFormat
+              .reads(jsValue)
+              .fold(
+                err => Failure(new RuntimeException(s"FromJsResult failed: $err", JsResultException(err))),
+                Success(_)
+              )
+          )
+        )
+      }
+
+    implicit def toBytes[F[_]: ApplicativeThrow]: com.evolutiongaming.skafka.ToBytes[F, State] = (state, _) => {
+      val jsValue = StateFormat.writes(state)
+      val bytes = Try(PlayJsonJsoniter.serialize(jsValue)).handleErrorWith { e =>
+        Try(Json.toBytes(jsValue)).adaptErr { _ =>
+          new RuntimeException(s"ToJsResult failed for $state: $e", e)
+        }
+      }
+
+      ApplicativeThrow[F].fromTry(bytes)
+    }
   }
 
   final case class Output(key: String, stateBeforeInput: Option[State], input: Input)

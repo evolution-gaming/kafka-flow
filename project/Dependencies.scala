@@ -9,6 +9,10 @@ object Dependencies {
   val skafka            = "com.evolutiongaming" %% "skafka"              % "17.1.3"
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.0.2"
   val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.3.0"
+  val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "3.0.0"
+  val random            = "com.evolutiongaming" %% "random"              % "1.0.0"
+  val retry             = "com.evolutiongaming" %% "retry"               % "3.0.1"
+  val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.1.1"
 
   object Cats {
     private val version       = "2.13.0"
@@ -19,11 +23,15 @@ object Dependencies {
     val effectTestkit         = "org.typelevel" %% "cats-effect-testkit" % effectVersion
   }
 
+  object Scodec {
+    val core = "org.scodec" %% "scodec-core" % "1.11.7"
+    val bits = "org.scodec" %% "scodec-bits" % "1.1.20"
+  }
+
   object KafkaJournal {
     private val version = "4.1.7"
-    val journal         = "com.evolutiongaming" %% "kafka-journal"                    % version
-    val cassandra       = "com.evolutiongaming" %% "kafka-journal-eventual-cassandra" % version
-    val persistence     = "com.evolutiongaming" %% "kafka-journal-persistence"        % version
+    val journal         = "com.evolutiongaming" %% "kafka-journal"             % version
+    val persistence     = "com.evolutiongaming" %% "kafka-journal-persistence" % version
   }
 
   object Monocle {
