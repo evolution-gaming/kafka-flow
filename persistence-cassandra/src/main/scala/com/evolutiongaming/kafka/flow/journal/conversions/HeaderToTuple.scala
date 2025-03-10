@@ -7,7 +7,7 @@ import scodec.bits.ByteVector
 import scodec.codecs
 
 object HeaderToTuple {
-  
+
   def convert[F[_]: ApplicativeThrow](header: Header): F[(String, String)] = {
     codecs
       .utf8
