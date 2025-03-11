@@ -26,7 +26,7 @@ abstract class ForAllKafkaSuite extends FunSuite with TestContainersFixtures {
     override def beforeAll(): Unit = {
       val config =
         ConsumerConfig(common = CommonConfig(bootstrapServers = NonEmptyList.one(kafka.container.bootstrapServers)))
-      implicit val logOf = LogOf.slf4j[IO].unsafeRunSync()
+      implicit val logOf: LogOf[IO] = LogOf.slf4j[IO].unsafeRunSync()
       val result = KafkaModule.of[IO]("KafkaSuite", config, CollectorRegistry.empty[IO]).allocated.unsafeRunSync()
       moduleRef.set(result)
     }

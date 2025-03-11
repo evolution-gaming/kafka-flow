@@ -4,14 +4,17 @@ ThisBuild / versionScheme := Some("early-semver")
 ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
 
+lazy val Scala3Version = "3.3.5"
+lazy val Scala2Version = "2.13.16"
+
 lazy val commonSettings = Seq(
   organization := "com.evolutiongaming",
-  homepage := Some(new URL("https://github.com/evolution-gaming/kafka-flow")),
+  homepage := Some(url("https://github.com/evolution-gaming/kafka-flow")),
   startYear := Some(2019),
   organizationName := "Evolution Gaming",
   organizationHomepage := Some(url("https://evolution.com/")),
   publishTo := Some(Resolver.evolutionReleases),
-  scalaVersion := "2.13.16",
+  scalaVersion := Scala2Version,
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   testFrameworks += new TestFramework("munit.Framework"),
   testOptions += Tests.Argument(new TestFramework("munit.Framework"), "+l"),
@@ -20,9 +23,25 @@ lazy val commonSettings = Seq(
   libraryDependencySchemes ++= Seq(
     "org.scala-lang.modules" %% "scala-java8-compat" % "always"
   ),
-  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.3" cross CrossVersion.full),
-  scalacOptions ++= Seq("-Xsource:3"),
+  libraryDependencies ++= crossSettings(
+    scalaVersion.value,
+    if3 = Nil,
+    if2 = List(compilerPlugin("org.typelevel" %% "kind-projector" % "0.13.3" cross CrossVersion.full)),
+  ),
+  scalacOptions ++= crossSettings(
+    scalaVersion.value,
+    if3 = List("-Ykind-projector", "-language:implicitConversions", "-explain", "-deprecation"),
+    if2 = List("-Xsource:3")
+  ),
+  crossScalaVersions := Seq(Scala2Version, Scala3Version)
 )
+
+def crossSettings[T](scalaVersion: String, if3: List[T], if2: List[T]) =
+  CrossVersion.partialVersion(scalaVersion) match {
+    case Some((3, _))       => if3
+    case Some((2, 12 | 13)) => if2
+    case _                  => Nil
+  }
 
 lazy val root = (project in file("."))
   .aggregate(
@@ -38,7 +57,8 @@ lazy val root = (project in file("."))
   .settings(commonSettings)
   .settings(
     name := "kafka-flow",
-    publish / skip := true
+    publish / skip := true,
+    crossScalaVersions := Nil,
   )
 
 lazy val core = (project in file("core"))
@@ -58,10 +78,14 @@ lazy val core = (project in file("core"))
       sstream,
       random,
       retry,
-      Scodec.core,
       Scodec.bits,
       Testing.munit % Test,
     ),
+    libraryDependencies ++= crossSettings(
+      scalaVersion.value,
+      if3 = List(Scodec.coreScala3),
+      if2 = List(Scodec.coreScala213)
+    )
   )
 
 lazy val `core-it-tests` = (project in file("core-it-tests"))
@@ -98,6 +122,11 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
       scassandra,
       cassandraSync,
     ),
+    libraryDependencies ++= crossSettings(
+      scalaVersion.value,
+      if3 = List(PureConfig.GenericScala3),
+      if2 = Nil,
+    )
   )
 
 lazy val `persistence-cassandra-it-tests` = (project in file("persistence-cassandra-it-tests"))
@@ -146,7 +175,8 @@ lazy val journal = (project in file("kafka-journal"))
       KafkaJournal.journal,
       KafkaJournal.persistence,
       Testing.munit % Test,
-    )
+    ),
+    crossScalaVersions := Seq(Scala2Version),
   )
 
 lazy val docs = (project in file("kafka-flow-docs"))

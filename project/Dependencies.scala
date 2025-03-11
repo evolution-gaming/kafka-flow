@@ -9,9 +9,9 @@ object Dependencies {
   val skafka            = "com.evolutiongaming" %% "skafka"              % "17.1.3"
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.0.2"
   val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.3.0"
-  val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "3.0.0"
-  val random            = "com.evolutiongaming" %% "random"              % "1.0.0"
-  val retry             = "com.evolutiongaming" %% "retry"               % "3.0.1"
+  val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "3.1.0"
+  val random            = "com.evolution"       %% "random"              % "1.0.5"
+  val retry             = "com.evolutiongaming" %% "retry"               % "3.1.0"
   val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.1.1"
 
   object Cats {
@@ -24,8 +24,9 @@ object Dependencies {
   }
 
   object Scodec {
-    val core = "org.scodec" %% "scodec-core" % "1.11.7"
-    val bits = "org.scodec" %% "scodec-bits" % "1.1.20"
+    val coreScala213 = "org.scodec" %% "scodec-core" % "1.11.10"
+    val coreScala3   = "org.scodec" %% "scodec-core" % "2.3.2"
+    val bits         = "org.scodec" %% "scodec-bits" % "1.2.1"
   }
 
   object KafkaJournal {
@@ -38,6 +39,11 @@ object Dependencies {
     private val version = "3.3.0"
     val core            = "dev.optics" %% "monocle-core"  % version
     val `macro`         = "dev.optics" %% "monocle-macro" % version
+  }
+
+  object PureConfig {
+    private val version = "0.17.8"
+    lazy val GenericScala3 = "com.github.pureconfig" %% "pureconfig-generic-scala3" % version
   }
 
   object Testing {

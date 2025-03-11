@@ -22,7 +22,7 @@ abstract class CassandraSpec extends FunSuite {
     override def apply(): CassandraModule[IO] = moduleRef.get()._1
 
     override def beforeAll(): Unit = {
-      implicit val logOf = LogOf.slf4j[IO].unsafeRunSync()
+      implicit val logOf: LogOf[IO] = LogOf.slf4j[IO].unsafeRunSync()
 
       val container = CassandraContainerResource.cassandra.cassandraContainer
       val result: (CassandraModule[IO], IO[Unit]) =

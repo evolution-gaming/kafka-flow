@@ -19,7 +19,6 @@ import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabaseMetrics.*
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.smetrics.CollectorRegistry
 import scodec.bits.ByteVector
-import scala.annotation.nowarn
 
 trait FlowMetrics[F[_]] {
 
@@ -40,7 +39,6 @@ object FlowMetrics {
 
   def apply[F[_]](implicit F: FlowMetrics[F]): FlowMetrics[F] = F
 
-  @nowarn("cat=unused") // for some reason compiler thinks that `persistentModule` is unused
   def of[F[_]: Monad: MeasureDuration](registry: CollectorRegistry[F]): Resource[F, FlowMetrics[F]] = for {
     keyDatabase      <- keyDatabaseMetricsOf[F].apply(registry)
     journalDatabase  <- journalDatabaseMetricsOf[F].apply(registry)

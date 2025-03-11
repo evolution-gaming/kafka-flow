@@ -15,7 +15,7 @@ import munit.FunSuite
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.*
-import scala.util.{Success, Try}
+import scala.util.Try
 
 class ConsumerFlowSpec extends FunSuite {
 
@@ -29,7 +29,7 @@ class ConsumerFlowSpec extends FunSuite {
       Command.Records()
     )
 
-    val Success(result) = ConstFixture.app(topic).runS(Context(commands = commands))
+    val result = ConstFixture.app(topic).runS(Context(commands = commands)).get
 
     assertEquals(
       result.actions.reverse,
@@ -64,7 +64,7 @@ class ConsumerFlowSpec extends FunSuite {
       Command.Records()
     )
 
-    val Success(result) = ConstFixture.app(topic1, topic2).runS(Context(commands = commands))
+    val result = ConstFixture.app(topic1, topic2).runS(Context(commands = commands)).get
 
     assertEquals(
       result.actions.reverse,

@@ -572,7 +572,7 @@ object TimerFlowSpec {
   )
 
   object Context {
-    val lens: GenLens[Context] = GenLens[Context]
+    val lens = GenLens[Context]
   }
 
   class ConstFixture {
