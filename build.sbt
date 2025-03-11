@@ -32,7 +32,8 @@ lazy val root = (project in file("."))
     `persistence-cassandra-it-tests`,
     `persistence-kafka`,
     `persistence-kafka-it-tests`,
-    metrics
+    metrics,
+    journal,
   )
   .settings(commonSettings)
   .settings(
@@ -49,14 +50,16 @@ lazy val core = (project in file("core"))
       Cats.mtl,
       Cats.effect,
       Cats.effectTestkit % Test,
-      KafkaJournal.journal,
-      KafkaJournal.persistence,
-      Monocle.`macro` % Test,
-      Monocle.core    % Test,
+      Monocle.`macro`    % Test,
+      Monocle.core       % Test,
       catsHelper,
       scache,
       skafka,
       sstream,
+      random,
+      retry,
+      Scodec.core,
+      Scodec.bits,
       Testing.munit % Test,
     ),
   )
@@ -92,8 +95,8 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
   .settings(
     name := "kafka-flow-persistence-cassandra",
     libraryDependencies ++= Seq(
-      KafkaJournal.cassandra,
       scassandra,
+      cassandraSync,
     ),
   )
 
@@ -125,12 +128,25 @@ lazy val `persistence-kafka-it-tests` = (project in file("persistence-kafka-it-t
     name := "kafka-flow-persistence-kafka-it-tests",
     libraryDependencies ++= Seq(
       catsHelperLogback            % Test,
+      playJsonJsoniter             % Test,
       Testing.munit                % Test,
       Testing.Testcontainers.kafka % Test,
       Testing.Testcontainers.munit % Test,
     ),
     Test / fork := true,
     publish / skip := true,
+  )
+
+lazy val journal = (project in file("kafka-journal"))
+  .dependsOn(core)
+  .settings(commonSettings)
+  .settings(
+    name := "kafka-flow-kafka-journal",
+    libraryDependencies ++= Seq(
+      KafkaJournal.journal,
+      KafkaJournal.persistence,
+      Testing.munit % Test,
+    )
   )
 
 lazy val docs = (project in file("kafka-flow-docs"))
