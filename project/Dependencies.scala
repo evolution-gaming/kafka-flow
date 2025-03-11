@@ -9,10 +9,11 @@ object Dependencies {
   val skafka            = "com.evolutiongaming" %% "skafka"              % "17.1.3"
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.0.2"
   val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.3.0"
-  val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "3.0.0"
-  val random            = "com.evolutiongaming" %% "random"              % "1.0.0"
-  val retry             = "com.evolutiongaming" %% "retry"               % "3.0.1"
+  val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "3.1.0"
+  val random            = "com.evolution"       %% "random"              % "1.0.5"
+  val retry             = "com.evolutiongaming" %% "retry"               % "3.1.0"
   val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.1.1"
+  val `kind-projector`  = "org.typelevel"       %% "kind-projector"      % "0.13.3"
 
   object Cats {
     private val version       = "2.13.0"
@@ -24,8 +25,10 @@ object Dependencies {
   }
 
   object Scodec {
-    val core = "org.scodec" %% "scodec-core" % "1.11.7"
-    val bits = "org.scodec" %% "scodec-bits" % "1.1.20"
+    val coreScala3 = "org.scodec" %% "scodec-core" % "2.3.2"
+    val coreScala2 = "org.scodec" %% "scodec-core" % "1.11.10"
+
+    val bits = "org.scodec" %% "scodec-bits" % "1.2.1"
   }
 
   object KafkaJournal {

@@ -4,6 +4,16 @@ ThisBuild / versionScheme := Some("early-semver")
 ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
 
+lazy val Scala3Version = "3.3.5"
+lazy val Scala2Version = "2.13.16"
+
+def crossSettings[T](scalaVersion: String, if3: List[T], if2: List[T]) =
+  CrossVersion.partialVersion(scalaVersion) match {
+    case Some((3, _))       => if3
+    case Some((2, 12 | 13)) => if2
+    case _                  => Nil
+  }
+
 lazy val commonSettings = Seq(
   organization := "com.evolutiongaming",
   homepage := Some(new URL("https://github.com/evolution-gaming/kafka-flow")),
@@ -11,7 +21,6 @@ lazy val commonSettings = Seq(
   organizationName := "Evolution Gaming",
   organizationHomepage := Some(url("https://evolution.com/")),
   publishTo := Some(Resolver.evolutionReleases),
-  scalaVersion := "2.13.16",
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   testFrameworks += new TestFramework("munit.Framework"),
   testOptions += Tests.Argument(new TestFramework("munit.Framework"), "+l"),
@@ -20,9 +29,32 @@ lazy val commonSettings = Seq(
   libraryDependencySchemes ++= Seq(
     "org.scala-lang.modules" %% "scala-java8-compat" % "always"
   ),
-  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.13.3" cross CrossVersion.full),
-  scalacOptions ++= Seq("-Xsource:3"),
 )
+
+lazy val commonCrossSettings = 
+  commonSettings ++
+  Seq(
+    crossScalaVersions := Seq(Scala2Version, Scala3Version),
+    scalaVersion := crossScalaVersions.value.head,
+    scalacOptions ++= crossSettings(
+      scalaVersion.value,
+      if3 = List("-Ykind-projector", "-language:implicitConversions", "-explain", "-deprecation"),
+      if2 = List("-Xsource:3"),
+    ),
+    libraryDependencies ++= crossSettings(
+      scalaVersion.value,
+      if3 = Nil,
+      if2 = List(compilerPlugin(`kind-projector` cross CrossVersion.full))
+    ),
+  )
+
+lazy val commonScala2OnlySettings = 
+  commonSettings ++ 
+  Seq(
+    scalaVersion := Scala2Version,
+    scalacOptions ++= Seq("-Xsource:3"),
+    libraryDependencies += compilerPlugin(`kind-projector` cross CrossVersion.full),
+  )
 
 lazy val root = (project in file("."))
   .aggregate(
@@ -35,16 +67,21 @@ lazy val root = (project in file("."))
     metrics,
     journal,
   )
-  .settings(commonSettings)
   .settings(
     name := "kafka-flow",
     publish / skip := true
   )
 
 lazy val core = (project in file("core"))
-  .settings(commonSettings)
+  .settings(commonCrossSettings)
   .settings(
     name := "kafka-flow",
+    libraryDependencies ++=
+      crossSettings(
+        scalaVersion.value,
+        if3 = List(Scodec.coreScala3),
+        if2 = List(Scodec.coreScala2),
+      ),
     libraryDependencies ++= Seq(
       Cats.core,
       Cats.mtl,
@@ -58,7 +95,6 @@ lazy val core = (project in file("core"))
       sstream,
       random,
       retry,
-      Scodec.core,
       Scodec.bits,
       Testing.munit % Test,
     ),
@@ -66,7 +102,7 @@ lazy val core = (project in file("core"))
 
 lazy val `core-it-tests` = (project in file("core-it-tests"))
   .dependsOn(core)
-  .settings(commonSettings)
+  .settings(commonCrossSettings)
   .settings(
     name := "kafka-flow-core-it-tests",
     libraryDependencies ++= Seq(
@@ -80,7 +116,7 @@ lazy val `core-it-tests` = (project in file("core-it-tests"))
 
 lazy val metrics = (project in file("metrics"))
   .dependsOn(core)
-  .settings(commonSettings)
+  .settings(commonCrossSettings)
   .settings(
     name := "kafka-flow-metrics",
     libraryDependencies ++= Seq(
@@ -91,7 +127,7 @@ lazy val metrics = (project in file("metrics"))
 
 lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
   .dependsOn(core)
-  .settings(commonSettings)
+  .settings(commonCrossSettings)
   .settings(
     name := "kafka-flow-persistence-cassandra",
     libraryDependencies ++= Seq(
@@ -102,7 +138,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
 
 lazy val `persistence-cassandra-it-tests` = (project in file("persistence-cassandra-it-tests"))
   .dependsOn(`persistence-cassandra`)
-  .settings(commonSettings)
+  .settings(commonCrossSettings)
   .settings(
     name := "kafka-flow-persistence-cassandra-it-tests",
     libraryDependencies ++= Seq(
@@ -116,14 +152,14 @@ lazy val `persistence-cassandra-it-tests` = (project in file("persistence-cassan
 
 lazy val `persistence-kafka` = (project in file("persistence-kafka"))
   .dependsOn(core, metrics)
-  .settings(commonSettings)
+  .settings(commonCrossSettings)
   .settings(
     name := "kafka-flow-persistence-kafka",
   )
 
 lazy val `persistence-kafka-it-tests` = (project in file("persistence-kafka-it-tests"))
   .dependsOn(`persistence-kafka`)
-  .settings(commonSettings)
+  .settings(commonCrossSettings)
   .settings(
     name := "kafka-flow-persistence-kafka-it-tests",
     libraryDependencies ++= Seq(
@@ -139,7 +175,7 @@ lazy val `persistence-kafka-it-tests` = (project in file("persistence-kafka-it-t
 
 lazy val journal = (project in file("kafka-journal"))
   .dependsOn(core)
-  .settings(commonSettings)
+  .settings(commonScala2OnlySettings)
   .settings(
     name := "kafka-flow-kafka-journal",
     libraryDependencies ++= Seq(
@@ -151,7 +187,7 @@ lazy val journal = (project in file("kafka-journal"))
 
 lazy val docs = (project in file("kafka-flow-docs"))
   .dependsOn(core, `persistence-cassandra`, `persistence-kafka`, metrics)
-  .settings(commonSettings)
+  .settings(commonCrossSettings)
   .enablePlugins(MdocPlugin, DocusaurusPlugin)
   .settings(scalacOptions -= "-Xfatal-warnings")
 
