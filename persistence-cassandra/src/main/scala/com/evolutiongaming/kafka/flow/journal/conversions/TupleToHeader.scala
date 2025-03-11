@@ -15,7 +15,7 @@ object TupleToHeader {
         err =>
           new RuntimeException(s"TupleToHeader failed for $key:$value: scodec error: ${err.messageWithContext}")
             .raiseError[F, Header],
-        bitVector => Header(key, bitVector.toByteVector.toArray).pure[F]
+        bitVector => Header(key, bitVector.toByteArray).pure[F]
       )
   }
 }
