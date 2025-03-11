@@ -33,13 +33,13 @@ jobs:
 
     - name: Run tests ${{ matrix.scala }}
       if: success() 
-      run: sbt ++${{ matrix.scala }} clean coverage test docs/mdoc versionPolicyCheck
+      run: sbt clean coverage "++${{ matrix.scala }} test" docs/mdoc "++${{ matrix.scala }} versionPolicyCheck"
 
     - name: Report test coverage
       if: success() && github.repository == 'evolution-gaming/kafka-flow'
       env:
         COVERALLS_REPO_TOKEN: ${{ secrets.COVERALLS_REPO_TOKEN }}
-      run: sbt ++${{ matrix.scala }} coverageReport coverageAggregate coveralls
+      run: sbt "++${{ matrix.scala }} coverageReport" coverageAggregate coveralls
 
     - name: Publish documentation / Setup Node
       if: success() 

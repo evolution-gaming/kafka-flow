@@ -14,7 +14,8 @@ lazy val commonSettings = Seq(
   organizationName := "Evolution Gaming",
   organizationHomepage := Some(url("https://evolution.com/")),
   publishTo := Some(Resolver.evolutionReleases),
-  scalaVersion := Scala2Version,
+  crossScalaVersions := Seq(Scala2Version, Scala3Version),
+  scalaVersion := crossScalaVersions.value.head,
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   testFrameworks += new TestFramework("munit.Framework"),
   testOptions += Tests.Argument(new TestFramework("munit.Framework"), "+l"),
@@ -33,7 +34,6 @@ lazy val commonSettings = Seq(
     if3 = List("-Ykind-projector", "-language:implicitConversions", "-explain", "-deprecation"),
     if2 = List("-Xsource:3")
   ),
-  crossScalaVersions := Seq(Scala2Version, Scala3Version)
 )
 
 def crossSettings[T](scalaVersion: String, if3: List[T], if2: List[T]) =
@@ -59,6 +59,7 @@ lazy val root = (project in file("."))
     name := "kafka-flow",
     publish / skip := true,
     crossScalaVersions := Nil,
+    scalaVersion := Scala2Version,
   )
 
 lazy val core = (project in file("core"))
@@ -85,7 +86,7 @@ lazy val core = (project in file("core"))
       scalaVersion.value,
       if3 = List(Scodec.coreScala3),
       if2 = List(Scodec.coreScala213)
-    )
+    ),
   )
 
 lazy val `core-it-tests` = (project in file("core-it-tests"))
@@ -110,7 +111,7 @@ lazy val metrics = (project in file("metrics"))
     libraryDependencies ++= Seq(
       smetrics,
       Testing.munit % Test,
-    )
+    ),
   )
 
 lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
@@ -126,7 +127,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
       scalaVersion.value,
       if3 = List(PureConfig.GenericScala3),
       if2 = Nil,
-    )
+    ),
   )
 
 lazy val `persistence-cassandra-it-tests` = (project in file("persistence-cassandra-it-tests"))
@@ -176,13 +177,15 @@ lazy val journal = (project in file("kafka-journal"))
       KafkaJournal.persistence,
       Testing.munit % Test,
     ),
-    crossScalaVersions := Seq(Scala2Version),
   )
+  .settings(crossScalaVersions -= Scala3Version)
 
 lazy val docs = (project in file("kafka-flow-docs"))
   .dependsOn(core, `persistence-cassandra`, `persistence-kafka`, metrics)
   .settings(commonSettings)
   .enablePlugins(MdocPlugin, DocusaurusPlugin)
-  .settings(scalacOptions -= "-Xfatal-warnings")
+  .settings(
+    scalacOptions -= "-Xfatal-warnings",
+  )
 
 addCommandAlias("check", "versionPolicyCheck")
