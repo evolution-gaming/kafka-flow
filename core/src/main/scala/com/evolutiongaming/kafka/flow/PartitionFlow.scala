@@ -234,7 +234,7 @@ object PartitionFlow {
         case (_, Right(value)) => value.context.holding
         case (key, Left(_)) =>
           log.error(s"trying to compute offset to commit but value for key $key is not ready").as(none[Offset])
-      })
+      }(using pickMinOffset))
     }
 
     def offsetToCommit(getMinOffset: F[Option[Offset]]): F[Option[Offset]] = for {
@@ -249,7 +249,7 @@ object PartitionFlow {
 
       allowedOffset = minimumOffset getOrElse maximumOffset
 
-      // we move forward if minimum offset became larger or it is empty,
+      // we move forward if minimum offset became larger, or it is empty,
       // i.e. if we dealt with all the states, and there is nothing holding
       // us from moving forward
       committedOffsetValue <- committedOffset.get
@@ -338,14 +338,13 @@ object PartitionFlow {
 
   }
 
-  private[this] implicit val pickMinOffset: CommutativeMonoid[Option[Offset]] =
-    CommutativeMonoid.instance[Option[Offset]](
-      none[Offset],
-      (x, y) =>
-        (x, y) match {
-          case (Some(x), Some(y)) => Some(x min y)
-          case (x @ Some(_), _)   => x
-          case (_, y)             => y
-        }
-    )
+  private[this] val pickMinOffset = CommutativeMonoid.instance[Option[Offset]](
+    none[Offset],
+    (x, y) =>
+      (x, y) match {
+        case (Some(x), Some(y)) => Some(x min y)
+        case (x @ Some(_), _)   => x
+        case (_, y)             => y
+      }
+  )
 }
