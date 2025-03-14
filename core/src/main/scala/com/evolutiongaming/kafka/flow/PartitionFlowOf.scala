@@ -7,6 +7,9 @@ import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
 
+/**
+  * Factory of PartitionFlows
+  */
 trait PartitionFlowOf[F[_]] {
 
   /** Creates partition record handler for assigned partition */
