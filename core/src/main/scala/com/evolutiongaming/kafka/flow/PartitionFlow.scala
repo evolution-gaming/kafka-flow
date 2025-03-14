@@ -234,7 +234,7 @@ object PartitionFlow {
         case (_, Right(value)) => value.context.holding
         case (key, Left(_)) =>
           log.error(s"trying to compute offset to commit but value for key $key is not ready").as(none[Offset])
-      }(pickMinOffset))
+      }(using pickMinOffset))
     }
 
     def offsetToCommit(getMinOffset: F[Option[Offset]]): F[Option[Offset]] = for {
@@ -249,7 +249,7 @@ object PartitionFlow {
 
       allowedOffset = minimumOffset getOrElse maximumOffset
 
-      // we move forward if minimum offset became larger or it is empty,
+      // we move forward if minimum offset became larger, or it is empty,
       // i.e. if we dealt with all the states, and there is nothing holding
       // us from moving forward
       committedOffsetValue <- committedOffset.get

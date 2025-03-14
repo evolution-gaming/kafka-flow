@@ -11,7 +11,7 @@ private[compression] object HeaderAndPayload {
   private val codec = variableSizeBytes(int32, bytes) ~ bytes
 
   def toBytes[F[_]: MonadThrow](header: ByteVector, payload: ByteVector): F[ByteVector] = {
-    codec.encode(header ~ payload) match {
+    codec.encode((header, payload)) match {
       case Attempt.Successful(value) => value.bytes.pure[F]
       case Attempt.Failure(e)        => CompressionError(e.message).raiseError
     }

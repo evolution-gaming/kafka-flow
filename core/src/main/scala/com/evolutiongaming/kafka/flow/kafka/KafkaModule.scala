@@ -35,7 +35,7 @@ object KafkaModule {
     config: ConsumerConfig,
     registry: CollectorRegistry[F]
   ): Resource[F, KafkaModule[F]] = {
-    implicit val measureDuration = MeasureDuration.fromClock[F](Clock[F])
+    implicit val measureDuration: MeasureDuration[F] = MeasureDuration.fromClock[F](Clock[F])
     for {
       producerMetrics <- ProducerMetrics.of(registry)
       consumerMetrics <- ConsumerMetrics.of(registry)
@@ -43,9 +43,9 @@ object KafkaModule {
       _consumerOf      = RawConsumerOf.apply1[F](consumerMetrics(applicationId).some)
 
       _healthCheck <- {
-        implicit val randomIdOf = RandomIdOf.uuid[F]
-        implicit val consumerOf = _consumerOf
-        implicit val producerOf = _producerOf
+        implicit val randomIdOf: RandomIdOf[F]    = RandomIdOf.uuid[F]
+        implicit val consumerOf: RawConsumerOf[F] = _consumerOf
+        implicit val producerOf: RawProducerOf[F] = _producerOf
 
         val commonConfig = config.common.copy(clientId = config.common.clientId.map(id => s"$id-HealthCheck"))
 

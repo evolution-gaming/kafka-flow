@@ -9,6 +9,7 @@ import com.evolutiongaming.kafka.flow.journal.CassandraJournals
 import com.evolutiongaming.kafka.flow.key.{CassandraKeys, KeySegments}
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
 import com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots
+import com.evolutiongaming.skafka.{FromBytes, ToBytes}
 import com.evolutiongaming.{scassandra, skafka}
 
 import scala.util.Try
@@ -44,9 +45,9 @@ object CassandraPersistence {
     consistencyOverrides: ConsistencyOverrides,
     keysSegments: KeySegments
   )(implicit fromBytes: skafka.FromBytes[Try, S], toBytes: skafka.ToBytes[Try, S]): F[PersistenceModule[F, S]] = {
-    val fromTry             = FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
-    implicit val _fromBytes = fromBytes mapK fromTry
-    implicit val _toBytes   = toBytes mapK fromTry
+    val fromTry                              = FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
+    implicit val _fromBytes: FromBytes[F, S] = fromBytes mapK fromTry
+    implicit val _toBytes: ToBytes[F, S]     = toBytes mapK fromTry
     withSchemaF(session, sync, consistencyOverrides, keysSegments)
   }
 

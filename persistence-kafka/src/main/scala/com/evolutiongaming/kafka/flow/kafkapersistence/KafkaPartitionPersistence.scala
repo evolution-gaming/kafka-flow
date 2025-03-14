@@ -57,12 +57,12 @@ object KafkaPartitionPersistence {
     case _ => map // ignore records with no key for now
   }
 
-  private[kafkapersistence] def readSnapshots[F[_]: BracketThrowable: FromBytes[*[_], String]: Log](
+  private[kafkapersistence] def readSnapshots[F[_]: BracketThrowable: Log](
     consumerOf: ConsumerOf[F],
     consumerConfig: ConsumerConfig,
     snapshotTopic: Topic,
     partition: Partition
-  ): F[BytesByKey] = {
+  )(implicit fromBytes: FromBytes[F, String]): F[BytesByKey] = {
     consumerOf
       .apply[String, ByteVector](
         consumerConfig.copy(

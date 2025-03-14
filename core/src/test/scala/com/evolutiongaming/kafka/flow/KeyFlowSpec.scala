@@ -84,7 +84,7 @@ class KeyFlowSpec extends FunSuite {
       Offset.unsafe(1) -> 7
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
-    implicit val context = new KeyContext[SyncIO] {
+    implicit val context: KeyContext[SyncIO] = new KeyContext[SyncIO] {
       def holding              = none[Offset].pure[SyncIO]
       def hold(offset: Offset) = SyncIO.unit
       def remove               = removeCalled.set(true)
@@ -134,7 +134,7 @@ class KeyFlowSpec extends FunSuite {
     val fold        = FoldOption.empty[SyncIO, State, ConsumerRecord[String, ByteVector]]
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 
-    implicit val context = new KeyContext[SyncIO] {
+    implicit val context: KeyContext[SyncIO] = new KeyContext[SyncIO] {
       def holding              = none[Offset].pure[SyncIO]
       def hold(offset: Offset) = SyncIO.unit
       def remove               = removeCalled.set(true)

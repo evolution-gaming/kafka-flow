@@ -394,7 +394,7 @@ class PartitionFlowSpec extends FunSuite {
 
   def setupRemapKeyTest(remapKey: RemapKey[IO], initialData: Map[KafkaKey, String]) = {
     import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
-    implicit val logOf = LogOf.empty[IO]
+    implicit val logOf: LogOf[IO] = LogOf.empty[IO]
     logOf.apply(classOf[PartitionFlowSpec]).toResource.flatMap { implicit log =>
       val committedOffset  = Ref.unsafe[IO, Offset](Offset.min)
       val keyStorage       = Ref.unsafe[IO, Set[KafkaKey]](initialData.keySet)

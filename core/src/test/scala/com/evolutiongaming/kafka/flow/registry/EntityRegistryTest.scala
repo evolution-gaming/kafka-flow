@@ -14,9 +14,7 @@ import munit.FunSuite
 import scodec.bits.ByteVector
 
 import java.nio.charset.StandardCharsets
-import scala.annotation.nowarn
 
-@nowarn("cat=unused") // for some reason compiler thinks that values in the test are unused
 class EntityRegistryTest extends FunSuite {
   implicit val logOf: LogOf[IO] = LogOf.empty[IO]
   implicit val log: Log[IO]     = Log.empty[IO]

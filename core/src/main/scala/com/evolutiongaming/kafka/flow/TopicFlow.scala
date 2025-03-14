@@ -15,7 +15,6 @@ import com.evolutiongaming.skafka.consumer.ConsumerRecords
 import scodec.bits.ByteVector
 
 import scala.collection.immutable.SortedSet
-import scala.annotation.nowarn
 
 trait TopicFlow[F[_]] {
 
@@ -82,7 +81,6 @@ object TopicFlow {
 
     val acquire = new TopicFlow[F] {
 
-      @nowarn("cat=unused") // for some reason compiler thinks that `flow` and `partitionRecords` are unused
       def apply(records: ConsumerRecords[String, ByteVector]) = {
 
         for {
