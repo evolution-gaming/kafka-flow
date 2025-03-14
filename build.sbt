@@ -189,4 +189,3 @@ lazy val docs = (project in file("kafka-flow-docs"))
   )
 
 addCommandAlias("check", "versionPolicyCheck")
-ThisBuild / versionPolicyIntention := Compatibility.None
