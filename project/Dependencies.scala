@@ -30,7 +30,7 @@ object Dependencies {
   }
 
   object KafkaJournal {
-    private val version = "4.1.7"
+    private val version = "4.1.8"
     val journal         = "com.evolutiongaming" %% "kafka-journal"             % version
     val persistence     = "com.evolutiongaming" %% "kafka-journal-persistence" % version
   }
@@ -42,7 +42,7 @@ object Dependencies {
   }
 
   object PureConfig {
-    private val version = "0.17.8"
+    private val version    = "0.17.8"
     lazy val GenericScala3 = "com.github.pureconfig" %% "pureconfig-generic-scala3" % version
   }
 
