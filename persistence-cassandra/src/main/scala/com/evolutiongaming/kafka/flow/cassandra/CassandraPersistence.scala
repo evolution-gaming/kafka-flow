@@ -17,7 +17,11 @@ import scala.util.Try
 trait CassandraPersistence[F[_], S] extends PersistenceModule[F, S]
 object CassandraPersistence {
 
-  /** Creates schema in Cassandra if not there yet. */
+  /** Creates schema in Cassandra if not there yet. Uses default names for all Cassandra tables:
+    *   - for keys see [[com.evolutiongaming.kafka.flow.key.CassandraKeys.DefaultTableName]]
+    *   - for snapshots see [[com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots.DefaultTableName]]
+    *   - for journals see [[com.evolutiongaming.kafka.flow.journal.CassandraJournals.DefaultTableName]]
+    */
   def withSchemaF[F[_]: Async, S](
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F],
@@ -33,7 +37,10 @@ object CassandraPersistence {
     def snapshots = _snapshots
   }
 
-  /** Creates schema in Cassandra if not there yet
+  /** Creates schema in Cassandra if not there yet. Uses default names for all Cassandra tables:
+    *   - for keys see [[com.evolutiongaming.kafka.flow.key.CassandraKeys.DefaultTableName]]
+    *   - for snapshots see [[com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots.DefaultTableName]]
+    *   - for journals see [[com.evolutiongaming.kafka.flow.journal.CassandraJournals.DefaultTableName]]
     *
     * This method uses the same `JsonCodec[Try]` as `JournalParser` does to simplify defining the basic application. if
     * \@consistencyConfig is present then applies ConsistencyConfig.Read for all read queries and
@@ -51,12 +58,16 @@ object CassandraPersistence {
     withSchemaF(session, sync, consistencyOverrides, keysSegments)
   }
 
-  /** Deletes all data in Cassandra */
+  /** Deletes all data in Cassandra. Uses default names for all Cassandra tables:
+    *   - for keys see [[com.evolutiongaming.kafka.flow.key.CassandraKeys.DefaultTableName]]
+    *   - for snapshots see [[com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots.DefaultTableName]]
+    *   - for journals see [[com.evolutiongaming.kafka.flow.journal.CassandraJournals.DefaultTableName]]
+    */
   def truncate[F[_]: Monad](
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F]
   ): F[Unit] =
     CassandraKeys.truncate(session, sync, CassandraKeys.DefaultTableName) *>
-      CassandraJournals.truncate(session, sync) *>
+      CassandraJournals.truncate(session, sync, CassandraJournals.DefaultTableName) *>
       CassandraSnapshots.truncate(session, sync, CassandraSnapshots.DefaultTableName)
 }

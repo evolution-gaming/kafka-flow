@@ -85,16 +85,20 @@ object CassandraJournals {
   ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
     withSchema(session, sync, ConsistencyOverrides.none, DefaultTableName)
 
-  def truncate[F[_]: Monad](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    tableName: String,
-  ): F[Unit] = JournalSchema.of(session, sync, tableName).truncate
-
+  @deprecated(
+    "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+    since = "6.1.3"
+  )
   def truncate[F[_]: Monad](
     session: CassandraSession[F],
     sync: CassandraSync[F],
   ): F[Unit] = truncate(session, sync, DefaultTableName)
+
+  def truncate[F[_]: Monad](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    tableName: String = DefaultTableName,
+  ): F[Unit] = JournalSchema.of(session, sync, tableName).truncate
 
   // we cannot use DecodeRow here because TupleToHeader is effectful
   protected def decode[F[_]: MonadThrow](key: KafkaKey, row: Row): F[ConsumerRecord[String, ByteVector]] = {
