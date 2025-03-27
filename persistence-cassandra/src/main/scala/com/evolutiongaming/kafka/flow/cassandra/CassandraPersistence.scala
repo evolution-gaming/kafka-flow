@@ -56,7 +56,7 @@ object CassandraPersistence {
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F]
   ): F[Unit] =
-    CassandraKeys.truncate(session, sync) *>
+    CassandraKeys.truncate(session, sync, CassandraKeys.DefaultTableName) *>
       CassandraJournals.truncate(session, sync) *>
-      CassandraSnapshots.truncate(session, sync)
+      CassandraSnapshots.truncate(session, sync, CassandraSnapshots.DefaultTableName)
 }

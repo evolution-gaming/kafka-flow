@@ -11,7 +11,7 @@ import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs.*
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.kafka.flow.key.CassandraKeys.{Statements, rowToKey}
-import com.evolutiongaming.scassandra
+import com.evolutiongaming.scassandra.CassandraSession
 import com.evolutiongaming.scassandra.StreamingCassandraSession.*
 import com.evolutiongaming.scassandra.syntax.*
 import com.evolutiongaming.skafka.TopicPartition
@@ -34,28 +34,34 @@ import java.time.{LocalDate, ZoneOffset}
   *   allows overriding read and write query consistency separately
   * @param segments
   *   a number of segments
+  * @param tableName
+  *   name of the table to use
   * @see
   *   See `com.evolutiongaming.kafka.flow.key.KeySchema` for a schema description
   */
 class CassandraKeys[F[_]: Async](
-  session: scassandra.CassandraSession[F],
+  session: CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides,
-  segments: KeySegments
+  segments: KeySegments,
+  tableName: String,
 ) extends KeyDatabase[F, KafkaKey] {
 
-  def this(session: scassandra.CassandraSession[F], segments: KeySegments) =
-    this(session, ConsistencyOverrides.none, segments)
+  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides, segments: KeySegments) =
+    this(session, consistencyOverrides, segments, CassandraKeys.DefaultTableName)
+
+  def this(session: CassandraSession[F], segments: KeySegments) =
+    this(session, ConsistencyOverrides.none, segments, CassandraKeys.DefaultTableName)
 
   def persist(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- Statements.persist(session, key, segments)
+      boundStatement <- Statements.persist(session, key, segments, tableName)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).void
     } yield ()
 
   def delete(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- Statements.delete(session, key, segments)
+      boundStatement <- Statements.delete(session, key, segments, tableName)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).void
     } yield ()
@@ -76,7 +82,7 @@ class CassandraKeys[F[_]: Async](
     topicPartition: TopicPartition
   ): Stream[F, KafkaKey] = {
     val boundStatement = Statements
-      .all(session, applicationId, groupId, segment, topicPartition)
+      .all(session, applicationId, groupId, segment, topicPartition, tableName)
       .map(_.withConsistencyLevel(consistencyOverrides.read))
 
     Stream
@@ -89,20 +95,58 @@ object CassandraKeys {
 
   val DefaultSegments: KeySegments = KeySegments.unsafe(10000)
 
-  /** Creates schema in Cassandra if not there yet */
+  val DefaultTableName: String = "keys"
+
+  /** Create table for storing keys. If table already exists it will not be recreated
+    *
+    * @param session
+    *   cassandra session to use for creating table
+    * @param sync
+    *   synchronization mechanism to use for avoiding concurrent attempts to create the table
+    * @param consistencyOverrides
+    *   overrides for read/write consistency levels for the keys table
+    * @param keySegments
+    *   number of segments to use for partitioning keys. See [[com.evolutiongaming.kafka.flow.key.KeySegments]] and the
+    *   documentation for `CassandraKeys` class for more details.
+    * @param tableName
+    *   name of the table to create
+    * @return
+    *   a KeyDatabase instance that can be used to interact with the keys in Cassandra
+    */
   def withSchema[F[_]: Async](
-    session: scassandra.CassandraSession[F],
+    session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
     keySegments: KeySegments,
+    tableName: String
   ): F[KeyDatabase[F, KafkaKey]] = {
-    KeySchema.of(session, sync).create.as(new CassandraKeys(session, consistencyOverrides, keySegments))
+    KeySchema
+      .of(session, sync, tableName)
+      .create
+      .as(new CassandraKeys(session, consistencyOverrides, keySegments, tableName))
   }
 
+  def withSchema[F[_]: Async](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides,
+    keySegments: KeySegments,
+  ): F[KeyDatabase[F, KafkaKey]] = withSchema(session, sync, consistencyOverrides, keySegments, DefaultTableName)
+
+  @deprecated(
+    "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+    since = "6.1.3"
+  )
   def truncate[F[_]: Monad](
-    session: scassandra.CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] = KeySchema.of(session, sync).truncate
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+  ): F[Unit] = truncate(session, sync, DefaultTableName)
+
+  def truncate[F[_]: Monad](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    tableName: String = DefaultTableName,
+  ): F[Unit] = KeySchema.of(session, sync, tableName).truncate
 
   protected def rowToKey(row: Row, appId: String, groupId: String, topicPartition: TopicPartition): KafkaKey =
     KafkaKey(
@@ -113,26 +157,40 @@ object CassandraKeys {
     )
 
   protected object Statements {
+
+    @deprecated(
+      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+      since = "6.1.3"
+    )
     def all[F[_]: Monad](
-      session: scassandra.CassandraSession[F],
+      session: CassandraSession[F],
       applicationId: String,
       groupId: String,
-      segment: SegmentNr
+      segment: SegmentNr,
+    ): F[BoundStatement] = all(session, applicationId, groupId, segment, DefaultTableName)
+
+    def all[F[_]: Monad](
+      session: CassandraSession[F],
+      applicationId: String,
+      groupId: String,
+      segment: SegmentNr,
+      tableName: String,
     ): F[BoundStatement] =
       session
         .prepare(
-          """ SELECT
-            |   topic,
-            |   partition,
-            |   key
-            | FROM
-            |   keys
-            | WHERE
-            |   application_id = :application_id
-            |   AND group_id = :group_id
-            |   AND segment = :segment
-            | ORDER BY
-            |   topic, partition, key
+          s"""
+          |SELECT
+          |  topic,
+          |  partition,
+          |  key
+          |FROM
+          |  $tableName
+          |WHERE
+          |  application_id = :application_id
+          |  AND group_id = :group_id
+          |  AND segment = :segment
+          |ORDER BY
+          |  topic, partition, key
       """.stripMargin
         )
         .map(
@@ -142,27 +200,41 @@ object CassandraKeys {
             .encode("segment", segment)
         )
 
+    @deprecated(
+      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+      since = "6.1.3"
+    )
     def all[F[_]: Monad](
-      session: scassandra.CassandraSession[F],
+      session: CassandraSession[F],
       applicationId: String,
       groupId: String,
       segment: SegmentNr,
-      topicPartition: TopicPartition
+      topicPartition: TopicPartition,
+    ): F[BoundStatement] = all(session, applicationId, groupId, segment, topicPartition, DefaultTableName)
+
+    def all[F[_]: Monad](
+      session: CassandraSession[F],
+      applicationId: String,
+      groupId: String,
+      segment: SegmentNr,
+      topicPartition: TopicPartition,
+      tableName: String,
     ): F[BoundStatement] =
       session
         .prepare(
-          """ SELECT
-            |   key
-            | FROM
-            |   keys
-            | WHERE
-            |   application_id = :application_id
-            |   AND group_id = :group_id
-            |   AND segment = :segment
-            |   AND topic = :topic
-            |   AND partition = :partition
-            | ORDER BY
-            |   topic, partition, key
+          s"""
+          |SELECT
+          |  key
+          |FROM
+          |  $tableName
+          |WHERE
+          |  application_id = :application_id
+          |  AND group_id = :group_id
+          |  AND segment = :segment
+          |  AND topic = :topic
+          |  AND partition = :partition
+          |ORDER BY
+          |  topic, partition, key
       """.stripMargin
         )
         .map(
@@ -174,26 +246,39 @@ object CassandraKeys {
             .encode("partition", topicPartition.partition.value)
         )
 
+    @deprecated(
+      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+      since = "6.1.3"
+    )
     def persist[F[_]: Monad: Clock](
-      session: scassandra.CassandraSession[F],
+      session: CassandraSession[F],
       key: KafkaKey,
-      segments: KeySegments
+      segments: KeySegments,
+    ): F[BoundStatement] =
+      persist(session, key, segments, DefaultTableName)
+
+    def persist[F[_]: Monad: Clock](
+      session: CassandraSession[F],
+      key: KafkaKey,
+      segments: KeySegments,
+      tableName: String,
     ): F[BoundStatement] =
       for {
         preparedStatement <- session.prepare(
-          """ UPDATE
-            |   keys
-            | SET
-            |   created = :created,
-            |   created_date = :created_date,
-            |   metadata = :metadata
-            | WHERE
-            |   application_id = :application_id
-            |   AND group_id = :group_id
-            |   AND segment = :segment
-            |   AND topic = :topic
-            |   AND partition = :partition
-            |   AND key = :key
+          s"""
+          |UPDATE
+          |  $tableName
+          |SET
+          |  created = :created,
+          |  created_date = :created_date,
+          |  metadata = :metadata
+          |WHERE
+          |  application_id = :application_id
+          |  AND group_id = :group_id
+          |  AND segment = :segment
+          |  AND topic = :topic
+          |  AND partition = :partition
+          |  AND key = :key
         """.stripMargin
         )
 
@@ -212,22 +297,35 @@ object CassandraKeys {
           .encode("metadata", "")
       }
 
+    @deprecated(
+      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+      since = "6.1.3"
+    )
     def delete[F[_]: Monad](
-      session: scassandra.CassandraSession[F],
+      session: CassandraSession[F],
       key: KafkaKey,
-      segments: KeySegments
+      segments: KeySegments,
+    ): F[BoundStatement] =
+      delete(session, key, segments, DefaultTableName)
+
+    def delete[F[_]: Monad](
+      session: CassandraSession[F],
+      key: KafkaKey,
+      segments: KeySegments,
+      tableName: String,
     ): F[BoundStatement] =
       session
         .prepare(
-          """ DELETE FROM
-            |   keys
-            | WHERE
-            |   application_id = :application_id
-            |   AND group_id = :group_id
-            |   AND segment = :segment
-            |   AND topic = :topic
-            |   AND partition = :partition
-            |   AND key = :key
+          s"""
+          |DELETE FROM
+          |  $tableName
+          |WHERE
+          |  application_id = :application_id
+          |  AND group_id = :group_id
+          |  AND segment = :segment
+          |  AND topic = :topic
+          |  AND partition = :partition
+          |  AND key = :key
         """.stripMargin
         )
         .map(

@@ -11,7 +11,7 @@ import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs.*
 import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.kafka.flow.journal.conversions.{HeaderToTuple, TupleToHeader}
-import com.evolutiongaming.scassandra
+import com.evolutiongaming.scassandra.CassandraSession
 import com.evolutiongaming.scassandra.StreamingCassandraSession.*
 import com.evolutiongaming.scassandra.syntax.*
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
@@ -24,20 +24,24 @@ import java.time.Instant
 import CassandraJournals.*
 
 class CassandraJournals[F[_]: Async](
-  session: scassandra.CassandraSession[F],
-  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none
+  session: CassandraSession[F],
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
+  tableName: String,
 ) extends JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]] {
+
+  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides) =
+    this(session, consistencyOverrides, DefaultTableName)
 
   def persist(key: KafkaKey, event: ConsumerRecord[String, ByteVector]): F[Unit] =
     for {
-      boundStatement <- Statements.persist(session, key, event)
+      boundStatement <- Statements.persist(session, key, event, tableName)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).void
     } yield ()
 
   def get(key: KafkaKey): Stream[F, ConsumerRecord[String, ByteVector]] = {
     val boundStatement = Statements
-      .get(session, key)
+      .get(session, key, tableName)
       .map(_.withConsistencyLevel(consistencyOverrides.read))
 
     Stream.lift(boundStatement).flatMap(session.executeStream(_)).mapM { row =>
@@ -47,30 +51,50 @@ class CassandraJournals[F[_]: Async](
 
   def delete(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- Statements.delete(session, key)
+      boundStatement <- Statements.delete(session, key, tableName)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).void
     } yield ()
 
 }
 object CassandraJournals {
-  def withSchema[F[_]: Async](
-    session: scassandra.CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides
-  ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
-    JournalSchema.of(session, sync).create as new CassandraJournals(session, consistencyOverrides)
+
+  val DefaultTableName: String = "records"
 
   def withSchema[F[_]: Async](
-    session: scassandra.CassandraSession[F],
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides,
+    tableName: String,
+  ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
+    JournalSchema
+      .of(session, sync, tableName)
+      .create
+      .as(new CassandraJournals(session, consistencyOverrides, tableName))
+
+  def withSchema[F[_]: Async](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides,
+  ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
+    withSchema(session, sync, consistencyOverrides, DefaultTableName)
+
+  def withSchema[F[_]: Async](
+    session: CassandraSession[F],
     sync: CassandraSync[F],
   ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
-    withSchema(session, sync, ConsistencyOverrides.none)
+    withSchema(session, sync, ConsistencyOverrides.none, DefaultTableName)
 
   def truncate[F[_]: Monad](
-    session: scassandra.CassandraSession[F],
-    sync: CassandraSync[F]
-  ): F[Unit] = JournalSchema.of(session, sync).truncate
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    tableName: String,
+  ): F[Unit] = JournalSchema.of(session, sync, tableName).truncate
+
+  def truncate[F[_]: Monad](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+  ): F[Unit] = truncate(session, sync, DefaultTableName)
 
   // we cannot use DecodeRow here because TupleToHeader is effectful
   protected def decode[F[_]: MonadThrow](key: KafkaKey, row: Row): F[ConsumerRecord[String, ByteVector]] = {
@@ -95,26 +119,34 @@ object CassandraJournals {
   }
 
   protected object Statements {
-    def get[F[_]: Monad](session: scassandra.CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    @deprecated(
+      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+      since = "6.1.3"
+    )
+    def get[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+      get(session, key, DefaultTableName)
+
+    def get[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, tableName: String): F[BoundStatement] =
       session
         .prepare(
-          """ SELECT
-            |   offset,
-            |   created,
-            |   timestamp,
-            |   timestamp_type,
-            |   headers,
-            |   metadata,
-            |   value
-            | FROM
-            |   records
-            | WHERE
-            |   application_id = :application_id
-            |   AND group_id = :group_id
-            |   AND topic = :topic
-            |   AND partition = :partition
-            |   AND key = :key
-            | ORDER BY offset
+          s"""
+          |SELECT
+          |  offset,
+          |  created,
+          |  timestamp,
+          |  timestamp_type,
+          |  headers,
+          |  metadata,
+          |  value
+          |FROM
+          |  $tableName
+          |WHERE
+          |  application_id = :application_id
+          |  AND group_id = :group_id
+          |  AND topic = :topic
+          |  AND partition = :partition
+          |  AND key = :key
+          |ORDER BY offset
       """.stripMargin
         )
         .map(
@@ -126,28 +158,40 @@ object CassandraJournals {
             .encode("key", key.key)
         )
 
+    @deprecated(
+      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+      since = "6.1.3"
+    )
     def persist[F[_]: MonadThrow: Clock](
-      session: scassandra.CassandraSession[F],
+      session: CassandraSession[F],
       key: KafkaKey,
-      event: ConsumerRecord[String, ByteVector]
+      event: ConsumerRecord[String, ByteVector],
+    ): F[BoundStatement] = persist(session, key, event, DefaultTableName)
+
+    def persist[F[_]: MonadThrow: Clock](
+      session: CassandraSession[F],
+      key: KafkaKey,
+      event: ConsumerRecord[String, ByteVector],
+      tableName: String,
     ): F[BoundStatement] = for {
       preparedStatement <- session.prepare(
-        """ UPDATE
-          |   records
-          | SET
-          |   created = :created,
-          |   timestamp = :timestamp,
-          |   timestamp_type = :timestamp_type,
-          |   headers = :headers,
-          |   metadata = :metadata,
-          |   value = :value
-          | WHERE
-          |   application_id = :application_id
-          |   AND group_id = :group_id
-          |   AND topic = :topic
-          |   AND partition = :partition
-          |   AND key = :key
-          |   AND offset = :offset
+        s"""
+        |UPDATE
+        |  $tableName
+        |SET
+        |  created = :created,
+        |  timestamp = :timestamp,
+        |  timestamp_type = :timestamp_type,
+        |  headers = :headers,
+        |  metadata = :metadata,
+        |  value = :value
+        |WHERE
+        |  application_id = :application_id
+        |  AND group_id = :group_id
+        |  AND topic = :topic
+        |  AND partition = :partition
+        |  AND key = :key
+        |  AND offset = :offset
         """.stripMargin
       )
 
@@ -170,17 +214,25 @@ object CassandraJournals {
         .encodeSome("value", event.value map (_.value))
     }
 
-    def delete[F[_]: Monad](session: scassandra.CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+    @deprecated(
+      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+      since = "6.1.3"
+    )
+    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
+      delete(session, key, DefaultTableName)
+
+    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, tableName: String): F[BoundStatement] =
       session
         .prepare(
-          """ DELETE FROM
-            |   records
-            | WHERE
-            |   application_id = :application_id
-            |   AND group_id = :group_id
-            |   AND topic = :topic
-            |   AND partition = :partition
-            |   AND key = :key
+          s"""
+          |DELETE FROM
+          |  $tableName
+          |WHERE
+          |  application_id = :application_id
+          |  AND group_id = :group_id
+          |  AND topic = :topic
+          |  AND partition = :partition
+          |  AND key = :key
         """.stripMargin
         )
         .map(
