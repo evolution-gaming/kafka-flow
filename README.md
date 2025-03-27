@@ -9,18 +9,15 @@
 
 https://evolution-gaming.github.io/kafka-flow
 
-## cats-effect compatibility
-Starting from version `1.0.0` the library uses cats-effect 3. 
-For versions based on cats-effect 2 please check the latest one in `0.x.x` series 
+## Scala 3 compatibility
+Starting from version `6.1.0` all of the modules are cross-compiled to Scala 3 except `kafka-flow-kafka-journal` which doesn't support Scala 3 yet.
 
 ## Setup
 
 ```scala
 addSbtPlugin("com.evolution" % "sbt-artifactory-plugin" % "0.0.2")
 
-lazy val version = "4.1.0" // For cats-effect 3 - compatible version, see the latest one in the badge above
-// or in Releases page 
-// lazy val version = "0.12.0" // For cats-effect 2 - compatible version, see the latest one in 'series-0.x.x' branch or in Releases page
+lazy val version = "<version>" // see the latest one in the badge above or in Releases page 
 
 libraryDependencies ++= Seq(
   "com.evolutiongaming" %% "kafka-flow" % version,
@@ -29,7 +26,9 @@ libraryDependencies ++= Seq(
   // if you want to use Kafka compact topic for storing persistent state
   "com.evolutiongaming" %% "kafka-flow-persistence-kafka" % version,
   // if you want to use predefined metrics
-  "com.evolutiongaming" %% "kafka-flow-metrics" % version
+  "com.evolutiongaming" %% "kafka-flow-metrics" % version,
+  // if you want to use kafka-journal integration
+  "com.evolutiongaming" %% "kafka-flow-kafka-journal" % version,
 )
 ```
 
