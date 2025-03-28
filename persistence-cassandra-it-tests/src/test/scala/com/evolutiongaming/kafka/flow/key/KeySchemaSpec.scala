@@ -13,7 +13,7 @@ class KeySchemaSpec extends CassandraSpec {
     val session = cassandra().session
     val sync    = cassandra().sync
 
-    val keySchema = KeySchema.of(session, sync)
+    val keySchema = KeySchema.of(session, sync, CassandraKeys.DefaultTableName)
 
     val test = for {
       _ <- keySchema.create
@@ -27,7 +27,7 @@ class KeySchemaSpec extends CassandraSpec {
     val session = cassandra().session
     val sync    = cassandra().sync
 
-    val keySchema = KeySchema.of(session, sync)
+    val keySchema = KeySchema.of(session, sync, CassandraKeys.DefaultTableName)
 
     val test = for {
       _ <- keySchema.create

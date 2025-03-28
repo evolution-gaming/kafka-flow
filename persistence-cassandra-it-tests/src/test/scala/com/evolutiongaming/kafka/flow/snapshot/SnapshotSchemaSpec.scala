@@ -12,7 +12,7 @@ class SnapshotSchemaSpec extends CassandraSpec {
   test("table is created using scassandra session API") {
     val session = cassandra().session
     val sync    = cassandra().sync
-    val schema  = SnapshotSchema.of(session, sync)
+    val schema  = SnapshotSchema.of(session, sync, CassandraSnapshots.DefaultTableName)
 
     val test = for {
       _ <- schema.create
@@ -26,7 +26,7 @@ class SnapshotSchemaSpec extends CassandraSpec {
     val session = cassandra().session
     val sync    = cassandra().sync
 
-    val schema = SnapshotSchema.of(session, sync)
+    val schema = SnapshotSchema.of(session, sync, CassandraSnapshots.DefaultTableName)
 
     val test = for {
       _ <- schema.create
