@@ -12,6 +12,7 @@ import com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots
 import com.evolutiongaming.skafka.{FromBytes, ToBytes}
 import com.evolutiongaming.{scassandra, skafka}
 
+import scala.concurrent.duration.FiniteDuration
 import scala.util.Try
 
 trait CassandraPersistence[F[_], S] extends PersistenceModule[F, S]
@@ -26,10 +27,11 @@ object CassandraPersistence {
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
-    keysSegments: KeySegments
+    keysSegments: KeySegments,
+    tablesTtl: Option[FiniteDuration] = None
   )(implicit fromBytes: skafka.FromBytes[F, S], toBytes: skafka.ToBytes[F, S]): F[PersistenceModule[F, S]] = for {
     _keys      <- CassandraKeys.withSchema(session, sync, consistencyOverrides, keysSegments)
-    _journals  <- CassandraJournals.withSchema(session, sync, consistencyOverrides)
+    _journals  <- CassandraJournals.withSchema(session, sync, consistencyOverrides, tablesTtl)
     _snapshots <- CassandraSnapshots.withSchema[F, S](session, sync, consistencyOverrides)
   } yield new CassandraPersistence[F, S] {
     def keys      = _keys

@@ -20,8 +20,9 @@ import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
 
 import java.time.Instant
-
 import CassandraJournals.*
+
+import scala.concurrent.duration.FiniteDuration
 
 class CassandraJournals[F[_]: Async](
   session: CassandraSession[F],
@@ -66,9 +67,10 @@ object CassandraJournals {
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
     tableName: String,
+    ttl: Option[FiniteDuration]
   ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
     JournalSchema
-      .of(session, sync, tableName)
+      .of(session, sync, tableName, ttl)
       .create
       .as(new CassandraJournals(session, consistencyOverrides, tableName))
 
@@ -76,14 +78,16 @@ object CassandraJournals {
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
+    ttl: Option[FiniteDuration]
   ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
-    withSchema(session, sync, consistencyOverrides, DefaultTableName)
+    withSchema(session, sync, consistencyOverrides, DefaultTableName, ttl)
 
   def withSchema[F[_]: Async](
     session: CassandraSession[F],
     sync: CassandraSync[F],
+    ttl: Option[FiniteDuration]
   ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
-    withSchema(session, sync, ConsistencyOverrides.none, DefaultTableName)
+    withSchema(session, sync, ConsistencyOverrides.none, DefaultTableName, ttl)
 
   @deprecated(
     "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
@@ -97,8 +101,9 @@ object CassandraJournals {
   def truncate[F[_]: Monad](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    tableName: String = DefaultTableName,
-  ): F[Unit] = JournalSchema.of(session, sync, tableName).truncate
+    tableName: String           = DefaultTableName,
+    ttl: Option[FiniteDuration] = None
+  ): F[Unit] = JournalSchema.of(session, sync, tableName, ttl).truncate
 
   // we cannot use DecodeRow here because TupleToHeader is effectful
   protected def decode[F[_]: MonadThrow](key: KafkaKey, row: Row): F[ConsumerRecord[String, ByteVector]] = {

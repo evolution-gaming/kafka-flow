@@ -12,7 +12,7 @@ class JournalSchemaSpec extends CassandraSpec {
   test("table is created using scassandra session API") {
     val session = cassandra().session
     val sync    = cassandra().sync
-    val schema  = JournalSchema.of(session, sync, CassandraJournals.DefaultTableName)
+    val schema  = JournalSchema.of(session, sync, CassandraJournals.DefaultTableName, ttl = Some(10.seconds))
 
     val test = for {
       _ <- schema.create
@@ -26,7 +26,7 @@ class JournalSchemaSpec extends CassandraSpec {
     val session = cassandra().session
     val sync    = cassandra().sync
 
-    val schema = JournalSchema.of(session, sync, CassandraJournals.DefaultTableName)
+    val schema = JournalSchema.of(session, sync, CassandraJournals.DefaultTableName, ttl = Some(10.seconds))
 
     val test = for {
       _ <- schema.create

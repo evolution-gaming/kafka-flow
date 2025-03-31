@@ -5,6 +5,8 @@ import cats.syntax.all.*
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.scassandra.CassandraSession
 
+import scala.concurrent.duration.FiniteDuration
+
 trait JournalSchema[F[_]] {
   def create: F[Unit]
 
@@ -19,14 +21,18 @@ object JournalSchema {
   def of[F[_]: Monad](
     session: CassandraSession[F],
     synchronize: CassandraSync[F],
-  ): JournalSchema[F] = of(session, synchronize, CassandraJournals.DefaultTableName)
+  ): JournalSchema[F] = of(session, synchronize, CassandraJournals.DefaultTableName, ttl = None)
 
   def of[F[_]: Monad](
     session: CassandraSession[F],
     synchronize: CassandraSync[F],
     tableName: String,
+    ttl: Option[FiniteDuration]
   ): JournalSchema[F] = new JournalSchema[F] {
     def create: F[Unit] = synchronize("JournalSchema") {
+
+      val ttlFragment = ttl.map(d => s"WITH default_time_to_live = ${d.toSeconds}").getOrElse("")
+
       session
         .execute(
           s"""
@@ -45,7 +51,7 @@ object JournalSchema {
           |  value BLOB,
           |  PRIMARY KEY((application_id, group_id, topic, partition, key), offset)
           |)
-          |""".stripMargin
+          |""".stripMargin + ttlFragment
         )
         .void
     }
