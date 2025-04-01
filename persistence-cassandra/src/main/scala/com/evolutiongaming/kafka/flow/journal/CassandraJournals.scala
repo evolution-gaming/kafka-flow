@@ -8,7 +8,7 @@ import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper.*
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs.*
-import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
+import com.evolutiongaming.kafka.flow.cassandra.{ConsistencyOverrides, StatementHelper}
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.kafka.flow.journal.conversions.{HeaderToTuple, TupleToHeader}
 import com.evolutiongaming.scassandra.CassandraSession
@@ -20,21 +20,26 @@ import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
 
 import java.time.Instant
-
 import CassandraJournals.*
+
+import scala.concurrent.duration.FiniteDuration
 
 class CassandraJournals[F[_]: Async](
   session: CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
   tableName: String,
+  ttl: Option[FiniteDuration],
 ) extends JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]] {
+
+  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides, tableName: String) =
+    this(session, consistencyOverrides, tableName, ttl = None)
 
   def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides) =
     this(session, consistencyOverrides, DefaultTableName)
 
   def persist(key: KafkaKey, event: ConsumerRecord[String, ByteVector]): F[Unit] =
     for {
-      boundStatement <- Statements.persist(session, key, event, tableName)
+      boundStatement <- Statements.persist(session, key, event, tableName, ttl)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).void
     } yield ()
@@ -66,11 +71,20 @@ object CassandraJournals {
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
     tableName: String,
+    ttl: Option[FiniteDuration],
   ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
     JournalSchema
       .of(session, sync, tableName)
       .create
-      .as(new CassandraJournals(session, consistencyOverrides, tableName))
+      .as(new CassandraJournals(session, consistencyOverrides, tableName, ttl))
+
+  def withSchema[F[_]: Async](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides,
+    tableName: String,
+  ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
+    withSchema(session, sync, consistencyOverrides, tableName, ttl = None)
 
   def withSchema[F[_]: Async](
     session: CassandraSession[F],
@@ -172,16 +186,30 @@ object CassandraJournals {
       event: ConsumerRecord[String, ByteVector],
     ): F[BoundStatement] = persist(session, key, event, DefaultTableName)
 
+    @deprecated(
+      "Use the version with an explicit ttl. This exists to preserve binary compatibility until the next major release",
+      since = "6.1.3"
+    )
     def persist[F[_]: MonadThrow: Clock](
       session: CassandraSession[F],
       key: KafkaKey,
       event: ConsumerRecord[String, ByteVector],
       tableName: String,
+    ): F[BoundStatement] =
+      persist(session, key, event, tableName, ttl = None)
+
+    def persist[F[_]: MonadThrow: Clock](
+      session: CassandraSession[F],
+      key: KafkaKey,
+      event: ConsumerRecord[String, ByteVector],
+      tableName: String,
+      ttl: Option[FiniteDuration],
     ): F[BoundStatement] = for {
       preparedStatement <- session.prepare(
         s"""
         |UPDATE
         |  $tableName
+        |  ${StatementHelper.ttlFragment(ttl)}
         |SET
         |  created = :created,
         |  timestamp = :timestamp,

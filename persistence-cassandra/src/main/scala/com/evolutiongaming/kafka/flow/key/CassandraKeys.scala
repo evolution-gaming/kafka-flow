@@ -8,7 +8,7 @@ import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper.*
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs.*
-import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
+import com.evolutiongaming.kafka.flow.cassandra.{ConsistencyOverrides, StatementHelper}
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.kafka.flow.key.CassandraKeys.{Statements, rowToKey}
 import com.evolutiongaming.scassandra.CassandraSession
@@ -18,6 +18,7 @@ import com.evolutiongaming.skafka.TopicPartition
 import com.evolutiongaming.sstream.Stream
 
 import java.time.{LocalDate, ZoneOffset}
+import scala.concurrent.duration.FiniteDuration
 
 /** `KeyDatabase` that uses a Cassandra table to store instances of `KafkaKey`.
   *
@@ -44,7 +45,16 @@ class CassandraKeys[F[_]: Async](
   consistencyOverrides: ConsistencyOverrides,
   segments: KeySegments,
   tableName: String,
+  ttl: Option[FiniteDuration],
 ) extends KeyDatabase[F, KafkaKey] {
+
+  def this(
+    session: CassandraSession[F],
+    consistencyOverrides: ConsistencyOverrides,
+    segments: KeySegments,
+    tableName: String,
+  ) =
+    this(session, consistencyOverrides, segments, tableName, ttl = None)
 
   def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides, segments: KeySegments) =
     this(session, consistencyOverrides, segments, CassandraKeys.DefaultTableName)
@@ -54,7 +64,7 @@ class CassandraKeys[F[_]: Async](
 
   def persist(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- Statements.persist(session, key, segments, tableName)
+      boundStatement <- Statements.persist(session, key, segments, tableName, ttl)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).void
     } yield ()
@@ -110,6 +120,8 @@ object CassandraKeys {
     *   documentation for `CassandraKeys` class for more details.
     * @param tableName
     *   name of the table to create
+    * @param ttl
+    *   optional TTL to set on inserted records
     * @return
     *   a KeyDatabase instance that can be used to interact with the keys in Cassandra
     */
@@ -118,13 +130,22 @@ object CassandraKeys {
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
     keySegments: KeySegments,
-    tableName: String
+    tableName: String,
+    ttl: Option[FiniteDuration],
   ): F[KeyDatabase[F, KafkaKey]] = {
     KeySchema
       .of(session, sync, tableName)
       .create
-      .as(new CassandraKeys(session, consistencyOverrides, keySegments, tableName))
+      .as(new CassandraKeys(session, consistencyOverrides, keySegments, tableName, ttl))
   }
+
+  def withSchema[F[_]: Async](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides,
+    keySegments: KeySegments,
+    tableName: String,
+  ): F[KeyDatabase[F, KafkaKey]] = withSchema(session, sync, consistencyOverrides, keySegments, tableName, ttl = None)
 
   def withSchema[F[_]: Async](
     session: CassandraSession[F],
@@ -257,17 +278,31 @@ object CassandraKeys {
     ): F[BoundStatement] =
       persist(session, key, segments, DefaultTableName)
 
+    @deprecated(
+      "Use the version with an explicit ttl. This exists to preserve binary compatibility until the next major release",
+      since = "6.1.3"
+    )
     def persist[F[_]: Monad: Clock](
       session: CassandraSession[F],
       key: KafkaKey,
       segments: KeySegments,
       tableName: String,
     ): F[BoundStatement] =
+      persist(session, key, segments, tableName, ttl = None)
+
+    def persist[F[_]: Monad: Clock](
+      session: CassandraSession[F],
+      key: KafkaKey,
+      segments: KeySegments,
+      tableName: String,
+      ttl: Option[FiniteDuration],
+    ): F[BoundStatement] =
       for {
         preparedStatement <- session.prepare(
           s"""
           |UPDATE
           |  $tableName
+          |  ${StatementHelper.ttlFragment(ttl)}
           |SET
           |  created = :created,
           |  created_date = :created_date,

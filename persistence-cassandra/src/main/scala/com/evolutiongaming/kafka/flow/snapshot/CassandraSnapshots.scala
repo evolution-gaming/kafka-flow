@@ -8,22 +8,31 @@ import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper.*
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs.*
-import com.evolutiongaming.kafka.flow.cassandra.ConsistencyOverrides
+import com.evolutiongaming.kafka.flow.cassandra.{ConsistencyOverrides, StatementHelper}
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.scassandra.CassandraSession
 import com.evolutiongaming.scassandra.StreamingCassandraSession.*
 import com.evolutiongaming.scassandra.syntax.*
 import com.evolutiongaming.skafka.{FromBytes, Offset, ToBytes}
 import scodec.bits.ByteVector
-
 import CassandraSnapshots.*
+
+import scala.concurrent.duration.FiniteDuration
 
 class CassandraSnapshots[F[_]: Async, T](
   session: CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
   tableName: String,
+  ttl: Option[FiniteDuration],
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
+
+  // This exists for the sake of binary compatibility
+  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides, tableName: String)(
+    implicit fromBytes: FromBytes[F, T],
+    toBytes: ToBytes[F, T]
+  ) =
+    this(session, consistencyOverrides, tableName, ttl = None)
 
   // This exists for the sake of binary compatibility
   def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides)(
@@ -34,7 +43,7 @@ class CassandraSnapshots[F[_]: Async, T](
 
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
-      boundStatement <- Statements.persist(session, key, snapshot, tableName)
+      boundStatement <- Statements.persist(session, key, snapshot, tableName, ttl)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).void
     } yield ()
@@ -69,6 +78,8 @@ object CassandraSnapshots {
     *   overrides for read/write consistency levels for the snapshots table
     * @param tableName
     *   name of the table to create. The default value is "snapshots_v2"
+    * @param ttl
+    *   optional TTL to set on inserted records
     * @param fromBytes
     *   deserializer function to convert array of bytes to the snapshot type T
     * @param toBytes
@@ -79,6 +90,7 @@ object CassandraSnapshots {
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
     tableName: String                          = DefaultTableName,
+    ttl: Option[FiniteDuration]                = None,
   )(
     implicit fromBytes: FromBytes[F, T],
     toBytes: ToBytes[F, T]
@@ -86,7 +98,18 @@ object CassandraSnapshots {
     SnapshotSchema
       .of(session, sync, tableName)
       .create
-      .as(new CassandraSnapshots(session, consistencyOverrides, tableName))
+      .as(new CassandraSnapshots(session, consistencyOverrides, tableName, ttl))
+
+  def withSchema[F[_]: Async, T](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides,
+    tableName: String,
+  )(
+    implicit fromBytes: FromBytes[F, T],
+    toBytes: ToBytes[F, T]
+  ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
+    withSchema(session, sync, consistencyOverrides, tableName, ttl = None)
 
   def withSchema[F[_]: Async, T](
     session: CassandraSession[F],
@@ -147,17 +170,31 @@ object CassandraSnapshots {
     )(implicit toBytes: ToBytes[F, T]): F[BoundStatement] =
       persist(session, key, snapshot, DefaultTableName)
 
+    @deprecated(
+      "Use the version with an explicit ttl. This exists to preserve binary compatibility until the next major release",
+      since = "6.1.3"
+    )
     def persist[F[_]: Clock: Monad, T](
       session: CassandraSession[F],
       key: KafkaKey,
       snapshot: KafkaSnapshot[T],
       tableName: String,
     )(implicit toBytes: ToBytes[F, T]): F[BoundStatement] =
+      persist(session, key, snapshot, tableName)
+
+    def persist[F[_]: Clock: Monad, T](
+      session: CassandraSession[F],
+      key: KafkaKey,
+      snapshot: KafkaSnapshot[T],
+      tableName: String,
+      ttl: Option[FiniteDuration],
+    )(implicit toBytes: ToBytes[F, T]): F[BoundStatement] =
       for {
         preparedStatement <- session.prepare(
           s"""
           |UPDATE
           |  $tableName
+          |  ${StatementHelper.ttlFragment(ttl)}
           |SET
           |  created = :created,
           |  metadata = :metadata,
