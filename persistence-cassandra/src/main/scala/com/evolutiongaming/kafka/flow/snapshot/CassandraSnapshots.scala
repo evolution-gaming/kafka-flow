@@ -22,19 +22,12 @@ import scala.concurrent.duration.FiniteDuration
 class CassandraSnapshots[F[_]: Async, T](
   session: CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
-  tableName: String,
-  ttl: Option[FiniteDuration],
+  tableName: String                          = CassandraSnapshots.DefaultTableName,
+  ttl: Option[FiniteDuration]                = None,
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
-  // This exists for the sake of binary compatibility
-  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides, tableName: String)(
-    implicit fromBytes: FromBytes[F, T],
-    toBytes: ToBytes[F, T]
-  ) =
-    this(session, consistencyOverrides, tableName, ttl = None)
-
-  // This exists for the sake of binary compatibility
+  // This exists for the sake of binary compatibility, to be removed in next major version
   def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides)(
     implicit fromBytes: FromBytes[F, T],
     toBytes: ToBytes[F, T]
@@ -100,35 +93,26 @@ object CassandraSnapshots {
       .create
       .as(new CassandraSnapshots(session, consistencyOverrides, tableName, ttl))
 
+  // This exists for the sake of binary compatibility, to be removed in next major version
+  def withSchema[F[_]: Async, T](
+    session: CassandraSession[F],
+    sync: CassandraSync[F],
+  )(
+    implicit fromBytes: FromBytes[F, T],
+    toBytes: ToBytes[F, T]
+  ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
+    withSchema(session, sync, ConsistencyOverrides.none, DefaultTableName, None)
+
+  // This exists for the sake of binary compatibility, to be removed in next major version
   def withSchema[F[_]: Async, T](
     session: CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
-    tableName: String,
   )(
     implicit fromBytes: FromBytes[F, T],
     toBytes: ToBytes[F, T]
   ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
-    withSchema(session, sync, consistencyOverrides, tableName, ttl = None)
-
-  def withSchema[F[_]: Async, T](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides,
-  )(
-    implicit fromBytes: FromBytes[F, T],
-    toBytes: ToBytes[F, T]
-  ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
-    withSchema(session, sync, consistencyOverrides, DefaultTableName)
-
-  def withSchema[F[_]: Async, T](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-  )(
-    implicit fromBytes: FromBytes[F, T],
-    toBytes: ToBytes[F, T]
-  ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
-    withSchema(session, sync, ConsistencyOverrides.none, DefaultTableName)
+    withSchema(session, sync, consistencyOverrides, DefaultTableName, None)
 
   def truncate[F[_]: Monad](
     session: CassandraSession[F],
@@ -160,7 +144,7 @@ object CassandraSnapshots {
   protected object Statements {
 
     @deprecated(
-      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+      "Use the version with an explicit table name and TTL. This exists to preserve binary compatibility until the next major release",
       since = "6.1.3"
     )
     def persist[F[_]: Clock: Monad, T](
@@ -168,19 +152,7 @@ object CassandraSnapshots {
       key: KafkaKey,
       snapshot: KafkaSnapshot[T],
     )(implicit toBytes: ToBytes[F, T]): F[BoundStatement] =
-      persist(session, key, snapshot, DefaultTableName)
-
-    @deprecated(
-      "Use the version with an explicit ttl. This exists to preserve binary compatibility until the next major release",
-      since = "6.1.3"
-    )
-    def persist[F[_]: Clock: Monad, T](
-      session: CassandraSession[F],
-      key: KafkaKey,
-      snapshot: KafkaSnapshot[T],
-      tableName: String,
-    )(implicit toBytes: ToBytes[F, T]): F[BoundStatement] =
-      persist(session, key, snapshot, tableName)
+      persist(session, key, snapshot, DefaultTableName, None)
 
     def persist[F[_]: Clock: Monad, T](
       session: CassandraSession[F],

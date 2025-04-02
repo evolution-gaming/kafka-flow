@@ -42,23 +42,17 @@ import scala.concurrent.duration.FiniteDuration
   */
 class CassandraKeys[F[_]: Async](
   session: CassandraSession[F],
-  consistencyOverrides: ConsistencyOverrides,
+  consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
   segments: KeySegments,
-  tableName: String,
-  ttl: Option[FiniteDuration],
+  tableName: String           = CassandraKeys.DefaultTableName,
+  ttl: Option[FiniteDuration] = None,
 ) extends KeyDatabase[F, KafkaKey] {
 
-  def this(
-    session: CassandraSession[F],
-    consistencyOverrides: ConsistencyOverrides,
-    segments: KeySegments,
-    tableName: String,
-  ) =
-    this(session, consistencyOverrides, segments, tableName, ttl = None)
-
+  // This exists for the sake of binary compatibility, to be removed in next major version
   def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides, segments: KeySegments) =
     this(session, consistencyOverrides, segments, CassandraKeys.DefaultTableName)
 
+  // This exists for the sake of binary compatibility, to be removed in next major version
   def this(session: CassandraSession[F], segments: KeySegments) =
     this(session, ConsistencyOverrides.none, segments, CassandraKeys.DefaultTableName)
 
@@ -128,10 +122,10 @@ object CassandraKeys {
   def withSchema[F[_]: Async](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides,
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
     keySegments: KeySegments,
-    tableName: String,
-    ttl: Option[FiniteDuration],
+    tableName: String           = DefaultTableName,
+    ttl: Option[FiniteDuration] = None,
   ): F[KeyDatabase[F, KafkaKey]] = {
     KeySchema
       .of(session, sync, tableName)
@@ -139,14 +133,7 @@ object CassandraKeys {
       .as(new CassandraKeys(session, consistencyOverrides, keySegments, tableName, ttl))
   }
 
-  def withSchema[F[_]: Async](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides,
-    keySegments: KeySegments,
-    tableName: String,
-  ): F[KeyDatabase[F, KafkaKey]] = withSchema(session, sync, consistencyOverrides, keySegments, tableName, ttl = None)
-
+  // This exists for the sake of binary compatibility, to be removed in next major version
   def withSchema[F[_]: Async](
     session: CassandraSession[F],
     sync: CassandraSync[F],
@@ -268,7 +255,7 @@ object CassandraKeys {
         )
 
     @deprecated(
-      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+      "Use the version with an explicit table name and TTL. This exists to preserve binary compatibility until the next major release",
       since = "6.1.3"
     )
     def persist[F[_]: Monad: Clock](
@@ -276,19 +263,7 @@ object CassandraKeys {
       key: KafkaKey,
       segments: KeySegments,
     ): F[BoundStatement] =
-      persist(session, key, segments, DefaultTableName)
-
-    @deprecated(
-      "Use the version with an explicit ttl. This exists to preserve binary compatibility until the next major release",
-      since = "6.1.3"
-    )
-    def persist[F[_]: Monad: Clock](
-      session: CassandraSession[F],
-      key: KafkaKey,
-      segments: KeySegments,
-      tableName: String,
-    ): F[BoundStatement] =
-      persist(session, key, segments, tableName, ttl = None)
+      persist(session, key, segments, DefaultTableName, ttl = None)
 
     def persist[F[_]: Monad: Clock](
       session: CassandraSession[F],

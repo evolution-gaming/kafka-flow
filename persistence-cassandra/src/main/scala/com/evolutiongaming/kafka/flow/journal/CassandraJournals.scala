@@ -27,15 +27,13 @@ import scala.concurrent.duration.FiniteDuration
 class CassandraJournals[F[_]: Async](
   session: CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
-  tableName: String,
-  ttl: Option[FiniteDuration],
+  tableName: String                          = CassandraJournals.DefaultTableName,
+  ttl: Option[FiniteDuration]                = None,
 ) extends JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]] {
 
-  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides, tableName: String) =
-    this(session, consistencyOverrides, tableName, ttl = None)
-
+  // This exists for the sake of binary compatibility, to be removed in next major version
   def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides) =
-    this(session, consistencyOverrides, DefaultTableName)
+    this(session, consistencyOverrides, CassandraJournals.DefaultTableName, None)
 
   def persist(key: KafkaKey, event: ConsumerRecord[String, ByteVector]): F[Unit] =
     for {
@@ -69,23 +67,16 @@ object CassandraJournals {
   def withSchema[F[_]: Async](
     session: CassandraSession[F],
     sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides,
-    tableName: String,
-    ttl: Option[FiniteDuration],
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
+    tableName: String                          = DefaultTableName,
+    ttl: Option[FiniteDuration]                = None,
   ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
     JournalSchema
       .of(session, sync, tableName)
       .create
       .as(new CassandraJournals(session, consistencyOverrides, tableName, ttl))
 
-  def withSchema[F[_]: Async](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides,
-    tableName: String,
-  ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
-    withSchema(session, sync, consistencyOverrides, tableName, ttl = None)
-
+  // This exists for the sake of binary compatibility, to be removed in next major version
   def withSchema[F[_]: Async](
     session: CassandraSession[F],
     sync: CassandraSync[F],
@@ -93,6 +84,7 @@ object CassandraJournals {
   ): F[JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
     withSchema(session, sync, consistencyOverrides, DefaultTableName)
 
+  // This exists for the sake of binary compatibility, to be removed in next major version
   def withSchema[F[_]: Async](
     session: CassandraSession[F],
     sync: CassandraSync[F],
@@ -177,26 +169,14 @@ object CassandraJournals {
         )
 
     @deprecated(
-      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
+      "Use the version with an explicit table name and TTL. This exists to preserve binary compatibility until the next major release",
       since = "6.1.3"
     )
     def persist[F[_]: MonadThrow: Clock](
       session: CassandraSession[F],
       key: KafkaKey,
       event: ConsumerRecord[String, ByteVector],
-    ): F[BoundStatement] = persist(session, key, event, DefaultTableName)
-
-    @deprecated(
-      "Use the version with an explicit ttl. This exists to preserve binary compatibility until the next major release",
-      since = "6.1.3"
-    )
-    def persist[F[_]: MonadThrow: Clock](
-      session: CassandraSession[F],
-      key: KafkaKey,
-      event: ConsumerRecord[String, ByteVector],
-      tableName: String,
-    ): F[BoundStatement] =
-      persist(session, key, event, tableName, ttl = None)
+    ): F[BoundStatement] = persist(session, key, event, DefaultTableName, None)
 
     def persist[F[_]: MonadThrow: Clock](
       session: CassandraSession[F],
