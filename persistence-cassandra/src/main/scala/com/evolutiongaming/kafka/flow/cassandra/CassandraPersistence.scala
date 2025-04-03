@@ -26,11 +26,17 @@ object CassandraPersistence {
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
-    keysSegments: KeySegments
+    keysSegments: KeySegments,
+    recordExpiration: RecordExpiration = RecordExpiration.default,
   )(implicit fromBytes: skafka.FromBytes[F, S], toBytes: skafka.ToBytes[F, S]): F[PersistenceModule[F, S]] = for {
-    _keys      <- CassandraKeys.withSchema(session, sync, consistencyOverrides, keysSegments)
-    _journals  <- CassandraJournals.withSchema(session, sync, consistencyOverrides)
-    _snapshots <- CassandraSnapshots.withSchema[F, S](session, sync, consistencyOverrides)
+    _keys <- CassandraKeys.withSchema(session, sync, consistencyOverrides, keysSegments, ttl = recordExpiration.keys)
+    _journals <- CassandraJournals.withSchema(session, sync, consistencyOverrides, ttl = recordExpiration.journals)
+    _snapshots <- CassandraSnapshots.withSchema[F, S](
+      session,
+      sync,
+      consistencyOverrides,
+      ttl = recordExpiration.snapshots
+    )
   } yield new CassandraPersistence[F, S] {
     def keys      = _keys
     def journals  = _journals
@@ -50,13 +56,32 @@ object CassandraPersistence {
     session: scassandra.CassandraSession[F],
     sync: CassandraSync[F],
     consistencyOverrides: ConsistencyOverrides,
-    keysSegments: KeySegments
+    keysSegments: KeySegments,
+    recordExpiration: RecordExpiration = RecordExpiration.default,
   )(implicit fromBytes: skafka.FromBytes[Try, S], toBytes: skafka.ToBytes[Try, S]): F[PersistenceModule[F, S]] = {
     val fromTry                              = FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
     implicit val _fromBytes: FromBytes[F, S] = fromBytes mapK fromTry
     implicit val _toBytes: ToBytes[F, S]     = toBytes mapK fromTry
-    withSchemaF(session, sync, consistencyOverrides, keysSegments)
+    withSchemaF(session, sync, consistencyOverrides, keysSegments, recordExpiration)
   }
+
+  // This exists for the sake of binary compatibility, to be removed in next major version
+  def withSchemaF[F[_]: Async, S](
+    session: scassandra.CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides,
+    keysSegments: KeySegments,
+  )(implicit fromBytes: skafka.FromBytes[F, S], toBytes: skafka.ToBytes[F, S]): F[PersistenceModule[F, S]] =
+    withSchemaF(session, sync, consistencyOverrides, keysSegments, RecordExpiration.default)
+
+  // This exists for the sake of binary compatibility, to be removed in next major version
+  def withSchema[F[_]: Async, S](
+    session: scassandra.CassandraSession[F],
+    sync: CassandraSync[F],
+    consistencyOverrides: ConsistencyOverrides,
+    keysSegments: KeySegments,
+  )(implicit fromBytes: skafka.FromBytes[Try, S], toBytes: skafka.ToBytes[Try, S]): F[PersistenceModule[F, S]] =
+    withSchema(session, sync, consistencyOverrides, keysSegments, RecordExpiration.default)
 
   /** Deletes all data in Cassandra. Uses default names for all Cassandra tables:
     *   - for keys see [[com.evolutiongaming.kafka.flow.key.CassandraKeys.DefaultTableName]]
