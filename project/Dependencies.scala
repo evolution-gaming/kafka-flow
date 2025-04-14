@@ -9,7 +9,7 @@ object Dependencies {
   val skafka            = "com.evolutiongaming" %% "skafka"              % "17.1.3"
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.0.2"
   val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.3.0"
-  val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "3.1.0"
+  val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "3.1.1"
   val random            = "com.evolution"       %% "random"              % "1.0.5"
   val retry             = "com.evolutiongaming" %% "retry"               % "3.1.0"
   val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.1.1"
