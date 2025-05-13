@@ -178,7 +178,6 @@ lazy val journal = (project in file("kafka-journal"))
       Testing.munit % Test,
     ),
   )
-  .settings(crossScalaVersions -= Scala3Version)
 
 lazy val docs = (project in file("kafka-flow-docs"))
   .dependsOn(core, `persistence-cassandra`, `persistence-kafka`, metrics)
