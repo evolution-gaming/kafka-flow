@@ -82,7 +82,8 @@ object KafkaPersistenceModule {
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
     snapshotTopicPartition: TopicPartition,
-    metrics: FlowMetrics[F]
+    metrics: FlowMetrics[F],
+    partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
@@ -90,13 +91,24 @@ object KafkaPersistenceModule {
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     implicit val fromTry: FromTry[F] = FromTry.lift
 
-    def readPartitionData(implicit log: Log[F]): F[BytesByKey] =
-      KafkaPartitionPersistence.readSnapshots[F](
-        consumerOf     = consumerOf,
-        consumerConfig = consumerConfig,
-        snapshotTopic  = snapshotTopicPartition.topic,
-        partition      = snapshotTopicPartition.partition
-      )
+    def readPartitionData(implicit log: Log[F]): F[BytesByKey] = {
+      val targetPartition = partitionMapper.getStatePartition(snapshotTopicPartition.partition)
+      KafkaPartitionPersistence
+        .readSnapshots[F](
+          consumerOf     = consumerOf,
+          consumerConfig = consumerConfig,
+          snapshotTopic  = snapshotTopicPartition.topic,
+          partition      = targetPartition
+        )
+        .map { snapshots =>
+          snapshots
+            .view
+            .filterKeys { key =>
+              partitionMapper.isStateKeyOwned(key, snapshotTopicPartition.partition)
+            }
+            .toMap
+        }
+    }
 
     def makeKeysOf(cache: Cache[F, String, ByteVector]): F[KeysOf[F, KafkaKey]] = {
       LogOf[F].apply(classOf[KeysOf[F, KafkaKey]]).map { implicit log =>
@@ -127,7 +139,7 @@ object KafkaPersistenceModule {
 
         val snapshotDatabase = SnapshotDatabase(
           read  = read,
-          write = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition, producer)
+          write = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition, producer, partitionMapper)
         ).withMetricsK(metrics.snapshotDatabaseMetrics)
 
         PersistenceOf.snapshotsOnly[F, KafkaKey, S, ConsumerRecord[String, ByteVector]](
