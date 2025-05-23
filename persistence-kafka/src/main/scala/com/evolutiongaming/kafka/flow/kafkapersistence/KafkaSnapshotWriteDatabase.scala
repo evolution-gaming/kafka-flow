@@ -12,7 +12,7 @@ object KafkaSnapshotWriteDatabase {
   def of[F[_]: FromTry: Monad, S: ToBytes[F, *]](
     snapshotTopicPartition: TopicPartition,
     producer: Producer[F],
-    partitionMapper: KafkaPersistencePartitionMapper,
+    partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
   ): SnapshotWriteDatabase[F, KafkaKey, S] = new SnapshotWriteDatabase[F, KafkaKey, S] {
     override def persist(key: KafkaKey, snapshot: S): F[Unit] = produce(key, snapshot.some)
 
