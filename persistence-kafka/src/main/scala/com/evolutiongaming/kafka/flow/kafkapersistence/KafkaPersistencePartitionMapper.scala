@@ -5,9 +5,9 @@ import org.apache.kafka.clients.producer.internals.BuiltInPartitioner
 
 /** Maps partitions of source Kafka topics into persistence topics.
   *
-  * Please be careful when using this with [[com.evolutiongaming.kafka.flow.RemapKey]]. Only the identity mapper is
+  * Please be careful when using this with `com.evolutiongaming.kafka.flow.RemapKey`. Only the identity mapper is
   * guaranteed to work properly with an arbitrary `RemapKey`, for other combinations you have to manually ensure that
-  * the [[isStateKeyOwned]] implementation is correct and will not allow duplicate KeyFlows.
+  * the `isStateKeyOwned` implementation is correct and will not allow duplicate KeyFlows.
   *
   * If the aggregate key depends on the record's contents, then only the identity mapper can be used.
   */
@@ -22,7 +22,7 @@ trait KafkaPersistencePartitionMapper {
   def getStatePartition(sourcePartition: Partition): Partition
 
   /** Checks if the aggregate in the state partition should be initialized as a
-    * [[com.evolutiongaming.kafka.flow.KeyFlow]].
+    * `com.evolutiongaming.kafka.flow.KeyFlow`.
     *
     * If the aggregate is initialized, it will have timers and ticks started. This is not desirable if the aggregate is
     * actually sourced from a different partition, which will also be started concurrently.

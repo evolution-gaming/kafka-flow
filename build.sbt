@@ -2,7 +2,7 @@ import Dependencies.*
 
 ThisBuild / versionScheme := Some("early-semver")
 ThisBuild / evictionErrorLevel := Level.Warn
-ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
+ThisBuild / versionPolicyIntention := Compatibility.None
 
 lazy val Scala3Version = "3.3.5"
 lazy val Scala2Version = "2.13.16"
