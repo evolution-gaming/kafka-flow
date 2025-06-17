@@ -2,8 +2,8 @@ import sbt.*
 
 object Dependencies {
 
-  val catsHelper        = "com.evolutiongaming" %% "cats-helper"         % "3.11.3"
-  val catsHelperLogback = "com.evolutiongaming" %% "cats-helper-logback" % "3.11.3"
+  val catsHelper        = "com.evolutiongaming" %% "cats-helper"         % "3.12.0"
+  val catsHelperLogback = "com.evolutiongaming" %% "cats-helper-logback" % "3.12.0"
   val smetrics          = "com.evolutiongaming" %% "smetrics"            % "2.3.2"
   val scache            = "com.evolution"       %% "scache"              % "5.1.3"
   val skafka            = "com.evolutiongaming" %% "skafka"              % "17.1.3"
