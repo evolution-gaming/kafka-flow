@@ -24,7 +24,7 @@ object Dependencies {
   }
 
   object Scodec {
-    val coreScala213 = "org.scodec" %% "scodec-core" % "1.11.10"
+    val coreScala213 = "org.scodec" %% "scodec-core" % "1.11.11"
     val coreScala3   = "org.scodec" %% "scodec-core" % "2.3.2"
     val bits         = "org.scodec" %% "scodec-bits" % "1.2.1"
   }
