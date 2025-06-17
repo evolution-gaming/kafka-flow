@@ -36,7 +36,8 @@ object KafkaPersistenceModuleOf {
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
     snapshotTopic: Topic,
-    metrics: FlowMetrics[F]
+    metrics: FlowMetrics[F],
+    partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
@@ -47,7 +48,8 @@ object KafkaPersistenceModuleOf {
       producer               = producer,
       consumerConfig         = consumerConfig,
       snapshotTopicPartition = TopicPartition(snapshotTopic, partition),
-      metrics                = metrics
+      metrics                = metrics,
+      partitionMapper        = partitionMapper,
     )
   }
 
@@ -60,6 +62,7 @@ object KafkaPersistenceModuleOf {
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
-  ): KafkaPersistenceModuleOf[F, S] = caching(consumerOf, producer, consumerConfig, snapshotTopic, FlowMetrics.empty[F])
+  ): KafkaPersistenceModuleOf[F, S] =
+    caching(consumerOf, producer, consumerConfig, snapshotTopic, FlowMetrics.empty[F])
 
 }
