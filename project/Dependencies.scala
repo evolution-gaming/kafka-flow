@@ -42,7 +42,7 @@ object Dependencies {
   }
 
   object PureConfig {
-    private val version    = "0.17.8"
+    private val version    = "0.17.9"
     lazy val GenericScala3 = "com.github.pureconfig" %% "pureconfig-generic-scala3" % version
   }
 
