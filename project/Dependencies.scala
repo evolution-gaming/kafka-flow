@@ -12,7 +12,7 @@ object Dependencies {
   val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "3.1.1"
   val random            = "com.evolution"       %% "random"              % "1.0.5"
   val retry             = "com.evolutiongaming" %% "retry"               % "3.1.0"
-  val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.1.1"
+  val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.2.3"
 
   object Cats {
     private val version       = "2.13.0"
