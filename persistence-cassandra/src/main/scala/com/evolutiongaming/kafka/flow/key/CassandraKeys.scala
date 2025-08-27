@@ -56,7 +56,7 @@ class CassandraKeys[F[_]: Async](
         .encode("group_id", key.groupId)
         .encode("segment", calculateSegment(key, segments))
         .encode("topic", key.topicPartition.topic)
-        .encode("partition", key.topicPartition.partition)
+        .encode("partition", key.topicPartition.partition.value)
         .encode("key", key.key)
         .encode("created", created)
         .encode("created_date", LocalDate.ofInstant(created, ZoneOffset.UTC))
@@ -73,7 +73,7 @@ class CassandraKeys[F[_]: Async](
         .encode("group_id", key.groupId)
         .encode("segment", calculateSegment(key, segments))
         .encode("topic", key.topicPartition.topic)
-        .encode("partition", key.topicPartition.partition)
+        .encode("partition", key.topicPartition.partition.value)
         .encode("key", key.key)
         .withConsistencyLevel(consistencyOverrides.write)
 
