@@ -3,14 +3,13 @@ package com.evolutiongaming.kafka.flow.key
 import cats.Monad
 import cats.effect.{Async, Clock}
 import cats.syntax.all.*
-import com.datastax.driver.core.{BoundStatement, Row}
+import com.datastax.driver.core.{PreparedStatement, Row}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper.*
 import com.evolutiongaming.kafka.flow.KafkaKey
-import com.evolutiongaming.kafka.flow.cassandra.CassandraCodecs.*
-import com.evolutiongaming.kafka.flow.cassandra.{ConsistencyOverrides, StatementHelper}
 import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
-import com.evolutiongaming.kafka.flow.key.CassandraKeys.{Statements, rowToKey}
+import com.evolutiongaming.kafka.flow.cassandra.{ConsistencyOverrides, StatementHelper}
+import com.evolutiongaming.kafka.flow.key.CassandraKeys.rowToKey
 import com.evolutiongaming.scassandra.CassandraSession
 import com.evolutiongaming.scassandra.StreamingCassandraSession.*
 import com.evolutiongaming.scassandra.syntax.*
@@ -35,8 +34,6 @@ import scala.concurrent.duration.FiniteDuration
   *   allows overriding read and write query consistency separately
   * @param segments
   *   a number of segments
-  * @param tableName
-  *   name of the table to use
   * @see
   *   See `com.evolutiongaming.kafka.flow.key.KeySchema` for a schema description
   */
@@ -44,31 +41,43 @@ class CassandraKeys[F[_]: Async](
   session: CassandraSession[F],
   consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
   segments: KeySegments,
-  tableName: String           = CassandraKeys.DefaultTableName,
-  ttl: Option[FiniteDuration] = None,
+  fetchAllStatement: PreparedStatement,
+  persistStatement: PreparedStatement,
+  deleteStatement: PreparedStatement,
 ) extends KeyDatabase[F, KafkaKey] {
-
-  // This exists for the sake of binary compatibility, to be removed in next major version
-  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides, segments: KeySegments) =
-    this(session, consistencyOverrides, segments, CassandraKeys.DefaultTableName)
-
-  // This exists for the sake of binary compatibility, to be removed in next major version
-  def this(session: CassandraSession[F], segments: KeySegments) =
-    this(session, ConsistencyOverrides.none, segments, CassandraKeys.DefaultTableName)
 
   def persist(key: KafkaKey): F[Unit] =
     for {
-      boundStatement <- Statements.persist(session, key, segments, tableName, ttl)
-      statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _              <- session.execute(statement).void
+      created <- Clock[F].instant
+      boundStatement = persistStatement
+        .bind()
+        .encode("application_id", key.applicationId)
+        .encode("group_id", key.groupId)
+        .encode("segment", calculateSegment(key, segments))
+        .encode("topic", key.topicPartition.topic)
+        .encode("partition", key.topicPartition.partition.value)
+        .encode("key", key.key)
+        .encode("created", created)
+        .encode("created_date", LocalDate.ofInstant(created, ZoneOffset.UTC))
+        .encode("metadata", "")
+        .withConsistencyLevel(consistencyOverrides.write)
+      _ <- session.execute(boundStatement).void
     } yield ()
 
-  def delete(key: KafkaKey): F[Unit] =
-    for {
-      boundStatement <- Statements.delete(session, key, segments, tableName)
-      statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-      _              <- session.execute(statement).void
-    } yield ()
+  def delete(key: KafkaKey): F[Unit] = {
+    val boundStatement =
+      deleteStatement
+        .bind()
+        .encode("application_id", key.applicationId)
+        .encode("group_id", key.groupId)
+        .encode("segment", calculateSegment(key, segments))
+        .encode("topic", key.topicPartition.topic)
+        .encode("partition", key.topicPartition.partition.value)
+        .encode("key", key.key)
+        .withConsistencyLevel(consistencyOverrides.write)
+
+    session.execute(boundStatement).void
+  }
 
   def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, KafkaKey] =
     for {
@@ -85,15 +94,24 @@ class CassandraKeys[F[_]: Async](
     segment: SegmentNr,
     topicPartition: TopicPartition
   ): Stream[F, KafkaKey] = {
-    val boundStatement = Statements
-      .all(session, applicationId, groupId, segment, topicPartition, tableName)
-      .map(_.withConsistencyLevel(consistencyOverrides.read))
+    val boundStatement =
+      fetchAllStatement
+        .bind()
+        .encode("application_id", applicationId)
+        .encode("group_id", groupId)
+        .encode("segment", segment)
+        .encode("topic", topicPartition.topic)
+        .encode("partition", topicPartition.partition.value)
+        .withConsistencyLevel(consistencyOverrides.read)
 
-    Stream
-      .lift(boundStatement)
-      .flatMap(session.executeStream(_))
+    session
+      .executeStream(boundStatement)
       .map(rowToKey(_, applicationId, groupId, topicPartition))
   }
+
+  private def calculateSegment(key: KafkaKey, segments: KeySegments): Long =
+    math.abs(key.key.hashCode.toLong % segments.value)
+
 }
 object CassandraKeys {
 
@@ -127,28 +145,20 @@ object CassandraKeys {
     tableName: String           = DefaultTableName,
     ttl: Option[FiniteDuration] = None,
   ): F[KeyDatabase[F, KafkaKey]] = {
-    KeySchema
-      .of(session, sync, tableName)
-      .create
-      .as(new CassandraKeys(session, consistencyOverrides, keySegments, tableName, ttl))
+    for {
+      _                 <- KeySchema.of(session, sync, tableName).create
+      fetchAllStatement <- Statements.prepareAllByFullKey(session, tableName)
+      persistStatement  <- Statements.preparePersistStatement(session, tableName, ttl)
+      deleteStatement   <- Statements.prepareDelete(session, tableName)
+    } yield new CassandraKeys(
+      session              = session,
+      consistencyOverrides = consistencyOverrides,
+      segments             = keySegments,
+      fetchAllStatement    = fetchAllStatement,
+      persistStatement     = persistStatement,
+      deleteStatement      = deleteStatement
+    )
   }
-
-  // This exists for the sake of binary compatibility, to be removed in next major version
-  def withSchema[F[_]: Async](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides,
-    keySegments: KeySegments,
-  ): F[KeyDatabase[F, KafkaKey]] = withSchema(session, sync, consistencyOverrides, keySegments, DefaultTableName)
-
-  @deprecated(
-    "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
-    since = "6.1.3"
-  )
-  def truncate[F[_]: Monad](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-  ): F[Unit] = truncate(session, sync, DefaultTableName)
 
   def truncate[F[_]: Monad](
     session: CassandraSession[F],
@@ -165,191 +175,69 @@ object CassandraKeys {
     )
 
   protected object Statements {
-
-    @deprecated(
-      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
-      since = "6.1.3"
-    )
-    def all[F[_]: Monad](
+    def prepareAllByFullKey[F[_]](
       session: CassandraSession[F],
-      applicationId: String,
-      groupId: String,
-      segment: SegmentNr,
-    ): F[BoundStatement] = all(session, applicationId, groupId, segment, DefaultTableName)
-
-    def all[F[_]: Monad](
-      session: CassandraSession[F],
-      applicationId: String,
-      groupId: String,
-      segment: SegmentNr,
-      tableName: String,
-    ): F[BoundStatement] =
+      tableName: String
+    ): F[PreparedStatement] = {
       session
-        .prepare(
-          s"""
-          |SELECT
-          |  topic,
-          |  partition,
-          |  key
-          |FROM
-          |  $tableName
-          |WHERE
-          |  application_id = :application_id
-          |  AND group_id = :group_id
-          |  AND segment = :segment
-          |ORDER BY
-          |  topic, partition, key
-      """.stripMargin
-        )
-        .map(
-          _.bind()
-            .encode("application_id", applicationId)
-            .encode("group_id", groupId)
-            .encode("segment", segment)
-        )
+        .prepare(s"""
+                    |SELECT
+                    |  key
+                    |FROM
+                    |  $tableName
+                    |WHERE
+                    |  application_id = :application_id
+                    |  AND group_id = :group_id
+                    |  AND segment = :segment
+                    |  AND topic = :topic
+                    |  AND partition = :partition
+                    |ORDER BY
+                    |  topic, partition, key
+      """.stripMargin)
+    }
 
-    @deprecated(
-      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
-      since = "6.1.3"
-    )
-    def all[F[_]: Monad](
+    def preparePersistStatement[F[_]](
       session: CassandraSession[F],
-      applicationId: String,
-      groupId: String,
-      segment: SegmentNr,
-      topicPartition: TopicPartition,
-    ): F[BoundStatement] = all(session, applicationId, groupId, segment, topicPartition, DefaultTableName)
-
-    def all[F[_]: Monad](
-      session: CassandraSession[F],
-      applicationId: String,
-      groupId: String,
-      segment: SegmentNr,
-      topicPartition: TopicPartition,
-      tableName: String,
-    ): F[BoundStatement] =
-      session
-        .prepare(
-          s"""
-          |SELECT
-          |  key
-          |FROM
-          |  $tableName
-          |WHERE
-          |  application_id = :application_id
-          |  AND group_id = :group_id
-          |  AND segment = :segment
-          |  AND topic = :topic
-          |  AND partition = :partition
-          |ORDER BY
-          |  topic, partition, key
-      """.stripMargin
-        )
-        .map(
-          _.bind()
-            .encode("application_id", applicationId)
-            .encode("group_id", groupId)
-            .encode("segment", segment)
-            .encode("topic", topicPartition.topic)
-            .encode("partition", topicPartition.partition.value)
-        )
-
-    @deprecated(
-      "Use the version with an explicit table name and TTL. This exists to preserve binary compatibility until the next major release",
-      since = "6.1.3"
-    )
-    def persist[F[_]: Monad: Clock](
-      session: CassandraSession[F],
-      key: KafkaKey,
-      segments: KeySegments,
-    ): F[BoundStatement] =
-      persist(session, key, segments, DefaultTableName, ttl = None)
-
-    def persist[F[_]: Monad: Clock](
-      session: CassandraSession[F],
-      key: KafkaKey,
-      segments: KeySegments,
       tableName: String,
       ttl: Option[FiniteDuration],
-    ): F[BoundStatement] =
-      for {
-        preparedStatement <- session.prepare(
-          s"""
-          |UPDATE
-          |  $tableName
-          |  ${StatementHelper.ttlFragment(ttl)}
-          |SET
-          |  created = :created,
-          |  created_date = :created_date,
-          |  metadata = :metadata
-          |WHERE
-          |  application_id = :application_id
-          |  AND group_id = :group_id
-          |  AND segment = :segment
-          |  AND topic = :topic
-          |  AND partition = :partition
-          |  AND key = :key
+    ): F[PreparedStatement] = {
+      session.prepare(
+        s"""
+           |UPDATE
+           |  $tableName
+           |  ${StatementHelper.ttlFragment(ttl)}
+           |SET
+           |  created = :created,
+           |  created_date = :created_date,
+           |  metadata = :metadata
+           |WHERE
+           |  application_id = :application_id
+           |  AND group_id = :group_id
+           |  AND segment = :segment
+           |  AND topic = :topic
+           |  AND partition = :partition
+           |  AND key = :key
         """.stripMargin
-        )
+      )
+    }
 
-        created <- Clock[F].instant
-      } yield {
-        preparedStatement
-          .bind()
-          .encode("application_id", key.applicationId)
-          .encode("group_id", key.groupId)
-          .encode("segment", calculateSegment(key, segments))
-          .encode("topic", key.topicPartition.topic)
-          .encode("partition", key.topicPartition.partition)
-          .encode("key", key.key)
-          .encode("created", created)
-          .encode("created_date", LocalDate.ofInstant(created, ZoneOffset.UTC))
-          .encode("metadata", "")
-      }
-
-    @deprecated(
-      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
-      since = "6.1.3"
-    )
-    def delete[F[_]: Monad](
+    def prepareDelete[F[_]](
       session: CassandraSession[F],
-      key: KafkaKey,
-      segments: KeySegments,
-    ): F[BoundStatement] =
-      delete(session, key, segments, DefaultTableName)
-
-    def delete[F[_]: Monad](
-      session: CassandraSession[F],
-      key: KafkaKey,
-      segments: KeySegments,
       tableName: String,
-    ): F[BoundStatement] =
+    ): F[PreparedStatement] = {
       session
-        .prepare(
-          s"""
-          |DELETE FROM
-          |  $tableName
-          |WHERE
-          |  application_id = :application_id
-          |  AND group_id = :group_id
-          |  AND segment = :segment
-          |  AND topic = :topic
-          |  AND partition = :partition
-          |  AND key = :key
-        """.stripMargin
-        )
-        .map(
-          _.bind()
-            .encode("application_id", key.applicationId)
-            .encode("group_id", key.groupId)
-            .encode("segment", calculateSegment(key, segments))
-            .encode("topic", key.topicPartition.topic)
-            .encode("partition", key.topicPartition.partition)
-            .encode("key", key.key)
-        )
-
-    private def calculateSegment(key: KafkaKey, segments: KeySegments): Long =
-      math.abs(key.key.hashCode.toLong % segments.value)
+        .prepare(s"""
+                    |DELETE FROM
+                    |  $tableName
+                    |WHERE
+                    |  application_id = :application_id
+                    |  AND group_id = :group_id
+                    |  AND segment = :segment
+                    |  AND topic = :topic
+                    |  AND partition = :partition
+                    |  AND key = :key
+        """.stripMargin)
+    }
 
   }
 }
