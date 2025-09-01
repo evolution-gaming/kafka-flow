@@ -52,14 +52,14 @@ class KeySpec extends CassandraSpec {
   test("failures") {
     val test: IO[Unit] = for {
       failAfter <- Ref.of[IO, Int](100)
-      session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
+      session    = CassandraSessionStub.injectFailuresOnExecute(cassandra().session, failAfter)
       keys <- CassandraKeys.withSchema(
         session,
         cassandra().sync,
         ConsistencyOverrides.none,
         CassandraKeys.DefaultSegments
       )
-      _    <- failAfter.set(1)
+      _    <- failAfter.set(0) // fail immediately on the first read attempt
       keys <- keys.all("KeySpec", "integration-tests-1", TopicPartition("topic", Partition.min)).toList.attempt
     } yield assert(clue(keys.isLeft))
 
