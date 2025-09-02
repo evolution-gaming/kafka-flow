@@ -52,7 +52,7 @@ class KeySpec extends CassandraSpec {
   test("failures") {
     val test: IO[Unit] = for {
       failAfter <- Ref.of[IO, Int](100)
-      session    = CassandraSessionStub.injectFailuresOnExecute(cassandra().session, failAfter)
+      session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
       keys <- CassandraKeys.withSchema(
         session,
         cassandra().sync,
