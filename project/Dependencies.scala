@@ -30,9 +30,8 @@ object Dependencies {
   }
 
   object KafkaJournal {
-    private val version = "4.3.1"
-    val journal         = "com.evolutiongaming" %% "kafka-journal"             % version
-    val persistence     = "com.evolutiongaming" %% "kafka-journal-persistence" % version
+    private val version = "5.0.0"
+    val journal         = "com.evolution" %% "kafka-journal" % version
   }
 
   object Monocle {
