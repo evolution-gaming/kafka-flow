@@ -20,10 +20,6 @@ trait KeyDatabase[F[_], K] {
 
   def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, K]
 
-  @deprecated("Use `toKeysOf` instead", "5.0.6")
-  def keysOf(implicit F: Monad[F], logOf: LogOf[F]): F[KeysOf[F, K]] =
-    logOf(KeyDatabase.getClass) map { implicit log => KeysOf(this) }
-
   def toKeysOf(implicit F: Monad[F], logOf: LogOf[F], logPrefix: LogPrefix[K]): F[KeysOf[F, K]] =
     logOf(KeyDatabase.getClass) map { implicit log => KeysOf.of(this) }
 }
