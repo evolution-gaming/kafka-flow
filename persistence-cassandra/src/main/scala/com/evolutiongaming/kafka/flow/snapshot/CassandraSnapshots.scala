@@ -3,7 +3,7 @@ package com.evolutiongaming.kafka.flow.snapshot
 import cats.Monad
 import cats.effect.{Async, Clock}
 import cats.syntax.all.*
-import com.datastax.driver.core.{BoundStatement, Row}
+import com.datastax.driver.core.{BoundStatement, PreparedStatement, Row}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper.*
 import com.evolutiongaming.kafka.flow.KafkaKey
@@ -21,39 +21,34 @@ import scala.concurrent.duration.FiniteDuration
 
 class CassandraSnapshots[F[_]: Async, T](
   session: CassandraSession[F],
+  getStatement: PreparedStatement,
+  persistStatement: PreparedStatement,
+  deleteStatement: PreparedStatement,
   consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
-  tableName: String                          = CassandraSnapshots.DefaultTableName,
-  ttl: Option[FiniteDuration]                = None,
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
-  // This exists for the sake of binary compatibility, to be removed in next major version
-  def this(session: CassandraSession[F], consistencyOverrides: ConsistencyOverrides)(
-    implicit fromBytes: FromBytes[F, T],
-    toBytes: ToBytes[F, T]
-  ) =
-    this(session, consistencyOverrides, DefaultTableName)
-
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
     for {
-      boundStatement <- Statements.persist(session, key, snapshot, tableName, ttl)
+      boundStatement <- Statements.bindPersist(persistStatement, key, snapshot)
       statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
       _              <- session.execute(statement).void
     } yield ()
 
-  def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] =
-    for {
-      boundStatement <- Statements.get(session, key, tableName)
-      statement       = boundStatement.withConsistencyLevel(consistencyOverrides.read)
-      row            <- session.executeStream(statement).first
-      snapshot       <- row.map(row => decode(row)).sequence
-    } yield snapshot
+  def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] = {
+    val boundStatement =
+      Statements.bindGet(getStatement, key).withConsistencyLevel(consistencyOverrides.read)
 
-  def delete(key: KafkaKey): F[Unit] = for {
-    boundStatement <- Statements.delete(session, key, tableName)
-    statement       = boundStatement.withConsistencyLevel(consistencyOverrides.write)
-    _              <- session.execute(statement).void
-  } yield ()
+    for {
+      row      <- session.executeStream(boundStatement).first
+      snapshot <- row.map(row => decode(row)).sequence
+    } yield snapshot
+  }
+
+  def delete(key: KafkaKey): F[Unit] = {
+    val boundStatement = Statements.bindDelete(deleteStatement, key).withConsistencyLevel(consistencyOverrides.write)
+    session.execute(boundStatement).void
+  }
 
 }
 
@@ -88,46 +83,24 @@ object CassandraSnapshots {
     implicit fromBytes: FromBytes[F, T],
     toBytes: ToBytes[F, T]
   ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
-    SnapshotSchema
-      .of(session, sync, tableName)
-      .create
-      .as(new CassandraSnapshots(session, consistencyOverrides, tableName, ttl))
-
-  // This exists for the sake of binary compatibility, to be removed in next major version
-  def withSchema[F[_]: Async, T](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-  )(
-    implicit fromBytes: FromBytes[F, T],
-    toBytes: ToBytes[F, T]
-  ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
-    withSchema(session, sync, ConsistencyOverrides.none, DefaultTableName, None)
-
-  // This exists for the sake of binary compatibility, to be removed in next major version
-  def withSchema[F[_]: Async, T](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-    consistencyOverrides: ConsistencyOverrides,
-  )(
-    implicit fromBytes: FromBytes[F, T],
-    toBytes: ToBytes[F, T]
-  ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
-    withSchema(session, sync, consistencyOverrides, DefaultTableName, None)
+    for {
+      _                <- SnapshotSchema.of(session, sync, tableName).create
+      getStatement     <- Statements.prepareGet(session, tableName)
+      persistStatement <- Statements.preparePersist(session, tableName, ttl)
+      deleteStatement  <- Statements.prepareDelete(session, tableName)
+    } yield new CassandraSnapshots(
+      session              = session,
+      getStatement         = getStatement,
+      persistStatement     = persistStatement,
+      deleteStatement      = deleteStatement,
+      consistencyOverrides = consistencyOverrides,
+    )
 
   def truncate[F[_]: Monad](
     session: CassandraSession[F],
     sync: CassandraSync[F],
     tableName: String = DefaultTableName,
   ): F[Unit] = SnapshotSchema.of(session, sync, tableName).truncate
-
-  @deprecated(
-    "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
-    since = "6.1.3"
-  )
-  def truncate[F[_]: Monad](
-    session: CassandraSession[F],
-    sync: CassandraSync[F],
-  ): F[Unit] = truncate(session, sync, DefaultTableName)
 
   // we cannot use DecodeRow here because Code[T].decode is effectful
   protected def decode[F[_]: Monad, T](row: Row)(implicit fromBytes: FromBytes[F, T]): F[KafkaSnapshot[T]] = {
@@ -143,47 +116,40 @@ object CassandraSnapshots {
 
   protected object Statements {
 
-    @deprecated(
-      "Use the version with an explicit table name and TTL. This exists to preserve binary compatibility until the next major release",
-      since = "6.1.3"
-    )
-    def persist[F[_]: Clock: Monad, T](
+    def preparePersist[F[_]](
       session: CassandraSession[F],
-      key: KafkaKey,
-      snapshot: KafkaSnapshot[T],
-    )(implicit toBytes: ToBytes[F, T]): F[BoundStatement] =
-      persist(session, key, snapshot, DefaultTableName, None)
-
-    def persist[F[_]: Clock: Monad, T](
-      session: CassandraSession[F],
-      key: KafkaKey,
-      snapshot: KafkaSnapshot[T],
       tableName: String,
       ttl: Option[FiniteDuration],
+    ): F[PreparedStatement] =
+      session.prepare(
+        s"""
+           |UPDATE
+           |  $tableName
+           |  ${StatementHelper.ttlFragment(ttl)}
+           |SET
+           |  created = :created,
+           |  metadata = :metadata,
+           |  value = :value,
+           |  offset = :offset
+           |WHERE
+           |  application_id = :application_id
+           |  AND group_id = :group_id
+           |  AND topic = :topic
+           |  AND partition = :partition
+           |  AND key = :key
+        """.stripMargin
+      )
+
+    def bindPersist[F[_]: Clock: Monad, T](
+      statement: PreparedStatement,
+      key: KafkaKey,
+      snapshot: KafkaSnapshot[T],
     )(implicit toBytes: ToBytes[F, T]): F[BoundStatement] =
       for {
-        preparedStatement <- session.prepare(
-          s"""
-          |UPDATE
-          |  $tableName
-          |  ${StatementHelper.ttlFragment(ttl)}
-          |SET
-          |  created = :created,
-          |  metadata = :metadata,
-          |  value = :value,
-          |  offset = :offset
-          |WHERE
-          |  application_id = :application_id
-          |  AND group_id = :group_id
-          |  AND topic = :topic
-          |  AND partition = :partition
-          |  AND key = :key
-        """.stripMargin
-        )
         created <- Clock[F].instant
         value   <- toBytes.apply(snapshot.value, key.topicPartition.topic)
       } yield {
-        preparedStatement
+        statement
           .bind()
           .encode("application_id", key.applicationId)
           .encode("group_id", key.groupId)
@@ -196,68 +162,56 @@ object CassandraSnapshots {
           .encode("value", value)
       }
 
-    @deprecated(
-      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
-      since = "6.1.3"
-    )
-    def get[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
-      get(session, key, DefaultTableName)
-
-    def get[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, tableName: String): F[BoundStatement] =
+    def prepareGet[F[_]](session: CassandraSession[F], tableName: String): F[PreparedStatement] =
       session
         .prepare(
           s"""
-          |SELECT
-          |  offset,
-          |  metadata,
-          |  value
-          |FROM
-          |  $tableName
-          |WHERE
-          |  application_id = :application_id
-          |  AND group_id = :group_id
-          |  AND topic = :topic
-          |  AND partition = :partition
-          |  AND key = :key
+             |SELECT
+             |  offset,
+             |  metadata,
+             |  value
+             |FROM
+             |  $tableName
+             |WHERE
+             |  application_id = :application_id
+             |  AND group_id = :group_id
+             |  AND topic = :topic
+             |  AND partition = :partition
+             |  AND key = :key
         """.stripMargin
         )
-        .map(
-          _.bind()
-            .encode("application_id", key.applicationId)
-            .encode("group_id", key.groupId)
-            .encode("topic", key.topicPartition.topic)
-            .encode("partition", key.topicPartition.partition)
-            .encode("key", key.key)
-        )
 
-    @deprecated(
-      "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
-      since = "6.1.3"
-    )
-    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey): F[BoundStatement] =
-      delete(session, key, DefaultTableName)
+    def bindGet(statement: PreparedStatement, key: KafkaKey): BoundStatement =
+      statement
+        .bind()
+        .encode("application_id", key.applicationId)
+        .encode("group_id", key.groupId)
+        .encode("topic", key.topicPartition.topic)
+        .encode("partition", key.topicPartition.partition)
+        .encode("key", key.key)
 
-    def delete[F[_]: Monad](session: CassandraSession[F], key: KafkaKey, tableName: String): F[BoundStatement] =
+    def prepareDelete[F[_]](session: CassandraSession[F], tableName: String): F[PreparedStatement] =
       session
         .prepare(
           s"""
-          |DELETE FROM
-          |  $tableName
-          |WHERE
-          |  application_id = :application_id
-          |  AND group_id = :group_id
-          |  AND topic = :topic
-          |  AND partition = :partition
-          |  AND key = :key
+             |DELETE FROM
+             |  $tableName
+             |WHERE
+             |  application_id = :application_id
+             |  AND group_id = :group_id
+             |  AND topic = :topic
+             |  AND partition = :partition
+             |  AND key = :key
         """.stripMargin
         )
-        .map(
-          _.bind()
-            .encode("application_id", key.applicationId)
-            .encode("group_id", key.groupId)
-            .encode("topic", key.topicPartition.topic)
-            .encode("partition", key.topicPartition.partition)
-            .encode("key", key.key)
-        )
+
+    def bindDelete(statement: PreparedStatement, key: KafkaKey): BoundStatement =
+      statement
+        .bind()
+        .encode("application_id", key.applicationId)
+        .encode("group_id", key.groupId)
+        .encode("topic", key.topicPartition.topic)
+        .encode("partition", key.topicPartition.partition)
+        .encode("key", key.key)
   }
 }
