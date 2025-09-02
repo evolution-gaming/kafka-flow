@@ -36,7 +36,7 @@ class SnapshotSpec extends CassandraSpec {
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "queries")
     val test: IO[Unit] = for {
       failAfter <- Ref.of[IO, Int](100)
-      session    = CassandraSessionStub.injectFailuresOnExecute(cassandra().session, failAfter)
+      session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
       snapshots <- CassandraSnapshots.withSchema[IO, String](session, cassandra().sync)
       _         <- failAfter.set(0) // fail immediately on the first read attempt
       snapshots <- snapshots.get(key).attempt

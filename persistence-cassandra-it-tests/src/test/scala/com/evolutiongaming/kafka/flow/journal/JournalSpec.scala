@@ -47,7 +47,7 @@ class JournalSpec extends CassandraSpec {
       failAfter <- Ref.of[IO, Int](100)
       session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
       journals  <- CassandraJournals.withSchema(session, cassandra().sync)
-      _         <- failAfter.set(1)
+      _         <- failAfter.set(0) // fail immediately on the first read attempt
       records   <- journals.get(key).toList.attempt
     } yield assert(clue(records.isLeft))
 

@@ -68,7 +68,13 @@ object CassandraJournals {
       getStatement     <- Statements.prepareGet(session, tableName)
       persistStatement <- Statements.preparePersist(session, tableName, ttl)
       deleteStatement  <- Statements.prepareDelete(session, tableName)
-    } yield new CassandraJournals(session, getStatement, persistStatement, deleteStatement, consistencyOverrides)
+    } yield new CassandraJournals(
+      session              = session,
+      getStatement         = getStatement,
+      persistStatement     = persistStatement,
+      deleteStatement      = deleteStatement,
+      consistencyOverrides = consistencyOverrides
+    )
   }
 
   def truncate[F[_]: Monad](

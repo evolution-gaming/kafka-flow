@@ -20,7 +20,7 @@ import scala.concurrent.duration.*
 class FlowSpec extends CassandraSpec {
 
   test("flow fails when Cassandra insert fails") {
-    val flow = for {
+    val flow: Resource[IO, IO[Unit]] = for {
       failAfter <- Resource.eval(Ref.of[IO, Int](10000))
       session    = CassandraSessionStub.injectFailures(cassandra().session, failAfter)
       storage <- Resource.eval(
@@ -78,11 +78,7 @@ class FlowSpec extends CassandraSpec {
       }
     } yield join
 
-    val test: IO[Unit] = flow use { join =>
-      join.attempt map { result =>
-        assert(clue(result.isLeft))
-      }
-    }
+    val test: IO[Unit] = flow.use(join => join.attempt.map(result => assert(clue(result.isLeft))))
 
     test.unsafeRunSync()
   }
