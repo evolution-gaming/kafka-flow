@@ -1,10 +1,10 @@
 package com.evolutiongaming.kafka.flow.journal
 
 import cats.syntax.option.*
+import com.evolution.kafka.journal.*
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.FoldOption
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
-import com.evolutiongaming.kafka.journal.*
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Header, Offset, TimestampAndType, TimestampType, TopicPartition}
 import munit.FunSuite

@@ -2,10 +2,10 @@ package com.evolutiongaming.kafka.flow.journal
 
 import cats.Monad
 import cats.syntax.all.*
+import com.evolution.kafka.journal.SeqNr
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.FoldOption
 import com.evolutiongaming.kafka.flow.snapshot.{KafkaSnapshot, SnapshotFold}
-import com.evolutiongaming.kafka.journal.SeqNr
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import scodec.bits.ByteVector
 

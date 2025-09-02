@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.journal
 
 import cats.syntax.option.*
-import com.evolutiongaming.kafka.journal.*
+import com.evolution.kafka.journal.*
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Header, Offset, TimestampAndType, TimestampType, TopicPartition}
 import munit.FunSuite

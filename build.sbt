@@ -19,8 +19,6 @@ lazy val commonSettings = Seq(
   licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
   testFrameworks += new TestFramework("munit.Framework"),
   testOptions += Tests.Argument(new TestFramework("munit.Framework"), "+l"),
-  resolvers += Resolver.bintrayRepo("evolutiongaming", "maven"),
-  resolvers ++= Resolver.sonatypeOssRepos("public"),
   libraryDependencySchemes ++= Seq(
     "org.scala-lang.modules" %% "scala-java8-compat" % "always"
   ),
@@ -174,7 +172,7 @@ lazy val journal = (project in file("kafka-journal"))
     name := "kafka-flow-kafka-journal",
     libraryDependencies ++= Seq(
       KafkaJournal.journal,
-      KafkaJournal.persistence,
+//      KafkaJournal.persistence,
       Testing.munit % Test,
     ),
   )
