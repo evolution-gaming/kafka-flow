@@ -13,15 +13,6 @@ trait SnapshotSchema[F[_]] {
 
 object SnapshotSchema {
 
-  @deprecated(
-    "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
-    since = "6.1.3"
-  )
-  def of[F[_]: Monad](
-    session: CassandraSession[F],
-    synchronize: CassandraSync[F],
-  ): SnapshotSchema[F] = of(session, synchronize, CassandraSnapshots.DefaultTableName)
-
   def of[F[_]: Monad](
     session: CassandraSession[F],
     synchronize: CassandraSync[F],

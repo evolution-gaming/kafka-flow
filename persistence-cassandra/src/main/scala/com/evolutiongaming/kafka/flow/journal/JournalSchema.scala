@@ -12,15 +12,6 @@ trait JournalSchema[F[_]] {
 }
 
 object JournalSchema {
-  @deprecated(
-    "Use the version with an explicit table name. This exists to preserve binary compatibility until the next major release",
-    since = "6.1.3"
-  )
-  def of[F[_]: Monad](
-    session: CassandraSession[F],
-    synchronize: CassandraSync[F],
-  ): JournalSchema[F] = of(session, synchronize, CassandraJournals.DefaultTableName)
-
   def of[F[_]: Monad](
     session: CassandraSession[F],
     synchronize: CassandraSync[F],
