@@ -172,7 +172,6 @@ lazy val journal = (project in file("kafka-journal"))
     name := "kafka-flow-kafka-journal",
     libraryDependencies ++= Seq(
       KafkaJournal.journal,
-//      KafkaJournal.persistence,
       Testing.munit % Test,
     ),
   )
