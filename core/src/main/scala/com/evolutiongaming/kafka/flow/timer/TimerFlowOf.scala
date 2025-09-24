@@ -9,6 +9,9 @@ import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
 
 import scala.concurrent.duration.*
 
+/**
+  * Factory of TimerFlows
+  */
 trait TimerFlowOf[F[_]] {
 
   def apply(
