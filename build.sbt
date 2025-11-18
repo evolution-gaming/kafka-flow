@@ -4,7 +4,7 @@ ThisBuild / versionScheme := Some("early-semver")
 ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / versionPolicyIntention := Compatibility.None
 
-lazy val Scala3Version = "3.3.6"
+lazy val Scala3Version = "3.3.7"
 lazy val Scala2Version = "2.13.16"
 
 lazy val commonSettings = Seq(
