@@ -83,8 +83,38 @@ object CassandraSnapshots {
     implicit fromBytes: FromBytes[F, T],
     toBytes: ToBytes[F, T]
   ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
+    withCustomSchema(SnapshotSchema.of(session, sync, tableName), session, consistencyOverrides, tableName, ttl)
+
+  /** Create table with a user defined schema for storing snapshots. If table already exists it will not be recreated.
+    * Note that the table schema must be compatible with predefined queries for storing and retrieving snapshots data.
+    *
+    * @param snapshotSchema
+    *   Custom schema definition
+    * @param session
+    *   Cassandra session to use for creating table
+    * @param consistencyOverrides
+    *   overrides for read/write consistency levels for the snapshots table
+    * @param tableName
+    *   name of the table to create. The default value is "snapshots_v2"
+    * @param ttl
+    *   optional TTL to set on inserted records
+    * @param fromBytes
+    *   deserializer function to convert array of bytes to the snapshot type T
+    * @param toBytes
+    *   serializer function to convert the snapshot type T to array of bytes
+    */
+  def withCustomSchema[F[_]: Async, T](
+    snapshotSchema: SnapshotSchema[F],
+    session: CassandraSession[F],
+    consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
+    tableName: String                          = DefaultTableName,
+    ttl: Option[FiniteDuration]                = None,
+  )(
+    implicit fromBytes: FromBytes[F, T],
+    toBytes: ToBytes[F, T]
+  ): F[SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]]] =
     for {
-      _                <- SnapshotSchema.of(session, sync, tableName).create
+      _                <- snapshotSchema.create
       getStatement     <- Statements.prepareGet(session, tableName)
       persistStatement <- Statements.preparePersist(session, tableName, ttl)
       deleteStatement  <- Statements.prepareDelete(session, tableName)
