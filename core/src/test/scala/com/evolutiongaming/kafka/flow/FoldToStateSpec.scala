@@ -135,6 +135,7 @@ object FoldToStateSpec {
       context.copy(removeCalled = context.removeCalled + 1)
     }
     def log = Log.empty
+    def key = ""
   }
 
 }

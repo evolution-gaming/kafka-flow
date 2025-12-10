@@ -2,8 +2,11 @@ package com.evolutiongaming.kafka.flow.timer
 
 import cats.{Applicative, Monad, MonadThrow}
 import cats.effect.Resource
+import cats.effect.syntax.all.*
 import cats.effect.kernel.Resource.ExitCase
 import cats.syntax.all.*
+import com.evolutiongaming.catshelper.Log.Mdc
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.KeyContext
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
 import com.evolutiongaming.skafka.Offset
@@ -16,8 +19,7 @@ trait TimerFlowOf[F[_]] {
     context: KeyContext[F],
     persistence: FlushBuffers[F],
     timers: TimerContext[F]
-  ): Resource[F, TimerFlow[F]]
-
+  )(implicit logOf: LogOf[F]): Resource[F, TimerFlow[F]]
 }
 object TimerFlowOf {
 
@@ -38,43 +40,48 @@ object TimerFlowOf {
     maxOffsetDifference: Int  = 100000,
     maxIdle: FiniteDuration   = 10.minutes,
     flushOnRevoke: Boolean    = false,
-  ): TimerFlowOf[F] = { (context, persistence, timers) =>
-    def register(touchedAt: Timestamp) =
-      timers.registerProcessing(touchedAt.clock plusMillis fireEvery.toMillis)
+  ): TimerFlowOf[F] =
+    new TimerFlowOf[F] {
+      override def apply(context: KeyContext[F], persistence: FlushBuffers[F], timers: TimerContext[F])(
+        implicit logOf: LogOf[F]
+      ): Resource[F, TimerFlow[F]] = {
+        def register(touchedAt: Timestamp): F[Unit] =
+          timers.registerProcessing(touchedAt.clock plusMillis fireEvery.toMillis)
 
-    val acquire = Resource.eval {
-      for {
-        current     <- timers.current
-        persistedAt <- timers.persistedAt
-        committedAt  = persistedAt getOrElse current
-        _           <- context.hold(committedAt.offset)
-        _           <- register(committedAt)
-      } yield new TimerFlow[F] {
-        def onTimer = for {
-          current         <- timers.current
-          processedAt     <- timers.processedAt
-          touchedAt        = processedAt getOrElse committedAt
-          expiredAt        = touchedAt.clock plusMillis maxIdle.toMillis
-          expired          = current.clock isAfter expiredAt
-          offsetDifference = current.offset.value - touchedAt.offset.value
-          canUnload        = expired || offsetDifference > maxOffsetDifference
-          _ <-
-            if (canUnload) {
-              context.log.info(s"flush, offset difference: $offsetDifference") *>
-                persistence.flush *>
-                context.remove
-            } else {
-              register(touchedAt)
-            }
-        } yield ()
+        val acquire = Resource.eval {
+          for {
+            log         <- logOf(classOf[TimerFlowOf[F]]).map(_.withMdc(Mdc.Eager("key" -> context.key)))
+            current     <- timers.current
+            persistedAt <- timers.persistedAt
+            committedAt  = persistedAt getOrElse current
+            _           <- context.hold(committedAt.offset)
+            _           <- register(committedAt)
+          } yield new TimerFlow[F] {
+            def onTimer: F[Unit] = for {
+              current         <- timers.current
+              processedAt     <- timers.processedAt
+              touchedAt        = processedAt getOrElse committedAt
+              expiredAt        = touchedAt.clock plusMillis maxIdle.toMillis
+              expired          = current.clock isAfter expiredAt
+              offsetDifference = current.offset.value - touchedAt.offset.value
+              canUnload        = expired || offsetDifference > maxOffsetDifference
+              _ <-
+                if (canUnload) {
+                  log.info(s"flush, offset difference: $offsetDifference") *>
+                    persistence.flush *>
+                    context.remove
+                } else {
+                  register(touchedAt)
+                }
+            } yield ()
+          }
+        }
+
+        val cancel = flushOnCancel.apply(context, persistence, timers)
+
+        if (flushOnRevoke) acquire <* cancel else acquire
       }
     }
-
-    val cancel = flushOnCancel.apply(context, persistence, timers)
-
-    if (flushOnRevoke) acquire <* cancel else acquire
-
-  }
 
   /** Performs flush periodically.
     *
@@ -102,40 +109,45 @@ object TimerFlowOf {
     persistEvery: FiniteDuration = 1.minute,
     flushOnRevoke: Boolean       = false,
     ignorePersistErrors: Boolean = false,
-  ): TimerFlowOf[F] = { (context, persistence, timers) =>
-    def register(current: Timestamp): F[Unit] =
-      timers.registerProcessing(current.clock plusMillis fireEvery.toMillis)
+  ): TimerFlowOf[F] = new TimerFlowOf[F] {
+    override def apply(context: KeyContext[F], persistence: FlushBuffers[F], timers: TimerContext[F])(
+      implicit logOf: LogOf[F]
+    ): Resource[F, TimerFlow[F]] = {
+      def register(current: Timestamp): F[Unit] =
+        timers.registerProcessing(current.clock plusMillis fireEvery.toMillis)
 
-    val acquire = Resource.eval {
-      for {
-        current     <- timers.current
-        persistedAt <- timers.persistedAt
-        committedAt  = persistedAt getOrElse current
-        _           <- context.hold(committedAt.offset)
-        _           <- register(current)
-      } yield new TimerFlow[F] {
-        def onTimer: F[Unit] = for {
-          current       <- timers.current
-          persistedAt   <- timers.persistedAt
-          flushedAt      = persistedAt getOrElse committedAt
-          triggerFlushAt = flushedAt.clock plusMillis persistEvery.toMillis
-          canPersist     = (current.clock compareTo triggerFlushAt) >= 0
-          _ <- MonadThrow[F].whenA(canPersist)(
-            persistence.attemptToPersist(
-              ignorePersistErrors = ignorePersistErrors,
-              context             = context,
-              currentOffset       = current.offset
-            )
-          )
-          _ <- register(current)
-        } yield ()
+      val acquire = Resource.eval {
+        for {
+          log         <- logOf(classOf[TimerFlowOf[F]]).map(_.withMdc(Mdc.Eager("key" -> context.key)))
+          current     <- timers.current
+          persistedAt <- timers.persistedAt
+          committedAt  = persistedAt getOrElse current
+          _           <- context.hold(committedAt.offset)
+          _           <- register(current)
+        } yield new TimerFlow[F] {
+          def onTimer: F[Unit] = for {
+            current       <- timers.current
+            persistedAt   <- timers.persistedAt
+            flushedAt      = persistedAt getOrElse committedAt
+            triggerFlushAt = flushedAt.clock plusMillis persistEvery.toMillis
+            canPersist     = (current.clock compareTo triggerFlushAt) >= 0
+            _ <- MonadThrow[F]
+              .whenA(canPersist)(
+                persistence.attemptToPersist(
+                  ignorePersistErrors = ignorePersistErrors,
+                  context             = context,
+                  currentOffset       = current.offset
+                )(log)
+              )
+            _ <- register(current)
+          } yield ()
+        }
       }
+
+      val cancel = flushOnCancel.apply(context, persistence, timers)
+
+      if (flushOnRevoke) acquire <* cancel else acquire
     }
-
-    val cancel = flushOnCancel.apply(context, persistence, timers)
-
-    if (flushOnRevoke) acquire <* cancel else acquire
-
   }
 
   /** Combines [[unloadOrphaned]] with [[persistPeriodically]] in a single TimerFlow
@@ -162,83 +174,93 @@ object TimerFlowOf {
     maxIdle: FiniteDuration      = 10.minutes,
     flushOnRevoke: Boolean       = false,
     ignorePersistErrors: Boolean = false,
-  ): TimerFlowOf[F] = (context, persistence, timers) => {
-    def register(touchedAt: Timestamp): F[Unit] =
-      timers.registerProcessing(touchedAt.clock plusMillis fireEvery.toMillis)
+  ): TimerFlowOf[F] = new TimerFlowOf[F] {
+    override def apply(context: KeyContext[F], persistence: FlushBuffers[F], timers: TimerContext[F])(
+      implicit logOf: LogOf[F]
+    ): Resource[F, TimerFlow[F]] = {
+      def register(touchedAt: Timestamp): F[Unit] =
+        timers.registerProcessing(touchedAt.clock plusMillis fireEvery.toMillis)
 
-    val acquire: Resource[F, TimerFlow[F]] = Resource.eval {
-      for {
-        current     <- timers.current
-        persistedAt <- timers.persistedAt
-        committedAt  = persistedAt getOrElse current
-        _           <- context.hold(committedAt.offset)
-        _           <- register(committedAt)
-      } yield new TimerFlow[F] {
-        def onTimer: F[Unit] = for {
-          current         <- timers.current
-          processedAt     <- timers.processedAt
-          touchedAt        = processedAt getOrElse committedAt
-          expiredAt        = touchedAt.clock plusMillis maxIdle.toMillis
-          offsetDifference = current.offset.value - touchedAt.offset.value
-          flushedAt        = persistedAt getOrElse committedAt
-          triggerFlushAt   = flushedAt.clock plusMillis persistEvery.toMillis
-          expired          = current.clock isAfter expiredAt
-          canUnload        = expired || offsetDifference > maxOffsetDifference
-          canPersist       = (current.clock compareTo triggerFlushAt) >= 0
-          _ <- Applicative[F].whenA(canPersist || canUnload)(
-            persistence.attemptToPersist(
-              ignorePersistErrors = ignorePersistErrors,
-              context             = context,
-              currentOffset       = current.offset
+      val acquire: Resource[F, TimerFlow[F]] = Resource.eval {
+        for {
+          log         <- logOf(classOf[TimerFlowOf[F]]).map(_.withMdc(Mdc.Eager("key" -> context.key)))
+          current     <- timers.current
+          persistedAt <- timers.persistedAt
+          committedAt  = persistedAt getOrElse current
+          _           <- context.hold(committedAt.offset)
+          _           <- register(committedAt)
+        } yield new TimerFlow[F] {
+          def onTimer: F[Unit] = for {
+            current         <- timers.current
+            processedAt     <- timers.processedAt
+            touchedAt        = processedAt getOrElse committedAt
+            expiredAt        = touchedAt.clock plusMillis maxIdle.toMillis
+            offsetDifference = current.offset.value - touchedAt.offset.value
+            flushedAt        = persistedAt getOrElse committedAt
+            triggerFlushAt   = flushedAt.clock plusMillis persistEvery.toMillis
+            expired          = current.clock isAfter expiredAt
+            canUnload        = expired || offsetDifference > maxOffsetDifference
+            canPersist       = (current.clock compareTo triggerFlushAt) >= 0
+            _ <- Applicative[F].whenA(canPersist || canUnload)(
+              persistence.attemptToPersist(
+                ignorePersistErrors = ignorePersistErrors,
+                context             = context,
+                currentOffset       = current.offset
+              )(log)
             )
-          )
-          _ <- Applicative[F].whenA(canUnload)(
-            context.log.info(s"flush, offset difference: $offsetDifference") *> context.remove
-          )
-          _ <- register(current)
-        } yield ()
+            _ <- Applicative[F].whenA(canUnload)(
+              log.info(s"flush, offset difference: $offsetDifference") *> context.remove
+            )
+            _ <- register(current)
+          } yield ()
+        }
       }
+
+      val cancel = flushOnCancel.apply(context, persistence, timers)
+
+      if (flushOnRevoke) acquire <* cancel else acquire
     }
-
-    val cancel = flushOnCancel.apply(context, persistence, timers)
-
-    if (flushOnRevoke) acquire <* cancel else acquire
   }
 
   /** Performs flush when `Resource` is cancelled only */
-  def flushOnCancel[F[_]: Monad]: TimerFlowOf[F] = { (context, persistence, _) =>
-    val cancel = context.holding flatMap { holding =>
-      Applicative[F].whenA(holding.isDefined) {
-        context.log.info(s"flush on revoke, holding offset: $holding") *>
-          persistence.flush *>
-          context.remove
-      }
-    }
+  def flushOnCancel[F[_]: Monad]: TimerFlowOf[F] = new TimerFlowOf[F] {
+    override def apply(context: KeyContext[F], persistence: FlushBuffers[F], timers: TimerContext[F])(
+      implicit logOf: LogOf[F]
+    ): Resource[F, TimerFlow[F]] =
+      logOf(classOf[TimerFlowOf[F]]).toResource.map(_.withMdc(Mdc.Eager("key" -> context.key))).flatMap { log =>
+        val cancel = context.holding flatMap { holding =>
+          Applicative[F].whenA(holding.isDefined) {
+            log.info(s"flush on revoke, holding offset: $holding") *>
+              persistence.flush *>
+              context.remove
+          }
+        }
 
-    Resource.makeCase(TimerFlow.empty.pure) {
-      case (_, ExitCase.Succeeded) =>
-        cancel
-      case (_, ExitCase.Canceled) =>
-        cancel
-      // there is no point to try flushing if it failed with an error
-      // the state might not be consistend and storage not accessible
-      // plus this is a concurrent operation, and we do not want anything
-      // to happen concurrently for a specific key
-      case (_, _) => ().pure[F]
-    }
+        Resource.makeCase(TimerFlow.empty.pure) {
+          case (_, ExitCase.Succeeded) =>
+            cancel
+          case (_, ExitCase.Canceled) =>
+            cancel
+          // there is no point to try flushing if it failed with an error
+          // the state might not be consistend and storage not accessible
+          // plus this is a concurrent operation, and we do not want anything
+          // to happen concurrently for a specific key
+          case (_, _) => ().pure[F]
+        }
+      }
   }
 
   private implicit class AttemptToPersist[F[_]: MonadThrow](persistence: FlushBuffers[F]) {
-    def attemptToPersist(ignorePersistErrors: Boolean, context: KeyContext[F], currentOffset: Offset): F[Unit] =
+    def attemptToPersist(ignorePersistErrors: Boolean, context: KeyContext[F], currentOffset: Offset)(
+      log: Log[F]
+    ): F[Unit] =
       persistence.flush.attempt.flatMap {
         case Left(err) if ignorePersistErrors =>
           // 'context' will continue holding the previous offset from the last time the state was persisted
           // and offsets committed (or just the last committed offset if no state has ever been persisted before).
           // Thus, when calculating the next offset to commit in `PartitionFlow#offsetToCommit` it will take
           // the minimal one (previous) and won't commit any offsets
-          context
-            .log
-            .info(s"Failed to persist state, the error is ignored and offsets won't be committed, error: $err")
+          log.info(s"Failed to persist state, the error is ignored and offsets won't be committed, error: $err")
         case Left(err) => err.raiseError[F, Unit]
         case Right(_)  => context.hold(currentOffset)
       }
