@@ -4,7 +4,7 @@ import cats.effect.IO
 import cats.effect.kernel.Ref
 import cats.effect.unsafe.implicits.global
 import cats.syntax.all.*
-import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.KeyContext
 import com.evolutiongaming.kafka.flow.MonadStateHelper.*
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
@@ -19,6 +19,8 @@ import java.time.Instant
 import scala.concurrent.duration.*
 
 class TimerFlowOfSpec extends FunSuite {
+
+  private implicit val log: LogOf[IO] = LogOf.empty
 
   test("unloadOrphaned holds commits when started") {
 
@@ -590,7 +592,8 @@ object TimerFlowSpec {
     implicit val keyContext: KeyContext[IO] =
       KeyContext(
         storage         = contextRef.stateInstance.focus(Context.lens(_.holding)),
-        removeFromCache = contextRef.update(ctx => ctx.copy(removed = ctx.removed + 1))
+        removeFromCache = contextRef.update(ctx => ctx.copy(removed = ctx.removed + 1)),
+        _key            = "test-key"
       )
 
     implicit val timerContext: TimerContext[IO] = {
