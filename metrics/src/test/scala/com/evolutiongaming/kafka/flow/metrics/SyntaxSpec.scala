@@ -30,7 +30,7 @@ class SyntaxSpec extends FunSuite {
       }
     }
     val service = new Service[Int]
-    service.withCollectorRegistry(CollectorRegistry.empty)
+    service.withCollectorRegistry(CollectorRegistry.empty[F])
   }
 
   test("measureTotalDuration on a stream of numbers") {
