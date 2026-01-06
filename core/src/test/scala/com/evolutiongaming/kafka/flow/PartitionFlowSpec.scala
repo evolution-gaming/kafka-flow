@@ -508,7 +508,7 @@ object PartitionFlowSpec {
           key: String,
           createdAt: Timestamp,
           context: KeyContext[IO]
-        ): Resource[IO, KeyState[IO, ConsumerRecord[String, ByteVector]]] = {
+        )(implicit logOf: LogOf[IO]): Resource[IO, KeyState[IO, ConsumerRecord[String, ByteVector]]] = {
           implicit val _context = context
           val fold0             = fold
           val kafkaKey          = KafkaKey("test", "test", topicPartition, key)

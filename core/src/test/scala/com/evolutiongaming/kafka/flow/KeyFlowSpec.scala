@@ -4,7 +4,7 @@ import cats.data.NonEmptyList
 import cats.effect.syntax.resource.*
 import cats.effect.{Ref, SyncIO}
 import cats.syntax.all.*
-import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.KeyFlowSpec.*
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.persistence.Persistence
@@ -18,6 +18,8 @@ import scodec.bits.ByteVector
 import java.time.Instant
 
 class KeyFlowSpec extends FunSuite {
+
+  private implicit val log: LogOf[SyncIO] = LogOf.empty
 
   test("KeyFlow processes messages correctly") {
 
@@ -89,6 +91,7 @@ class KeyFlowSpec extends FunSuite {
       def hold(offset: Offset) = SyncIO.unit
       def remove               = removeCalled.set(true)
       def log                  = Log.empty
+      def key                  = ""
     }
     val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
     val keyFlow = timerFlowOf(context, persistence, timers).flatMap(tf =>
@@ -139,6 +142,7 @@ class KeyFlowSpec extends FunSuite {
       def hold(offset: Offset) = SyncIO.unit
       def remove               = removeCalled.set(true)
       def log                  = Log.empty
+      def key                  = ""
     }
 
     val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
@@ -294,7 +298,7 @@ object KeyFlowSpec {
   implicit val log: Log[SyncIO] = Log.empty
 
   implicit val context: KeyContext[SyncIO] =
-    KeyContext.of(().pure[SyncIO]).unsafeRunSync()
+    KeyContext.of(().pure[SyncIO], "").unsafeRunSync()
 
   implicit val stateToOffset: ToOffset[State] = {
     case (offset, _) =>
