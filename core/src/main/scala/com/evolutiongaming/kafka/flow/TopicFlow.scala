@@ -39,7 +39,8 @@ object TopicFlow {
   def of[F[_]: Concurrent: Runtime: Parallel: LogOf](
     consumer: Consumer[F],
     topic: Topic,
-    partitionFlowOf: PartitionFlowOf[F]
+    partitionFlowOf: PartitionFlowOf[F],
+    onRecoveryFinished: Option[F[Unit]]
   ): Resource[F, TopicFlow[F]] =
     safeguard(
       for {
@@ -49,7 +50,7 @@ object TopicFlow {
           .toResource
           .map(PendingCommits.fromRef(_))
         flow <- LogResource[F](getClass, topic) flatMap { implicit log =>
-          of(consumer, topic, partitionFlowOf, cache, pendingCommits)
+          of(consumer, topic, partitionFlowOf, cache, pendingCommits, onRecoveryFinished)
         }
       } yield flow
     )
@@ -59,7 +60,8 @@ object TopicFlow {
     topic: Topic,
     partitionFlowOf: PartitionFlowOf[F],
     cache: Cache[F, Partition, PartitionFlow[F]],
-    pendingCommits: PendingCommits[F]
+    pendingCommits: PendingCommits[F],
+    onRecoveryFinished: Option[F[Unit]]
   ): Resource[F, TopicFlow[F]] = {
 
     def commitPending(hint: String) = pendingCommits.clear.flatMap { offsets =>
@@ -120,13 +122,13 @@ object TopicFlow {
       }
 
       def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] = {
-        partitions parTraverse_ {
+        (partitions parTraverse_ {
           case (partition, offset) =>
             val scheduleCommit = pendingCommits.newScheduleCommit(topic, partition)
             cache.getOrUpdateResource(partition) {
               partitionFlowOf(TopicPartition(topic, partition), offset, scheduleCommit)
             }
-        }
+        }).flatMap(_ => onRecoveryFinished.getOrElse(().pure[F]))
       }
     }
 
