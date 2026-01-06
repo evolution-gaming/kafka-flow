@@ -472,8 +472,6 @@ class TimerFlowOfSpec extends FunSuite {
       TimerFlowOf.persistPeriodically[IO](fireEvery = 1.minute, ignorePersistErrors = false)
     val persistingAndUnloadingFlowOf =
       TimerFlowOf.persistPeriodicallyAndUnloadOrphaned[IO](fireEvery = 1.minute, ignorePersistErrors = false)
-    // val flowOf = TimerFlowOf.persistPeriodically[IO](1.minute, ignorePersistErrors = false)
-    // val flow   = flowOf(f.keyContext, flushBuffersErr, f.timerContext)
 
     // When("timers trigger called")
     def program(flow: Resource[IO, TimerFlow[IO]]) =
@@ -529,8 +527,6 @@ class TimerFlowOfSpec extends FunSuite {
       TimerFlowOf.persistPeriodically[IO](fireEvery = 1.minute, ignorePersistErrors = true)
     val persistingAndUnloadingFlowOf =
       TimerFlowOf.persistPeriodicallyAndUnloadOrphaned[IO](fireEvery = 1.minute, ignorePersistErrors = true)
-    // val flowOf = TimerFlowOf.persistPeriodically[IO](1.minute, ignorePersistErrors = true)
-    // val flow   = flowOf(f.keyContext, flushBuffersErr, f.timerContext)
 
     // When("timers trigger called")
     def program(flow: Resource[IO, TimerFlow[IO]]) = flow.use { flow =>
