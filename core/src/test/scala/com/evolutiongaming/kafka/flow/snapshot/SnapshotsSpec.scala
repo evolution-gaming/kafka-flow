@@ -126,6 +126,26 @@ class SnapshotsSpec extends FunSuite {
     assert(database.persistsCounted == 1)
   }
 
+  test("Snapshots does not persist snapshots when it was initialized from persistence") {
+
+    val f = new ConstFixture
+
+    // Given("database without contents")
+    val database  = countingSnapshotDb(f.database)
+    val snapshots = Snapshots("key1", database, f.buffer)
+    val context = Context(
+      database = Map.empty,
+      buffer   = None
+    )
+
+    // When("snapshot is initialized and flush is requested")
+    val program = snapshots.initPersisted(100) *> snapshots.flush
+    program.runS(context).value
+
+    // Then("state is not persisted")
+    assert(database.persistsCounted == 0)
+  }
+
 }
 
 object SnapshotsSpec {

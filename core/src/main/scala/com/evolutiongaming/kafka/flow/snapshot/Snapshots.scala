@@ -28,6 +28,13 @@ trait SnapshotWriter[F[_], S] {
     */
   def append(snapshot: S): F[Unit]
 
+  /** Saves the initial snapshot to a buffer.
+    *
+    * The snapshot is stored in the buffer as already persisted. This means that on the next flush, it will not be
+    * persisted again, but only when it is replaced using `append`.
+    */
+  def initPersisted(snapshot: S): F[Unit]
+
   /** Flushes buffer to a database */
   def flush: F[Unit]
 
@@ -64,6 +71,10 @@ object Snapshots {
       }
     }
 
+    def initPersisted(snapshot: S) = {
+      buffer.set(Snapshot.initPersisted(snapshot).some)
+    }
+
     def flush = {
       for {
         snapshot <- buffer.get
@@ -92,6 +103,7 @@ object Snapshots {
   def empty[F[_]: Applicative, S]: Snapshots[F, S] = new Snapshots[F, S] {
     def read                     = none[S].pure[F]
     def append(event: S)         = ().pure[F]
+    def initPersisted(event: S)  = ().pure[F]
     def flush                    = ().pure[F]
     def delete(persist: Boolean) = ().pure[F]
   }
@@ -103,7 +115,8 @@ object Snapshots {
   }
 
   object Snapshot {
-    def init[S](value: S): Snapshot[S] = Snapshot(value, persisted = false)
+    def init[S](value: S): Snapshot[S]          = Snapshot(value, persisted = false)
+    def initPersisted[S](value: S): Snapshot[S] = Snapshot(value, persisted = true)
   }
 
 }
