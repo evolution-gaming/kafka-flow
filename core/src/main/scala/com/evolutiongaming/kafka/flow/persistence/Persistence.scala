@@ -38,6 +38,13 @@ trait Buffers[F[_], S, E] extends WriteToBuffers[F, S, E] {
     */
   def delete(persist: Boolean): F[Unit]
 
+  /** Initialize an already persisted state, used to store a state in buffers that was fetched from the database.
+    *
+    * It won't be saved to the database when `flush` is called unless replaced by `replaceState` with the next state
+    * before `flush`.
+    */
+  def initPersistedState(state: S): F[Unit]
+
 }
 trait WriteToBuffers[F[_], S, E] {
 
@@ -122,8 +129,8 @@ object Persistence {
     }
 
     def read = readState.read flatTap { state =>
-      state traverse_ { _ =>
-        Timestamps[F].onPersisted
+      state traverse_ { state =>
+        Timestamps[F].onPersisted *> buffers.initPersistedState(state)
       }
     }
 
@@ -133,11 +140,12 @@ object Persistence {
 object Buffers {
 
   def empty[F[_]: Applicative, S, E]: Buffers[F, S, E] = new Buffers[F, S, E] {
-    def appendEvent(event: E)    = ().pure[F]
-    def replaceState(state: S)   = ().pure[F]
-    def flushKeys                = ().pure[F]
-    def flushState               = ().pure[F]
-    def delete(persist: Boolean) = ().pure[F]
+    def appendEvent(event: E)        = ().pure[F]
+    def replaceState(state: S)       = ().pure[F]
+    def initPersistedState(state: S) = ().pure[F]
+    def flushKeys                    = ().pure[F]
+    def flushState                   = ().pure[F]
+    def delete(persist: Boolean)     = ().pure[F]
   }
 
   def apply[F[_]: Monad, S, E](
@@ -149,6 +157,8 @@ object Buffers {
     def appendEvent(event: E) = journals.append(event)
 
     def replaceState(state: S) = snapshots.append(state)
+
+    def initPersistedState(state: S) = snapshots.initPersisted(state)
 
     def delete(persist: Boolean) =
       snapshots.delete(persist) *> journals.delete(persist) *> keys.delete(persist)

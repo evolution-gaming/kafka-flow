@@ -84,6 +84,18 @@ class PersistenceSpec extends FunSuite {
     assert(!context.deleteCalled)
   }
 
+  test("state is initialized in buffers when it is read from the database") {
+    val f = new ConstFixture(state = Some(1))
+
+    // Given("a state is read from persistence")
+    val program = f.persistence.read
+
+    // When("program is run")
+    val context = program.runS(Context()).value
+
+    // Then("state is initialized in the buffers")
+    assert(context.initializedState.contains(1))
+  }
 }
 object PersistenceSpec {
 
@@ -96,7 +108,8 @@ object PersistenceSpec {
         offset    = Offset.min
       )
     ),
-    deleteCalled: Boolean = false
+    deleteCalled: Boolean         = false,
+    initializedState: Option[Int] = None
   )
 
   class ConstFixture(state: Option[Int] = None) {
@@ -104,6 +117,9 @@ object PersistenceSpec {
     val buffers: Buffers[F, Int, String] = new Buffers[F, Int, String] {
       def appendEvent(event: String) = ().pure[F]
       def replaceState(state: Int)   = ().pure[F]
+      def initPersistedState(state: Int) = State.modify { context =>
+        context.copy(initializedState = state.some)
+      }
       def delete(persist: Boolean) = State.modify { context =>
         context.copy(deleteCalled = persist)
       }
