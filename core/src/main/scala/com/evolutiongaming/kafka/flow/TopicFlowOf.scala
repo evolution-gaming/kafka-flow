@@ -6,6 +6,9 @@ import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.skafka.Topic
 
+/**
+  * Factory of TopicFlows
+  */
 trait TopicFlowOf[F[_]] {
 
   def apply(consumer: Consumer[F], topic: Topic): Resource[F, TopicFlow[F]]
