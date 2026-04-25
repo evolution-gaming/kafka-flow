@@ -5,7 +5,7 @@ object Dependencies {
   val catsHelper        = "com.evolutiongaming" %% "cats-helper"         % "3.12.2"
   val catsHelperLogback = "com.evolutiongaming" %% "cats-helper-logback" % "3.12.2"
   val smetrics          = "com.evolutiongaming" %% "smetrics"            % "2.4.4"
-  val scache            = "com.evolution"       %% "scache"              % "5.1.4"
+  val scache            = "com.evolution"       %% "scache"              % "6.0.0"
   val skafka            = "com.evolutiongaming" %% "skafka"              % "19.1.0"
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.1.0"
   val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.4.0"
