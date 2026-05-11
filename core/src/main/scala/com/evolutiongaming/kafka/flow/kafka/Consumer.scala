@@ -98,6 +98,8 @@ object Consumer {
       timeout: FiniteDuration
     ): Try[Map[TopicPartition, OffsetAndMetadata]] = Success(Map.empty)
 
+    def currentLag(partition: TopicPartition): Try[Option[Long]] = Success(None)
+
     def endOffsets(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, Offset]] = Success(Map.empty)
 
     def endOffsets(partitions: NonEmptySet[TopicPartition], timeout: FiniteDuration): Try[Map[TopicPartition, Offset]] =

@@ -45,6 +45,8 @@ class ExplodingRebalanceConsumer extends RebalanceConsumer {
     timeout: FiniteDuration
   ): Try[Map[TopicPartition, OffsetAndMetadata]] = Try(notImplemented)
 
+  def currentLag(partition: TopicPartition): Try[Option[Long]] = Try(notImplemented)
+
   def endOffsets(partitions: NonEmptySet[TopicPartition]): Try[Map[TopicPartition, Offset]] = Try(notImplemented)
 
   def endOffsets(partitions: NonEmptySet[TopicPartition], timeout: FiniteDuration): Try[Map[TopicPartition, Offset]] =
