@@ -30,7 +30,7 @@ object KafkaModule {
     * repeatedly sends and consumes messages to/from topic named 'healthcheck' (refer to
     * `KafkaHealthCheck.Config.default`)
     */
-  def of[F[_]: Async: FromTry: ToTry: ToFuture: LogOf](
+  def of[F[_]: Async: FromTry: ToTry: LogOf](
     applicationId: String,
     config: ConsumerConfig,
     registry: CollectorRegistry[F]
