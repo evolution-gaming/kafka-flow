@@ -6,6 +6,11 @@ on:
       - 'v*'
 
 jobs:
+  clear-cache:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Clear SBT compiler bridge cache # Gets corrupted often in GH actions
+      run: rm -rf ~/.sbt/boot/scala-*/org.scala-sbt/sbt/*/org.scala-sbt-compiler-bridge*
   release:
     uses: evolution-gaming/scala-github-actions/.github/workflows/release.yml@v3
     secrets: inherit
