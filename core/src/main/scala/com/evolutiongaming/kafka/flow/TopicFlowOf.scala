@@ -14,9 +14,10 @@ trait TopicFlowOf[F[_]] {
 object TopicFlowOf {
 
   def apply[F[_]: Concurrent: Runtime: Parallel: LogOf](
-    partitionFlowOf: PartitionFlowOf[F]
+    partitionFlowOf: PartitionFlowOf[F],
+    onRecoveryFinished: Option[F[Unit]] = None
   ): TopicFlowOf[F] = { (consumer, topic) =>
-    TopicFlow.of(consumer, topic, partitionFlowOf)
+    TopicFlow.of(consumer, topic, partitionFlowOf, onRecoveryFinished)
   }
 
   def route[F[_]](f: Topic => TopicFlowOf[F]): TopicFlowOf[F] = { (consumer, topic) =>
