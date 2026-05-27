@@ -30,7 +30,7 @@ object Dependencies {
   }
 
   object KafkaJournal {
-    private val version = "8.1.0"
+    private val version = "9.0.0"
     val journal         = "com.evolution" %% "kafka-journal" % version
   }
 
