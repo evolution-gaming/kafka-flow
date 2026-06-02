@@ -20,8 +20,6 @@ import scala.concurrent.duration.*
 
 class TimerFlowOfSpec extends FunSuite {
 
-  private implicit val log: LogOf[IO] = LogOf.empty
-
   test("unloadOrphaned holds commits when started") {
 
     val f = new ConstFixture
@@ -573,7 +571,8 @@ class TimerFlowOfSpec extends FunSuite {
 
 }
 object TimerFlowSpec {
-  implicit val log: Log[IO] = Log.empty[IO]
+  implicit val log: Log[IO]     = Log.empty[IO]
+  implicit val logOf: LogOf[IO] = LogOf.empty
 
   case class Context(
     holding: Option[Offset] = None,
@@ -603,7 +602,7 @@ object TimerFlowSpec {
       KeyContext(
         storage         = contextRef.stateInstance.focus(Context.lens(_.holding)),
         removeFromCache = contextRef.update(ctx => ctx.copy(removed = ctx.removed + 1)),
-        _key            = "test-key"
+        mdc             = Log.Mdc.Eager("key" -> "test-key")
       )
 
     implicit val timerContext: TimerContext[IO] = {

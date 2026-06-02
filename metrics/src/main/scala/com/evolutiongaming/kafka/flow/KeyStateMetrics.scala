@@ -3,7 +3,6 @@ package com.evolutiongaming.kafka.flow
 import cats.Monad
 import cats.effect.Resource
 import cats.syntax.all.*
-import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.timer.Timestamp
 import com.evolutiongaming.skafka.TopicPartition
@@ -29,7 +28,7 @@ object KeyStateMetrics {
             key: String,
             createdAt: Timestamp,
             context: KeyContext[F]
-          )(implicit logOf: LogOf[F]) =
+          ) =
             count(topicPartition.topic) *> keyStateOf(topicPartition, key, createdAt, context)
 
           def all(topicPartition: TopicPartition) =

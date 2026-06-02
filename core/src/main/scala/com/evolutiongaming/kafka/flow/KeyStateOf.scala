@@ -3,7 +3,6 @@ package com.evolutiongaming.kafka.flow
 import cats.Applicative
 import cats.effect.{Resource, Sync}
 import cats.syntax.all.*
-import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -21,7 +20,7 @@ trait KeyStateOf[F[_]] { self =>
     key: String,
     createdAt: Timestamp,
     context: KeyContext[F]
-  )(implicit logOf: LogOf[F]): Resource[F, KeyState[F, ConsumerRecord[String, ByteVector]]]
+  ): Resource[F, KeyState[F, ConsumerRecord[String, ByteVector]]]
 
   /** Restores a state for all keys present in persistence.
     *
@@ -72,9 +71,7 @@ object KeyStateOf {
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = new KeyStateOf[F] {
 
-    def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[F])(
-      implicit logOf: LogOf[F]
-    ) = {
+    def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[F]) = {
       implicit val _context = context
       val kafkaKey = KafkaKey(
         applicationId  = applicationId,
@@ -220,9 +217,7 @@ object KeyStateOf {
     registry: EntityRegistry[F, KafkaKey, S],
   ): KeyStateOf[F] = new KeyStateOf[F] {
 
-    def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[F])(
-      implicit logOf: LogOf[F]
-    ) = {
+    def apply(topicPartition: TopicPartition, key: String, createdAt: Timestamp, context: KeyContext[F]) = {
       val kafkaKey = KafkaKey(
         applicationId  = applicationId,
         groupId        = groupId,

@@ -116,8 +116,7 @@ object PartitionFlow {
         for {
           context <- KeyContext.resource[F](
             removeFromCache = cache.remove(key).flatten.void,
-            log             = log.prefixed(key),
-            key             = key
+            mdc             = Log.Mdc.Eager("key" -> key, "topicPartition" -> topicPartition.toString)
           )
           keyState <- keyStateOf(topicPartition, key, createdAt, context)
         } yield PartitionKey(keyState, context)
