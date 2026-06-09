@@ -8,7 +8,7 @@ object Dependencies {
   val scache            = "com.evolution"       %% "scache"              % "6.0.1"
   val skafka            = "com.evolutiongaming" %% "skafka"              % "20.1.0"
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.1.0"
-  val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.4.0"
+  val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.5.0"
   val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "4.0.0"
   val random            = "com.evolution"       %% "random"              % "1.0.5"
   val retry             = "com.evolutiongaming" %% "retry"               % "3.1.0"
