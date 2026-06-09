@@ -74,7 +74,8 @@ object KeyFlow {
     registry: EntityRegistry[F, KafkaKey, S],
   ): Resource[F, KeyFlow[F, A]] =
     for {
-      state <- persistence.read(KeyContext[F].log).toResource
+      log   <- KeyContext[F].log(classOf[KeyFlow[F, A]]).toResource
+      state <- persistence.read(log).toResource
       _     <- storage.set(state).toResource
       // we should not run any timers if there was decision
       // by fold or tick to run the state, because in this
