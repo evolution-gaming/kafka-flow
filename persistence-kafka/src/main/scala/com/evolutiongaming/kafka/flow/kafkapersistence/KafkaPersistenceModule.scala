@@ -106,10 +106,10 @@ object KafkaPersistenceModule {
     * `transactionalIdPrefix`, and `initTransactions` is called before the snapshot topic is read: the broker fences
     * the previous owner of the partition, so a stale snapshot write fails with
     * [[KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict]] instead of overwriting a newer snapshot
-    * (https://github.com/evolution-gaming/kafka-flow/issues/732). Writes run in transactions (serialized per
-    * partition), recovery reads with `read_committed`, and unlike [[caching]] the identity partition mapping is
-    * always used. See the "Single-writer guarantees" section of the persistence documentation for limitations and
-    * costs.
+    * (https://github.com/evolution-gaming/kafka-flow/issues/732). Writes run in transactions (group committed per
+    * partition, see [[KafkaSnapshotWriteDatabase.transactional]]), recovery reads with `read_committed`, and unlike
+    * [[caching]] the identity partition mapping is always used. See the "Single-writer guarantees" section of the
+    * persistence documentation for limitations and costs.
     *
     * Switch an existing deployment to or from this mode with a replace (stop-all-then-start) deployment, not a
     * rolling one: a non-transactional instance recovers snapshots with `read_uncommitted` and may read records of
@@ -118,11 +118,15 @@ object KafkaPersistenceModule {
     * @param producerOf
     *   factory used to create the per-partition transactional producer
     * @param producerConfig
-    *   base config for the snapshot producer; `transactionalId` and `idempotence` are overridden by this factory
+    *   base config for the snapshot producer; `transactionalId` and `idempotence` are overridden by this factory, and
+    *   `clientId` is suffixed per partition
     * @param transactionalIdPrefix
     *   stable prefix for `transactional.id` (the partition number is appended). It must not change across restarts
     *   and deployments (otherwise fencing is lost) and must be unique per consumer group + input topic + snapshot
     *   topic combination (otherwise unrelated writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
+    * @param maxWritesPerTransaction
+    *   upper bound of snapshot writes group committed in one transaction, see
+    *   [[KafkaSnapshotWriteDatabase.transactional]] for the trade-off
     */
   def cachingTransactional[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
@@ -131,7 +135,8 @@ object KafkaPersistenceModule {
     producerConfig: ProducerConfig,
     transactionalIdPrefix: String,
     snapshotTopicPartition: TopicPartition,
-    metrics: FlowMetrics[F] = FlowMetrics.empty[F],
+    metrics: FlowMetrics[F]      = FlowMetrics.empty[F],
+    maxWritesPerTransaction: Int = KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction,
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
@@ -152,8 +157,14 @@ object KafkaPersistenceModule {
       producer <- producerOf(transactionalProducerConfig)
       // fences the previous owner of this partition: performed on partition assignment,
       // before the snapshot topic is read, so a stale writer cannot write after the read
-      _             <- Resource.eval(producer.initTransactions)
-      writeDatabase <- Resource.eval(KafkaSnapshotWriteDatabase.transactional[F, S](snapshotTopicPartition, producer))
+      _ <- Resource.eval(producer.initTransactions)
+      writeDatabase <- Resource.eval(
+        KafkaSnapshotWriteDatabase.transactional[F, S](
+          snapshotTopicPartition  = snapshotTopicPartition,
+          producer                = producer,
+          maxWritesPerTransaction = maxWritesPerTransaction,
+        )
+      )
       module <- of(
         consumerOf = consumerOf,
         // records of aborted transactions (e.g. of a fenced previous owner) must not be recovered as snapshots

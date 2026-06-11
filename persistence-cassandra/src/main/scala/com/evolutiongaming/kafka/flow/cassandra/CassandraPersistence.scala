@@ -56,7 +56,7 @@ object CassandraPersistence {
     *
     * This method uses the same `JsonCodec[Try]` as `JournalParser` does to simplify defining the basic application. if
     * \@consistencyConfig is present then applies ConsistencyConfig.Read for all read queries and
-    * ConsistencyConfig.Write for all the mutations
+    * ConsistencyConfig.Write for all the mutations. For `snapshotCompareAndSet` see [[withSchemaF]].
     */
   def withSchema[F[_]: Async, S](
     session: scassandra.CassandraSession[F],

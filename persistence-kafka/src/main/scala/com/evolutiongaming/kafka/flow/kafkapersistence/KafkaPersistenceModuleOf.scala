@@ -80,21 +80,26 @@ object KafkaPersistenceModuleOf {
     producerConfig: ProducerConfig,
     transactionalIdPrefix: String,
     snapshotTopic: Topic,
-    metrics: FlowMetrics[F] = FlowMetrics.empty[F],
+    metrics: FlowMetrics[F]      = FlowMetrics.empty[F],
+    maxWritesPerTransaction: Int = KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction,
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
+    // fail at wiring time, not on the first partition assignment
+    require(maxWritesPerTransaction >= 1, s"maxWritesPerTransaction must be positive, got $maxWritesPerTransaction")
+
     override def make(partition: Partition): Resource[F, KafkaPersistenceModule[F, S]] =
       KafkaPersistenceModule.cachingTransactional(
-        consumerOf             = consumerOf,
-        producerOf             = producerOf,
-        consumerConfig         = consumerConfig,
-        producerConfig         = producerConfig,
-        transactionalIdPrefix  = transactionalIdPrefix,
-        snapshotTopicPartition = TopicPartition(snapshotTopic, partition),
-        metrics                = metrics,
+        consumerOf              = consumerOf,
+        producerOf              = producerOf,
+        consumerConfig          = consumerConfig,
+        producerConfig          = producerConfig,
+        transactionalIdPrefix   = transactionalIdPrefix,
+        snapshotTopicPartition  = TopicPartition(snapshotTopic, partition),
+        metrics                 = metrics,
+        maxWritesPerTransaction = maxWritesPerTransaction,
       )
   }
 

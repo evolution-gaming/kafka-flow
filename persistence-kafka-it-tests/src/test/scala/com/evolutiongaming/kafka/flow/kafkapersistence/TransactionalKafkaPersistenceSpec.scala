@@ -263,33 +263,42 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     test.unsafeRunSync()
   }
 
-  test("concurrent writes of different keys are serialized on the shared transactional producer") {
-    val stateTopic = "tx-concurrent-state-topic"
-    val keys       = (1 to 10).toList.map(i => s"key$i")
+  // the assertions cover safety (all writes land), not grouping — grouping is opportunistic and its effect is
+  // demonstrated by TransactionalWriteThroughputSpec; also exercised with maxWritesPerTransaction = 1, where the
+  // group commit degenerates to a transaction per write
+  List(KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction, 1).foreach { maxWritesPerTransaction =>
+    test(
+      s"concurrent writes of different keys are safe on the shared transactional producer " +
+        s"(maxWritesPerTransaction = $maxWritesPerTransaction)"
+    ) {
+      val stateTopic = s"tx-concurrent-$maxWritesPerTransaction-state-topic"
+      val keys       = (1 to 10).toList.map(i => s"key$i")
 
-    def kafkaKey(key: String): KafkaKey =
-      KafkaKey(appId, groupId, TopicPartition(s"input-$stateTopic", Partition.min), key)
+      def kafkaKey(key: String): KafkaKey =
+        KafkaKey(appId, groupId, TopicPartition(s"input-$stateTopic", Partition.min), key)
 
-    def writeDatabase(producer: Producer[IO]): IO[SnapshotWriteDatabase[IO, KafkaKey, String]] =
-      KafkaSnapshotWriteDatabase.transactional[IO, String](
-        snapshotTopicPartition = TopicPartition(stateTopic, Partition.min),
-        producer               = producer,
-      )
+      def writeDatabase(producer: Producer[IO]): IO[SnapshotWriteDatabase[IO, KafkaKey, String]] =
+        KafkaSnapshotWriteDatabase.transactional[IO, String](
+          snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
+          producer                = producer,
+          maxWritesPerTransaction = maxWritesPerTransaction,
+        )
 
-    val test = createTopic(stateTopic, 1) *>
-      transactionalProducer("tx-concurrent").use { producer =>
-        for {
-          _        <- producer.initTransactions
-          database <- writeDatabase(producer)
-          // kafka-flow flushes keys of a partition in parallel by default: this must not corrupt or crash
-          _      <- keys.parTraverse_(key => database.persist(kafkaKey(key), s"state-of-$key"))
-          stored <- readSnapshots(stateTopic)
-        } yield keys.foreach { key =>
-          assertEquals(clue(stored.get(key)), utf8(s"state-of-$key"))
+      val test = createTopic(stateTopic, 1) *>
+        transactionalProducer(s"tx-concurrent-$maxWritesPerTransaction").use { producer =>
+          for {
+            _        <- producer.initTransactions
+            database <- writeDatabase(producer)
+            // kafka-flow flushes keys of a partition in parallel by default: this must not corrupt or crash
+            _      <- keys.parTraverse_(key => database.persist(kafkaKey(key), s"state-of-$key"))
+            stored <- readSnapshots(stateTopic)
+          } yield keys.foreach { key =>
+            assertEquals(clue(stored.get(key)), utf8(s"state-of-$key"))
+          }
         }
-      }
 
-    test.unsafeRunSync()
+      test.unsafeRunSync()
+    }
   }
 
   test("an open transaction of a fenced writer neither blocks nor leaks into recovery") {

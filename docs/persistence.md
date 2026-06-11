@@ -24,16 +24,18 @@ offsets of the input topic were committed correctly. See
 ownership overlap of tens of seconds has been observed in production.
 
 Two related notes on configuration:
-- `TimerFlowOf(flushOnRevoke = true)` makes the stale-writer window *more* likely to be hit, because
-  revoked partitions flush snapshots concurrently with the new owner starting up.
+- `TimerFlowOf.persistPeriodically(flushOnRevoke = true)` makes the stale-writer window *more*
+  likely to be hit, because revoked partitions flush snapshots concurrently with the new owner
+  starting up.
 - A high `fireEvery` in `TimerFlowOf.persistPeriodically` makes hitting the window *less* likely, at
   the cost of more events to replay on recovery.
 
 Both protections below reject a stale write with a conflict error. A rejection during a *periodic*
 flush fails the flow of the stale instance — safe, since it no longer owns the partition — unless
-`TimerFlowOf(ignorePersistErrors = true)` is set, in which case it is logged and swallowed. A
-rejection during *flush-on-revoke* is logged and swallowed by the key release (the partition is
-being given away anyway). In all cases the stale write is rejected and no offsets are committed.
+`persistPeriodically(ignorePersistErrors = true)` is set, in which case it is logged and swallowed.
+A rejection during *flush-on-revoke* is logged and swallowed by the key release (the partition is
+being given away anyway). In all cases the stale write is rejected and no offsets are committed for
+the rejected write.
 
 ### Compare-and-set snapshot writes (Cassandra)
 
@@ -102,18 +104,24 @@ Instead of one shared snapshot producer, the module creates one *transactional* 
 assigned partition, with a stable `transactional.id` of `s"$transactionalIdPrefix-$partition"`, and
 calls `initTransactions` on partition assignment — before the snapshot topic is read. The broker
 then *fences* the previous owner's producer: a stale snapshot write is rejected with
-`KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict`. Every write runs in its own transaction,
-and recovery reads the snapshot topic with `read_committed`, so records of aborted transactions are
-never observed.
+`KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict`. Writes run in Kafka transactions (group
+committed under concurrency, see below), and recovery reads the snapshot topic with
+`read_committed`, so records of aborted transactions are never observed.
 
 The `transactionalIdPrefix` must be stable across restarts and deployments (otherwise fencing is
 lost) and unique per consumer group + input topic + snapshot topic combination (otherwise unrelated
 writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
 
 Limitations and costs:
-- Each write costs a transaction, and each assigned partition holds its own producer plus
-  transaction-coordinator state on the brokers; writes of a partition are serialized (one
-  transaction at a time per producer). Measure first if snapshot writes are frequent.
+- Each write costs a transaction (a few milliseconds against real brokers), and each assigned
+  partition holds its own producer plus transaction-coordinator state on the brokers. The producer
+  allows one transaction at a time, so concurrent flushes of a partition's keys are group committed
+  into shared transactions — a batch fails together, and a burst of N dirty keys still costs about
+  N / `maxWritesPerTransaction` (default 256, configurable on `cachingTransactional`) sequential
+  transaction round-trips on the poll path. Keys recovered together become persist-eligible in
+  synchronized waves every `persistEvery`, each wave writing the keys whose state changed since the
+  last flush — so size the burst for the changed-key population of a partition, which in a busy
+  partition approaches all active keys. Measure first if snapshot writes are frequent.
 - An old owner can be fenced while flushing on revoke; its last state delta is then neither
   persisted nor committed, so the new owner replays those events — noise, not loss.
 - This mode always uses the identity `KafkaPersistencePartitionMapper`: fencing is per input
