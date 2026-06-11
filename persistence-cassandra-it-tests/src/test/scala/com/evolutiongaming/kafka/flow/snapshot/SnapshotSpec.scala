@@ -32,6 +32,84 @@ class SnapshotSpec extends CassandraSpec {
     test.unsafeRunSync()
   }
 
+  test("compare-and-set: writes with monotonically increasing offsets are applied") {
+    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-monotonic")
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](cassandra().session, cassandra().sync, compareAndSet = true)
+      // first write of a key goes through the `INSERT ... IF NOT EXISTS` path
+      _     <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(5), value = "state-5"))
+      five  <- snapshots.get(key)
+      _     <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      ten   <- snapshots.get(key)
+      // a snapshot can be replaced at the same offset, e.g. when state was changed by a timer
+      _     <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10-updated"))
+      tenUp <- snapshots.get(key)
+    } yield {
+      assertEquals(clue(five.map(_.value)), Some("state-5"))
+      assertEquals(clue(ten.map(_.value)), Some("state-10"))
+      assertEquals(clue(tenUp.map(_.value)), Some("state-10-updated"))
+    }
+
+    test.unsafeRunSync()
+  }
+
+  test("compare-and-set: stale write is rejected") {
+    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-stale")
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](cassandra().session, cassandra().sync, compareAndSet = true)
+      _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      result <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(7), value = "state-7-stale")).attempt
+      stored <- snapshots.get(key)
+    } yield {
+      result match {
+        case Left(conflict: CassandraSnapshots.SnapshotWriteConflict) =>
+          assertEquals(clue(conflict.key), key)
+          assertEquals(clue(conflict.attemptedOffset), Offset.unsafe(7))
+          assertEquals(clue(conflict.persistedOffset), Some(Offset.unsafe(10)))
+        case other => fail(s"expected SnapshotWriteConflict, got $other")
+      }
+      assertEquals(clue(stored.map(_.value)), Some("state-10"))
+    }
+
+    test.unsafeRunSync()
+  }
+
+  test("compare-and-set: write after delete starts from scratch") {
+    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-delete")
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](cassandra().session, cassandra().sync, compareAndSet = true)
+      _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      _      <- snapshots.delete(key)
+      _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(3), value = "state-3"))
+      stored <- snapshots.get(key)
+    } yield assertEquals(clue(stored.map(_.value)), Some("state-3"))
+
+    test.unsafeRunSync()
+  }
+
+  test("compare-and-set: ttl is set on both insert and update paths") {
+    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-ttl")
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        ttl           = 1.hour.some,
+        compareAndSet = true,
+      )
+      _          <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(5), value = "state-5"))
+      insertTtls <- getTtls(key)
+      _          <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      updateTtls <- getTtls(key)
+    } yield {
+      assertEquals(clue(insertTtls.size), 1)
+      assert(clue(insertTtls.head.isDefined))
+      assertEquals(clue(updateTtls.size), 1)
+      assert(clue(updateTtls.head.isDefined))
+    }
+
+    test.unsafeRunSync()
+  }
+
   test("failures") {
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "queries")
     val test: IO[Unit] = for {

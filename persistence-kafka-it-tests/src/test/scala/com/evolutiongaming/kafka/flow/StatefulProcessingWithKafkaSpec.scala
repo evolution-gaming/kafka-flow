@@ -136,6 +136,27 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
       .unsafeRunSync()
   }
 
+  test("stateful processing using transactional kafka persistence") {
+    // using unique input topic name per test as weaver is running tests in parallel
+    val inputTopic = "kafka-transactional-persistence-test"
+    val stateTopic = "state-topic-tx-StatefulProcessingWithKafkaSpec"
+
+    val persistenceModuleOf = KafkaPersistenceModuleOf.cachingTransactional[IO, State](
+      consumerOf = ConsumerOf.apply1[IO](),
+      producerOf = ProducerOf.apply1[IO](),
+      consumerConfig = ConsumerConfig(
+        common          = producerConfig.common,
+        autoCommit      = false,
+        autoOffsetReset = AutoOffsetReset.Earliest
+      ),
+      producerConfig        = producerConfig,
+      transactionalIdPrefix = s"$testGroupId-$stateTopic",
+      snapshotTopic         = stateTopic,
+    )
+
+    (createTopic(stateTopic, 2) *> comboTestCase(kafkaModule(), persistenceModuleOf, inputTopic)).unsafeRunSync()
+  }
+
   private def createTopic(topic: String, partitions: Int) = {
     val props = new Properties
     props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.container.bootstrapServers)
