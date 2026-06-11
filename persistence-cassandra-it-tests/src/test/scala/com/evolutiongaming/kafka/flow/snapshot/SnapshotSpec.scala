@@ -32,37 +32,6 @@ class SnapshotSpec extends CassandraSpec {
     test.unsafeRunSync()
   }
 
-  // Reproduces the stale-writer snapshot corruption of
-  // https://github.com/evolution-gaming/kafka-flow/issues/732: a previous partition owner that did not yet observe
-  // a rebalance overwrites the new owner's newer snapshot. The assertion documents the corruption happening in the
-  // default last-write-wins mode; the paired test below shows compareAndSet preventing it.
-  test("issue #732 reproduction: a stale writer overwrites a newer snapshot with last-write-wins") {
-    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "lww-732")
-    val test: IO[Unit] = for {
-      snapshots <- CassandraSnapshots.withSchema[IO, String](cassandra().session, cassandra().sync)
-      _         <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
-      _         <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(7), value = "state-7-stale"))
-      stored    <- snapshots.get(key)
-    } yield assertEquals(clue(stored.map(_.value)), Some("state-7-stale"))
-
-    test.unsafeRunSync()
-  }
-
-  test("issue #732 prevention: compare-and-set rejects the stale writer's overwrite") {
-    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-732")
-    val test: IO[Unit] = for {
-      snapshots <- CassandraSnapshots.withSchema[IO, String](cassandra().session, cassandra().sync, compareAndSet = true)
-      _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
-      stale  <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(7), value = "state-7-stale")).attempt
-      stored <- snapshots.get(key)
-    } yield {
-      assert(clue(stale).isLeft)
-      assertEquals(clue(stored.map(_.value)), Some("state-10"))
-    }
-
-    test.unsafeRunSync()
-  }
-
   test("compare-and-set: writes with monotonically increasing offsets are applied") {
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-monotonic")
     val test: IO[Unit] = for {

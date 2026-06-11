@@ -29,10 +29,11 @@ Two related notes on configuration:
 - A high `fireEvery` in `TimerFlowOf.persistPeriodically` makes hitting the window *less* likely, at
   the cost of more events to replay on recovery.
 
-Both protections below reject a stale write with a conflict error, failing the flow of the stale
-instance — safe, since it no longer owns the partition. With `TimerFlowOf(ignorePersistErrors =
-true)` the error is logged and swallowed instead: the protection still holds (nothing is written
-and no offsets are committed), but the stale instance keeps running rather than failing fast.
+Both protections below reject a stale write with a conflict error. A rejection during a *periodic*
+flush fails the flow of the stale instance — safe, since it no longer owns the partition — unless
+`TimerFlowOf(ignorePersistErrors = true)` is set, in which case it is logged and swallowed. A
+rejection during *flush-on-revoke* is logged and swallowed by the key release (the partition is
+being given away anyway). In all cases the stale write is rejected and no offsets are committed.
 
 ### Compare-and-set snapshot writes (Cassandra)
 
