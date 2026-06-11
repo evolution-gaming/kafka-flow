@@ -6,18 +6,24 @@ import cats.effect.{IO, Resource}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafkapersistence.KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict
+import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
 import com.evolutiongaming.kafka.flow.{ForAllKafkaSuite, KafkaKey}
-import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf}
+import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf, IsolationLevel}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf, ProducerRecord}
 import com.evolutiongaming.skafka.{CommonConfig, Partition, TopicPartition}
-import org.apache.kafka.clients.admin.{AdminClient, AdminClientConfig, NewTopic}
 import scodec.bits.ByteVector
 
-import java.util.Properties
-import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.*
-import scala.jdk.CollectionConverters.*
 
+/** Reproduces the stale-writer snapshot corruption of
+  * [[https://github.com/evolution-gaming/kafka-flow/issues/732 issue #732]] against a real Kafka broker, and proves
+  * that the transactional mode prevents it.
+  *
+  * The tests simulate the mechanism of the issue deterministically: two writers for the same partition (the previous
+  * owner that did not yet observe a rebalance, and the new owner), where the stale writer writes after the new owner
+  * already persisted a newer snapshot. A true end-to-end reproduction with two consumers and an in-flight rebalance
+  * depends on session-timeout timing and is not deterministic enough for CI.
+  */
 class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
   implicit val ioRuntime: IORuntime = IORuntime.global
   implicit val logOf: LogOf[IO]     = LogOf.slf4j[IO].unsafeRunSync()
@@ -37,63 +43,111 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
   private def transactionalProducer(transactionalId: String): Resource[IO, Producer[IO]] =
     producerOf(producerConfig.copy(transactionalId = transactionalId.some, idempotence = true))
 
-  private def writeDatabase(stateTopic: String, producer: Producer[IO]) =
+  private def transactionalWriteDatabase(
+    stateTopic: String,
+    producer: Producer[IO],
+  ): IO[SnapshotWriteDatabase[IO, KafkaKey, String]] =
     KafkaSnapshotWriteDatabase.transactional[IO, String](
       snapshotTopicPartition = TopicPartition(stateTopic, Partition.min),
       producer               = producer,
     )
 
+  private def plainWriteDatabase(stateTopic: String, producer: Producer[IO]): SnapshotWriteDatabase[IO, KafkaKey, String] =
+    KafkaSnapshotWriteDatabase.of[IO, String](
+      snapshotTopicPartition = TopicPartition(stateTopic, Partition.min),
+      producer               = producer,
+    )
+
+  /** Recovery read of the snapshot topic, as performed on partition assignment.
+    *
+    * `read_committed` matches the transactional mode; it is equally correct for reading topics written without
+    * transactions, where it behaves the same as `read_uncommitted`.
+    */
   private def readSnapshots(stateTopic: String): IO[BytesByKey] =
     KafkaPartitionPersistence.readSnapshots[IO](
       consumerOf     = ConsumerOf.apply1[IO](),
-      consumerConfig = consumerConfig,
+      consumerConfig = consumerConfig.copy(isolationLevel = IsolationLevel.ReadCommitted),
       snapshotTopic  = stateTopic,
       partition      = Partition.min,
-      transactional  = true,
     )
 
   private def kafkaKey(stateTopic: String, key: String): KafkaKey =
     KafkaKey("app-id", "group-id", TopicPartition(s"input-$stateTopic", Partition.min), key)
 
-  private def createTopic(topic: String): IO[Unit] = {
-    val props = new Properties
-    props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.container.bootstrapServers)
+  private def utf8(value: String): Option[ByteVector] = ByteVector.encodeUtf8(value).toOption
 
-    Resource.make(IO.delay(AdminClient.create(props)))(cl => IO(cl.close())).use { client =>
-      IO(client.createTopics(List(new NewTopic(topic, 1, 1.toShort)).asJava)).map(res =>
-        res.all().get(10, TimeUnit.SECONDS)
-      )
-    }.void
+  test("issue #732 reproduction: a stale writer overwrites a newer snapshot with the default shared producer") {
+    val stateTopic = "lww-732-state-topic"
+    val key        = kafkaKey(stateTopic, "key1")
+
+    val test = createTopic(stateTopic, 1) *>
+      producerOf(producerConfig).use { producerA =>
+        producerOf(producerConfig).use { producerB =>
+          val databaseA = plainWriteDatabase(stateTopic, producerA) // previous owner of the partition
+          val databaseB = plainWriteDatabase(stateTopic, producerB) // new owner after a rebalance
+          for {
+            _      <- databaseA.persist(key, "state-5")
+            _      <- databaseB.persist(key, "state-10")
+            _      <- databaseA.persist(key, "state-7-stale") // the previous owner did not yet observe the rebalance
+            stored <- readSnapshots(stateTopic)
+          } yield
+          // recovery returns the STALE snapshot: this assertion documents the corruption of issue #732
+          // (the paired test below shows the transactional mode preventing it)
+          assertEquals(clue(stored.get("key1")), utf8("state-7-stale"))
+        }
+      }
+
+    test.unsafeRunSync()
   }
 
-  test("a stale writer is fenced and its write rejected with KafkaSnapshotWriteConflict") {
+  test("issue #732 prevention: a stale writer is fenced and its write rejected with KafkaSnapshotWriteConflict") {
     val stateTopic = "tx-fencing-state-topic"
     val key        = kafkaKey(stateTopic, "key1")
 
-    val test = createTopic(stateTopic) *>
+    val test = createTopic(stateTopic, 1) *>
       transactionalProducer("tx-fencing").use { producerA =>
-        val databaseA = writeDatabase(stateTopic, producerA)
         for {
-          _ <- producerA.initTransactions
-          _ <- databaseA.persist(key, "state-1")
+          _         <- producerA.initTransactions
+          databaseA <- transactionalWriteDatabase(stateTopic, producerA)
+          _         <- databaseA.persist(key, "state-5")
           _ <- transactionalProducer("tx-fencing").use { producerB =>
-            val databaseB = writeDatabase(stateTopic, producerB)
             for {
               // fences producerA: it belongs to the previous owner of the partition
-              _      <- producerB.initTransactions
-              _      <- databaseB.persist(key, "state-2")
-              stale  <- databaseA.persist(key, "state-1-stale").attempt
-              stored <- readSnapshots(stateTopic)
+              _         <- producerB.initTransactions
+              databaseB <- transactionalWriteDatabase(stateTopic, producerB)
+              _         <- databaseB.persist(key, "state-10")
+              stale     <- databaseA.persist(key, "state-7-stale").attempt
+              stored    <- readSnapshots(stateTopic)
             } yield {
               stale match {
                 case Left(conflict: KafkaSnapshotWriteConflict) =>
                   assertEquals(clue(conflict.key), key)
                 case other => fail(s"expected KafkaSnapshotWriteConflict, got $other")
               }
-              assertEquals(clue(stored.get("key1")), ByteVector.encodeUtf8("state-2").toOption)
+              assertEquals(clue(stored.get("key1")), utf8("state-10"))
             }
           }
         } yield ()
+      }
+
+    test.unsafeRunSync()
+  }
+
+  test("concurrent writes of different keys are serialized on the shared transactional producer") {
+    val stateTopic = "tx-concurrent-state-topic"
+    val keys       = (1 to 10).toList.map(i => s"key$i")
+
+    val test = createTopic(stateTopic, 1) *>
+      transactionalProducer("tx-concurrent").use { producer =>
+        for {
+          _        <- producer.initTransactions
+          database <- transactionalWriteDatabase(stateTopic, producer)
+          // kafka-flow flushes keys of a partition in parallel by default: this must not corrupt or crash
+          _      <- keys.parTraverse_(key => database.persist(kafkaKey(stateTopic, key), s"state-of-$key"))
+          stored <- readSnapshots(stateTopic)
+        } yield keys.foreach { key =>
+          assertEquals(clue(stored.get(key)), utf8(s"state-of-$key"))
+        }
       }
 
     test.unsafeRunSync()
@@ -109,7 +163,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
       value     = "uncommitted".some,
     )
 
-    val test = createTopic(stateTopic) *>
+    val test = createTopic(stateTopic, 1) *>
       transactionalProducer("tx-open").use { producerA =>
         for {
           _ <- producerA.initTransactions
@@ -122,26 +176,5 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
       }
 
     test.unsafeRunSync()
-  }
-
-  test("cachingTransactional rejects a non-identity partition mapper") {
-    val result = KafkaPersistenceModule
-      .cachingTransactional[IO, String](
-        consumerOf             = ConsumerOf.apply1[IO](),
-        producerOf             = producerOf,
-        consumerConfig         = consumerConfig,
-        producerConfig         = producerConfig,
-        transactionalIdPrefix  = "tx-mapper",
-        snapshotTopicPartition = TopicPartition("tx-mapper-state-topic", Partition.min),
-        partitionMapper        = KafkaPersistencePartitionMapper.modulo(2, 1),
-      )
-      .use_
-      .attempt
-      .unsafeRunSync()
-
-    result match {
-      case Left(_: IllegalArgumentException) => ()
-      case other                             => fail(s"expected IllegalArgumentException, got $other")
-    }
   }
 }

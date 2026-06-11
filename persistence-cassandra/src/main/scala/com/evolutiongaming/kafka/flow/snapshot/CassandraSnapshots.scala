@@ -13,10 +13,11 @@ import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.scassandra.CassandraSession
 import com.evolutiongaming.scassandra.StreamingCassandraSession.*
 import com.evolutiongaming.scassandra.syntax.*
-import com.evolutiongaming.skafka.{FromBytes, Offset, ToBytes}
+import com.evolutiongaming.skafka.{Bytes, FromBytes, Offset, ToBytes}
 import scodec.bits.ByteVector
 import CassandraSnapshots.*
 
+import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NoStackTrace
 
@@ -53,7 +54,8 @@ class CassandraSnapshots[F[_]: Async, T](
     *
     * The conditional update is not applied either when the stored row has a higher offset (a concurrent writer
     * persisted a newer snapshot) or when the row does not exist yet. The latter case is retried as
-    * `INSERT ... IF NOT EXISTS`, which in turn fails only if another writer inserted the row in-between.
+    * `INSERT ... IF NOT EXISTS`; if that one is lost to a concurrent insert, the conditional update is retried once
+    * more, so that the writer with the newest snapshot wins a first-write race instead of failing on it.
     */
   private def persistCompareAndSet(
     insertStatement: PreparedStatement,
@@ -61,34 +63,44 @@ class CassandraSnapshots[F[_]: Async, T](
     snapshot: KafkaSnapshot[T],
   ): F[Unit] = {
 
-    def execute(statement: PreparedStatement): F[Row] =
-      for {
-        boundStatement <- Statements.bindPersist(statement, key, snapshot)
-        resultSet      <- session.execute(boundStatement.withConsistencyLevel(consistencyOverrides.write))
-      } yield resultSet.one()
+    def execute(boundStatement: BoundStatement): F[Row] =
+      session.execute(boundStatement.withConsistencyLevel(consistencyOverrides.write)).map(_.one())
 
-    def conflict(row: Row): F[Unit] =
-      SnapshotWriteConflict(key, snapshot.offset, persistedOffsetOf(row)).raiseError[F, Unit]
+    def applied(row: Row): Boolean = row.getBool("[applied]")
 
-    def insert: F[Unit] =
-      for {
-        row <- execute(insertStatement)
-        _   <- if (row.getBool("[applied]")) ().pure[F] else conflict(row)
-      } yield ()
+    def conflict(persistedOffset: Option[Offset]): F[Unit] =
+      SnapshotWriteConflict(key, snapshot.offset, persistedOffset).raiseError[F, Unit]
 
     for {
-      row <- execute(persistStatement)
-      _ <- if (row.getBool("[applied]")) ().pure[F]
-      else if (persistedOffsetOf(row).isDefined) conflict(row)
-      else insert
+      created  <- Clock[F].instant
+      value    <- toBytes.apply(snapshot.value, key.topicPartition.topic)
+      bind      = (statement: PreparedStatement) => Statements.bindPersist(statement, key, snapshot, created, value)
+      updateRow <- execute(bind(persistStatement))
+      _ <-
+        if (applied(updateRow)) ().pure[F]
+        else
+          persistedOffsetOf(updateRow) match {
+            case Some(persistedOffset) =>
+              // the stored snapshot is newer: this writer is stale
+              conflict(persistedOffset.some)
+            case None =>
+              // the row does not exist yet: first write for the key
+              execute(bind(insertStatement)).flatMap { insertRow =>
+                if (applied(insertRow)) ().pure[F]
+                else
+                  // lost the insert race to a concurrent writer: retry the conditional update once
+                  execute(bind(persistStatement)).flatMap { retryRow =>
+                    if (applied(retryRow)) ().pure[F]
+                    else conflict(persistedOffsetOf(retryRow))
+                  }
+              }
+          }
     } yield ()
   }
 
   private def persistedOffsetOf(row: Row): Option[Offset] =
-    if (row.getColumnDefinitions.contains("offset") && !row.isNull("offset"))
-      row.decode[Offset]("offset").some
-    else
-      none
+    if (row.getColumnDefinitions.contains("offset")) row.decode[Option[Offset]]("offset")
+    else none
 
   def get(key: KafkaKey): F[Option[KafkaSnapshot[T]]] = {
     val boundStatement =
@@ -149,12 +161,11 @@ object CassandraSnapshots {
     *   optional TTL to set on inserted records
     * @param compareAndSet
     *   if `true`, snapshots are persisted with a Cassandra lightweight transaction asserting that the stored
-    *   snapshot's offset is not greater than the offset of the new snapshot. This protects from a stale writer (e.g. a
-    *   previous partition owner that did not yet observe a rebalance) overwriting a newer snapshot with an older one,
-    *   see https://github.com/evolution-gaming/kafka-flow/issues/732. A rejected write fails with
-    *   [[SnapshotWriteConflict]]. Note that lightweight transactions are significantly more expensive than regular
-    *   writes. When enabling the flag with a rolling deployment, the protection takes effect only once all instances
-    *   run with it enabled. Default is `false` (last write wins).
+    *   snapshot's offset is not greater than the offset of the new snapshot, protecting from a stale writer
+    *   overwriting a newer snapshot during partition ownership transitions
+    *   (https://github.com/evolution-gaming/kafka-flow/issues/732). A rejected write fails with
+    *   [[SnapshotWriteConflict]]. See the "Single-writer guarantees" section of the persistence documentation for
+    *   limitations and costs. Default is `false` (last write wins).
     * @param fromBytes
     *   deserializer function to convert array of bytes to the snapshot type T
     * @param toBytes
@@ -317,19 +328,26 @@ object CassandraSnapshots {
       for {
         created <- Clock[F].instant
         value   <- toBytes.apply(snapshot.value, key.topicPartition.topic)
-      } yield {
-        statement
-          .bind()
-          .encode("application_id", key.applicationId)
-          .encode("group_id", key.groupId)
-          .encode("topic", key.topicPartition.topic)
-          .encode("partition", key.topicPartition.partition)
-          .encode("key", key.key)
-          .encode("offset", snapshot.offset)
-          .encode("created", created)
-          .encode("metadata", snapshot.metadata)
-          .encode("value", value)
-      }
+      } yield bindPersist(statement, key, snapshot, created, value)
+
+    def bindPersist[T](
+      statement: PreparedStatement,
+      key: KafkaKey,
+      snapshot: KafkaSnapshot[T],
+      created: Instant,
+      value: Bytes,
+    ): BoundStatement =
+      statement
+        .bind()
+        .encode("application_id", key.applicationId)
+        .encode("group_id", key.groupId)
+        .encode("topic", key.topicPartition.topic)
+        .encode("partition", key.topicPartition.partition)
+        .encode("key", key.key)
+        .encode("offset", snapshot.offset)
+        .encode("created", created)
+        .encode("metadata", snapshot.metadata)
+        .encode("value", value)
 
     def prepareGet[F[_]](session: CassandraSession[F], tableName: String): F[PreparedStatement] =
       session

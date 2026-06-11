@@ -10,7 +10,7 @@ import com.evolutiongaming.kafka.flow.metrics.syntax.*
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotWriteDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey}
-import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
+import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf, IsolationLevel}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf}
 import com.evolutiongaming.skafka.{FromBytes, ToBytes, TopicPartition}
 import com.evolutiongaming.sstream.Stream
@@ -97,29 +97,23 @@ object KafkaPersistenceModule {
       metrics                = metrics,
       partitionMapper        = partitionMapper,
       writeDatabase          = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition, producer, partitionMapper),
-      transactional          = false,
     )
   }
 
   /** Variant of [[caching]] protecting the snapshot topic from stale writers via Kafka transactions.
     *
-    * During a rebalance there is a window where a previous partition owner that did not yet observe the revocation
-    * keeps writing snapshots in parallel with the new owner, which can result in a newer snapshot being overwritten by
-    * an older one, see [[https://github.com/evolution-gaming/kafka-flow/issues/732]]. This factory creates one
-    * transactional producer per assigned partition with a stable `transactional.id` derived from
-    * `transactionalIdPrefix` and the partition number, and calls `initTransactions` before the snapshot topic is read:
-    * the broker then fences the previous owner's producer, so a stale writer fails with
-    * [[KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict]] instead of corrupting the state. Every snapshot write
-    * is performed in its own transaction and the snapshot topic is read with `read_committed` isolation level.
-    *
-    * Only [[KafkaPersistencePartitionMapper.identity]] is supported: fencing is per input partition, and with a
-    * non-identity mapper a state topic partition may be shared by writers with different `transactional.id`s, in which
-    * case reading the partition to the end is not well defined under `read_committed`.
+    * One transactional producer is created per assigned partition with a stable `transactional.id` derived from
+    * `transactionalIdPrefix`, and `initTransactions` is called before the snapshot topic is read: the broker fences
+    * the previous owner of the partition, so a stale snapshot write fails with
+    * [[KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict]] instead of overwriting a newer snapshot
+    * (https://github.com/evolution-gaming/kafka-flow/issues/732). Writes run in transactions (serialized per
+    * partition), recovery reads with `read_committed`, and unlike [[caching]] the identity partition mapping is
+    * always used. See the "Single-writer guarantees" section of the persistence documentation for limitations and
+    * costs.
     *
     * Switch an existing deployment to or from this mode with a replace (stop-all-then-start) deployment, not a
     * rolling one: a non-transactional instance recovers snapshots with `read_uncommitted` and may read records of
-    * aborted transactions as valid snapshots while both modes coexist. See the "Single-writer guarantees" section of
-    * the persistence documentation for details.
+    * aborted transactions as valid snapshots while both modes coexist.
     *
     * @param producerOf
     *   factory used to create the per-partition transactional producer
@@ -137,8 +131,7 @@ object KafkaPersistenceModule {
     producerConfig: ProducerConfig,
     transactionalIdPrefix: String,
     snapshotTopicPartition: TopicPartition,
-    metrics: FlowMetrics[F]                          = FlowMetrics.empty[F],
-    partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
+    metrics: FlowMetrics[F] = FlowMetrics.empty[F],
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
@@ -156,24 +149,19 @@ object KafkaPersistenceModule {
     )
 
     for {
-      _ <- Resource.eval {
-        new IllegalArgumentException(
-          "cachingTransactional supports only KafkaPersistencePartitionMapper.identity, " +
-            "fencing domains of other mappers do not match the state topic partitions"
-        ).raiseError[F, Unit].whenA(partitionMapper != KafkaPersistencePartitionMapper.identity)
-      }
       producer <- producerOf(transactionalProducerConfig)
       // fences the previous owner of this partition: performed on partition assignment,
       // before the snapshot topic is read, so a stale writer cannot write after the read
-      _ <- Resource.eval(producer.initTransactions)
+      _             <- Resource.eval(producer.initTransactions)
+      writeDatabase <- Resource.eval(KafkaSnapshotWriteDatabase.transactional[F, S](snapshotTopicPartition, producer))
       module <- of(
-        consumerOf             = consumerOf,
-        consumerConfig         = consumerConfig,
+        consumerOf = consumerOf,
+        // records of aborted transactions (e.g. of a fenced previous owner) must not be recovered as snapshots
+        consumerConfig         = consumerConfig.copy(isolationLevel = IsolationLevel.ReadCommitted),
         snapshotTopicPartition = snapshotTopicPartition,
         metrics                = metrics,
-        partitionMapper        = partitionMapper,
-        writeDatabase = KafkaSnapshotWriteDatabase.transactional[F, S](snapshotTopicPartition, producer, partitionMapper),
-        transactional = true,
+        partitionMapper        = KafkaPersistencePartitionMapper.identity,
+        writeDatabase          = writeDatabase,
       )
     } yield module
   }
@@ -185,7 +173,6 @@ object KafkaPersistenceModule {
     metrics: FlowMetrics[F],
     partitionMapper: KafkaPersistencePartitionMapper,
     writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
-    transactional: Boolean,
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
@@ -199,7 +186,6 @@ object KafkaPersistenceModule {
           consumerConfig = consumerConfig,
           snapshotTopic  = snapshotTopicPartition.topic,
           partition      = targetPartition,
-          transactional  = transactional,
         )
         .map { snapshots =>
           snapshots

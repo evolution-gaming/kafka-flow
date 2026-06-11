@@ -11,7 +11,6 @@ import com.evolutiongaming.skafka.consumer.{
   ConsumerConfig,
   ConsumerOf,
   ConsumerRecord,
-  IsolationLevel,
   WithSize
 }
 import scodec.bits.ByteVector
@@ -58,23 +57,16 @@ object KafkaPartitionPersistence {
     case _ => map // ignore records with no key for now
   }
 
-  /** @param transactional
-    *   when `true`, snapshots are written with a transactional producer (see
-    *   [[KafkaPersistenceModule.cachingTransactional]]) and have to be read with `read_committed` isolation level to
-    *   not observe records of aborted transactions
-    */
   private[kafkapersistence] def readSnapshots[F[_]: BracketThrowable: Log](
     consumerOf: ConsumerOf[F],
     consumerConfig: ConsumerConfig,
     snapshotTopic: Topic,
     partition: Partition,
-    transactional: Boolean = false,
   )(implicit fromBytes: FromBytes[F, String]): F[BytesByKey] = {
     consumerOf
       .apply[String, ByteVector](
         consumerConfig.copy(
           autoOffsetReset = Earliest,
-          isolationLevel  = if (transactional) IsolationLevel.ReadCommitted else consumerConfig.isolationLevel,
           common = consumerConfig
             .common
             .copy(clientId = consumerConfig.common.clientId.map(cid => s"$cid-snapshot-$partition"))

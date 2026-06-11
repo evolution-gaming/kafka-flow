@@ -67,25 +67,11 @@ object KafkaPersistenceModuleOf {
 
   /** Create a [[KafkaPersistenceModuleOf]] factory producing transactional implementations of
     * [[KafkaPersistenceModule]] which protect the snapshot topic from stale writers during rebalances. See
-    * `KafkaPersistenceModule.cachingTransactional` documentation for details and trade-offs.
+    * `KafkaPersistenceModule.cachingTransactional` for the semantics, parameter documentation (in particular the
+    * stability and uniqueness rules of `transactionalIdPrefix`) and trade-offs.
     *
-    * @param consumerOf
-    *   factory of consumers
-    * @param producerOf
-    *   factory used to create one transactional snapshot producer per assigned partition
-    * @param consumerConfig
-    *   consumer config to be used when creating snapshot topic consumer; isolation level is forced to
-    *   `read_committed`
-    * @param producerConfig
-    *   base producer config; `transactionalId` and `idempotence` are overridden per partition
-    * @param transactionalIdPrefix
-    *   stable prefix for `transactional.id` (the partition number is appended). It must not change across restarts
-    *   and deployments and must be unique per consumer group + input topic + snapshot topic combination. A good
-    *   choice is `s"$groupId-$inputTopic"`.
     * @param snapshotTopic
     *   snapshot topic name (should be configured as a 'compacted' topic)
-    * @param metrics
-    *   instance of `FlowMetrics` for [[KafkaPersistenceModule]]
     */
   def cachingTransactional[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],

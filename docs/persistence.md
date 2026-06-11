@@ -29,6 +29,11 @@ Two related notes on configuration:
 - A high `fireEvery` in `TimerFlowOf.persistPeriodically` makes hitting the window *less* likely, at
   the cost of more events to replay on recovery.
 
+Both protections below reject a stale write with a conflict error, failing the flow of the stale
+instance — safe, since it no longer owns the partition. With `TimerFlowOf(ignorePersistErrors =
+true)` the error is logged and swallowed instead: the protection still holds (nothing is written
+and no offsets are committed), but the stale instance keeps running rather than failing fast.
+
 ### Compare-and-set snapshot writes (Cassandra)
 
 The Cassandra persistence module can protect from stale writers using compare-and-set writes,
@@ -50,41 +55,32 @@ CassandraPersistence.withSchema[F, State](
 )
 ```
 
-When enabled, every snapshot write is performed as a Cassandra lightweight transaction asserting
-that the stored snapshot's offset is not greater than the offset of the snapshot being written
-(`IF offset <= :offset`). A write that loses the race fails with
-`CassandraSnapshots.SnapshotWriteConflict`, which fails the flow of the stale instance — by that
-point the partition is owned by another instance anyway, so failing fast is the safe outcome. The
-new owner is unaffected and its newer snapshot is preserved.
+When enabled, every snapshot write is a Cassandra lightweight transaction asserting that the stored
+snapshot's offset is not greater than the offset being written (`IF offset <= :offset`). A stale
+write is rejected with `CassandraSnapshots.SnapshotWriteConflict` and the newer snapshot is
+preserved.
 
-Things to be aware of before enabling it:
-- Lightweight transactions are noticeably more expensive than regular writes (Paxos round-trips).
-  If snapshot writes are frequent, measure the impact first.
-- Snapshot offsets must be monotonic per key, which holds for normal operation. If you reset the
-  consumer group to an earlier offset while keeping the snapshot tables, writes at lower offsets
-  will be rejected until the stored snapshots catch up or are truncated.
-- Snapshot *deletes* (e.g. when a fold finishes a key) are performed as `DELETE ... IF EXISTS` in
-  this mode (all mutations must go through the Paxos path once lightweight transactions are used),
-  but they are not guarded by the offset: a stale writer could still delete a newer snapshot. This
-  window is much narrower and has not been observed in practice.
-- The Kafka-based persistence module (`kafka-flow-persistence-kafka`) writes snapshots to a compact
-  topic and cannot do conditional writes; it has its own protection instead, see below.
+Limitations and costs:
+- Lightweight transactions are noticeably more expensive than regular writes (Paxos round-trips);
+  measure first if snapshot writes are frequent.
+- Offsets must be monotonic per key: after a consumer-group offset reset, writes at lower offsets
+  are rejected until the stored snapshots are passed or truncated.
+- Writes at an *equal* offset are allowed (snapshots may legitimately be replaced at the same
+  offset, e.g. by timer-driven state changes), so a stale writer holding exactly the stored offset
+  is not detected.
+- Deletes are not offset-guarded: a stale writer can delete a newer snapshot, and a delete resets
+  the guard, letting a subsequent stale write through — a much narrower window than the one this
+  feature closes.
 
 #### Enabling on a running system
 
-There is no schema or data migration: the condition reads the `offset` column that every previous
-version has always written, so the first conditional write per existing key works as expected, and
-the flag can also be disabled again without any migration.
-
-- *Replace deployments* (all old instances stop before new ones start) are safe.
-- *Rolling deployments* are supported, with two caveats that apply to the migration rollout only.
-  The protection takes effect once **all** replicas run with the flag enabled — until then, old
-  replicas still write unconditionally and can overwrite anything. And because regular writes use
-  client-side timestamps while lightweight transactions commit with coordinator-generated (Paxos
-  ballot) timestamps, an application clock running ahead of the Cassandra coordinators can make a
-  regular write shadow a later conditional one; with NTP-synchronized clocks this skew is
-  milliseconds and not a practical concern. Subsequent rolling deployments where both versions have
-  the flag enabled are fully safe.
+No schema or data migration is needed in either direction: the condition reads the `offset` column
+that every version has always written. One new failure mode exists while flag-on and flag-off
+instances coexist in a rolling deployment: regular writes carry client-side timestamps while
+lightweight transactions commit with coordinator-generated timestamps, so an application clock
+running ahead of the Cassandra coordinators can make an old instance's write silently shadow a
+newer conditional one. With NTP-synchronized clocks the skew is milliseconds and this is not a
+practical concern.
 
 ### Transactional snapshot writes (Kafka)
 
@@ -104,43 +100,38 @@ KafkaPersistenceModuleOf.cachingTransactional[F, State](
 Instead of one shared snapshot producer, the module creates one *transactional* producer per
 assigned partition, with a stable `transactional.id` of `s"$transactionalIdPrefix-$partition"`, and
 calls `initTransactions` on partition assignment — before the snapshot topic is read. The broker
-then *fences* the previous owner's producer: any further snapshot write of a stale owner fails with
-`KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict`, failing the flow of the stale instance — by
-that point the partition is owned by another instance anyway, so failing fast is the safe outcome.
-Every snapshot write runs in its own transaction, and the snapshot topic is read with the
-`read_committed` isolation level during recovery, so records of aborted transactions are never
-observed.
+then *fences* the previous owner's producer: a stale snapshot write is rejected with
+`KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict`. Every write runs in its own transaction,
+and recovery reads the snapshot topic with `read_committed`, so records of aborted transactions are
+never observed.
 
 The `transactionalIdPrefix` must be stable across restarts and deployments (otherwise fencing is
 lost) and unique per consumer group + input topic + snapshot topic combination (otherwise unrelated
 writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
 
-Things to be aware of before enabling it:
-- Each snapshot write costs a transaction (begin, send, commit markers) and each assigned partition
-  holds its own producer plus transaction-coordinator state on the brokers. If snapshot writes are
-  frequent, measure the impact first.
-- A gracefully shutting down old owner can be fenced while flushing on revoke; its last state delta
-  is then neither persisted nor committed, so the new owner simply replays those events — expected
-  noise, not data loss.
-- Only the identity `KafkaPersistencePartitionMapper` is supported: fencing is per input partition,
-  and with a non-identity mapper a state topic partition would be shared by writers with different
-  `transactional.id`s, making read-to-end recovery under `read_committed` ill-defined.
+Limitations and costs:
+- Each write costs a transaction, and each assigned partition holds its own producer plus
+  transaction-coordinator state on the brokers; writes of a partition are serialized (one
+  transaction at a time per producer). Measure first if snapshot writes are frequent.
+- An old owner can be fenced while flushing on revoke; its last state delta is then neither
+  persisted nor committed, so the new owner replays those events — noise, not loss.
+- This mode always uses the identity `KafkaPersistencePartitionMapper`: fencing is per input
+  partition, and with a non-identity mapper a state topic partition would be shared by writers with
+  different `transactional.id`s, making read-to-end recovery under `read_committed` ill-defined.
 
 #### Enabling on a running system
 
-There is no topic or data migration: recovery under `read_committed` reads all the existing
+No topic or data migration is needed: recovery under `read_committed` reads all the existing
 non-transactional records, and the first `initTransactions` simply registers the new
 `transactional.id`s with the brokers.
 
-However, **enable (and roll back) this mode with a replace deployment** — stop all old instances
-before starting the new ones — rather than a rolling one. While transactional and non-transactional
-versions coexist, the protection is not in force (the old shared producer cannot be fenced) and,
-worse, old instances recover snapshots with `read_uncommitted`: if a new instance gets fenced
-mid-transaction during the rollout, an old instance taking over that partition will read the
-*aborted* — and possibly stale — snapshot record as if it were valid, until log compaction removes
-it. The same applies when rolling back from the transactional mode to a non-transactional version.
-Rolling deployments where both versions run in transactional mode are fully safe — fencing handles
-the handover, that is the designed steady state.
+One new failure mode exists while transactional and non-transactional instances coexist:
+non-transactional instances recover snapshots with `read_uncommitted` and will read records of
+*aborted* transactions (e.g. of an instance fenced mid-rollout) as valid snapshots, until log
+compaction removes them. **Enable and roll back this mode with a replace (stop-all-then-start)
+deployment** rather than a rolling one to avoid that window.
+
+## Compression
 Kafka-flow has a built-in support for compressing application's state
 when it's being persisted. This can be achieved by creating an instance of `Compressor`
 and enhancing a user-defined instance of `ToBytes[F, State]` with it 
