@@ -26,11 +26,14 @@ abstract class ForAllKafkaSuite extends FunSuite with TestContainersFixtures {
     val props = new Properties
     props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.container.bootstrapServers)
 
-    Resource.make(IO.delay(AdminClient.create(props)))(cl => IO(cl.close())).use { client =>
-      IO(client.createTopics(List(new NewTopic(topic, partitions, 1.toShort)).asJava)).map(res =>
-        res.all().get(10, TimeUnit.SECONDS)
-      )
-    }.void
+    Resource
+      .make(IO.delay(AdminClient.create(props)))(cl => IO(cl.close()))
+      .use { client =>
+        IO(client.createTopics(List(new NewTopic(topic, partitions, 1.toShort)).asJava)).map(res =>
+          res.all().get(10, TimeUnit.SECONDS)
+        )
+      }
+      .void
   }
 
   val kafkaModule = new Fixture[KafkaModule[IO]]("KafkaModule") {

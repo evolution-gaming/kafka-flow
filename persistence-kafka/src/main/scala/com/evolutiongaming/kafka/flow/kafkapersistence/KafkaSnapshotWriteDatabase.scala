@@ -20,8 +20,8 @@ object KafkaSnapshotWriteDatabase {
   /** Raised in transactional mode (see [[KafkaPersistenceModule.cachingTransactional]]) when a snapshot write was
     * fenced by the broker because another producer with the same `transactional.id` was initialized.
     *
-    * This indicates that another writer (most likely a new owner of the partition after a rebalance) has taken over
-    * the snapshot topic partition, i.e. this instance is a stale writer and should not continue working with the key.
+    * This indicates that another writer (most likely a new owner of the partition after a rebalance) has taken over the
+    * snapshot topic partition, i.e. this instance is a stale writer and should not continue working with the key.
     */
   final case class KafkaSnapshotWriteConflict(
     key: KafkaKey,
@@ -47,14 +47,19 @@ object KafkaSnapshotWriteDatabase {
     * called on it already. A write fenced by a newer producer with the same `transactional.id` fails with
     * [[KafkaSnapshotWriteConflict]].
     *
-    * The Kafka producer allows only one transaction at a time, while kafka-flow may flush multiple keys of a
-    * partition concurrently (folds and timers run with parallel execution by default), so writes are group
-    * committed — hence the effectful return type: a sequential write gets its own transaction, while writes arriving
-    * while another transaction is in flight are committed together in the next one (up to `maxWritesPerTransaction`).
-    * There is no batching delay: a write never waits to fill a batch, a batch is simply whatever queued up during the
-    * previous transaction's commit. This keeps a burst of N concurrent key flushes at O(N / maxWritesPerTransaction)
-    * transaction round-trips instead of O(N), while a lone write is committed immediately. The writes of a batch
-    * share the transaction outcome: if it fails or is aborted, every write of the batch fails.
+    * The Kafka producer allows only one transaction at a time, while kafka-flow may flush multiple keys of a partition
+    * concurrently (folds and timers run with parallel execution by default), so writes are group committed — hence the
+    * effectful return type: a sequential write gets its own transaction, while writes arriving while another
+    * transaction is in flight are committed together in the next one (up to `maxWritesPerTransaction`). There is no
+    * batching delay: a write never waits to fill a batch, a batch is simply whatever queued up during the previous
+    * transaction's commit. This keeps a burst of N concurrent key flushes at O(N / maxWritesPerTransaction) transaction
+    * round-trips instead of O(N), while a lone write is committed immediately. The writes of a batch share the
+    * transaction outcome: if it fails or is aborted, every write of the batch fails.
+    *
+    * "Group commit" is a borrowed pattern name (as in database write-ahead-log group commit: fold many waiting writes
+    * into one expensive commit to amortize its cost), not a Kafka feature — here implemented as a per-partition queue
+    * plus a single "leader" that drains and commits the batch. See `docs/kafka-single-writer-design.md` for the full
+    * design and measurements.
     *
     * @param maxWritesPerTransaction
     *   upper bound of writes committed in one transaction. The bound exists to keep transaction duration well below
@@ -132,12 +137,12 @@ object KafkaSnapshotWriteDatabase {
         partitionMapper,
         (key, record) =>
           for {
-            done  <- Deferred[F, Either[Throwable, Unit]]
-            write  = Pending(key, record, done)
-            _     <- pending.offer(write)
-            _     <- transactionLock.permit.use(_ => lead(write))
+            done   <- Deferred[F, Either[Throwable, Unit]]
+            write   = Pending(key, record, done)
+            _      <- pending.offer(write)
+            _      <- transactionLock.permit.use(_ => lead(write))
             result <- done.get
-            _     <- result.liftTo[F]
+            _      <- result.liftTo[F]
           } yield (),
       )
     }

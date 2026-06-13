@@ -35,12 +35,16 @@ class SnapshotSpec extends CassandraSpec {
   test("compare-and-set: writes with monotonically increasing offsets are applied") {
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-monotonic")
     val test: IO[Unit] = for {
-      snapshots <- CassandraSnapshots.withSchema[IO, String](cassandra().session, cassandra().sync, compareAndSet = true)
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        compareAndSet = true
+      )
       // first write of a key goes through the `INSERT ... IF NOT EXISTS` path
-      _     <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(5), value = "state-5"))
-      five  <- snapshots.get(key)
-      _     <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
-      ten   <- snapshots.get(key)
+      _    <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(5), value = "state-5"))
+      five <- snapshots.get(key)
+      _    <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      ten  <- snapshots.get(key)
       // a snapshot can be replaced at the same offset, e.g. when state was changed by a timer
       _     <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10-updated"))
       tenUp <- snapshots.get(key)
@@ -56,7 +60,11 @@ class SnapshotSpec extends CassandraSpec {
   test("compare-and-set: stale write is rejected") {
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-stale")
     val test: IO[Unit] = for {
-      snapshots <- CassandraSnapshots.withSchema[IO, String](cassandra().session, cassandra().sync, compareAndSet = true)
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        compareAndSet = true
+      )
       _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
       result <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(7), value = "state-7-stale")).attempt
       stored <- snapshots.get(key)
@@ -77,7 +85,11 @@ class SnapshotSpec extends CassandraSpec {
   test("compare-and-set: write after delete starts from scratch") {
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-delete")
     val test: IO[Unit] = for {
-      snapshots <- CassandraSnapshots.withSchema[IO, String](cassandra().session, cassandra().sync, compareAndSet = true)
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        compareAndSet = true
+      )
       _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
       _      <- snapshots.delete(key)
       _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(3), value = "state-3"))

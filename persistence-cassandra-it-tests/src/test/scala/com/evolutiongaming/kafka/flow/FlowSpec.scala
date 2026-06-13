@@ -110,8 +110,8 @@ class FlowSpec extends CassandraSpec {
   }
 
   /** The #732 scenario: the previous owner (flow A) folds events e1..e5 without flushing; the new owner (flow B)
-    * recovers (nothing was persisted or committed by A), folds events e1..e10, and flushes on release; then A —
-    * unaware of the handover — flushes its stale state on revoke.
+    * recovers (nothing was persisted or committed by A), folds events e1..e10, and flushes on release; then A — unaware
+    * of the handover — flushes its stale state on revoke.
     *
     * Returns (result of A's release, stored snapshot after A's release).
     */
@@ -185,16 +185,16 @@ class FlowSpec extends CassandraSpec {
         snapshotCompareAndSet = compareAndSet,
       )
       // the previous owner: folds events, snapshots stay buffered in memory
-      flowA            <- allocateFlow(storage)
+      flowA             <- allocateFlow(storage)
       (flowA_, releaseA) = flowA
-      _                <- flowA_(records(eventsA))
+      _                 <- flowA_(records(eventsA))
       // the new owner: eagerly recovers (finds nothing), folds all events, flushes on release
-      flowB            <- allocateFlow(storage)
+      flowB             <- allocateFlow(storage)
       (flowB_, releaseB) = flowB
-      _                <- flowB_(records(eventsB))
-      _                <- releaseB
-      newOwnerWrote    <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
-      _                 = assertEquals(clue(newOwnerWrote.map(_.value)), Some(eventsB.mkString(",")))
+      _                 <- flowB_(records(eventsB))
+      _                 <- releaseB
+      newOwnerWrote     <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
+      _                  = assertEquals(clue(newOwnerWrote.map(_.value)), Some(eventsB.mkString(",")))
       // the previous owner flushes its stale state on revoke
       staleFlush <- releaseA.attempt
       stored     <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))

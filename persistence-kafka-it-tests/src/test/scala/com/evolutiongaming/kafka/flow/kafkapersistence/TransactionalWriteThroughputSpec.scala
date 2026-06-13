@@ -13,15 +13,15 @@ import com.evolutiongaming.skafka.{CommonConfig, Partition, TopicPartition}
 
 import scala.concurrent.duration.*
 
-/** Measures the cost of transactional snapshot writes for capacity planning: the per-transaction latency (a
-  * sequential write is one transaction), the effect of the group commit on a concurrent burst, and the burst cost at
-  * different `maxWritesPerTransaction` values — a flush burst of N dirty keys costs about N / maxWritesPerTransaction
+/** Measures the cost of transactional snapshot writes for capacity planning: the per-transaction latency (a sequential
+  * write is one transaction), the effect of the group commit on a concurrent burst, and the burst cost at different
+  * `maxWritesPerTransaction` values — a flush burst of N dirty keys costs about N / maxWritesPerTransaction
   * transactions on the poll path. Also demonstrates the failure mode motivating the cap: a transaction outliving
   * `transaction.timeout.ms` is aborted by the coordinator.
   *
-  * Each producer performs an untimed warm-up write before its measurement (first use pays metadata fetch and
-  * connection setup). Absolute numbers from a single-node testcontainers broker underestimate production latency (no
-  * network round trips, replication factor 1); the assertions are sanity-only.
+  * Each producer performs an untimed warm-up write before its measurement (first use pays metadata fetch and connection
+  * setup). Absolute numbers from a single-node testcontainers broker underestimate production latency (no network round
+  * trips, replication factor 1); the assertions are sanity-only.
   */
 class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
   implicit val ioRuntime: IORuntime = IORuntime.global
@@ -157,17 +157,40 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
         }
     }
 
+    // safety-off baseline: the same burst on a plain shared batched producer (no transactions), so the cost of the
+    // transactional cap sweep above is comparable against the default mode on the realistic workload. Run after the
+    // cap sweep below so it does not pay the cold-JVM penalty the first burst eats (which would understate the cost).
+    val runPlain: IO[FiniteDuration] = {
+      val stateTopic = "tx-burst-plain-state-topic"
+      createTopic(stateTopic, 1) *>
+        producerOf(producerConfig).use { producer =>
+          val database = KafkaSnapshotWriteDatabase.of[IO, String](TopicPartition(stateTopic, Partition.min), producer)
+          for {
+            _ <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
+            elapsed <- timed {
+              (1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload))
+            }
+            stored <- readSnapshots(stateTopic)
+            _       = assertEquals(clue(stored.size), burst + 1)
+          } yield elapsed
+        }
+    }
+
     val caps = List(1, 16, 256, burst)
 
-    val test = caps
-      .traverse(cap => run(cap).map(elapsed => cap -> elapsed))
-      .flatMap { results =>
-        IO.println {
-          results
-            .map { case (cap, elapsed) => s"maxWritesPerTransaction=$cap: ${elapsed.toMillis} ms" }
-            .mkString(s"burst of $burst x ${payload.length / 1024} KiB snapshots: ", ", ", "")
-        }
+    val test = for {
+      capped <- caps.traverse(cap => run(cap).map(elapsed => cap -> elapsed))
+      plain  <- runPlain
+      _ <- IO.println {
+        capped
+          .map { case (cap, elapsed) => s"maxWritesPerTransaction=$cap: ${elapsed.toMillis} ms" }
+          .mkString(
+            s"burst of $burst x ${payload.length / 1024} KiB snapshots: shared batched producer: ${plain.toMillis} ms, ",
+            ", ",
+            "",
+          )
       }
+    } yield ()
 
     test.unsafeRunSync()
   }
@@ -189,8 +212,11 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
         producerConfig.copy(transactionalId = "throughput-tx".some, idempotence = true)
       ).use { producer =>
         for {
-          _        <- producer.initTransactions
-          database <- KafkaSnapshotWriteDatabase.transactional[IO, String](TopicPartition(txTopic, Partition.min), producer)
+          _ <- producer.initTransactions
+          database <- KafkaSnapshotWriteDatabase.transactional[IO, String](
+            TopicPartition(txTopic, Partition.min),
+            producer
+          )
           _          <- database.persist(kafkaKey(txTopic, "warm-up"), "warm-up")
           sequential <- persistSequentially(txTopic, database)
           concurrent <- persistConcurrently(txTopic, database)

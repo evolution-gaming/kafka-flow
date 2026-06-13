@@ -103,17 +103,17 @@ object KafkaPersistenceModule {
   /** Variant of [[caching]] protecting the snapshot topic from stale writers via Kafka transactions.
     *
     * One transactional producer is created per assigned partition with a stable `transactional.id` derived from
-    * `transactionalIdPrefix`, and `initTransactions` is called before the snapshot topic is read: the broker fences
-    * the previous owner of the partition, so a stale snapshot write fails with
+    * `transactionalIdPrefix`, and `initTransactions` is called before the snapshot topic is read: the broker fences the
+    * previous owner of the partition, so a stale snapshot write fails with
     * [[KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict]] instead of overwriting a newer snapshot
     * (https://github.com/evolution-gaming/kafka-flow/issues/732). Writes run in transactions (group committed per
     * partition, see [[KafkaSnapshotWriteDatabase.transactional]]), recovery reads with `read_committed`, and unlike
     * [[caching]] the identity partition mapping is always used. See the "Single-writer guarantees" section of the
     * persistence documentation for limitations and costs.
     *
-    * Switch an existing deployment to or from this mode with a replace (stop-all-then-start) deployment, not a
-    * rolling one: a non-transactional instance recovers snapshots with `read_uncommitted` and may read records of
-    * aborted transactions as valid snapshots while both modes coexist.
+    * Switch an existing deployment to or from this mode with a replace (stop-all-then-start) deployment, not a rolling
+    * one: a non-transactional instance recovers snapshots with `read_uncommitted` and may read records of aborted
+    * transactions as valid snapshots while both modes coexist.
     *
     * @param producerOf
     *   factory used to create the per-partition transactional producer
@@ -121,9 +121,9 @@ object KafkaPersistenceModule {
     *   base config for the snapshot producer; `transactionalId` and `idempotence` are overridden by this factory, and
     *   `clientId` is suffixed per partition
     * @param transactionalIdPrefix
-    *   stable prefix for `transactional.id` (the partition number is appended). It must not change across restarts
-    *   and deployments (otherwise fencing is lost) and must be unique per consumer group + input topic + snapshot
-    *   topic combination (otherwise unrelated writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
+    *   stable prefix for `transactional.id` (the partition number is appended). It must not change across restarts and
+    *   deployments (otherwise fencing is lost) and must be unique per consumer group + input topic + snapshot topic
+    *   combination (otherwise unrelated writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
     * @param maxWritesPerTransaction
     *   upper bound of snapshot writes group committed in one transaction, see
     *   [[KafkaSnapshotWriteDatabase.transactional]] for the trade-off

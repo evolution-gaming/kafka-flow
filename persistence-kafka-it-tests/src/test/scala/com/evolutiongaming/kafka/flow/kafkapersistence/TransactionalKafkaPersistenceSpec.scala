@@ -19,7 +19,14 @@ import com.evolutiongaming.kafka.flow.{
   PartitionFlowOf,
   TickOption
 }
-import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf, ConsumerRecord, IsolationLevel, WithSize}
+import com.evolutiongaming.skafka.consumer.{
+  AutoOffsetReset,
+  ConsumerConfig,
+  ConsumerOf,
+  ConsumerRecord,
+  IsolationLevel,
+  WithSize
+}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf, ProducerRecord}
 import com.evolutiongaming.skafka.{CommonConfig, Offset, Partition, TopicPartition}
 import scodec.bits.ByteVector
@@ -28,8 +35,8 @@ import scala.concurrent.duration.*
 
 /** Reproduces the stale-writer snapshot corruption of
   * [[https://github.com/evolution-gaming/kafka-flow/issues/732 issue #732]] against a real Kafka broker through the
-  * real kafka-flow machinery (PartitionFlow with eager recovery, fold, buffered snapshots, flush-on-revoke), and
-  * proves that the transactional mode prevents it.
+  * real kafka-flow machinery (PartitionFlow with eager recovery, fold, buffered snapshots, flush-on-revoke), and proves
+  * that the transactional mode prevents it.
   *
   * The partition ownership overlap is simulated by construction — two PartitionFlows over the same partition — since
   * the consumer-group rebalance notification itself is Kafka's guarantee: in a real overlap the previous owner has
@@ -103,13 +110,17 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
       )
     }
 
-  /** Snapshots are flushed only when the flow is released (flush-on-revoke), never periodically — so the moment of
-    * the stale write is controlled by the test.
+  /** Snapshots are flushed only when the flow is released (flush-on-revoke), never periodically — so the moment of the
+    * stale write is controlled by the test.
     */
   private def flushOnRevokeOnly: TimerFlowOf[IO] =
     TimerFlowOf.persistPeriodically[IO](fireEvery = 1.hour, persistEvery = 1.hour, flushOnRevoke = true)
 
-  private def inputRecords(inputTopic: String, key: String, events: List[String]): List[ConsumerRecord[String, ByteVector]] =
+  private def inputRecords(
+    inputTopic: String,
+    key: String,
+    events: List[String]
+  ): List[ConsumerRecord[String, ByteVector]] =
     events.zipWithIndex.map {
       case (event, offset) =>
         ConsumerRecord[String, ByteVector](
@@ -121,9 +132,9 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
         )
     }
 
-  /** The #732 scenario: the previous owner (flow A) folds events 1..5 without flushing; the new owner (flow B)
-    * recovers (nothing was persisted or committed by A), re-folds events 1..5 plus new events 6..10, and flushes on
-    * release; then A — unaware of the handover — flushes its stale state on revoke.
+  /** The #732 scenario: the previous owner (flow A) folds events 1..5 without flushing; the new owner (flow B) recovers
+    * (nothing was persisted or committed by A), re-folds events 1..5 plus new events 6..10, and flushes on release;
+    * then A — unaware of the handover — flushes its stale state on revoke.
     *
     * Returns (result of A's release, snapshot store content after A's release).
     */
@@ -143,16 +154,16 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     for {
       _ <- createTopic(stateTopic, 1)
       // the previous owner: folds events, snapshots stay buffered in memory
-      flowA            <- allocateFlow
+      flowA             <- allocateFlow
       (flowA_, releaseA) = flowA
-      _                <- flowA_(inputRecords(inputTopic, key, eventsA))
+      _                 <- flowA_(inputRecords(inputTopic, key, eventsA))
       // the new owner: eagerly recovers (finds nothing), folds all events, flushes on release
-      flowB            <- allocateFlow
+      flowB             <- allocateFlow
       (flowB_, releaseB) = flowB
-      _                <- flowB_(inputRecords(inputTopic, key, eventsB))
-      _                <- releaseB
-      newOwnerWrote    <- readSnapshots(stateTopic)
-      _                 = assertEquals(clue(newOwnerWrote.get(key)), utf8(eventsB.mkString(",")))
+      _                 <- flowB_(inputRecords(inputTopic, key, eventsB))
+      _                 <- releaseB
+      newOwnerWrote     <- readSnapshots(stateTopic)
+      _                  = assertEquals(clue(newOwnerWrote.get(key)), utf8(eventsB.mkString(",")))
       // the previous owner flushes its stale state on revoke
       staleFlush <- releaseA.attempt
       stored     <- readSnapshots(stateTopic)
@@ -233,18 +244,18 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
       flowOf(
         moduleOf,
         TimerFlowOf.persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds),
-        PartitionFlowConfig(triggerTimersInterval = 0.seconds),
+        PartitionFlowConfig(triggerTimersInterval     = 0.seconds),
       ).flatMap(_.apply(tp, Offset.min, ScheduleCommit.empty[IO]).allocated)
 
     val test = for {
       _ <- createTopic(stateTopic, 1)
       // the previous owner persists eagerly while it still owns the partition
-      flowA            <- allocateEagerFlow
+      flowA             <- allocateEagerFlow
       (flowA_, releaseA) = flowA
-      _                <- flowA_(inputRecords(inputTopic, key, List("e1", "e2", "e3")))
+      _                 <- flowA_(inputRecords(inputTopic, key, List("e1", "e2", "e3")))
       // the new owner appears: its module's initTransactions fences the previous owner
-      flowB              <- allocateEagerFlow
-      (_, releaseB)       = flowB
+      flowB        <- allocateEagerFlow
+      (_, releaseB) = flowB
       // the previous owner, unaware, processes further records: the periodic flush must fail fast with the conflict
       staleResult <- flowA_(
         inputRecords(inputTopic, key, List("e1", "e2", "e3", "e4")).drop(3)

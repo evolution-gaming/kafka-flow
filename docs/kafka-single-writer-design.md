@@ -86,7 +86,16 @@ would serialize that burst on the consumer poll path (~4 s for 2000 keys, measur
 are therefore **group committed**: a write is queued, and the first writer to take the transaction
 lock drains everything queued at that moment into a single transaction, delivering the outcome to
 each waiter. There is no batching delay — a lone write commits immediately; a batch is whatever
-accumulated during the previous transaction's flight.
+accumulated during the previous transaction's flight. ("Group commit" is a borrowed pattern name —
+as in database write-ahead-log group commit — not a Kafka feature; Kafka only provides the
+single-transaction-at-a-time producer this is built on.)
+
+The queue and the transaction lock are **per partition**, like the producer — one of each, created
+together with the partition's transactional producer and shared by all of that partition's keys
+(the write database is keyed by `KafkaKey`, passed per call, so one instance serves every key). A
+single transaction therefore commits snapshots for many different keys at once; there is no per-key
+queue or transaction. Per-key state lives upstream as the in-memory snapshot buffers, which all
+delegate their writes to this one shared, per-partition path.
 
 ```mermaid
 flowchart TD
@@ -110,9 +119,40 @@ flowchart TD
 |---|---|
 | Group commit, not time-window batching | Batching is purely opportunistic: sporadic writes pay zero added latency, bursts collapse to O(burst / cap) transactions. A batch shares its transaction's outcome — one failure fails them all (bounded by the cap). |
 | Drain and completion run masked, only the ack await is cancelable | A canceled leader must never remove writes from the queue without delivering their outcome (waiters would hang or get a nonsense error), and must never leave an open transaction holding the lock's next user hostage (`onCancel: abort`). |
-| `maxWritesPerTransaction` cap (default 256, configurable) | Not for throughput — Kafka batches the network traffic itself and uncapped is ~9% faster (measured below). The cap bounds *transaction duration*: a transaction outliving `transaction.timeout.ms` (default 1 minute) is aborted by the coordinator (demonstrated below). Transaction bytes ≈ cap × snapshot size, and this layer cannot see record sizes (serialization happens inside the producer), so the bound is a configurable count — lower it for large snapshots. |
+| `maxWritesPerTransaction` cap (default 256, configurable) | A *duration* bound, not a throughput knob — capping can only lower throughput (uncapped is ~15% faster, measured below), so it is never raised for speed. It bounds *transaction duration*: a transaction outliving `transaction.timeout.ms` (default 1 minute) is aborted by the coordinator (demonstrated below). Transaction bytes ≈ cap × snapshot size, and this layer cannot see record sizes (serialization happens inside the producer), so the bound is a configurable count — lower it for large snapshots. A *higher* cap, not a lower one, helps a partition keep up (it amortizes the fixed begin/commit round-trip over more writes); the default sits past that knee — see "Batch formation and back-pressure". |
 | Fencing classified by walking the exception cause chain | A fenced producer moves to a fatal state; follow-up calls throw a generic `KafkaException` only *wrapping* the fencing exception. |
 | Leader-based lock instead of a background committer fiber | A worker fiber would simplify the write path but adds a Resource lifecycle and a liveness dependency (a dead worker hangs all writes); the leader protocol keeps failure handling local to the writes. |
+
+### Batch formation and back-pressure
+
+How big is a batch? The leader takes whatever is queued **at the instant it drains**, up to the
+cap — there is no linger or timer holding a batch open to fill it:
+
+```
+batch size = min(maxWritesPerTransaction, writes queued during the previous transaction's flight)
+```
+
+So a lone write commits immediately as a batch of one, and a batch only grows when writes arrive
+*concurrently* faster than transactions complete. Batch size is driven by arrival concurrency, not
+by a delay. (This is the whole story behind the two transactional rows of measurement Experiment A:
+a sequential stream never lets anything queue during a transaction, so every write is its own
+transaction; a concurrent burst lets writes pile up and collapse into a few large batches.)
+
+A write that arrives while a transaction is in flight enqueues and blocks on the lock. It is then
+either **taken along** by the current leader — its result delivered from that transaction's shared
+outcome, so when it finally gets the lock it finds itself already done and returns without starting
+a transaction — or, if it did not fit (past the cap, or arrived after the drain), it is committed
+by the **next** leader. Only the lock holder ever touches the producer, so the producer's
+one-transaction-at-a-time rule is never violated.
+
+This is also why the `pending` queue cannot grow without bound, which is the real answer to "can a
+fast partition outrun the drain?". A `persist` call does not complete until its transaction commits,
+and kafka-flow's flush awaits each `persist` before marking the key persisted, so the source is
+**back-pressured**: the queue holds at most the keys being flushed concurrently in one wave, not an
+open-ended backlog. If a partition genuinely produces writes faster than `cap / transaction-time`
+can drain them, the symptom is rising flush latency and consumer lag — not unbounded memory — and
+the remedy is more partitions (more parallel single-writers), not a longer transaction, which would
+only trade lag for the coordinator's timeout abort.
 
 ### How a rejection surfaces
 
@@ -136,23 +176,63 @@ theoretical.
 
 From `TransactionalWriteThroughputSpec`: single-node testcontainers broker on localhost,
 replication factor 1, no network latency — a *floor*; expect a few milliseconds per transaction
-against real brokers. Each producer does an untimed warm-up write before measurement.
+against real brokers. Each producer does an untimed warm-up write before measurement, and the
+numbers below are from a single consistent run (they vary run to run — read them as orders of
+magnitude, not exact figures). Two separate experiments:
 
-| Scenario | Result |
-|---|---|
-| 500 small snapshots, shared batched producer (default mode), sequential | 219 ms |
-| 500 small snapshots, one transaction per write, sequential | 698 ms (~1.4 ms per transaction) |
-| 500 small snapshots, concurrent burst, group committed | 11 ms |
-| 2000 × 10 KiB burst, `maxWritesPerTransaction = 1` | 4 070 ms |
-| 2000 × 10 KiB burst, `maxWritesPerTransaction = 16` | 666 ms |
-| 2000 × 10 KiB burst, `maxWritesPerTransaction = 256` (default) | 382 ms |
-| 2000 × 10 KiB burst, `maxWritesPerTransaction = 2000` (uncapped) | 348 ms |
+### Experiment A — modes at a small fixed workload
 
-Reading of the numbers: the default cap costs ~9% over uncapped while keeping each transaction
-(256 × 10 KiB ≈ 2.5 MiB) at ~50 ms — three orders of magnitude below the 1-minute transaction
-timeout here, roughly two orders of magnitude below it at production latencies. Without the group
-commit (cap = 1), a post-restart burst pays per-transaction latency × keys: multi-second poll-path
-stalls at realistic key counts.
+500 keys, small string snapshots, one partition. Isolates per-transaction latency and what the
+group commit buys on a concurrent burst.
+
+| Mode | Arrival | Batches | Result |
+|---|---|---|---|
+| Shared batched producer (default mode, no transactions) | sequential | — (no transactions) | 203 ms |
+| Group-committed transactions | sequential | 500 (one per write) | 669 ms (~1.3 ms per transaction) |
+| Group-committed transactions | concurrent burst | a handful | 9 ms |
+
+The lower two rows are the **same** group commit — only the arrival pattern differs, and that is
+the point. Sequentially, nothing is ever queued while a transaction is in flight, so every write
+forms a batch of one: 500 transactions, and the row measures the raw per-transaction round-trip
+(~1.3 ms). Concurrently, writes pile up during each transaction's flight and collapse into a few
+large batches (see "Batch formation and back-pressure"), so the same 500 writes land far below even
+the non-transactional shared producer. Same lesson as Experiment B at small scale: cost tracks the
+number of transactions, and concurrency — the real flush pattern — drives the batching for free,
+with no added delay.
+
+### Experiment B — `maxWritesPerTransaction` sweep on a realistic burst
+
+2000 keys, 10 KiB snapshots each (in the ballpark of a real serialized aggregate), all flushed
+concurrently — the post-restart synchronized-wave pattern. Isolates burst cost against the cap,
+with the safety-off shared producer as a baseline for the overhead the mode adds. The shared-producer
+baseline is measured *after* the cap sweep so it does not pay the cold-JVM penalty the first burst
+absorbs.
+
+The cap is the upper bound on writes the leader drains into one transaction, so for a burst of
+`N` keys it is also roughly the number of transactions (≈ `N / cap`) — i.e. the number of
+sequential round trips the burst pays on the poll path. That count, not the byte volume, drives
+the timing:
+
+| Configuration | ≈ transactions | Result |
+|---|---|---|
+| Shared batched producer (safety off, baseline) | — (no transactions) | 340 ms |
+| `maxWritesPerTransaction = 1` | 2000 | 3 807 ms |
+| `maxWritesPerTransaction = 16` | 125 | 729 ms |
+| `maxWritesPerTransaction = 256` (default) | ≈ 8 | 395 ms |
+| `maxWritesPerTransaction = 2000` (uncapped) | 1 | 338 ms |
+
+Reading of the numbers: cost tracks the transaction count until Kafka's own network batching
+floors it (~340 ms here regardless). At the default cap the transactional burst (395 ms, ≈ 8
+transactions) runs within ~15% of the safety-off baseline (340 ms) and essentially level with
+uncapped (338 ms, 1 transaction) — on this workload the single-writer safety is not a meaningful
+throughput cost. Each of those ≈ 8 transactions (256 × 10 KiB ≈ 2.5 MiB) takes ~50 ms — three
+orders of magnitude below the 1-minute transaction timeout here, roughly two orders of magnitude
+below it at production latencies. Without the group commit (cap = 1) the burst pays one round trip
+per key — 2000 of them, an order of magnitude slower here and multi-second poll-path stalls at
+realistic key counts.
+
+Reproduce: `sbt "persistence-kafka-it-tests/testOnly *TransactionalWriteThroughputSpec"` (prints
+both experiments' timings; the suite spins up the testcontainers broker, ~2–3 min).
 
 The timeout failure mode, demonstrated with `transaction.timeout.ms = 1s` and a transaction held
 open until the coordinator's abort checker fires: across runs the commit failed with
@@ -180,7 +260,7 @@ variance behind the caveat above.
   produce.
 - **Transaction per write, serialized**: correct but burst cost is O(keys) transaction round-trips
   on the poll path (the cap = 1 row above).
-- **Unbounded batches**: ~9% faster than the default cap, but transaction duration then scales with
+- **Unbounded batches**: ~15% faster than the default cap, but transaction duration then scales with
   burst × snapshot size, unprotected against the coordinator timeout abort.
 - **Background committer fiber**: see the design table — liveness dependency on a supervised
   worker.

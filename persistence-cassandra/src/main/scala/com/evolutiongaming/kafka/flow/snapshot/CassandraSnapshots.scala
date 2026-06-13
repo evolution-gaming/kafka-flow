@@ -23,9 +23,9 @@ import scala.util.control.NoStackTrace
 
 /** Cassandra-backed implementation of [[SnapshotDatabase]].
   *
-  * When `insertStatement` is non-empty, the database works in compare-and-set mode: a snapshot is persisted only if
-  * the stored snapshot's offset is not greater than the offset of the new snapshot. See
-  * [[CassandraSnapshots.withSchema]] for details.
+  * When `insertStatement` is non-empty, the database works in compare-and-set mode: a snapshot is persisted only if the
+  * stored snapshot's offset is not greater than the offset of the new snapshot. See [[CassandraSnapshots.withSchema]]
+  * for details.
   */
 class CassandraSnapshots[F[_]: Async, T](
   session: CassandraSession[F],
@@ -53,9 +53,9 @@ class CassandraSnapshots[F[_]: Async, T](
   /** Persists the snapshot only if the stored one is not newer.
     *
     * The conditional update is not applied either when the stored row has a higher offset (a concurrent writer
-    * persisted a newer snapshot) or when the row does not exist yet. The latter case is retried as
-    * `INSERT ... IF NOT EXISTS`; if that one is lost to a concurrent insert, the conditional update is retried once
-    * more, so that the writer with the newest snapshot wins a first-write race instead of failing on it.
+    * persisted a newer snapshot) or when the row does not exist yet. The latter case is retried as `INSERT ... IF NOT
+    * EXISTS`; if that one is lost to a concurrent insert, the conditional update is retried once more, so that the
+    * writer with the newest snapshot wins a first-write race instead of failing on it.
     */
   private def persistCompareAndSet(
     insertStatement: PreparedStatement,
@@ -72,9 +72,9 @@ class CassandraSnapshots[F[_]: Async, T](
       SnapshotWriteConflict(key, snapshot.offset, persistedOffset).raiseError[F, Unit]
 
     for {
-      created  <- Clock[F].instant
-      value    <- toBytes.apply(snapshot.value, key.topicPartition.topic)
-      bind      = (statement: PreparedStatement) => Statements.bindPersist(statement, key, snapshot, created, value)
+      created   <- Clock[F].instant
+      value     <- toBytes.apply(snapshot.value, key.topicPartition.topic)
+      bind       = (statement: PreparedStatement) => Statements.bindPersist(statement, key, snapshot, created, value)
       updateRow <- execute(bind(persistStatement))
       _ <-
         if (applied(updateRow)) ().pure[F]
@@ -160,12 +160,11 @@ object CassandraSnapshots {
     * @param ttl
     *   optional TTL to set on inserted records
     * @param compareAndSet
-    *   if `true`, snapshots are persisted with a Cassandra lightweight transaction asserting that the stored
-    *   snapshot's offset is not greater than the offset of the new snapshot, protecting from a stale writer
-    *   overwriting a newer snapshot during partition ownership transitions
-    *   (https://github.com/evolution-gaming/kafka-flow/issues/732). A rejected write fails with
-    *   [[SnapshotWriteConflict]]. See the "Single-writer guarantees" section of the persistence documentation for
-    *   limitations and costs. Default is `false` (last write wins).
+    *   if `true`, snapshots are persisted with a Cassandra lightweight transaction asserting that the stored snapshot's
+    *   offset is not greater than the offset of the new snapshot, protecting from a stale writer overwriting a newer
+    *   snapshot during partition ownership transitions (https://github.com/evolution-gaming/kafka-flow/issues/732). A
+    *   rejected write fails with [[SnapshotWriteConflict]]. See the "Single-writer guarantees" section of the
+    *   persistence documentation for limitations and costs. Default is `false` (last write wins).
     * @param fromBytes
     *   deserializer function to convert array of bytes to the snapshot type T
     * @param toBytes
@@ -227,8 +226,9 @@ object CassandraSnapshots {
       getStatement     <- Statements.prepareGet(session, tableName)
       persistStatement <- Statements.preparePersist(session, tableName, ttl, compareAndSet)
       deleteStatement  <- Statements.prepareDelete(session, tableName, ifExists = compareAndSet)
-      insertStatement <- if (compareAndSet) Statements.prepareInsertIfNotExists(session, tableName, ttl).map(_.some)
-      else none[PreparedStatement].pure[F]
+      insertStatement <-
+        if (compareAndSet) Statements.prepareInsertIfNotExists(session, tableName, ttl).map(_.some)
+        else none[PreparedStatement].pure[F]
     } yield new CassandraSnapshots(
       session              = session,
       getStatement         = getStatement,
