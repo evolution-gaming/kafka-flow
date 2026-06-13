@@ -5,7 +5,7 @@ import cats.effect.{Concurrent, Resource}
 import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.FlowMetrics
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
-import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf}
+import com.evolutiongaming.skafka.producer.{Producer, ProducerOf}
 import com.evolutiongaming.skafka.*
 
 /** Convenience factory trait to create an instance of [[KafkaPersistenceModule]] for an assigned partition */
@@ -76,30 +76,27 @@ object KafkaPersistenceModuleOf {
   def cachingTransactional[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
-    consumerConfig: ConsumerConfig,
-    producerConfig: ProducerConfig,
-    transactionalIdPrefix: String,
+    config: KafkaPersistenceModule.TransactionalConfig,
     snapshotTopic: Topic,
-    metrics: FlowMetrics[F]      = FlowMetrics.empty[F],
-    maxWritesPerTransaction: Int = KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction,
+    metrics: FlowMetrics[F] = FlowMetrics.empty[F],
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     // fail at wiring time, not on the first partition assignment
-    require(maxWritesPerTransaction >= 1, s"maxWritesPerTransaction must be positive, got $maxWritesPerTransaction")
+    require(
+      config.maxWritesPerTransaction >= 1,
+      s"maxWritesPerTransaction must be positive, got ${config.maxWritesPerTransaction}",
+    )
 
     override def make(partition: Partition): Resource[F, KafkaPersistenceModule[F, S]] =
       KafkaPersistenceModule.cachingTransactional(
-        consumerOf              = consumerOf,
-        producerOf              = producerOf,
-        consumerConfig          = consumerConfig,
-        producerConfig          = producerConfig,
-        transactionalIdPrefix   = transactionalIdPrefix,
-        snapshotTopicPartition  = TopicPartition(snapshotTopic, partition),
-        metrics                 = metrics,
-        maxWritesPerTransaction = maxWritesPerTransaction,
+        consumerOf             = consumerOf,
+        producerOf             = producerOf,
+        config                 = config,
+        snapshotTopicPartition = TopicPartition(snapshotTopic, partition),
+        metrics                = metrics,
       )
   }
 

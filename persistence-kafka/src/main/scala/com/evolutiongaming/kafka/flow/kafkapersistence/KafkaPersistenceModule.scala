@@ -4,7 +4,7 @@ import cats.Parallel
 import cats.effect.{Concurrent, Resource}
 import cats.syntax.all.*
 import com.evolution.scache.Cache
-import com.evolutiongaming.catshelper.{FromTry, Log, LogOf, Runtime}
+import com.evolutiongaming.catshelper.{FromTry, LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.metrics.syntax.*
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
@@ -25,6 +25,28 @@ trait KafkaPersistenceModule[F[_], S] {
 }
 
 object KafkaPersistenceModule {
+
+  /** Settings for [[cachingTransactional]], grouped into one parameter to keep the factory's parameter list small.
+    *
+    * @param consumerConfig
+    *   config for the snapshot-reading consumer; recovery forces `read_committed` regardless of this value
+    * @param producerConfig
+    *   base config for the snapshot producer; `transactionalId` and `idempotence` are overridden per partition and
+    *   `clientId` is suffixed per partition
+    * @param transactionalIdPrefix
+    *   stable prefix for `transactional.id` (the partition number is appended). It must not change across restarts and
+    *   deployments (otherwise fencing is lost) and must be unique per consumer group + input topic + snapshot topic
+    *   combination (otherwise unrelated writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
+    * @param maxWritesPerTransaction
+    *   upper bound of snapshot writes group committed in one transaction, see
+    *   [[KafkaSnapshotWriteDatabase.transactional]] for the trade-off
+    */
+  final case class TransactionalConfig(
+    consumerConfig: ConsumerConfig,
+    producerConfig: ProducerConfig,
+    transactionalIdPrefix: String,
+    maxWritesPerTransaction: Int = KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction,
+  )
 
   def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
@@ -117,32 +139,23 @@ object KafkaPersistenceModule {
     *
     * @param producerOf
     *   factory used to create the per-partition transactional producer
-    * @param producerConfig
-    *   base config for the snapshot producer; `transactionalId` and `idempotence` are overridden by this factory, and
-    *   `clientId` is suffixed per partition
-    * @param transactionalIdPrefix
-    *   stable prefix for `transactional.id` (the partition number is appended). It must not change across restarts and
-    *   deployments (otherwise fencing is lost) and must be unique per consumer group + input topic + snapshot topic
-    *   combination (otherwise unrelated writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
-    * @param maxWritesPerTransaction
-    *   upper bound of snapshot writes group committed in one transaction, see
-    *   [[KafkaSnapshotWriteDatabase.transactional]] for the trade-off
+    * @param config
+    *   transactional snapshot settings (consumer/producer config, `transactional.id` prefix, batch cap); see
+    *   [[TransactionalConfig]]
     */
   def cachingTransactional[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
-    consumerConfig: ConsumerConfig,
-    producerConfig: ProducerConfig,
-    transactionalIdPrefix: String,
+    config: TransactionalConfig,
     snapshotTopicPartition: TopicPartition,
-    metrics: FlowMetrics[F]      = FlowMetrics.empty[F],
-    maxWritesPerTransaction: Int = KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction,
+    metrics: FlowMetrics[F] = FlowMetrics.empty[F],
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     implicit val fromTry: FromTry[F] = FromTry.lift
+    import config.{consumerConfig, maxWritesPerTransaction, producerConfig, transactionalIdPrefix}
 
     val transactionalId = s"$transactionalIdPrefix-${snapshotTopicPartition.partition.value}"
     val transactionalProducerConfig = producerConfig.copy(
@@ -187,74 +200,83 @@ object KafkaPersistenceModule {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-  ): Resource[F, KafkaPersistenceModule[F, S]] = {
-
-    def readPartitionData(implicit log: Log[F]): F[BytesByKey] = {
-      val targetPartition = partitionMapper.getStatePartition(snapshotTopicPartition.partition)
-      KafkaPartitionPersistence
-        .readSnapshots[F](
-          consumerOf     = consumerOf,
-          consumerConfig = consumerConfig,
-          snapshotTopic  = snapshotTopicPartition.topic,
-          partition      = targetPartition,
-        )
-        .map { snapshots =>
-          snapshots
-            .view
-            .filterKeys { key =>
-              partitionMapper.isStateKeyOwned(key, snapshotTopicPartition.partition)
-            }
-            .toMap
-        }
-    }
-
-    def makeKeysOf(cache: Cache[F, String, ByteVector]): F[KeysOf[F, KafkaKey]] = {
-      LogOf[F].apply(classOf[KeysOf[F, KafkaKey]]).map { implicit log =>
-        new KeysOf[F, KafkaKey] {
-          def apply(key: KafkaKey): Keys[F] =
-            Keys.empty[F]
-
-          def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, KafkaKey] = {
-            Stream.fromF {
-              readPartitionData
-                .map(_.map { case (key, value) => KafkaKey(applicationId, groupId, topicPartition, key) -> value })
-                .flatTap(_.toList.traverse_ { case (k, v) => cache.put(k.key, v) })
-                .map(_.keys)
-            }
-          }
-        }
-      }
-    }
-
-    def makeSnapshotPersistenceOf(
-      keysOf: KeysOf[F, KafkaKey],
-      cache: Cache[F, String, ByteVector],
-    ): F[SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]]] = {
-      LogOf[F].apply(classOf[KafkaPersistenceModule[F, S]]).map { implicit log =>
-        val read =
-          KafkaSnapshotReadDatabase.of[F, S](snapshotTopicPartition.topic, getState = key => cache.remove(key).flatten)
-
-        val snapshotDatabase = SnapshotDatabase(
-          read  = read,
-          write = writeDatabase
-        ).withMetricsK(metrics.snapshotDatabaseMetrics)
-
-        PersistenceOf.snapshotsOnly[F, KafkaKey, S, ConsumerRecord[String, ByteVector]](
-          keysOf      = keysOf,
-          snapshotsOf = SnapshotsOf.backedBy[F, KafkaKey, S](snapshotDatabase)
-        )
-      }
-    }
-
+  ): Resource[F, KafkaPersistenceModule[F, S]] =
     for {
       partitionDataCache <- Cache.loading[F, String, ByteVector]
-      keysOf_            <- Resource.eval(makeKeysOf(partitionDataCache))
-      persistence_       <- Resource.eval(makeSnapshotPersistenceOf(keysOf_, partitionDataCache))
+      keysOf_ <- Resource.eval(
+        makeKeysOf(partitionDataCache, consumerOf, consumerConfig, snapshotTopicPartition, partitionMapper)
+      )
+      persistence_ <- Resource.eval(
+        makeSnapshotPersistenceOf(keysOf_, partitionDataCache, snapshotTopicPartition, metrics, writeDatabase)
+      )
     } yield new KafkaPersistenceModule[F, S] {
       override def keysOf: KeysOf[F, KafkaKey] = keysOf_
 
       override def persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]] =
         persistence_
     }
-  }
+
+  private def makeKeysOf[F[_]: LogOf: Concurrent](
+    cache: Cache[F, String, ByteVector],
+    consumerOf: ConsumerOf[F],
+    consumerConfig: ConsumerConfig,
+    snapshotTopicPartition: TopicPartition,
+    partitionMapper: KafkaPersistencePartitionMapper,
+  )(implicit fromBytesKey: FromBytes[F, String]): F[KeysOf[F, KafkaKey]] =
+    LogOf[F].apply(classOf[KeysOf[F, KafkaKey]]).map { implicit log =>
+      def readPartitionData: F[BytesByKey] = {
+        val targetPartition = partitionMapper.getStatePartition(snapshotTopicPartition.partition)
+        KafkaPartitionPersistence
+          .readSnapshots[F](
+            consumerOf     = consumerOf,
+            consumerConfig = consumerConfig,
+            snapshotTopic  = snapshotTopicPartition.topic,
+            partition      = targetPartition,
+          )
+          .map { snapshots =>
+            snapshots
+              .view
+              .filterKeys(key => partitionMapper.isStateKeyOwned(key, snapshotTopicPartition.partition))
+              .toMap
+          }
+      }
+
+      new KeysOf[F, KafkaKey] {
+        def apply(key: KafkaKey): Keys[F] =
+          Keys.empty[F]
+
+        def all(applicationId: String, groupId: String, topicPartition: TopicPartition): Stream[F, KafkaKey] = {
+          Stream.fromF {
+            readPartitionData
+              .map(_.map { case (key, value) => KafkaKey(applicationId, groupId, topicPartition, key) -> value })
+              .flatTap(_.toList.traverse_ { case (k, v) => cache.put(k.key, v) })
+              .map(_.keys)
+          }
+        }
+      }
+    }
+
+  private def makeSnapshotPersistenceOf[F[_]: LogOf: Concurrent, S](
+    keysOf: KeysOf[F, KafkaKey],
+    cache: Cache[F, String, ByteVector],
+    snapshotTopicPartition: TopicPartition,
+    metrics: FlowMetrics[F],
+    writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
+  )(
+    implicit fromBytesState: FromBytes[F, S]
+  ): F[SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]]] =
+    LogOf[F].apply(classOf[KafkaPersistenceModule[F, S]]).map { implicit log =>
+      val read =
+        KafkaSnapshotReadDatabase.of[F, S](snapshotTopicPartition.topic, getState = key => cache.remove(key).flatten)
+
+      val snapshotDatabase = SnapshotDatabase(
+        read  = read,
+        write = writeDatabase
+      ).withMetricsK(metrics.snapshotDatabaseMetrics)
+
+      PersistenceOf.snapshotsOnly[F, KafkaKey, S, ConsumerRecord[String, ByteVector]](
+        keysOf      = keysOf,
+        snapshotsOf = SnapshotsOf.backedBy[F, KafkaKey, S](snapshotDatabase)
+      )
+    }
 }

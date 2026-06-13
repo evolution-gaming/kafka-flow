@@ -91,12 +91,14 @@ The Kafka persistence module can protect from stale writers using Kafka transact
 
 ```scala
 KafkaPersistenceModuleOf.cachingTransactional[F, State](
-  consumerOf            = consumerOf,
-  producerOf            = producerOf,
-  consumerConfig        = snapshotConsumerConfig,
-  producerConfig        = snapshotProducerConfig,
-  transactionalIdPrefix = s"$groupId-$inputTopic",
-  snapshotTopic         = stateTopic,
+  consumerOf = consumerOf,
+  producerOf = producerOf,
+  config = KafkaPersistenceModule.TransactionalConfig(
+    consumerConfig        = snapshotConsumerConfig,
+    producerConfig        = snapshotProducerConfig,
+    transactionalIdPrefix = s"$groupId-$inputTopic",
+  ),
+  snapshotTopic = stateTopic,
 )
 ```
 

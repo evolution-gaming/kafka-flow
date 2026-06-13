@@ -88,7 +88,7 @@ class FlowSpec extends CassandraSpec {
   // Reproduces the stale-writer snapshot corruption of
   // https://github.com/evolution-gaming/kafka-flow/issues/732 through the real kafka-flow machinery (PartitionFlow
   // with eager recovery, fold, buffered snapshots, flush-on-revoke). The partition ownership overlap is simulated by
-  // construction — two PartitionFlows over the same partition — since the consumer-group rebalance notification
+  // construction - two PartitionFlows over the same partition - since the consumer-group rebalance notification
   // itself is Kafka's guarantee: a real overlap is indistinguishable from the second flow being created while the
   // first one is still alive.
   test("issue #732 reproduction: stale flush-on-revoke overwrites the newer snapshot (last-write-wins)") {
@@ -110,8 +110,8 @@ class FlowSpec extends CassandraSpec {
   }
 
   /** The #732 scenario: the previous owner (flow A) folds events e1..e5 without flushing; the new owner (flow B)
-    * recovers (nothing was persisted or committed by A), folds events e1..e10, and flushes on release; then A — unaware
-    * of the handover — flushes its stale state on revoke.
+    * recovers (nothing was persisted or committed by A), folds events e1..e10, and flushes on release; then A - unaware
+    * of the handover - flushes its stale state on revoke.
     *
     * Returns (result of A's release, stored snapshot after A's release).
     */
@@ -122,56 +122,6 @@ class FlowSpec extends CassandraSpec {
     val groupId = "integration-tests-1"
     val tp      = TopicPartition.empty
     val key     = "key-732"
-
-    // state is the comma-joined list of folded events; the snapshot offset is the offset of the folded record
-    val fold: FoldOption[IO, KafkaSnapshot[String], ConsumerRecord[String, ByteVector]] =
-      FoldOption.of { (state, record) =>
-        IO {
-          val event = record.value.flatMap(_.value.decodeUtf8.toOption).getOrElse(sys.error("event payload missing"))
-          val value = state.fold(event)(s => s"${s.value},$event")
-          KafkaSnapshot(offset = record.offset, value = value).some
-        }
-      }
-
-    def records(events: List[String]): List[ConsumerRecord[String, ByteVector]] =
-      events.zipWithIndex.map {
-        case (event, offset) =>
-          ConsumerRecord[String, ByteVector](
-            topicPartition   = tp,
-            offset           = Offset.unsafe(offset.toLong),
-            timestampAndType = None,
-            key              = Some(WithSize(key)),
-            value            = Some(WithSize(ByteVector.encodeUtf8(event).toOption.get)),
-          )
-      }
-
-    def allocateFlow(storage: PersistenceModule[IO, String]): IO[(PartitionFlow[IO], IO[Unit])] = {
-      val flow = for {
-        timersOf      <- Resource.eval(TimersOf.memory[IO, KafkaKey])
-        keysOf        <- Resource.eval(storage.keys.toKeysOf)
-        persistenceOf <- Resource.eval(storage.snapshotsOnly)
-        keyStateOf = KeyStateOf.eagerRecovery[IO, KafkaSnapshot[String]](
-          applicationId = appId,
-          groupId       = groupId,
-          keysOf        = keysOf,
-          timersOf      = timersOf,
-          persistenceOf = persistenceOf,
-          // snapshots are flushed only when the flow is released (flush-on-revoke), never periodically —
-          // so the moment of the stale write is controlled by the test
-          timerFlowOf = TimerFlowOf.persistPeriodically[IO](
-            fireEvery     = 1.hour,
-            persistEvery  = 1.hour,
-            flushOnRevoke = true,
-          ),
-          fold     = fold,
-          tick     = TickOption.id[IO, KafkaSnapshot[String]],
-          registry = EntityRegistry.empty[IO, KafkaKey, KafkaSnapshot[String]],
-        )
-        partitionFlowOf = PartitionFlowOf(keyStateOf, PartitionFlowConfig(commitOnRevoke = true))
-        flow           <- partitionFlowOf(tp, Offset.min, ScheduleCommit.empty[IO])
-      } yield flow
-      flow.allocated
-    }
 
     val eventsA = (1 to 5).toList.map(i => s"e$i")
     val eventsB = (1 to 10).toList.map(i => s"e$i")
@@ -185,13 +135,13 @@ class FlowSpec extends CassandraSpec {
         snapshotCompareAndSet = compareAndSet,
       )
       // the previous owner: folds events, snapshots stay buffered in memory
-      flowA             <- allocateFlow(storage)
+      flowA             <- allocateStaleFlow(storage, appId, groupId, tp)
       (flowA_, releaseA) = flowA
-      _                 <- flowA_(records(eventsA))
+      _                 <- flowA_(staleFlowRecords(eventsA, key, tp))
       // the new owner: eagerly recovers (finds nothing), folds all events, flushes on release
-      flowB             <- allocateFlow(storage)
+      flowB             <- allocateStaleFlow(storage, appId, groupId, tp)
       (flowB_, releaseB) = flowB
-      _                 <- flowB_(records(eventsB))
+      _                 <- flowB_(staleFlowRecords(eventsB, key, tp))
       _                 <- releaseB
       newOwnerWrote     <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
       _                  = assertEquals(clue(newOwnerWrote.map(_.value)), Some(eventsB.mkString(",")))
@@ -199,6 +149,65 @@ class FlowSpec extends CassandraSpec {
       staleFlush <- releaseA.attempt
       stored     <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
     } yield (staleFlush, stored)
+  }
+
+  // state is the comma-joined list of folded events; the snapshot offset is the offset of the folded record
+  private val staleFlowFold: FoldOption[IO, KafkaSnapshot[String], ConsumerRecord[String, ByteVector]] =
+    FoldOption.of { (state, record) =>
+      IO {
+        val event = record.value.flatMap(_.value.decodeUtf8.toOption).getOrElse(sys.error("event payload missing"))
+        val value = state.fold(event)(s => s"${s.value},$event")
+        KafkaSnapshot(offset = record.offset, value = value).some
+      }
+    }
+
+  private def staleFlowRecords(
+    events: List[String],
+    key: String,
+    tp: TopicPartition,
+  ): List[ConsumerRecord[String, ByteVector]] =
+    events.zipWithIndex.map {
+      case (event, offset) =>
+        ConsumerRecord[String, ByteVector](
+          topicPartition   = tp,
+          offset           = Offset.unsafe(offset.toLong),
+          timestampAndType = None,
+          key              = Some(WithSize(key)),
+          value            = Some(WithSize(ByteVector.encodeUtf8(event).toOption.get)),
+        )
+    }
+
+  private def allocateStaleFlow(
+    storage: PersistenceModule[IO, String],
+    appId: String,
+    groupId: String,
+    tp: TopicPartition,
+  ): IO[(PartitionFlow[IO], IO[Unit])] = {
+    val flow = for {
+      timersOf      <- Resource.eval(TimersOf.memory[IO, KafkaKey])
+      keysOf        <- Resource.eval(storage.keys.toKeysOf)
+      persistenceOf <- Resource.eval(storage.snapshotsOnly)
+      keyStateOf = KeyStateOf.eagerRecovery[IO, KafkaSnapshot[String]](
+        applicationId = appId,
+        groupId       = groupId,
+        keysOf        = keysOf,
+        timersOf      = timersOf,
+        persistenceOf = persistenceOf,
+        // snapshots are flushed only when the flow is released (flush-on-revoke), never periodically -
+        // so the moment of the stale write is controlled by the test
+        timerFlowOf = TimerFlowOf.persistPeriodically[IO](
+          fireEvery     = 1.hour,
+          persistEvery  = 1.hour,
+          flushOnRevoke = true,
+        ),
+        fold     = staleFlowFold,
+        tick     = TickOption.id[IO, KafkaSnapshot[String]],
+        registry = EntityRegistry.empty[IO, KafkaKey, KafkaSnapshot[String]],
+      )
+      partitionFlowOf = PartitionFlowOf(keyStateOf, PartitionFlowConfig(commitOnRevoke = true))
+      flow           <- partitionFlowOf(tp, Offset.min, ScheduleCommit.empty[IO])
+    } yield flow
+    flow.allocated
   }
 
   implicit val log: LogOf[IO] = LogOf.slf4j[IO].unsafeRunSync()(IORuntime.global)

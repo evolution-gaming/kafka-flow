@@ -15,7 +15,7 @@ import scala.concurrent.duration.*
 
 /** Measures the cost of transactional snapshot writes for capacity planning: the per-transaction latency (a sequential
   * write is one transaction), the effect of the group commit on a concurrent burst, and the burst cost at different
-  * `maxWritesPerTransaction` values — a flush burst of N dirty keys costs about N / maxWritesPerTransaction
+  * `maxWritesPerTransaction` values - a flush burst of N dirty keys costs about N / maxWritesPerTransaction
   * transactions on the poll path. Also demonstrates the failure mode motivating the cap: a transaction outliving
   * `transaction.timeout.ms` is aborted by the coordinator.
   *

@@ -140,14 +140,16 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
     val persistenceModuleOf = KafkaPersistenceModuleOf.cachingTransactional[IO, State](
       consumerOf = ConsumerOf.apply1[IO](),
       producerOf = ProducerOf.apply1[IO](),
-      consumerConfig = ConsumerConfig(
-        common          = producerConfig.common,
-        autoCommit      = false,
-        autoOffsetReset = AutoOffsetReset.Earliest
+      config = KafkaPersistenceModule.TransactionalConfig(
+        consumerConfig = ConsumerConfig(
+          common          = producerConfig.common,
+          autoCommit      = false,
+          autoOffsetReset = AutoOffsetReset.Earliest
+        ),
+        producerConfig        = producerConfig,
+        transactionalIdPrefix = s"$testGroupId-$inputTopic",
       ),
-      producerConfig        = producerConfig,
-      transactionalIdPrefix = s"$testGroupId-$inputTopic",
-      snapshotTopic         = stateTopic,
+      snapshotTopic = stateTopic,
     )
 
     (createTopic(stateTopic, 2) *> comboTestCase(kafkaModule(), persistenceModuleOf, inputTopic)).unsafeRunSync()

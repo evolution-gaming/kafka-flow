@@ -38,7 +38,7 @@ import scala.concurrent.duration.*
   * real kafka-flow machinery (PartitionFlow with eager recovery, fold, buffered snapshots, flush-on-revoke), and proves
   * that the transactional mode prevents it.
   *
-  * The partition ownership overlap is simulated by construction — two PartitionFlows over the same partition — since
+  * The partition ownership overlap is simulated by construction - two PartitionFlows over the same partition - since
   * the consumer-group rebalance notification itself is Kafka's guarantee: in a real overlap the previous owner has
   * simply not yet observed the revocation, which is indistinguishable from the second flow being created while the
   * first one is still alive.
@@ -110,7 +110,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
       )
     }
 
-  /** Snapshots are flushed only when the flow is released (flush-on-revoke), never periodically — so the moment of the
+  /** Snapshots are flushed only when the flow is released (flush-on-revoke), never periodically - so the moment of the
     * stale write is controlled by the test.
     */
   private def flushOnRevokeOnly: TimerFlowOf[IO] =
@@ -134,7 +134,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
 
   /** The #732 scenario: the previous owner (flow A) folds events 1..5 without flushing; the new owner (flow B) recovers
     * (nothing was persisted or committed by A), re-folds events 1..5 plus new events 6..10, and flushes on release;
-    * then A — unaware of the handover — flushes its stale state on revoke.
+    * then A - unaware of the handover - flushes its stale state on revoke.
     *
     * Returns (result of A's release, snapshot store content after A's release).
     */
@@ -203,12 +203,14 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     val key        = "key1"
 
     val moduleOf = KafkaPersistenceModuleOf.cachingTransactional[IO, String](
-      consumerOf            = consumerOf,
-      producerOf            = producerOf,
-      consumerConfig        = consumerConfig,
-      producerConfig        = producerConfig,
-      transactionalIdPrefix = s"$groupId-input-$stateTopic",
-      snapshotTopic         = stateTopic,
+      consumerOf = consumerOf,
+      producerOf = producerOf,
+      config = KafkaPersistenceModule.TransactionalConfig(
+        consumerConfig        = consumerConfig,
+        producerConfig        = producerConfig,
+        transactionalIdPrefix = s"$groupId-input-$stateTopic",
+      ),
+      snapshotTopic = stateTopic,
     )
 
     val test = staleFlushScenario(moduleOf, stateTopic, key).map {
@@ -231,12 +233,14 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     val key        = "key1"
 
     val moduleOf = KafkaPersistenceModuleOf.cachingTransactional[IO, String](
-      consumerOf            = consumerOf,
-      producerOf            = producerOf,
-      consumerConfig        = consumerConfig,
-      producerConfig        = producerConfig,
-      transactionalIdPrefix = s"$groupId-$inputTopic",
-      snapshotTopic         = stateTopic,
+      consumerOf = consumerOf,
+      producerOf = producerOf,
+      config = KafkaPersistenceModule.TransactionalConfig(
+        consumerConfig        = consumerConfig,
+        producerConfig        = producerConfig,
+        transactionalIdPrefix = s"$groupId-$inputTopic",
+      ),
+      snapshotTopic = stateTopic,
     )
 
     // flush on every records application, so the fenced writer hits the conflict on its next poll cycle
@@ -274,7 +278,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     test.unsafeRunSync()
   }
 
-  // the assertions cover safety (all writes land), not grouping — grouping is opportunistic and its effect is
+  // the assertions cover safety (all writes land), not grouping - grouping is opportunistic and its effect is
   // demonstrated by TransactionalWriteThroughputSpec; also exercised with maxWritesPerTransaction = 1, where the
   // group commit degenerates to a transaction per write
   List(KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction, 1).foreach { maxWritesPerTransaction =>
