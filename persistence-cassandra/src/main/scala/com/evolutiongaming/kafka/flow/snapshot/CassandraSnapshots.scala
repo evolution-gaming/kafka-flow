@@ -23,7 +23,7 @@ import scala.util.control.NoStackTrace
 
 /** Cassandra-backed implementation of [[SnapshotDatabase]].
   *
-  * When `insertStatement` is non-empty, the database works in compare-and-set mode: a snapshot is persisted only if the
+  * When `insertStatement` is defined, the database works in compare-and-set mode: a snapshot is persisted only if the
   * stored snapshot's offset is not greater than the offset of the new snapshot. See [[CassandraSnapshots.withSchema]]
   * for details.
   */

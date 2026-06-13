@@ -24,6 +24,13 @@ import scala.concurrent.duration.*
   * trips, replication factor 1); the assertions are sanity-only.
   */
 class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
+
+  // Performance/rationale experiment, not a regression test: it adds no coverage beyond
+  // TransactionalKafkaPersistenceSpec and is expensive, so it is excluded from the default test run.
+  // Run on demand to refresh the numbers in docs/kafka-single-writer-design.md:
+  //   KAFKA_FLOW_PERF=1 sbt "persistence-kafka-it-tests/testOnly *TransactionalWriteThroughputSpec"
+  override def munitIgnore: Boolean = !sys.env.contains("KAFKA_FLOW_PERF")
+
   implicit val ioRuntime: IORuntime = IORuntime.global
   implicit val logOf: LogOf[IO]     = LogOf.slf4j[IO].unsafeRunSync()
   implicit val log: Log[IO]         = logOf(this.getClass).unsafeRunSync()

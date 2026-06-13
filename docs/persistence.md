@@ -63,9 +63,14 @@ snapshot's offset is not greater than the offset being written (`IF offset <= :o
 write is rejected with `CassandraSnapshots.SnapshotWriteConflict` and the newer snapshot is
 preserved.
 
-Limitations and costs:
-- Lightweight transactions are noticeably more expensive than regular writes (Paxos round-trips);
-  measure first if snapshot writes are frequent.
+**Cost of enabling:** every snapshot write — and every delete — becomes a Cassandra lightweight
+transaction (Paxos). Each one takes several inter-replica round-trips, so it is typically a few
+times slower and markedly more CPU-intensive on the coordinators than a regular quorum write. The
+overhead applies per write, and kafka-flow can flush the whole changed-key population of a partition
+in a single `persistEvery` wave, so the added load scales with that wave, not with one write.
+Measure it against your snapshot write rate before enabling.
+
+Limitations:
 - Offsets must be monotonic per key: after a consumer-group offset reset, writes at lower offsets
   are rejected until the stored snapshots are passed or truncated.
 - Writes at an *equal* offset are allowed (snapshots may legitimately be replaced at the same
@@ -114,16 +119,21 @@ The `transactionalIdPrefix` must be stable across restarts and deployments (othe
 lost) and unique per consumer group + input topic + snapshot topic combination (otherwise unrelated
 writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
 
-Limitations and costs:
-- Each write costs a transaction (a few milliseconds against real brokers), and each assigned
-  partition holds its own producer plus transaction-coordinator state on the brokers. The producer
-  allows one transaction at a time, so concurrent flushes of a partition's keys are group committed
-  into shared transactions — a batch fails together, and a burst of N dirty keys still costs about
-  N / `maxWritesPerTransaction` (default 256, configurable on `cachingTransactional`) sequential
-  transaction round-trips on the poll path. Keys recovered together become persist-eligible in
-  synchronized waves every `persistEvery`, each wave writing the keys whose state changed since the
-  last flush — so size the burst for the changed-key population of a partition, which in a busy
-  partition approaches all active keys. Measure first if snapshot writes are frequent.
+**Cost of enabling:** every snapshot write now goes through a Kafka transaction (a few milliseconds
+against real brokers). The cost is driven by the *number* of transactions, not the byte volume.
+Because the producer allows one transaction at a time, a partition's concurrent key flushes are
+group committed into shared transactions, so a burst of N dirty keys costs about
+N / `maxWritesPerTransaction` (default 256, configurable on `cachingTransactional`) sequential
+transaction round-trips on the poll path — size that against the changed-key population of a
+partition, which after a restart flushes in synchronized waves and in a busy partition approaches
+all active keys. On a realistic burst at the default cap the measured overhead was within ~15% of
+the non-transactional producer; the full methodology and numbers are in the
+[design document](kafka-single-writer-design.md). Each
+assigned partition also holds its own producer and transaction-coordinator state on the brokers.
+Measure it against your flush pattern before enabling.
+
+Limitations:
+- A batch shares its transaction's outcome: if the transaction fails, every write in it fails.
 - An old owner can be fenced while flushing on revoke; its last state delta is then neither
   persisted nor committed, so the new owner replays those events — noise, not loss.
 - This mode always uses the identity `KafkaPersistencePartitionMapper`: fencing is per input

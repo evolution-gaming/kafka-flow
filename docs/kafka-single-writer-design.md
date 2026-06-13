@@ -133,20 +133,15 @@ batch size = min(maxWritesPerTransaction, writes queued during the previous tran
 ```
 
 So a lone write commits immediately as a batch of one, and a batch only grows when writes arrive
-*concurrently* faster than transactions complete. Batch size is driven by arrival concurrency, not
-by a delay. (This is the whole story behind the two transactional rows of measurement Experiment A:
-a sequential stream never lets anything queue during a transaction, so every write is its own
-transaction; a concurrent burst lets writes pile up and collapse into a few large batches.)
+*concurrently* faster than transactions complete — arrival concurrency drives batch size, not a
+delay. (This is the whole story behind Experiment A's two transactional rows: a sequential stream
+never lets anything queue mid-transaction, so every write is its own transaction; a concurrent burst
+piles up and collapses into a few large batches.) A write that does not fit — past the cap, or
+arrived after the drain — is committed by the next leader; only the lock holder ever touches the
+producer, so the one-transaction-at-a-time rule holds.
 
-A write that arrives while a transaction is in flight enqueues and blocks on the lock. It is then
-either **taken along** by the current leader — its result delivered from that transaction's shared
-outcome, so when it finally gets the lock it finds itself already done and returns without starting
-a transaction — or, if it did not fit (past the cap, or arrived after the drain), it is committed
-by the **next** leader. Only the lock holder ever touches the producer, so the producer's
-one-transaction-at-a-time rule is never violated.
-
-This is also why the `pending` queue cannot grow without bound, which is the real answer to "can a
-fast partition outrun the drain?". A `persist` call does not complete until its transaction commits,
+The `pending` queue also cannot grow without bound, which is the real answer to "can a fast
+partition outrun the drain?". A `persist` call does not complete until its transaction commits,
 and kafka-flow's flush awaits each `persist` before marking the key persisted, so the source is
 **back-pressured**: the queue holds at most the keys being flushed concurrently in one wave, not an
 open-ended backlog. If a partition genuinely produces writes faster than `cap / transaction-time`
@@ -231,8 +226,10 @@ below it at production latencies. Without the group commit (cap = 1) the burst p
 per key — 2000 of them, an order of magnitude slower here and multi-second poll-path stalls at
 realistic key counts.
 
-Reproduce: `sbt "persistence-kafka-it-tests/testOnly *TransactionalWriteThroughputSpec"` (prints
-both experiments' timings; the suite spins up the testcontainers broker, ~2–3 min).
+Reproduce: `KAFKA_FLOW_PERF=1 sbt "persistence-kafka-it-tests/testOnly *TransactionalWriteThroughputSpec"`
+(prints both experiments' timings; the suite spins up the testcontainers broker, ~2–3 min). The
+`KAFKA_FLOW_PERF` env var is required because the suite is excluded from the default test run — see
+"Testing strategy".
 
 The timeout failure mode, demonstrated with `transaction.timeout.ms = 1s` and a transaction held
 open until the coordinator's abort checker fires: across runs the commit failed with
@@ -251,8 +248,10 @@ variance behind the caveat above.
 - **Failure-mode pins**: fenced writer fails fast on its next periodic flush; an open transaction
   of a fenced writer neither blocks nor leaks into recovery; concurrent writes are safe on the
   shared producer (both at the default cap and at cap = 1); the timeout abort demonstration.
-- **Performance**: `TransactionalWriteThroughputSpec` (numbers above) runs in the suite, so the
-  numbers stay current.
+- **Performance**: `TransactionalWriteThroughputSpec` (numbers above) is a measurement experiment,
+  not a regression test — it adds no coverage beyond the suites above, so it is excluded from the
+  default test run and opt-in via the `KAFKA_FLOW_PERF` env var (see the reproduce command above).
+  Re-run it to refresh the numbers in this document.
 
 ## Rejected alternatives
 
