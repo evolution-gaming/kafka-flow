@@ -83,30 +83,30 @@ object KafkaSnapshotWriteDatabase {
     } yield apply(
       snapshotTopicPartition,
       partitionMapper,
-      groupCommitSend(snapshotTopicPartition, producer, maxWritesPerTransaction, transactionLock, pending),
+      new GroupCommit(snapshotTopicPartition, producer, maxWritesPerTransaction, transactionLock, pending).send,
     )
 
-  /** The group-commit send function backing [[transactional]] (extracted to keep that factory short): a write enqueues
+  /** The group-commit machinery backing [[transactional]] (a class so each step stays a short method): a write enqueues
     * into `pending` and competes for `transactionLock`; the leader drains the queue (up to `maxWritesPerTransaction`)
     * into one transaction and delivers that transaction's shared outcome to every drained write. See
     * `docs/kafka-single-writer-design.md` for the full design.
     */
-  private def groupCommitSend[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
+  private final class GroupCommit[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
     snapshotTopicPartition: TopicPartition,
     producer: Producer[F],
     maxWritesPerTransaction: Int,
     transactionLock: Semaphore[F],
     pending: Queue[F, Pending[F, S]],
-  ): (KafkaKey, ProducerRecord[String, S]) => F[Unit] = {
+  ) {
 
-    val abort = producer.abortTransaction.voidError
+    private val abort = producer.abortTransaction.voidError
 
-    def adapt(key: KafkaKey)(e: Throwable): Throwable =
+    private def adapt(key: KafkaKey)(e: Throwable): Throwable =
       // a fenced producer moves to an error state: follow-up calls throw a generic KafkaException with the
       // fencing exception as the cause, so the cause chain has to be inspected as well
       if (isFenced(e)) KafkaSnapshotWriteConflict(key, snapshotTopicPartition, e) else e
 
-    def commitBatch(poll: Poll[F], batch: List[Pending[F, S]]): F[Unit] = {
+    private def commitBatch(poll: Poll[F], batch: List[Pending[F, S]]): F[Unit] = {
       // enqueue all sends first, then await all acks: within one transaction the producer batches them
       val sendAll = batch.traverse(pending => producer.send(pending.record)).flatMap(_.sequence_)
 
@@ -133,7 +133,7 @@ object KafkaSnapshotWriteDatabase {
     // left in the queue by a canceled waiter is picked up by the next leader. The drain runs masked together with
     // the batch completion, so a canceled leader can never remove writes from the queue without delivering their
     // outcome; the only cancelable point is the ack await inside commitBatch
-    def lead(own: Pending[F, S]): F[Unit] =
+    private def lead(own: Pending[F, S]): F[Unit] =
       own.done.tryGet.flatMap {
         case Some(_) => ().pure[F]
         case None =>
@@ -149,15 +149,16 @@ object KafkaSnapshotWriteDatabase {
             } *> lead(own)
       }
 
-    (key, record) =>
-      for {
-        done   <- Deferred[F, Either[Throwable, Unit]]
-        write   = Pending(key, record, done)
-        _      <- pending.offer(write)
-        _      <- transactionLock.permit.use(_ => lead(write))
-        result <- done.get
-        _      <- result.liftTo[F]
-      } yield ()
+    val send: (KafkaKey, ProducerRecord[String, S]) => F[Unit] =
+      (key, record) =>
+        for {
+          done   <- Deferred[F, Either[Throwable, Unit]]
+          write   = Pending(key, record, done)
+          _      <- pending.offer(write)
+          _      <- transactionLock.permit.use(_ => lead(write))
+          result <- done.get
+          _      <- result.liftTo[F]
+        } yield ()
   }
 
   /** Default upper bound of snapshot writes committed in one transaction, see [[transactional]]. */
