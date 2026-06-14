@@ -5,37 +5,64 @@ sidebar_label: Persistence
 ---
 
 ## Persistence modes
-TBD.
+
+kafka-flow keeps the state of each key in memory while it processes a partition. To survive a
+restart or a partition rebalance without replaying the whole input topic from the beginning, that
+state is **persisted** and recovered when the partition is next assigned. Persistence is optional —
+it is only needed when reprocessing the full journal on every recovery is too expensive — and two
+backends are provided:
+
+- **Cassandra** (`kafka-flow-persistence-cassandra`) — stores per-key *journals* (the folded
+  events) and/or *snapshots* (the latest state) in Cassandra tables. See
+  `CassandraPersistence`.
+- **Kafka** (`kafka-flow-persistence-kafka`) — stores per-key snapshots in a dedicated Kafka
+  [compacted](https://kafka.apache.org/documentation/#compaction) topic, recovered by reading that
+  topic to the end on assignment. See `KafkaPersistenceModuleOf`.
+
+Both backends recover state per key during partition assignment, relying on Kafka's guarantee that a
+partition is owned by a single consumer in the group. The [single-writer
+guarantees](#single-writer-guarantees) below cover the one case where that ownership guarantee is
+not enough.
 
 ## Single-writer guarantees
 
 Kafka guarantees that, within a consumer group, an input topic partition is consumed by a single
-consumer at a time. However, this guarantee does **not** extend to the snapshot store: there is a
-window during a rebalance where a previous partition owner has not yet observed that the partition
-was revoked (e.g. due to a network issue, a long GC pause, or a slow poll loop), while a new owner
-has already started processing the partition. During this window both instances may write snapshots
-for the same keys.
+consumer at a time — but this guarantee does **not** extend to the snapshot store. During a
+rebalance there is a window in which a previous owner has not yet observed that the partition was
+revoked (a network issue, a long GC pause, a slow poll loop) while the new owner has already started
+processing it, so both instances write snapshots for the same keys. Because the default snapshot
+write is unconditional ("last write wins"), the stale writer can overwrite the newer snapshot with
+an older one; the next recovery then starts from stale state and the events between the two
+snapshots are lost — even though the input offsets were committed correctly. See
+[kafka-flow#732](https://github.com/evolution-gaming/kafka-flow/issues/732) for the full scenario;
+ownership overlaps of tens of seconds have been observed in production.
 
-Since the default snapshot write is unconditional ("last write wins"), a stale writer can overwrite
-a newer snapshot with an older one. The next recovery of the key then starts from a stale state, and
-events between the stale and the newer snapshot offsets are effectively lost — even though the
-offsets of the input topic were committed correctly. See
-[kafka-flow#732](https://github.com/evolution-gaming/kafka-flow/issues/732) for a detailed scenario;
-ownership overlap of tens of seconds has been observed in production.
+Timer configuration affects how often this window is hit:
+- `TimerFlowOf.persistPeriodically(flushOnRevoke = true)` makes it *more* likely — revoked
+  partitions flush snapshots concurrently with the new owner starting up.
+- A high `persistEvery` makes it *less* likely, at the cost of more events to replay on recovery.
 
-Two related notes on configuration:
-- `TimerFlowOf.persistPeriodically(flushOnRevoke = true)` makes the stale-writer window *more*
-  likely to be hit, because revoked partitions flush snapshots concurrently with the new owner
-  starting up.
-- A high `fireEvery` in `TimerFlowOf.persistPeriodically` makes hitting the window *less* likely, at
-  the cost of more events to replay on recovery.
+kafka-flow offers two opt-in protections, both off by default. Pick the one matching your snapshot
+store:
 
-Both protections below reject a stale write with a conflict error. A rejection during a *periodic*
-flush fails the flow of the stale instance — safe, since it no longer owns the partition — unless
-`persistPeriodically(ignorePersistErrors = true)` is set, in which case it is logged and swallowed.
-A rejection during *flush-on-revoke* is logged and swallowed by the key release (the partition is
-being given away anyway). In all cases the stale write is rejected and no offsets are committed for
-the rejected write.
+|                | Compare-and-set (Cassandra)                       | Transactional (Kafka)                                  |
+| -------------- | ------------------------------------------------- | ------------------------------------------------------ |
+| **Mechanism**  | conditional write guarded by the stored offset    | Kafka producer fencing (`initTransactions`)            |
+| **Enable**     | `compareAndSet = true`                            | `KafkaPersistenceModuleOf.cachingTransactional`        |
+| **Rejection**  | `CassandraSnapshots.SnapshotWriteConflict`        | `KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict`|
+| **Rollout**    | rolling deploy OK (clock-skew caveat below)       | rolling deploy OK; full protection once all instances are transactional |
+| **Main cost**  | a lightweight transaction per write and delete    | a Kafka transaction per snapshot-write batch           |
+
+Both protections reject a stale write with a conflict error, and kafka-flow handles that rejection
+the same way regardless of backend:
+- During a **periodic flush**, the conflict fails the flow of the stale instance — safe, since it no
+  longer owns the partition — unless `persistPeriodically(ignorePersistErrors = true)` is set, in
+  which case it is logged and swallowed.
+- During **flush-on-revoke**, the conflict is logged and swallowed by the key release (the partition
+  is being given away anyway).
+
+In all cases the rejected write does not land and no offsets are committed for it, so the new owner
+simply replays the affected events.
 
 ### Compare-and-set snapshot writes (Cassandra)
 
@@ -83,7 +110,7 @@ Limitations:
 #### Enabling on a running system
 
 No schema or data migration is needed in either direction: the condition reads the `offset` column
-that every version has always written. One new failure mode exists while flag-on and flag-off
+that every version has always written. One failure mode can arise while flag-on and flag-off
 instances coexist in a rolling deployment: regular writes carry client-side timestamps while
 lightweight transactions commit with coordinator-generated timestamps, so an application clock
 running ahead of the Cassandra coordinators can make an old instance's write silently shadow a
@@ -112,23 +139,24 @@ assigned partition, with a stable `transactional.id` of `s"$transactionalIdPrefi
 calls `initTransactions` on partition assignment — before the snapshot topic is read. The broker
 then *fences* the previous owner's producer: a stale snapshot write is rejected with
 `KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict`. Writes run in Kafka transactions (group
-committed under concurrency, see below), and recovery reads the snapshot topic with
-`read_committed`, so records of aborted transactions are never observed.
+committed under concurrency, see the [design doc](kafka-single-writer-design.md#write-path-group-committed-transactions)),
+and recovery reads the snapshot topic with `read_committed`, so records of aborted transactions are
+never observed.
 
 The `transactionalIdPrefix` must be stable across restarts and deployments (otherwise fencing is
 lost) and unique per consumer group + input topic + snapshot topic combination (otherwise unrelated
 writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
 
-**Cost of enabling:** every snapshot write now goes through a Kafka transaction (a few milliseconds
+**Cost of enabling:** every snapshot write goes through a Kafka transaction (a few milliseconds
 against real brokers). The cost is driven by the *number* of transactions, not the byte volume.
 Because the producer allows one transaction at a time, a partition's concurrent key flushes are
 group committed into shared transactions, so a burst of N dirty keys costs about
-N / `maxWritesPerTransaction` (default 256, configurable on `cachingTransactional`) sequential
+N / `maxWritesPerTransaction` (default 256, configurable via `TransactionalConfig`) sequential
 transaction round-trips on the poll path — size that against the changed-key population of a
 partition, which after a restart flushes in synchronized waves and in a busy partition approaches
-all active keys. On a realistic burst at the default cap the measured overhead was within ~15% of
-the non-transactional producer; the full methodology and numbers are in the
-[design document](kafka-single-writer-design.md). Each
+all active keys. On a realistic burst at the default cap the measured overhead was within ~16% of
+the non-transactional producer; the full mechanism, methodology and numbers are in the
+[Kafka single-writer design](kafka-single-writer-design.md). Each
 assigned partition also holds its own producer and transaction-coordinator state on the brokers.
 Measure it against your flush pattern before enabling.
 
@@ -146,11 +174,16 @@ No topic or data migration is needed: recovery under `read_committed` reads all 
 non-transactional records, and the first `initTransactions` simply registers the new
 `transactional.id`s with the brokers.
 
-One new failure mode exists while transactional and non-transactional instances coexist:
-non-transactional instances recover snapshots with `read_uncommitted` and will read records of
-*aborted* transactions (e.g. of an instance fenced mid-rollout) as valid snapshots, until log
-compaction removes them. **Enable and roll back this mode with a replace (stop-all-then-start)
-deployment** rather than a rolling one to avoid that window.
+A rolling deployment is safe. While transactional and non-transactional instances coexist the
+protection is only partial: a non-transactional instance has no `transactional.id` so it is not
+fenced, it writes snapshots plainly, and it recovers with `read_uncommitted` (reading records of
+*aborted* transactions as valid, until log compaction removes them). But that is the **same
+stale-writer exposure you already have without this mode** ([#732](https://github.com/evolution-gaming/kafka-flow/issues/732))
+— each such case is a stale write that last-write-wins would have allowed anyway, not a new failure
+mode — and it disappears as soon as every instance is transactional (`read_committed` everywhere
+then hides the aborted records and fencing is fully effective). So no special deployment is needed;
+the protection simply becomes complete once the rollout finishes, and likewise full exposure returns
+only after a full roll-back.
 
 ## Compression
 Kafka-flow has a built-in support for compressing application's state

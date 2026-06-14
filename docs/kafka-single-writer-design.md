@@ -5,19 +5,42 @@ sidebar_label: Kafka single-writer design
 ---
 
 Design document for the transactional snapshot mode of `kafka-flow-persistence-kafka`
-(`KafkaPersistenceModuleOf.cachingTransactional`). User-facing guarantees, limitations and rollout
-guidance live in [Persistence](persistence.md); this page records the problem, the decisions, why
-they were made, and the measurements behind them.
+(`KafkaPersistenceModuleOf.cachingTransactional`) — the **Kafka** single-writer protection only.
+The user-facing guarantees, costs and rollout guidance for both backends (including the lighter
+Cassandra compare-and-set approach) live in
+[Persistence](persistence.md#single-writer-guarantees); this page records the problem, the
+decisions, why they were made, and the measurements behind them.
 
 ## Problem
 
-[kafka-flow#732](https://github.com/evolution-gaming/kafka-flow/issues/732): consumer-group
-ownership of the input topic does not extend to the snapshot topic. During a rebalance, a previous
-partition owner that has not yet observed the revocation (network issue, GC pause, slow poll loop —
-overlaps of tens of seconds observed in production) keeps writing snapshots in parallel with the
-new owner. A compacted topic is last-write-wins, so the stale snapshot overwrites the newer one and
-the next recovery silently starts from stale state: events between the two snapshots are lost even
-though the input offsets were committed correctly.
+[kafka-flow#732](https://github.com/evolution-gaming/kafka-flow/issues/732), recapped here from the
+fuller account in [Persistence](persistence.md#single-writer-guarantees): consumer-group ownership
+of the input topic does not extend to the snapshot topic. During a rebalance a previous partition
+owner that has not yet observed the revocation (network issue, GC pause, slow poll loop) keeps
+writing snapshots in parallel with the new owner. A compacted topic is last-write-wins, so the stale
+snapshot overwrites the newer one and the next recovery silently starts from stale state: events
+between the two snapshots are lost even though the input offsets were committed correctly. Overlaps
+of tens of seconds have been observed in production.
+
+```mermaid
+sequenceDiagram
+    participant A as Owner A<br/>(previous)
+    participant ST as Snapshot topic<br/>(compacted: last-write-wins)
+    participant B as Owner B<br/>(new)
+
+    Note over A: folds input up to offset 100,<br/>state buffered, not yet flushed
+    Note over A,B: rebalance — partition revoked from A and assigned to B,<br/>but A has not observed it yet
+    B->>ST: recover: read to end (no newer snapshot)
+    B->>B: fold input up to offset 150
+    B->>ST: write snapshot @150 ✓
+    A-->>ST: flush buffered snapshot @100<br/>(stale: A no longer owns the partition)
+    Note over ST: last write wins — @100 overwrites @150
+    Note over ST,B: next recovery loads @100<br/>(events 101 to 150 lost, though their<br/>offsets were committed)
+```
+
+Both protections in this family close this window by making the stale `@100` write **fail** instead
+of overwriting `@150`. The Kafka mechanism is below; the Cassandra one is in
+[Persistence](persistence.md#single-writer-guarantees).
 
 ## Goals and non-goals
 
@@ -26,10 +49,8 @@ Goals:
 - A stale writer must not be able to overwrite a newer snapshot — at any point after the new owner
   starts reading the snapshot topic.
 - Opt-in: the default (shared producer, no transactions) behavior stays byte-for-byte unchanged.
-- The cost must be acceptable for bursty flush patterns: keys recovered together share their flush
-  baseline, so they become persist-eligible in synchronized waves every `persistEvery`, and each
-  wave writes every key whose state changed since the last flush — in a busy partition, approaching
-  the full active population.
+- The cost must be acceptable for bursty flush patterns (the synchronized post-restart flush waves
+  described under "Write path").
 
 Non-goals:
 
@@ -86,47 +107,48 @@ would serialize that burst on the consumer poll path (~4 s for 2000 keys, measur
 are therefore **group committed**: a write is queued, and the first writer to take the transaction
 lock drains everything queued at that moment into a single transaction, delivering the outcome to
 each waiter. There is no batching delay — a lone write commits immediately; a batch is whatever
-accumulated during the previous transaction's flight. ("Group commit" is a borrowed pattern name —
-as in database write-ahead-log group commit — not a Kafka feature; Kafka only provides the
-single-transaction-at-a-time producer this is built on.)
+accumulated during the previous transaction's flight. (The name is borrowed from database
+write-ahead-log group commit; Kafka itself only provides the one-transaction-at-a-time producer.)
 
 The queue and the transaction lock are **per partition**, like the producer — one of each, created
-together with the partition's transactional producer and shared by all of that partition's keys
-(the write database is keyed by `KafkaKey`, passed per call, so one instance serves every key). A
+together with the partition's transactional producer and shared by all of that partition's keys. A
 single transaction therefore commits snapshots for many different keys at once; there is no per-key
-queue or transaction. Per-key state lives upstream as the in-memory snapshot buffers, which all
-delegate their writes to this one shared, per-partition path.
+queue or transaction.
 
 ```mermaid
 flowchart TD
-    A["persist(key, snapshot)"] --> B["enqueue (key, record, deferred)"]
-    B --> C["acquire Semaphore(1) permit"]
-    C --> D{"own deferred<br/>already completed?"}
-    D -- "yes (a previous leader<br/>took this write along)" --> R(["release permit,<br/>outcome from deferred"])
-    D -- no --> E["MASKED: drain queue, up to<br/>maxWritesPerTransaction writes (own + whatever<br/>queued during the previous transaction)"]
-    E --> F["beginTransaction<br/>(masked)"]
-    F --> G["send all records + await acks<br/>(the long phase — the only cancelable point,<br/>onCancel: abortTransaction)"]
-    G -- ok --> H["commitTransaction<br/>(masked)"]
-    G -- error --> I["abortTransaction<br/>(its own error suppressed — a fenced<br/>producer fails abort too; keep the original)"]
-    H -- error --> I
-    H -- ok --> J["complete every drained deferred<br/>with success"]
-    I --> K["complete every drained deferred with the error,<br/>per key: isFenced(cause chain) ?<br/>KafkaSnapshotWriteConflict : original"]
+    A["persist(key, snapshot)"] --> B["enqueue write"]
+    B --> C["acquire transaction lock"]
+    C --> D{"own write already done?"}
+    D -- "yes: a prior leader took it" --> Z(["release lock, return its outcome"])
+    D -- "no: become leader" --> E["drain queue, up to cap"]
+    E --> F["beginTransaction"]
+    F --> G["send records, await acks"]
+    G -- "ok" --> H["commitTransaction"]
+    G -- "error" --> I["abortTransaction"]
+    H -- "error" --> I
+    H -- "ok" --> J["complete batch: success"]
+    I --> K["complete batch: conflict / error"]
     J --> D
     K --> D
 ```
+
+The leader runs one transaction for the whole batch and delivers its outcome to every drained write
+before looping back to check its own; a write a prior leader already took returns immediately. Only
+the send/await-acks step is cancelable — everything else is masked, for the reasons in the table.
 
 | Decision | Rationale |
 |---|---|
 | Group commit, not time-window batching | Batching is purely opportunistic: sporadic writes pay zero added latency, bursts collapse to O(burst / cap) transactions. A batch shares its transaction's outcome — one failure fails them all (bounded by the cap). |
 | Drain and completion run masked, only the ack await is cancelable | A canceled leader must never remove writes from the queue without delivering their outcome (waiters would hang or get a nonsense error), and must never leave an open transaction holding the lock's next user hostage (`onCancel: abort`). |
-| `maxWritesPerTransaction` cap (default 256, configurable) | A *duration* bound, not a throughput knob — capping can only lower throughput (uncapped is ~15% faster, measured below), so it is never raised for speed. It bounds *transaction duration*: a transaction outliving `transaction.timeout.ms` (default 1 minute) is aborted by the coordinator (demonstrated below). Transaction bytes ≈ cap × snapshot size, and this layer cannot see record sizes (serialization happens inside the producer), so the bound is a configurable count — lower it for large snapshots. A *higher* cap, not a lower one, helps a partition keep up (it amortizes the fixed begin/commit round-trip over more writes); the default sits past that knee — see "Batch formation and back-pressure". |
+| `maxWritesPerTransaction` cap (default 256, configurable) | A *duration* bound, not a throughput knob — capping only lowers throughput (uncapped is ~15% faster, measured below), so it is never raised for speed. It keeps a transaction from outliving `transaction.timeout.ms` (default 1 minute), which the coordinator would abort (demonstrated below). Transaction bytes ≈ cap × snapshot size and this layer cannot see record sizes, so the bound is a count — lower it for large snapshots. |
 | Fencing classified by walking the exception cause chain | A fenced producer moves to a fatal state; follow-up calls throw a generic `KafkaException` only *wrapping* the fencing exception. |
 | Leader-based lock instead of a background committer fiber | A worker fiber would simplify the write path but adds a Resource lifecycle and a liveness dependency (a dead worker hangs all writes); the leader protocol keeps failure handling local to the writes. |
 
 ### Batch formation and back-pressure
 
-How big is a batch? The leader takes whatever is queued **at the instant it drains**, up to the
-cap — there is no linger or timer holding a batch open to fill it:
+A batch is whatever is queued **the instant the leader drains**, up to the cap — no linger or timer
+holds it open to fill:
 
 ```
 batch size = min(maxWritesPerTransaction, writes queued during the previous transaction's flight)
@@ -134,11 +156,7 @@ batch size = min(maxWritesPerTransaction, writes queued during the previous tran
 
 So a lone write commits immediately as a batch of one, and a batch only grows when writes arrive
 *concurrently* faster than transactions complete — arrival concurrency drives batch size, not a
-delay. (This is the whole story behind Experiment A's two transactional rows: a sequential stream
-never lets anything queue mid-transaction, so every write is its own transaction; a concurrent burst
-piles up and collapses into a few large batches.) A write that does not fit — past the cap, or
-arrived after the drain — is committed by the next leader; only the lock holder ever touches the
-producer, so the one-transaction-at-a-time rule holds.
+delay.
 
 The `pending` queue also cannot grow without bound, which is the real answer to "can a fast
 partition outrun the drain?". A `persist` call does not complete until its transaction commits,
@@ -186,14 +204,11 @@ group commit buys on a concurrent burst.
 | Group-committed transactions | sequential | 500 (one per write) | 669 ms (~1.3 ms per transaction) |
 | Group-committed transactions | concurrent burst | a handful | 9 ms |
 
-The lower two rows are the **same** group commit — only the arrival pattern differs, and that is
-the point. Sequentially, nothing is ever queued while a transaction is in flight, so every write
-forms a batch of one: 500 transactions, and the row measures the raw per-transaction round-trip
-(~1.3 ms). Concurrently, writes pile up during each transaction's flight and collapse into a few
-large batches (see "Batch formation and back-pressure"), so the same 500 writes land far below even
-the non-transactional shared producer. Same lesson as Experiment B at small scale: cost tracks the
-number of transactions, and concurrency — the real flush pattern — drives the batching for free,
-with no added delay.
+The lower two rows are the **same** group commit — only the arrival pattern differs. Sequentially,
+every write forms a batch of one (500 transactions, measuring the raw ~1.3 ms per-transaction
+round-trip); concurrently, writes collapse into a few large batches, landing the same 500 writes
+below even the non-transactional producer. Cost tracks the number of transactions, and concurrency —
+the real flush pattern — drives the batching for free.
 
 ### Experiment B — `maxWritesPerTransaction` sweep on a realistic burst
 
@@ -218,13 +233,10 @@ the timing:
 
 Reading of the numbers: cost tracks the transaction count until Kafka's own network batching
 floors it (~340 ms here regardless). At the default cap the transactional burst (395 ms, ≈ 8
-transactions) runs within ~15% of the safety-off baseline (340 ms) and essentially level with
-uncapped (338 ms, 1 transaction) — on this workload the single-writer safety is not a meaningful
-throughput cost. Each of those ≈ 8 transactions (256 × 10 KiB ≈ 2.5 MiB) takes ~50 ms — three
-orders of magnitude below the 1-minute transaction timeout here, roughly two orders of magnitude
-below it at production latencies. Without the group commit (cap = 1) the burst pays one round trip
-per key — 2000 of them, an order of magnitude slower here and multi-second poll-path stalls at
-realistic key counts.
+transactions) runs within ~16% of the safety-off baseline (340 ms) and essentially level with
+uncapped — on this workload the single-writer safety is not a meaningful throughput cost. Without
+the group commit (cap = 1) the burst pays one round trip per key — 2000 of them, an order of
+magnitude slower, and multi-second poll-path stalls at realistic key counts.
 
 Reproduce: `KAFKA_FLOW_PERF=1 sbt "persistence-kafka-it-tests/testOnly *TransactionalWriteThroughputSpec"`
 (prints both experiments' timings; the suite spins up the testcontainers broker, ~2–3 min). The

@@ -85,12 +85,9 @@ class FlowSpec extends CassandraSpec {
     test.unsafeRunSync()
   }
 
-  // Reproduces the stale-writer snapshot corruption of
-  // https://github.com/evolution-gaming/kafka-flow/issues/732 through the real kafka-flow machinery (PartitionFlow
-  // with eager recovery, fold, buffered snapshots, flush-on-revoke). The partition ownership overlap is simulated by
-  // construction - two PartitionFlows over the same partition - since the consumer-group rebalance notification
-  // itself is Kafka's guarantee: a real overlap is indistinguishable from the second flow being created while the
-  // first one is still alive.
+  // Reproduces the #732 stale-writer corruption through the real kafka-flow machinery (PartitionFlow, eager recovery,
+  // fold, buffered snapshots, flush-on-revoke). The ownership overlap is simulated by two PartitionFlows over one
+  // partition: a real overlap is indistinguishable from the second flow being created while the first is still alive.
   test("issue #732 reproduction: stale flush-on-revoke overwrites the newer snapshot (last-write-wins)") {
     val (staleFlush, stored) = staleFlushScenario(compareAndSet = false).unsafeRunSync()
     assertEquals(clue(staleFlush), Right(()))

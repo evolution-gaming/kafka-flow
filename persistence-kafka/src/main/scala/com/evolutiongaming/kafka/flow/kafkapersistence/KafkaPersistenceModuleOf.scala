@@ -65,10 +65,9 @@ object KafkaPersistenceModuleOf {
   ): KafkaPersistenceModuleOf[F, S] =
     caching(consumerOf, producer, consumerConfig, snapshotTopic, FlowMetrics.empty[F])
 
-  /** Create a [[KafkaPersistenceModuleOf]] factory producing transactional implementations of
-    * [[KafkaPersistenceModule]] which protect the snapshot topic from stale writers during rebalances. See
-    * `KafkaPersistenceModule.cachingTransactional` for the semantics, parameter documentation (in particular the
-    * stability and uniqueness rules of `transactionalIdPrefix`) and trade-offs.
+  /** Create a [[KafkaPersistenceModuleOf]] factory producing transactional [[KafkaPersistenceModule]]s that protect the
+    * snapshot topic from stale writers during rebalances. See `KafkaPersistenceModule.cachingTransactional` for the
+    * semantics, parameters and trade-offs.
     *
     * @param snapshotTopic
     *   snapshot topic name (should be configured as a 'compacted' topic)

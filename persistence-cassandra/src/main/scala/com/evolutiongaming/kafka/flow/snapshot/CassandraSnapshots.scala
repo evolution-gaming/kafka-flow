@@ -52,10 +52,10 @@ class CassandraSnapshots[F[_]: Async, T](
 
   /** Persists the snapshot only if the stored one is not newer.
     *
-    * The conditional update is not applied either when the stored row has a higher offset (a concurrent writer
-    * persisted a newer snapshot) or when the row does not exist yet. The latter case is retried as `INSERT ... IF NOT
-    * EXISTS`; if that one is lost to a concurrent insert, the conditional update is retried once more, so that the
-    * writer with the newest snapshot wins a first-write race instead of failing on it.
+    * The conditional update is not applied when the stored row has a higher offset (a concurrent writer persisted a
+    * newer snapshot) or when the row does not exist yet. The latter is retried as `INSERT ... IF NOT EXISTS`; if that
+    * loses to a concurrent insert, the conditional update is retried once, so the writer with the newest snapshot wins
+    * a first-write race.
     */
   private def persistCompareAndSet(
     insertStatement: PreparedStatement,
@@ -123,11 +123,9 @@ object CassandraSnapshots {
 
   val DefaultTableName = "snapshots_v2"
 
-  /** Raised in compare-and-set mode (see [[CassandraSnapshots.withSchema]]) when a snapshot was not persisted because
-    * the snapshot store already contains a newer snapshot for the key.
-    *
-    * This indicates that another writer (most likely a new owner of the partition after a rebalance) has persisted a
-    * snapshot in parallel, i.e. this instance is a stale writer and should not continue working with the key.
+  /** Raised in compare-and-set mode (see [[CassandraSnapshots.withSchema]]) when the store already contains a newer
+    * snapshot for the key - another writer (likely the new partition owner after a rebalance) persisted in parallel, so
+    * this writer is stale.
     *
     * @param key
     *   key for which the conflict was detected
@@ -160,11 +158,10 @@ object CassandraSnapshots {
     * @param ttl
     *   optional TTL to set on inserted records
     * @param compareAndSet
-    *   if `true`, snapshots are persisted with a Cassandra lightweight transaction asserting that the stored snapshot's
-    *   offset is not greater than the offset of the new snapshot, protecting from a stale writer overwriting a newer
-    *   snapshot during partition ownership transitions (https://github.com/evolution-gaming/kafka-flow/issues/732). A
-    *   rejected write fails with [[SnapshotWriteConflict]]. See the "Single-writer guarantees" section of the
-    *   persistence documentation for limitations and costs. Default is `false` (last write wins).
+    *   if `true`, each snapshot write is a Cassandra lightweight transaction asserting the stored offset is not greater
+    *   than the new one, protecting from stale writers (https://github.com/evolution-gaming/kafka-flow/issues/732); a
+    *   rejected write fails with [[SnapshotWriteConflict]]. See the persistence docs' "Single-writer guarantees" for
+    *   limitations and costs. Default `false` (last write wins).
     * @param fromBytes
     *   deserializer function to convert array of bytes to the snapshot type T
     * @param toBytes

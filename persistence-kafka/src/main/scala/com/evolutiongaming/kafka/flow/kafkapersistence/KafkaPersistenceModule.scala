@@ -26,7 +26,7 @@ trait KafkaPersistenceModule[F[_], S] {
 
 object KafkaPersistenceModule {
 
-  /** Settings for [[cachingTransactional]], grouped into one parameter to keep the factory's parameter list small.
+  /** Settings for [[cachingTransactional]].
     *
     * @param consumerConfig
     *   config for the snapshot-reading consumer; recovery forces `read_committed` regardless of this value
@@ -133,9 +133,9 @@ object KafkaPersistenceModule {
     * [[caching]] the identity partition mapping is always used. See the "Single-writer guarantees" section of the
     * persistence documentation for limitations and costs.
     *
-    * Switch an existing deployment to or from this mode with a replace (stop-all-then-start) deployment, not a rolling
-    * one: a non-transactional instance recovers snapshots with `read_uncommitted` and may read records of aborted
-    * transactions as valid snapshots while both modes coexist.
+    * A rolling deployment to or from this mode is safe: while the two modes coexist the protection is only partial -
+    * the same stale-writer exposure as without it, not a new failure mode - and it becomes complete once every instance
+    * is transactional.
     *
     * @param producerOf
     *   factory used to create the per-partition transactional producer
@@ -168,8 +168,7 @@ object KafkaPersistenceModule {
 
     for {
       producer <- producerOf(transactionalProducerConfig)
-      // fences the previous owner of this partition: performed on partition assignment,
-      // before the snapshot topic is read, so a stale writer cannot write after the read
+      // fences the previous owner before the snapshot topic is read, so a stale writer cannot write behind recovery
       _ <- Resource.eval(producer.initTransactions)
       writeDatabase <- Resource.eval(
         KafkaSnapshotWriteDatabase.transactional[F, S](

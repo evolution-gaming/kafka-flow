@@ -34,14 +34,11 @@ import scodec.bits.ByteVector
 import scala.concurrent.duration.*
 
 /** Reproduces the stale-writer snapshot corruption of
-  * [[https://github.com/evolution-gaming/kafka-flow/issues/732 issue #732]] against a real Kafka broker through the
-  * real kafka-flow machinery (PartitionFlow with eager recovery, fold, buffered snapshots, flush-on-revoke), and proves
-  * that the transactional mode prevents it.
-  *
-  * The partition ownership overlap is simulated by construction - two PartitionFlows over the same partition - since
-  * the consumer-group rebalance notification itself is Kafka's guarantee: in a real overlap the previous owner has
-  * simply not yet observed the revocation, which is indistinguishable from the second flow being created while the
-  * first one is still alive.
+  * [[https://github.com/evolution-gaming/kafka-flow/issues/732 issue #732]] through the real kafka-flow machinery
+  * (PartitionFlow, eager recovery, fold, buffered snapshots, flush-on-revoke), and proves the transactional mode
+  * prevents it. The ownership overlap is simulated by two PartitionFlows over one partition: a real overlap (the
+  * previous owner not yet aware of the revocation) is indistinguishable from the second flow being created while the
+  * first is still alive.
   */
 class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
   implicit val ioRuntime: IORuntime = IORuntime.global
