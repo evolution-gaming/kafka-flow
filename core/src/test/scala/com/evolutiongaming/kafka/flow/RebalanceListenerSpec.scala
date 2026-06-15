@@ -110,6 +110,8 @@ object RebalanceListenerSpec {
       def subscribe(topics: NonEmptySet[Topic], listener: SRebalanceListener[F]): F[Unit] = ().pure[F]
       def poll(timeout: FiniteDuration): F[ConsumerRecords[String, ByteVector]]    = ConsumerRecords.empty.pure[F]
       def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] = ().pure[F]
+      def groupMetadata: F[com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata] =
+        com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata.Empty.pure[F]
     }
 
     def flow(topic: String) = new TopicFlow[F] {

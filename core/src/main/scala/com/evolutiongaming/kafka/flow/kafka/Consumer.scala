@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.kafka
 
 import cats.MonadThrow
 import cats.data.{NonEmptyList, NonEmptyMap, NonEmptySet}
-import cats.effect.Ref
+import cats.effect.{Ref, Sync}
 import cats.syntax.all.*
 import com.evolutiongaming.skafka.*
 import com.evolutiongaming.skafka.consumer.{Consumer => KafkaConsumer, _}
@@ -24,24 +24,48 @@ trait Consumer[F[_]] {
 
   def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit]
 
+  /** Last consumer group metadata observed on a rebalance (generation, member id). Needed to bind offset commits into a
+    * producer transaction so a stale owner is fenced by generation (KIP-447). [[ConsumerGroupMetadata.Empty]] until the
+    * first rebalance.
+    */
+  def groupMetadata: F[ConsumerGroupMetadata]
+
 }
 object Consumer {
 
   def apply[F[_]](implicit F: Consumer[F]): Consumer[F] = F
 
-  def apply[F[_]](
+  def apply[F[_]: Sync](
     consumer: KafkaConsumer[F, String, ByteVector]
-  ): Consumer[F] = new Consumer[F] {
-    def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener1[F]): F[Unit] =
-      consumer.subscribe(topics, listener)
+  ): F[Consumer[F]] =
+    // capture the group metadata on each rebalance (on the poll thread, where it is safe to read) into a Ref so the
+    // transactional snapshot writer can read the current generation off-thread
+    Ref[F].of(ConsumerGroupMetadata.Empty).map { groupMetadataRef =>
+      new Consumer[F] {
+        def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener1[F]): F[Unit] = {
+          val capturing = new RebalanceListener1WithConsumer[F] {
+            import com.evolutiongaming.skafka.consumer.RebalanceCallback.syntax.*
+            private def capture: RebalanceCallback[F, Unit] =
+              this.consumer.groupMetadata.flatMap(meta => groupMetadataRef.set(meta).lift)
+            def onPartitionsAssigned(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
+              capture *> listener.onPartitionsAssigned(partitions)
+            def onPartitionsRevoked(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
+              capture *> listener.onPartitionsRevoked(partitions)
+            def onPartitionsLost(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
+              capture *> listener.onPartitionsLost(partitions)
+          }
+          consumer.subscribe(topics, capturing)
+        }
 
-    def poll(timeout: FiniteDuration): F[ConsumerRecords[String, ByteVector]] =
-      consumer.poll(timeout)
+        def poll(timeout: FiniteDuration): F[ConsumerRecords[String, ByteVector]] =
+          consumer.poll(timeout)
 
-    def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] =
-      consumer.commit(offsets)
+        def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] =
+          consumer.commit(offsets)
 
-  }
+        def groupMetadata: F[ConsumerGroupMetadata] = groupMetadataRef.get
+      }
+    }
 
   /** Does not call Kafka, returns specified records on every poll */
   def repeat[F[_]: MonadThrow: Ref.Make](
@@ -66,6 +90,8 @@ object Consumer {
 
       def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] =
         ().pure[F]
+
+      def groupMetadata: F[ConsumerGroupMetadata] = ConsumerGroupMetadata.Empty.pure[F]
     }
   }
 

@@ -149,6 +149,9 @@ package object kafkapersistence {
           // TODO: per-partition persistence module with 'String -> ByteVector' cache or global persistence module with 'KafkaKey -> ByteVector' cache?
           // Latter would require initialization of PartitionFlowOf as a Resource
           kafkaPersistenceModule <- kafkaPersistenceModuleOf.make(topicPartition.partition)
+          // in transactional mode the module commits offsets through its own producer transaction (binding ownership
+          // across the consumer and the snapshot store); otherwise fall back to the consumer-driven commit
+          effectiveScheduleCommit = kafkaPersistenceModule.scheduleCommit.getOrElse(scheduleCommit)
           partitionFlowOf = PartitionFlowOf.apply[F](
             keyStateOf = KeyStateOf.eagerRecovery(
               applicationId = applicationId,
@@ -168,7 +171,7 @@ package object kafkapersistence {
             filter   = filter,
             remapKey = remapKey,
           )
-          partitionFlow <- partitionFlowOf(topicPartition, assignedAt, scheduleCommit)
+          partitionFlow <- partitionFlowOf(topicPartition, assignedAt, effectiveScheduleCommit)
         } yield partitionFlow
       }
     }

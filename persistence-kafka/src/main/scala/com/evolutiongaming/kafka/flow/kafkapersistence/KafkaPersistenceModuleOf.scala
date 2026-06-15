@@ -4,7 +4,7 @@ import cats.Parallel
 import cats.effect.{Concurrent, Resource}
 import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.FlowMetrics
-import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
+import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerGroupMetadata, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerOf}
 import com.evolutiongaming.skafka.*
 
@@ -66,17 +66,25 @@ object KafkaPersistenceModuleOf {
     caching(consumerOf, producer, consumerConfig, snapshotTopic, FlowMetrics.empty[F])
 
   /** Create a [[KafkaPersistenceModuleOf]] factory producing transactional [[KafkaPersistenceModule]]s that protect the
-    * snapshot topic from stale writers during rebalances. See `KafkaPersistenceModule.cachingTransactional` for the
-    * semantics, parameters and trade-offs.
+    * snapshot topic from stale writers during rebalances and bind input offset commits into the snapshot transactions
+    * (ownership coupling across the consumer and the snapshot store). See `KafkaPersistenceModule.cachingTransactional`
+    * for the semantics, parameters and trade-offs.
     *
     * @param snapshotTopic
     *   snapshot topic name (should be configured as a 'compacted' topic)
+    * @param inputTopic
+    *   the input topic kafka-flow consumes; its offsets are committed transactionally with the snapshot writes
+    * @param groupMetadata
+    *   reads the current consumer group metadata of the SAME consumer that drives this flow (use
+    *   `Consumer.groupMetadata`); the generation it carries is what fences a stale owner (KIP-447)
     */
   def cachingTransactional[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
     config: KafkaPersistenceModule.TransactionalConfig,
     snapshotTopic: Topic,
+    inputTopic: Topic,
+    groupMetadata: F[ConsumerGroupMetadata],
     metrics: FlowMetrics[F] = FlowMetrics.empty[F],
   )(
     implicit fromBytesKey: FromBytes[F, String],
@@ -95,6 +103,8 @@ object KafkaPersistenceModuleOf {
         producerOf             = producerOf,
         config                 = config,
         snapshotTopicPartition = TopicPartition(snapshotTopic, partition),
+        inputTopic             = inputTopic,
+        groupMetadata          = groupMetadata,
         metrics                = metrics,
       )
   }

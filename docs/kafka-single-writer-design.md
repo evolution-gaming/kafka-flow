@@ -54,10 +54,10 @@ Goals:
 
 Non-goals:
 
-- Exactly-once processing. Input offsets are still committed by the consumer, outside the snapshot
-  transaction (`sendOffsetsToTransaction` would require rerouting core offset committing through
-  the producer). Fencing alone removes the corruption; a fenced instance's events are replayed, not
-  lost.
+- Exactly-once *output*. The flow's own output-topic produces are not part of the snapshot
+  transaction, so after a fenced/replayed batch the new owner re-emits them: output is at-least-once
+  (duplicates possible), which the consuming side must tolerate. Only the snapshot store and the
+  input-offset commit are made consistent.
 - Non-identity partition mappers. Fencing is per input partition; a state partition shared by
   writers with different `transactional.id`s would make read-to-end recovery under `read_committed`
   ill-defined. The mode forces the identity mapping.
@@ -96,6 +96,48 @@ sequenceDiagram
 | Stable `transactional.id` per input partition | Fencing is per `transactional.id`: old and new owner of the *same* partition must collide on the same id; different partitions must not. The prefix must be stable across deployments and unique per consumer group + input topic + snapshot topic — these contracts cannot be enforced in code and are documented. |
 | `initTransactions` before the recovery read | Read-then-fence would leave a window in which the old owner writes behind the completed read. |
 | Recovery forced to `read_committed` | A fenced owner's in-flight transaction is aborted, but its records sit in the log until compaction; `read_uncommitted` would resurrect them as valid snapshots. (`initTransactions` also waits out any open transaction of the previous incarnation, so the read-to-end target is exact.) |
+
+### Ownership coupling: the input-offset commit rides the snapshot transaction
+
+Epoch fencing alone gives *mutual exclusion* — at most one producer per `transactional.id` — but the
+epoch is allocated in `initTransactions` **arrival order** at the transaction coordinator, which is
+independent of consumer-group **assignment order**. Under overlapping rebalances a delayed
+`initTransactions` from a stale owner can land a *higher* epoch than the true new owner and fence it,
+re-opening the stale-overwrite window. Mutual exclusion is not the same as *ownership*.
+
+To bind the two, the input-offset commit is moved out of the consumer and **into the snapshot
+producer's transaction** via `sendOffsetsToTransaction(offsets, consumerGroupMetadata)` (KIP-447): the
+group coordinator validates the consumer **generation** and rejects a commit from a stale generation
+(`ILLEGAL_GENERATION`). Because the offset commit and the snapshot writes are in the *same*
+transaction, that rejection aborts the snapshot writes too. The consumer generation — authoritative
+for ownership — now gates both. This is the Kafka Streams EOS offset path, minus the transactional
+*output* produces (we accept at-least-once output).
+
+```mermaid
+sequenceDiagram
+    participant B as Stale owner<br/>(higher producer epoch, old generation)
+    participant TC as Broker<br/>(txn + group coordinator)
+    participant ST as Snapshot topic
+
+    Note over B: won the initTransactions race → not epoch-fenced
+    B->>TC: beginTransaction
+    B->>ST: send stale snapshot (buffered in txn)
+    B->>TC: sendOffsetsToTransaction(offset, gen=old)
+    TC-->>B: ILLEGAL_GENERATION (partition reassigned)
+    B->>TC: abort — stale snapshot never committed
+    Note over ST: newer snapshot survives
+```
+
+| Decision | Rationale |
+|---|---|
+| Commit offsets through the producer, not the consumer | The generation check on `sendOffsetsToTransaction` is what ties the fence to ownership; a consumer-side commit is not part of the transaction and cannot gate the snapshot writes. In transactional mode the partition is therefore never `consumer.commit`-ed. |
+| Piggyback: every transaction carries the latest committable offset | Chosen over a commit-driven model (one transaction per partition per commit tick, Streams-style) to reuse the group commit and keep the per-key flush unchanged. The committable offset is the partition's min held-offset (only persisted state), so it is always ≤ what is durably written; attaching it to every transaction makes every snapshot write generation-gated. A `ScheduleCommit` also forces an (offset-only) transaction so progress and the final on-revoke offset are committed even with no writes pending. The switch to commit-driven stays local: the transaction packing lives in `GroupCommit`, the offset source in `ScheduleCommit`. |
+| Offset binding activates once the consumer has joined the group | Before the first rebalance there is no generation to fence by (only epoch fencing applies); a partition is only processed after assignment, so this window does not occur in normal operation. |
+
+Wiring requires the input topic and a reader of the driving consumer's group metadata
+(`Consumer.groupMetadata`, captured on each rebalance on the poll thread). A fenced offset commit
+surfaces like a fenced snapshot write (`KafkaSnapshotWriteConflict`) and is handled identically (see
+"How a rejection surfaces").
 
 ### Write path: group-committed transactions
 

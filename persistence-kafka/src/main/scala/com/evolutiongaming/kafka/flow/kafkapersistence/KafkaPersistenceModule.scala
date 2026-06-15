@@ -5,14 +5,15 @@ import cats.effect.{Concurrent, Resource}
 import cats.syntax.all.*
 import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.{FromTry, LogOf, Runtime}
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.metrics.syntax.*
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotWriteDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey}
-import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf, IsolationLevel}
+import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerGroupMetadata, ConsumerOf, IsolationLevel}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf}
-import com.evolutiongaming.skafka.{FromBytes, ToBytes, TopicPartition}
+import com.evolutiongaming.skafka.{FromBytes, ToBytes, Topic, TopicPartition}
 import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
@@ -22,6 +23,12 @@ import com.evolutiongaming.skafka.consumer.ConsumerRecord
 trait KafkaPersistenceModule[F[_], S] {
   def keysOf: KeysOf[F, KafkaKey]
   def persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]]
+
+  /** A `ScheduleCommit` that commits input offsets transactionally with the snapshot writes, when the module provides
+    * single-writer offset binding (transactional mode). `None` means offsets are committed the default way (by the
+    * consumer). See [[cachingTransactional]].
+    */
+  def scheduleCommit: Option[ScheduleCommit[F]]
 }
 
 object KafkaPersistenceModule {
@@ -39,7 +46,7 @@ object KafkaPersistenceModule {
     *   combination (otherwise unrelated writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
     * @param maxWritesPerTransaction
     *   upper bound of snapshot writes group committed in one transaction, see
-    *   [[KafkaSnapshotWriteDatabase.transactional]] for the trade-off
+    *   [[KafkaSnapshotWriteDatabase.transactionalWithOffsetCommit]] for the trade-off
     */
   final case class TransactionalConfig(
     consumerConfig: ConsumerConfig,
@@ -129,7 +136,7 @@ object KafkaPersistenceModule {
     * previous owner of the partition, so a stale snapshot write fails with
     * [[KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict]] instead of overwriting a newer snapshot
     * (https://github.com/evolution-gaming/kafka-flow/issues/732). Writes run in transactions (group committed per
-    * partition, see [[KafkaSnapshotWriteDatabase.transactional]]), recovery reads with `read_committed`, and unlike
+    * partition, see [[KafkaSnapshotWriteDatabase.transactionalWithOffsetCommit]]), recovery reads with `read_committed`, and unlike
     * [[caching]] the identity partition mapping is always used. See the "Single-writer guarantees" section of the
     * persistence documentation for limitations and costs.
     *
@@ -148,6 +155,8 @@ object KafkaPersistenceModule {
     producerOf: ProducerOf[F],
     config: TransactionalConfig,
     snapshotTopicPartition: TopicPartition,
+    inputTopic: Topic,
+    groupMetadata: F[ConsumerGroupMetadata],
     metrics: FlowMetrics[F] = FlowMetrics.empty[F],
   )(
     implicit fromBytesKey: FromBytes[F, String],
@@ -165,15 +174,20 @@ object KafkaPersistenceModule {
         .common
         .copy(clientId = producerConfig.common.clientId.map(cid => s"$cid-snapshot-$transactionalId"))
     )
+    // offsets are committed for the input partition with the same number as the assigned (snapshot) partition - the
+    // mode forces the identity mapping
+    val inputTopicPartition = TopicPartition(inputTopic, snapshotTopicPartition.partition)
 
     for {
       producer <- producerOf(transactionalProducerConfig)
       // fences the previous owner before the snapshot topic is read, so a stale writer cannot write behind recovery
       _ <- Resource.eval(producer.initTransactions)
-      writeDatabase <- Resource.eval(
-        KafkaSnapshotWriteDatabase.transactional[F, S](
+      transactional <- Resource.eval(
+        KafkaSnapshotWriteDatabase.transactionalWithOffsetCommit[F, S](
           snapshotTopicPartition  = snapshotTopicPartition,
           producer                = producer,
+          inputTopicPartition     = inputTopicPartition,
+          groupMetadata           = groupMetadata,
           maxWritesPerTransaction = maxWritesPerTransaction,
         )
       )
@@ -184,7 +198,8 @@ object KafkaPersistenceModule {
         snapshotTopicPartition = snapshotTopicPartition,
         metrics                = metrics,
         partitionMapper        = KafkaPersistencePartitionMapper.identity,
-        writeDatabase          = writeDatabase,
+        writeDatabase          = transactional.writeDatabase,
+        scheduleCommit         = transactional.scheduleCommit.some,
       )
     } yield module
   }
@@ -196,10 +211,12 @@ object KafkaPersistenceModule {
     metrics: FlowMetrics[F],
     partitionMapper: KafkaPersistencePartitionMapper,
     writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
+    scheduleCommit: Option[ScheduleCommit[F]] = None,
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-  ): Resource[F, KafkaPersistenceModule[F, S]] =
+  ): Resource[F, KafkaPersistenceModule[F, S]] = {
+    val scheduleCommit_ = scheduleCommit
     for {
       partitionDataCache <- Cache.loading[F, String, ByteVector]
       keysOf_ <- Resource.eval(
@@ -213,7 +230,10 @@ object KafkaPersistenceModule {
 
       override def persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]] =
         persistence_
+
+      override def scheduleCommit: Option[ScheduleCommit[F]] = scheduleCommit_
     }
+  }
 
   private def makeKeysOf[F[_]: LogOf: Concurrent](
     cache: Cache[F, String, ByteVector],

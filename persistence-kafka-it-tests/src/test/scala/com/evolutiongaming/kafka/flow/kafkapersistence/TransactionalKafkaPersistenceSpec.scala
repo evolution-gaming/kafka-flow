@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
-import cats.data.NonEmptyList
+import cats.data.{NonEmptyList, NonEmptySet}
 import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Resource}
 import cats.syntax.all.*
@@ -22,9 +22,11 @@ import com.evolutiongaming.kafka.flow.{
 import com.evolutiongaming.skafka.consumer.{
   AutoOffsetReset,
   ConsumerConfig,
+  ConsumerGroupMetadata,
   ConsumerOf,
   ConsumerRecord,
   IsolationLevel,
+  RebalanceListener1,
   WithSize
 }
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf, ProducerRecord}
@@ -208,6 +210,10 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
         transactionalIdPrefix = s"$groupId-input-$stateTopic",
       ),
       snapshotTopic = stateTopic,
+      inputTopic    = s"input-$stateTopic",
+      // these tests simulate ownership overlap with two manually-created flows (no real consumer group), so they
+      // exercise producer-epoch fencing of snapshot writes; offset/generation binding is skipped while empty
+      groupMetadata = ConsumerGroupMetadata.Empty.pure[IO],
     )
 
     val test = staleFlushScenario(moduleOf, stateTopic, key).map {
@@ -238,6 +244,8 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
         transactionalIdPrefix = s"$groupId-$inputTopic",
       ),
       snapshotTopic = stateTopic,
+      inputTopic    = inputTopic,
+      groupMetadata = ConsumerGroupMetadata.Empty.pure[IO],
     )
 
     // flush on every records application, so the fenced writer hits the conflict on its next poll cycle
@@ -270,6 +278,75 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
           s"expected KafkaSnapshotWriteConflict in the cause chain of $e",
         )
       case Right(()) => fail("expected the fenced writer's periodic flush to fail fast, but it succeeded")
+    }
+
+    test.unsafeRunSync()
+  }
+
+  /** Joins a real consumer to a fresh group and runs `f` with the group's current metadata (generation N). The
+    * consumer stays alive (heartbeating) for the duration so the current generation is stable while `f` runs.
+    */
+  private def withJoinedConsumer[A](group: String, inputTopic: String)(
+    f: ConsumerGroupMetadata => IO[A]
+  ): IO[A] =
+    kafkaModule().consumerOf(group).use { consumer =>
+      def pollUntilJoined(attempts: Int): IO[ConsumerGroupMetadata] =
+        consumer.poll(100.millis) *> consumer.groupMetadata.flatMap { meta =>
+          if (meta.generationId >= 1) meta.pure[IO]
+          else if (attempts <= 0) IO.raiseError(new RuntimeException(s"consumer did not join the group: $meta"))
+          else IO.sleep(100.millis) *> pollUntilJoined(attempts - 1)
+        }
+
+      consumer.subscribe(NonEmptySet.of(inputTopic), RebalanceListener1.empty[IO]) *>
+        pollUntilJoined(50).flatMap(f)
+    }
+
+  test("issue #732 prevention: a stale consumer generation is fenced from committing offsets transactionally") {
+    val stateTopic = "flow-732-tx-stale-generation-state-topic"
+    val inputTopic = s"input-$stateTopic"
+    val group      = s"$groupId-stale-generation"
+    val tp         = TopicPartition(inputTopic, Partition.min)
+
+    val test = for {
+      _ <- createTopic(stateTopic, 1)
+      _ <- createTopic(inputTopic, 1)
+      result <- withJoinedConsumer(group, inputTopic) { current =>
+        // a previous-generation owner: the broker rejects a transactional offset commit whose generation is not the
+        // current one (KIP-447), which aborts the transaction (and, in a real flow, the snapshot writes within it)
+        val stale = current.copy(generationId = current.generationId - 1)
+        transactionalProducer(s"$group-tx").use { producer =>
+          for {
+            _ <- producer.initTransactions
+            tx <- KafkaSnapshotWriteDatabase.transactionalWithOffsetCommit[IO, String](
+              snapshotTopicPartition = TopicPartition(stateTopic, Partition.min),
+              producer               = producer,
+              inputTopicPartition    = tp,
+              groupMetadata          = IO.pure(stale),
+            )
+            attempt <- tx.scheduleCommit.schedule(Offset.unsafe(5)).attempt
+          } yield attempt
+        }
+      }
+      stored <- readSnapshots(stateTopic)
+    } yield {
+      result match {
+        case Left(e) =>
+          val chain    = causeChain(e)
+          val keywords = List("generation", "epoch", "fenced", "rebalanced")
+          val fenced = chain.exists(c =>
+            c.isInstanceOf[KafkaSnapshotWriteConflict] ||
+              c.isInstanceOf[org.apache.kafka.clients.consumer.CommitFailedException] ||
+              c.isInstanceOf[org.apache.kafka.common.errors.ProducerFencedException] ||
+              c.isInstanceOf[org.apache.kafka.common.errors.InvalidProducerEpochException]
+          ) || chain.exists(c => Option(c.getMessage).map(_.toLowerCase).exists(m => keywords.exists(m.contains)))
+          assert(
+            fenced,
+            s"expected a generation/fencing rejection, got ${chain.map(_.getClass.getName)}: ${chain.map(_.getMessage)}",
+          )
+        case Right(()) => fail("expected the stale-generation offset commit to be rejected, but it succeeded")
+      }
+      // the rejected commit aborted: nothing landed in the snapshot store
+      assertEquals(clue(stored), BytesByKey.empty)
     }
 
     test.unsafeRunSync()

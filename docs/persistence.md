@@ -47,7 +47,7 @@ store:
 
 |                | Compare-and-set (Cassandra)                       | Transactional (Kafka)                                  |
 | -------------- | ------------------------------------------------- | ------------------------------------------------------ |
-| **Mechanism**  | conditional write guarded by the stored offset    | Kafka producer fencing (`initTransactions`)            |
+| **Mechanism**  | conditional write guarded by the stored offset    | producer fencing + offset commit bound into the snapshot transaction, fenced by consumer generation (KIP-447) |
 | **Enable**     | `compareAndSet = true`                            | `KafkaPersistenceModuleOf.cachingTransactional`        |
 | **Rejection**  | `CassandraSnapshots.SnapshotWriteConflict`        | `KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict`|
 | **Rollout**    | rolling deploy OK (clock-skew caveat below)       | rolling deploy OK; full protection once all instances are transactional |
@@ -122,16 +122,22 @@ practical concern.
 The Kafka persistence module can protect from stale writers using Kafka transactions:
 
 ```scala
-KafkaPersistenceModuleOf.cachingTransactional[F, State](
-  consumerOf = consumerOf,
-  producerOf = producerOf,
-  config = KafkaPersistenceModule.TransactionalConfig(
-    consumerConfig        = snapshotConsumerConfig,
-    producerConfig        = snapshotProducerConfig,
-    transactionalIdPrefix = s"$groupId-$inputTopic",
-  ),
-  snapshotTopic = stateTopic,
-)
+// allocate the driving consumer first so the module can read its group metadata (generation)
+consumer.use { consumer =>
+  val moduleOf = KafkaPersistenceModuleOf.cachingTransactional[F, State](
+    consumerOf = consumerOf,
+    producerOf = producerOf,
+    config = KafkaPersistenceModule.TransactionalConfig(
+      consumerConfig        = snapshotConsumerConfig,
+      producerConfig        = snapshotProducerConfig,
+      transactionalIdPrefix = s"$groupId-$inputTopic",
+    ),
+    snapshotTopic = stateTopic,
+    inputTopic    = inputTopic,
+    groupMetadata = consumer.groupMetadata, // the SAME consumer that drives the flow
+  )
+  // ... wire moduleOf into the flow, driven by `consumer`
+}
 ```
 
 Instead of one shared snapshot producer, the module creates one *transactional* producer per
@@ -142,6 +148,16 @@ then *fences* the previous owner's producer: a stale snapshot write is rejected 
 committed under concurrency, see the [design doc](kafka-single-writer-design.md#write-path-group-committed-transactions)),
 and recovery reads the snapshot topic with `read_committed`, so records of aborted transactions are
 never observed.
+
+To couple ownership across the consumer and the snapshot store, the input-offset commit is bound
+into the same transaction as the snapshot writes (`sendOffsetsToTransaction`, fenced by the consumer
+**generation** — KIP-447): a stale owner is rejected from advancing offsets *and* writing snapshots
+together, which closes the producer-epoch ordering race that fencing alone leaves open. In this mode
+offsets are committed through the producer, not the consumer. This requires the `inputTopic` and a
+reader of the driving consumer's group metadata (`groupMetadata = consumer.groupMetadata`); offset
+binding activates once the consumer has joined the group. Output-topic produces stay outside the
+transaction, so output remains at-least-once (duplicates possible after a replay) — see the
+[design doc](kafka-single-writer-design.md#ownership-coupling-the-input-offset-commit-rides-the-snapshot-transaction).
 
 The `transactionalIdPrefix` must be stable across restarts and deployments (otherwise fencing is
 lost) and unique per consumer group + input topic + snapshot topic combination (otherwise unrelated
@@ -164,6 +180,9 @@ Limitations:
 - A batch shares its transaction's outcome: if the transaction fails, every write in it fails.
 - An old owner can be fenced while flushing on revoke; its last state delta is then neither
   persisted nor committed, so the new owner replays those events — noise, not loss.
+- Output is at-least-once: the flow's output-topic produces are not part of the snapshot transaction,
+  so a replayed batch re-emits them. The consuming side must tolerate duplicates. Only the snapshot
+  store and the input-offset commit are made consistent (not exactly-once).
 - This mode always uses the identity `KafkaPersistencePartitionMapper`: fencing is per input
   partition, and with a non-identity mapper a state topic partition would be shared by writers with
   different `transactional.id`s, making read-to-end recovery under `read_committed` ill-defined.
