@@ -46,7 +46,7 @@ object KafkaPersistenceModule {
     *   combination (otherwise unrelated writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
     * @param maxWritesPerTransaction
     *   upper bound of snapshot writes group committed in one transaction, see
-    *   [[KafkaSnapshotWriteDatabase.transactionalWithOffsetCommit]] for the trade-off
+    *   [[KafkaSnapshotWriteDatabase.transactional]] for the trade-off
     */
   final case class TransactionalConfig(
     consumerConfig: ConsumerConfig,
@@ -136,7 +136,7 @@ object KafkaPersistenceModule {
     * previous owner of the partition, so a stale snapshot write fails with
     * [[KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict]] instead of overwriting a newer snapshot
     * (https://github.com/evolution-gaming/kafka-flow/issues/732). Writes run in transactions (group committed per
-    * partition, see [[KafkaSnapshotWriteDatabase.transactionalWithOffsetCommit]]), recovery reads with `read_committed`, and unlike
+    * partition, see [[KafkaSnapshotWriteDatabase.transactional]]), recovery reads with `read_committed`, and unlike
     * [[caching]] the identity partition mapping is always used. See the "Single-writer guarantees" section of the
     * persistence documentation for limitations and costs.
     *
@@ -183,7 +183,7 @@ object KafkaPersistenceModule {
       // fences the previous owner before the snapshot topic is read, so a stale writer cannot write behind recovery
       _ <- Resource.eval(producer.initTransactions)
       transactional <- Resource.eval(
-        KafkaSnapshotWriteDatabase.transactionalWithOffsetCommit[F, S](
+        KafkaSnapshotWriteDatabase.transactional[F, S](
           snapshotTopicPartition  = snapshotTopicPartition,
           producer                = producer,
           inputTopicPartition     = inputTopicPartition,

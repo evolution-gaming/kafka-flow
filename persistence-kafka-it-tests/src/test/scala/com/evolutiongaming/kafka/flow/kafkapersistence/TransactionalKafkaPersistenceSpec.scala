@@ -317,7 +317,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
         transactionalProducer(s"$group-tx").use { producer =>
           for {
             _ <- producer.initTransactions
-            tx <- KafkaSnapshotWriteDatabase.transactionalWithOffsetCommit[IO, String](
+            tx <- KafkaSnapshotWriteDatabase.transactional[IO, String](
               snapshotTopicPartition = TopicPartition(stateTopic, Partition.min),
               producer               = producer,
               inputTopicPartition    = tp,
@@ -367,11 +367,17 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
         KafkaKey(appId, groupId, TopicPartition(s"input-$stateTopic", Partition.min), key)
 
       def writeDatabase(producer: Producer[IO]): IO[SnapshotWriteDatabase[IO, KafkaKey, String]] =
-        KafkaSnapshotWriteDatabase.transactional[IO, String](
-          snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
-          producer                = producer,
-          maxWritesPerTransaction = maxWritesPerTransaction,
-        )
+        // no offsets are scheduled here, so the input partition and (empty) group metadata are inert - this exercises
+        // the snapshot-write/group-commit path only
+        KafkaSnapshotWriteDatabase
+          .transactional[IO, String](
+            snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
+            producer                = producer,
+            inputTopicPartition     = TopicPartition(s"input-$stateTopic", Partition.min),
+            groupMetadata           = IO.pure(ConsumerGroupMetadata.Empty),
+            maxWritesPerTransaction = maxWritesPerTransaction,
+          )
+          .map(_.writeDatabase)
 
       val test = createTopic(stateTopic, 1) *>
         transactionalProducer(s"tx-concurrent-$maxWritesPerTransaction").use { producer =>

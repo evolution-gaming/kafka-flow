@@ -7,7 +7,13 @@ import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
 import com.evolutiongaming.kafka.flow.{ForAllKafkaSuite, KafkaKey}
-import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf, IsolationLevel}
+import com.evolutiongaming.skafka.consumer.{
+  AutoOffsetReset,
+  ConsumerConfig,
+  ConsumerGroupMetadata,
+  ConsumerOf,
+  IsolationLevel
+}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf}
 import com.evolutiongaming.skafka.{CommonConfig, Partition, TopicPartition}
 
@@ -149,11 +155,17 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
         ).use { producer =>
           for {
             _ <- producer.initTransactions
-            database <- KafkaSnapshotWriteDatabase.transactional[IO, String](
-              snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
-              producer                = producer,
-              maxWritesPerTransaction = maxWritesPerTransaction,
-            )
+            // offsets are never scheduled in this measurement, so the input partition and (empty) group metadata are
+            // inert; this isolates the snapshot-write/group-commit cost
+            database <- KafkaSnapshotWriteDatabase
+              .transactional[IO, String](
+                snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
+                producer                = producer,
+                inputTopicPartition     = TopicPartition(s"input-$stateTopic", Partition.min),
+                groupMetadata           = IO.pure(ConsumerGroupMetadata.Empty),
+                maxWritesPerTransaction = maxWritesPerTransaction,
+              )
+              .map(_.writeDatabase)
             _ <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
             elapsed <- timed {
               (1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload))
@@ -220,10 +232,14 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
       ).use { producer =>
         for {
           _ <- producer.initTransactions
-          database <- KafkaSnapshotWriteDatabase.transactional[IO, String](
-            TopicPartition(txTopic, Partition.min),
-            producer
-          )
+          database <- KafkaSnapshotWriteDatabase
+            .transactional[IO, String](
+              snapshotTopicPartition = TopicPartition(txTopic, Partition.min),
+              producer               = producer,
+              inputTopicPartition    = TopicPartition(s"input-$txTopic", Partition.min),
+              groupMetadata          = IO.pure(ConsumerGroupMetadata.Empty),
+            )
+            .map(_.writeDatabase)
           _          <- database.persist(kafkaKey(txTopic, "warm-up"), "warm-up")
           sequential <- persistSequentially(txTopic, database)
           concurrent <- persistConcurrently(txTopic, database)

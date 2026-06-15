@@ -43,23 +43,31 @@ object KafkaSnapshotWriteDatabase {
   ): SnapshotWriteDatabase[F, KafkaKey, S] =
     apply(snapshotTopicPartition, partitionMapper, (_, record) => producer.send(record).flatten.void)
 
-  /** Variant of [[of]] performing writes as group-committed Kafka transactions, '''without''' binding input offsets -
-    * i.e. snapshot writes are fenced only by the producer epoch, with no ownership coupling to the consumer generation.
+  /** Result of [[transactional]]: the snapshot write database plus a [[ScheduleCommit]] that routes
+    * input offset commits through the same per-partition transactions as the snapshot writes.
+    */
+  final case class Transactional[F[_], S](
+    writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
+    scheduleCommit: ScheduleCommit[F],
+  )
+
+  /** Variant of [[of]] performing writes as group-committed Kafka transactions, binding the input offset commit into
+    * the same transaction as the snapshot writes - the only Kafka mechanism that fully closes
+    * [[https://github.com/evolution-gaming/kafka-flow/issues/732 issue #732]].
     *
-    * TODO: temporary - to be removed before this PR is merge-ready. Production uses
-    * [[transactionalWithOffsetCommit]] (which adds the offset binding); this no-binding variant is retained only for
-    * the tests that have no consumer to take a generation from (`TransactionalWriteThroughputSpec`, the concurrent-write
-    * safety test). Those usages should migrate to [[transactionalWithOffsetCommit]] (e.g. with
-    * `groupMetadata = ConsumerGroupMetadata.Empty.pure`, which keeps binding inert while no offsets are scheduled), then
-    * this method is deleted.
+    * The producer must be transactional with `initTransactions` already called. Writes are group committed: a lone
+    * write commits in its own transaction, while writes arriving during a transaction's flight are committed together
+    * in the next one (up to `maxWritesPerTransaction`) and share its outcome. The returned [[ScheduleCommit]] records
+    * the offset to commit; the group commit then calls `sendOffsetsToTransaction` with the current consumer group
+    * metadata inside the same transaction as the snapshot writes. The broker rejects a commit from a stale consumer
+    * generation (KIP-447), so a stale owner is fenced from advancing offsets and writing snapshots together - closing
+    * the producer-epoch ordering race that fencing alone leaves open. A fenced write fails with
+    * [[KafkaSnapshotWriteConflict]]. See `docs/kafka-single-writer-design.md` for the design and measurements.
     *
-    * The producer must be transactional with `initTransactions` already called; a write fenced by a newer producer with
-    * the same `transactional.id` fails with [[KafkaSnapshotWriteConflict]].
-    *
-    * Writes are group committed: a lone write commits in its own transaction, while writes arriving during a
-    * transaction's flight are committed together in the next one (up to `maxWritesPerTransaction`) and share its
-    * outcome. See `docs/kafka-single-writer-design.md` for the design and measurements.
-    *
+    * @param inputTopicPartition
+    *   the input topic-partition whose offset is committed (distinct from the snapshot topic-partition)
+    * @param groupMetadata
+    *   reads the current consumer group metadata (generation); see `Consumer.groupMetadata`
     * @param maxWritesPerTransaction
     *   upper bound of writes per transaction, to keep its duration below `transaction.timeout.ms` (the coordinator
     *   aborts a transaction that exceeds it). Transaction bytes scale with this times the snapshot size: lower it for
@@ -68,58 +76,10 @@ object KafkaSnapshotWriteDatabase {
   def transactional[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
     snapshotTopicPartition: TopicPartition,
     producer: Producer[F],
-    partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
-    maxWritesPerTransaction: Int                     = DefaultMaxWritesPerTransaction,
-  ): F[SnapshotWriteDatabase[F, KafkaKey, S]] =
-    build[F, S](snapshotTopicPartition, producer, partitionMapper, maxWritesPerTransaction, offsetCommit = None)
-      .map(_.writeDatabase)
-
-  /** Result of [[transactionalWithOffsetCommit]]: the snapshot write database plus a [[ScheduleCommit]] that routes
-    * input offset commits through the same per-partition transactions as the snapshot writes.
-    */
-  final case class Transactional[F[_], S](
-    writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
-    scheduleCommit: ScheduleCommit[F],
-  )
-
-  /** Like [[transactional]] but additionally binds input offset commits into the snapshot transactions. The returned
-    * [[ScheduleCommit]] records the offset to commit; the group commit then calls `sendOffsetsToTransaction` with the
-    * current consumer group metadata inside the same transaction as the snapshot writes. The broker rejects a commit
-    * from a stale consumer generation (KIP-447), so a stale owner is fenced from advancing offsets and writing
-    * snapshots together - closing the producer-epoch ordering race that fencing alone leaves open.
-    *
-    * @param inputTopicPartition
-    *   the input topic-partition whose offset is committed (distinct from the snapshot topic-partition)
-    * @param groupMetadata
-    *   reads the current consumer group metadata (generation); see `Consumer.groupMetadata`
-    */
-  def transactionalWithOffsetCommit[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
-    snapshotTopicPartition: TopicPartition,
-    producer: Producer[F],
     inputTopicPartition: TopicPartition,
     groupMetadata: F[ConsumerGroupMetadata],
     partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
     maxWritesPerTransaction: Int                     = DefaultMaxWritesPerTransaction,
-  ): F[Transactional[F, S]] =
-    build[F, S](
-      snapshotTopicPartition,
-      producer,
-      partitionMapper,
-      maxWritesPerTransaction,
-      offsetCommit = OffsetCommit(inputTopicPartition, groupMetadata).some,
-    )
-
-  private final case class OffsetCommit[F[_]](
-    inputTopicPartition: TopicPartition,
-    groupMetadata: F[ConsumerGroupMetadata],
-  )
-
-  private def build[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
-    snapshotTopicPartition: TopicPartition,
-    producer: Producer[F],
-    partitionMapper: KafkaPersistencePartitionMapper,
-    maxWritesPerTransaction: Int,
-    offsetCommit: Option[OffsetCommit[F]],
   ): F[Transactional[F, S]] =
     for {
       _ <- new IllegalArgumentException(s"maxWritesPerTransaction must be positive, got $maxWritesPerTransaction")
@@ -135,7 +95,8 @@ object KafkaSnapshotWriteDatabase {
         transactionLock,
         pending,
         offsetToCommit,
-        offsetCommit,
+        inputTopicPartition,
+        groupMetadata,
       )
     } yield Transactional(
       writeDatabase  = apply(snapshotTopicPartition, partitionMapper, groupCommit.sendWrite),
@@ -144,9 +105,9 @@ object KafkaSnapshotWriteDatabase {
 
   /** The group-commit machinery backing [[transactional]]: a snapshot write (or an offset-commit marker) enqueues into
     * `pending` and competes for `transactionLock`; the leader drains the queue into one transaction and delivers its
-    * shared outcome to every drained item. When `offsetCommit` is set, every transaction also commits the latest
-    * scheduled input offset via `sendOffsetsToTransaction`, so the snapshot writes in that transaction are gated by the
-    * consumer generation too. See `docs/kafka-single-writer-design.md`.
+    * shared outcome to every drained item. Every transaction also commits the latest scheduled input offset via
+    * `sendOffsetsToTransaction`, so the snapshot writes in that transaction are gated by the consumer generation too.
+    * See `docs/kafka-single-writer-design.md`.
     */
   private final class GroupCommit[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
     snapshotTopicPartition: TopicPartition,
@@ -155,7 +116,8 @@ object KafkaSnapshotWriteDatabase {
     transactionLock: Semaphore[F],
     pending: Queue[F, Pending[F, S]],
     offsetToCommit: Ref[F, Option[Offset]],
-    offsetCommit: Option[OffsetCommit[F]],
+    inputTopicPartition: TopicPartition,
+    groupMetadata: F[ConsumerGroupMetadata],
   ) {
 
     // best-effort
@@ -166,24 +128,22 @@ object KafkaSnapshotWriteDatabase {
       if (isFenced(e)) key.fold(e)(k => KafkaSnapshotWriteConflict(k, snapshotTopicPartition, e)) else e
 
     // commits the latest scheduled offset within the open transaction; the generation in groupMetadata fences a stale
-    // owner (KIP-447). No-op when offset binding is disabled or nothing has been scheduled yet.
+    // owner (KIP-447). No-op until an offset has been scheduled, or before the consumer has joined a group.
     private def commitOffsets: F[Unit] =
-      offsetCommit.traverse_ { oc =>
-        offsetToCommit.get.flatMap {
-          case None => ().pure[F]
-          case Some(offset) =>
-            oc.groupMetadata.flatMap {
-              // before the consumer has joined a group there is no generation to fence by - only epoch fencing
-              // applies. This window does not occur in normal operation: a partition is processed only after it is
-              // assigned, by which point the group metadata is set.
-              case ConsumerGroupMetadata.Empty => ().pure[F]
-              case meta =>
-                producer.sendOffsetsToTransaction(
-                  NonEmptyMap.of(oc.inputTopicPartition -> OffsetAndMetadata(offset)),
-                  meta,
-                )
-            }
-        }
+      offsetToCommit.get.flatMap {
+        case None => ().pure[F]
+        case Some(offset) =>
+          groupMetadata.flatMap {
+            // before the consumer has joined a group there is no generation to fence by - only epoch fencing applies.
+            // This window does not occur in normal operation: a partition is processed only after it is assigned, by
+            // which point the group metadata is set.
+            case ConsumerGroupMetadata.Empty => ().pure[F]
+            case meta =>
+              producer.sendOffsetsToTransaction(
+                NonEmptyMap.of(inputTopicPartition -> OffsetAndMetadata(offset)),
+                meta,
+              )
+          }
       }
 
     private def commitBatch(poll: Poll[F], batch: List[Pending[F, S]]): F[Unit] = {
