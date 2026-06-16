@@ -1,16 +1,21 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
 import cats.Parallel
-import cats.effect.{Concurrent, Resource}
+import cats.effect.{Async, Concurrent, Resource}
 import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.FlowMetrics
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerGroupMetadata, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerOf}
 import com.evolutiongaming.skafka.*
 
-/** Convenience factory trait to create an instance of [[KafkaPersistenceModule]] for an assigned partition */
+/** Convenience factory trait to create an instance of [[KafkaPersistenceModule]] for an assigned partition.
+  *
+  * @param assignedAt
+  *   the offset the partition was assigned at; the transactional module seeds it as the initial offset-to-commit so the
+  *   first snapshot write is generation-gated (ignored by the non-transactional caching module)
+  */
 trait KafkaPersistenceModuleOf[F[_], S] {
-  def make(partition: Partition): Resource[F, KafkaPersistenceModule[F, S]]
+  def make(partition: Partition, assignedAt: Offset): Resource[F, KafkaPersistenceModule[F, S]]
 }
 
 object KafkaPersistenceModuleOf {
@@ -43,14 +48,16 @@ object KafkaPersistenceModuleOf {
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
-    override def make(partition: Partition): Resource[F, KafkaPersistenceModule[F, S]] = KafkaPersistenceModule.caching(
-      consumerOf             = consumerOf,
-      producer               = producer,
-      consumerConfig         = consumerConfig,
-      snapshotTopicPartition = TopicPartition(snapshotTopic, partition),
-      metrics                = metrics,
-      partitionMapper        = partitionMapper,
-    )
+    // assignedAt is unused: the non-transactional caching module does not commit offsets through a producer
+    override def make(partition: Partition, assignedAt: Offset): Resource[F, KafkaPersistenceModule[F, S]] =
+      KafkaPersistenceModule.caching(
+        consumerOf             = consumerOf,
+        producer               = producer,
+        consumerConfig         = consumerConfig,
+        snapshotTopicPartition = TopicPartition(snapshotTopic, partition),
+        metrics                = metrics,
+        partitionMapper        = partitionMapper,
+      )
   }
 
   def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
@@ -78,7 +85,7 @@ object KafkaPersistenceModuleOf {
     *   reads the current consumer group metadata of the SAME consumer that drives this flow (use
     *   `Consumer.groupMetadata`); the generation it carries is what fences a stale owner (KIP-447)
     */
-  def cachingTransactional[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
     config: KafkaPersistenceModule.TransactionalConfig,
@@ -97,7 +104,7 @@ object KafkaPersistenceModuleOf {
       s"maxWritesPerTransaction must be positive, got ${config.maxWritesPerTransaction}",
     )
 
-    override def make(partition: Partition): Resource[F, KafkaPersistenceModule[F, S]] =
+    override def make(partition: Partition, assignedAt: Offset): Resource[F, KafkaPersistenceModule[F, S]] =
       KafkaPersistenceModule.cachingTransactional(
         consumerOf             = consumerOf,
         producerOf             = producerOf,
@@ -105,6 +112,7 @@ object KafkaPersistenceModuleOf {
         snapshotTopicPartition = TopicPartition(snapshotTopic, partition),
         inputTopic             = inputTopic,
         groupMetadata          = groupMetadata,
+        assignedAt             = assignedAt,
         metrics                = metrics,
       )
   }

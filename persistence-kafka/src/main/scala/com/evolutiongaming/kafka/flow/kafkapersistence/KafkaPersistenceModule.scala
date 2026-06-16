@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
 import cats.Parallel
-import cats.effect.{Concurrent, Resource}
+import cats.effect.{Async, Concurrent, Resource}
 import cats.syntax.all.*
 import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.{FromTry, LogOf, Runtime}
@@ -13,7 +13,7 @@ import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotWriteD
 import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey}
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerGroupMetadata, ConsumerOf, IsolationLevel}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf}
-import com.evolutiongaming.skafka.{FromBytes, ToBytes, Topic, TopicPartition}
+import com.evolutiongaming.skafka.{FromBytes, Offset, ToBytes, Topic, TopicPartition}
 import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
@@ -160,13 +160,14 @@ object KafkaPersistenceModule {
     *   transactional snapshot settings (consumer/producer config, `transactional.id` prefix, batch cap); see
     *   [[TransactionalConfig]]
     */
-  def cachingTransactional[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
     config: TransactionalConfig,
     snapshotTopicPartition: TopicPartition,
     inputTopic: Topic,
     groupMetadata: F[ConsumerGroupMetadata],
+    assignedAt: Offset,
     metrics: FlowMetrics[F] = FlowMetrics.empty[F],
   )(
     implicit fromBytesKey: FromBytes[F, String],
@@ -176,22 +177,25 @@ object KafkaPersistenceModule {
     implicit val fromTry: FromTry[F] = FromTry.lift
     import config.{consumerConfig, maxWritesPerTransaction, producerConfig, transactionalIdPrefix}
 
-    val transactionalId = s"$transactionalIdPrefix-${snapshotTopicPartition.partition.value}"
-    val transactionalProducerConfig = producerConfig.copy(
-      transactionalId = transactionalId.some,
-      idempotence     = true,
-      common = producerConfig
-        .common
-        .copy(clientId = producerConfig.common.clientId.map(cid => s"$cid-snapshot-$transactionalId"))
-    )
     // offsets are committed for the input partition with the same number as the assigned (snapshot) partition - the
     // mode forces the identity mapping
     val inputTopicPartition = TopicPartition(inputTopic, snapshotTopicPartition.partition)
 
     for {
+      // unique per producer instance: stale writers are fenced by the consumer generation (KIP-447), not by this id,
+      // so a fresh id per assignment is correct and avoids any cross-owner epoch fencing. The prefix is just a label.
+      uuid <- Resource.eval(Async[F].delay(java.util.UUID.randomUUID().toString))
+      transactionalId = s"$transactionalIdPrefix-${snapshotTopicPartition.partition.value}-$uuid"
+      transactionalProducerConfig = producerConfig.copy(
+        transactionalId = transactionalId.some,
+        idempotence     = true,
+        common = producerConfig
+          .common
+          .copy(clientId = producerConfig.common.clientId.map(cid => s"$cid-snapshot-$transactionalId"))
+      )
       producer <- producerOf(transactionalProducerConfig)
-      // required to use transactions; also bumps the producer epoch (incidental fencing). The real guard is the
-      // per-transaction offset commit fenced by the consumer generation (see KafkaSnapshotWriteDatabase.transactional)
+      // required to use transactions; the guard is the per-transaction offset commit fenced by the consumer
+      // generation (see KafkaSnapshotWriteDatabase.transactional), seeded so even the first flush is gated
       _ <- Resource.eval(producer.initTransactions)
       transactional <- Resource.eval(
         KafkaSnapshotWriteDatabase.transactional[F, S](
@@ -199,6 +203,7 @@ object KafkaPersistenceModule {
           producer                = producer,
           inputTopicPartition     = inputTopicPartition,
           groupMetadata           = groupMetadata,
+          assignedOffset          = assignedAt,
           maxWritesPerTransaction = maxWritesPerTransaction,
         )
       )

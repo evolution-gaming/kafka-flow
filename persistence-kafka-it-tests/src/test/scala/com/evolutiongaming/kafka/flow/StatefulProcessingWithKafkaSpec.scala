@@ -22,7 +22,7 @@ import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf, ConsumerRecord}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf, ProducerRecord, RecordMetadata}
-import com.evolutiongaming.skafka.{Bytes, CommonConfig, Partition}
+import com.evolutiongaming.skafka.{Bytes, CommonConfig, Offset, Partition}
 import play.api.libs.json.{JsResultException, Json, OFormat}
 import scodec.bits.ByteVector
 
@@ -73,7 +73,7 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
 
   private val inMemoryPersistenceModuleOf: KafkaPersistenceModuleOf[IO, State] =
     new KafkaPersistenceModuleOf[IO, State] {
-      override def make(partition: Partition): Resource[IO, KafkaPersistenceModule[IO, State]] =
+      override def make(partition: Partition, assignedAt: Offset): Resource[IO, KafkaPersistenceModule[IO, State]] =
         Resource.pure(inMemoryPersistenceModule)
     }
 

@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow.kafkapersistence
 
 import cats.data.{NonEmptyList, NonEmptySet}
 import cats.effect.unsafe.IORuntime
-import cats.effect.{IO, Resource}
+import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
@@ -138,7 +138,8 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     * Returns (result of A's release, snapshot store content after A's release).
     */
   private def staleFlushScenario(
-    moduleOf: KafkaPersistenceModuleOf[IO, String],
+    moduleOfA: KafkaPersistenceModuleOf[IO, String],
+    moduleOfB: KafkaPersistenceModuleOf[IO, String],
     stateTopic: String,
     key: String,
   ): IO[(Either[Throwable, Unit], BytesByKey)] = {
@@ -147,17 +148,17 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     val eventsA    = (1 to 5).toList.map(i => s"e$i")
     val eventsB    = (1 to 10).toList.map(i => s"e$i")
 
-    def allocateFlow: IO[(PartitionFlow[IO], IO[Unit])] =
+    def allocateFlow(moduleOf: KafkaPersistenceModuleOf[IO, String]): IO[(PartitionFlow[IO], IO[Unit])] =
       flowOf(moduleOf, flushOnRevokeOnly).flatMap(_.apply(tp, Offset.min, ScheduleCommit.empty[IO]).allocated)
 
     for {
       _ <- createTopic(stateTopic, 1)
       // the previous owner: folds events, snapshots stay buffered in memory
-      flowA             <- allocateFlow
+      flowA             <- allocateFlow(moduleOfA)
       (flowA_, releaseA) = flowA
       _                 <- flowA_(inputRecords(inputTopic, key, eventsA))
       // the new owner: eagerly recovers (finds nothing), folds all events, flushes on release
-      flowB             <- allocateFlow
+      flowB             <- allocateFlow(moduleOfB)
       (flowB_, releaseB) = flowB
       _                 <- flowB_(inputRecords(inputTopic, key, eventsB))
       _                 <- releaseB
@@ -185,7 +186,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
         consumerConfig = consumerConfig,
         snapshotTopic  = stateTopic,
       )
-      staleFlushScenario(moduleOf, stateTopic, key).map {
+      staleFlushScenario(moduleOf, moduleOf, stateTopic, key).map {
         case (staleFlush, stored) =>
           assertEquals(clue(staleFlush), Right(()))
           // recovery now returns the STALE snapshot (events 6..10 are lost although the new owner persisted them):
@@ -199,31 +200,36 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
 
   test("issue #732 prevention: stale flush-on-revoke is fenced (transactional)") {
     val stateTopic = "flow-732-tx-state-topic"
+    val inputTopic = s"input-$stateTopic"
+    val group      = s"$groupId-flush-on-revoke"
     val key        = "key1"
 
-    val moduleOf = KafkaPersistenceModuleOf.cachingTransactional[IO, String](
-      consumerOf = consumerOf,
-      producerOf = producerOf,
-      config = KafkaPersistenceModule.TransactionalConfig(
-        consumerConfig        = consumerConfig,
-        producerConfig        = producerConfig,
-        transactionalIdPrefix = s"$groupId-input-$stateTopic",
-      ),
-      snapshotTopic = stateTopic,
-      inputTopic    = s"input-$stateTopic",
-      // these tests simulate ownership overlap with two manually-created flows (no real consumer group), so they
-      // exercise producer-epoch fencing of snapshot writes; offset/generation binding is skipped while empty
-      groupMetadata = ConsumerGroupMetadata.Empty.pure[IO],
-    )
+    def moduleOf(gm: ConsumerGroupMetadata): KafkaPersistenceModuleOf[IO, String] =
+      KafkaPersistenceModuleOf.cachingTransactional[IO, String](
+        consumerOf = consumerOf,
+        producerOf = producerOf,
+        config = KafkaPersistenceModule.TransactionalConfig(
+          consumerConfig        = consumerConfig,
+          producerConfig        = producerConfig,
+          transactionalIdPrefix = s"$group-$inputTopic",
+        ),
+        snapshotTopic = stateTopic,
+        inputTopic    = inputTopic,
+        groupMetadata = IO.pure(gm),
+      )
 
-    val test = staleFlushScenario(moduleOf, stateTopic, key).map {
-      case (staleFlush, stored) =>
-        // the release itself succeeds: the rejected write surfaces as a logged-and-swallowed cache entry release
-        // error ("scache: failed to release cache entry: ... KafkaSnapshotWriteConflict"), which is the desired
-        // outcome for a partition that is being given away anyway
-        assertEquals(clue(staleFlush), Right(()))
-        // the protection: the stale write did not land, the new owner's snapshot survived
-        assertEquals(clue(stored.get(key)), utf8((1 to 10).map(i => s"e$i").mkString(",")))
+    // the previous owner (flow A) carries a stale generation; the new owner (flow B) carries the current one
+    val test = createTopic(inputTopic, 1) *> withJoinedConsumer(group, inputTopic) { current =>
+      val stale = current.copy(generationId = current.generationId - 1)
+      staleFlushScenario(moduleOf(stale), moduleOf(current), stateTopic, key).map {
+        case (staleFlush, stored) =>
+          // the release itself succeeds: the rejected write surfaces as a logged-and-swallowed cache entry release
+          // error ("scache: failed to release cache entry: ... KafkaSnapshotWriteConflict"), which is the desired
+          // outcome for a partition that is being given away anyway
+          assertEquals(clue(staleFlush), Right(()))
+          // the protection: the stale (older-generation) write did not land, the new owner's snapshot survived
+          assertEquals(clue(stored.get(key)), utf8((1 to 10).map(i => s"e$i").mkString(",")))
+      }
     }
 
     test.unsafeRunSync()
@@ -232,52 +238,50 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
   test("issue #732 prevention: a fenced stale writer fails fast on its next periodic flush (transactional)") {
     val stateTopic = "flow-732-tx-failfast-state-topic"
     val inputTopic = s"input-$stateTopic"
+    val group      = s"$groupId-failfast"
     val tp         = TopicPartition(inputTopic, Partition.min)
     val key        = "key1"
 
-    val moduleOf = KafkaPersistenceModuleOf.cachingTransactional[IO, String](
-      consumerOf = consumerOf,
-      producerOf = producerOf,
-      config = KafkaPersistenceModule.TransactionalConfig(
-        consumerConfig        = consumerConfig,
-        producerConfig        = producerConfig,
-        transactionalIdPrefix = s"$groupId-$inputTopic",
-      ),
-      snapshotTopic = stateTopic,
-      inputTopic    = inputTopic,
-      groupMetadata = ConsumerGroupMetadata.Empty.pure[IO],
-    )
-
-    // flush on every records application, so the fenced writer hits the conflict on its next poll cycle
-    def allocateEagerFlow: IO[(PartitionFlow[IO], IO[Unit])] =
-      flowOf(
-        moduleOf,
-        TimerFlowOf.persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds),
-        PartitionFlowConfig(triggerTimersInterval     = 0.seconds),
-      ).flatMap(_.apply(tp, Offset.min, ScheduleCommit.empty[IO]).allocated)
-
-    val test = for {
-      _ <- createTopic(stateTopic, 1)
-      // the previous owner persists eagerly while it still owns the partition
-      flowA             <- allocateEagerFlow
-      (flowA_, releaseA) = flowA
-      _                 <- flowA_(inputRecords(inputTopic, key, List("e1", "e2", "e3")))
-      // the new owner appears: its module's initTransactions fences the previous owner
-      flowB        <- allocateEagerFlow
-      (_, releaseB) = flowB
-      // the previous owner, unaware, processes further records: the periodic flush must fail fast with the conflict
-      staleResult <- flowA_(
-        inputRecords(inputTopic, key, List("e1", "e2", "e3", "e4")).drop(3)
-      ).attempt
-      _ <- releaseB
-      _ <- releaseA.attempt // the fenced writer's flush-on-revoke error is logged and swallowed, see above
-    } yield staleResult match {
-      case Left(e) =>
-        assert(
-          clue(causeChain(e)).exists(_.isInstanceOf[KafkaSnapshotWriteConflict]),
-          s"expected KafkaSnapshotWriteConflict in the cause chain of $e",
-        )
-      case Right(()) => fail("expected the fenced writer's periodic flush to fail fast, but it succeeded")
+    // the owner starts current and persists fine; a rebalance then leaves it on a stale generation (simulated by
+    // flipping the metadata it reads), so its next flush is generation-fenced and fails fast
+    val test = createTopic(stateTopic, 1) *> createTopic(inputTopic, 1) *> withJoinedConsumer(group, inputTopic) {
+      current =>
+        for {
+          gmRef <- Ref.of[IO, ConsumerGroupMetadata](current)
+          moduleOf = KafkaPersistenceModuleOf.cachingTransactional[IO, String](
+            consumerOf = consumerOf,
+            producerOf = producerOf,
+            config = KafkaPersistenceModule.TransactionalConfig(
+              consumerConfig        = consumerConfig,
+              producerConfig        = producerConfig,
+              transactionalIdPrefix = s"$group-$inputTopic",
+            ),
+            snapshotTopic = stateTopic,
+            inputTopic    = inputTopic,
+            groupMetadata = gmRef.get,
+          )
+          // flush on every records application, so the writer hits the conflict on its next poll cycle
+          flow <- flowOf(
+            moduleOf,
+            TimerFlowOf.persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds),
+            PartitionFlowConfig(triggerTimersInterval = 0.seconds),
+          ).flatMap(_.apply(tp, Offset.min, ScheduleCommit.empty[IO]).allocated)
+          (flow_, release) = flow
+          // persists fine while the generation is current
+          _ <- flow_(inputRecords(inputTopic, key, List("e1", "e2", "e3")))
+          // the partition is reassigned: the owner's captured generation is now stale
+          _ <- gmRef.set(current.copy(generationId = current.generationId - 1))
+          // the next periodic flush must fail fast with the conflict
+          staleResult <- flow_(inputRecords(inputTopic, key, List("e1", "e2", "e3", "e4")).drop(3)).attempt
+          _           <- release.attempt // the fenced writer's flush-on-revoke error is logged and swallowed
+        } yield staleResult match {
+          case Left(e) =>
+            assert(
+              clue(causeChain(e)).exists(_.isInstanceOf[KafkaSnapshotWriteConflict]),
+              s"expected KafkaSnapshotWriteConflict in the cause chain of $e",
+            )
+          case Right(()) => fail("expected the fenced writer's periodic flush to fail fast, but it succeeded")
+        }
     }
 
     test.unsafeRunSync()
@@ -322,6 +326,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
               producer               = producer,
               inputTopicPartition    = tp,
               groupMetadata          = IO.pure(stale),
+              assignedOffset         = Offset.min,
             )
             attempt <- tx.scheduleCommit.schedule(Offset.unsafe(5)).attempt
           } yield attempt
@@ -352,6 +357,62 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     test.unsafeRunSync()
   }
 
+  test("issue #732 prevention: a stale writer's very first snapshot flush is generation-gated by the seeded offset") {
+    val stateTopic = "flow-732-tx-none-window-state-topic"
+    val inputTopic = s"input-$stateTopic"
+    val group      = s"$groupId-none-window"
+    val tp         = TopicPartition(inputTopic, Partition.min)
+    val key        = KafkaKey(appId, groupId, tp, "key1")
+
+    val test = for {
+      _ <- createTopic(stateTopic, 1)
+      _ <- createTopic(inputTopic, 1)
+      result <- withJoinedConsumer(group, inputTopic) { current =>
+        val stale = current.copy(generationId = current.generationId - 1)
+        transactionalProducer(s"$group-tx").use { producer =>
+          for {
+            _ <- producer.initTransactions
+            tx <- KafkaSnapshotWriteDatabase.transactional[IO, String](
+              snapshotTopicPartition = TopicPartition(stateTopic, Partition.min),
+              producer               = producer,
+              inputTopicPartition    = tp,
+              groupMetadata          = IO.pure(stale),
+              // seeded: so even the FIRST write (below, with no prior scheduleCommit) carries the offset and is
+              // generation-gated. Without the seed this would be the ungated "None window" and the stale write
+              // would land.
+              assignedOffset = Offset.unsafe(3),
+            )
+            // the very first write, no scheduleCommit beforehand - relies entirely on the seed for gating
+            attempt <- tx.writeDatabase.persist(key, "stale-state").attempt
+          } yield attempt
+        }
+      }
+      stored <- readSnapshots(stateTopic)
+    } yield {
+      result match {
+        case Left(e) =>
+          val keywords = List("generation", "epoch", "fenced", "rebalanced")
+          val chain    = causeChain(e)
+          val fenced = chain.exists(c =>
+            c.isInstanceOf[KafkaSnapshotWriteConflict] ||
+              c.isInstanceOf[org.apache.kafka.clients.consumer.CommitFailedException] ||
+              c.isInstanceOf[org.apache.kafka.common.errors.ProducerFencedException] ||
+              c.isInstanceOf[org.apache.kafka.common.errors.InvalidProducerEpochException]
+          ) || chain.exists(c => Option(c.getMessage).map(_.toLowerCase).exists(m => keywords.exists(m.contains)))
+          assert(
+            fenced,
+            s"expected the stale first flush to be generation-fenced, got ${chain.map(_.getClass.getName)}: ${chain.map(_.getMessage)}",
+          )
+        case Right(()) =>
+          fail("expected the stale writer's first (seeded) flush to be generation-fenced, but it landed")
+      }
+      // the stale first flush did not land
+      assertEquals(clue(stored), BytesByKey.empty)
+    }
+
+    test.unsafeRunSync()
+  }
+
   // the assertions cover safety (all writes land), not grouping - grouping is opportunistic and its effect is
   // demonstrated by TransactionalWriteThroughputSpec; also exercised with maxWritesPerTransaction = 1, where the
   // group commit degenerates to a transaction per write
@@ -375,6 +436,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
             producer                = producer,
             inputTopicPartition     = TopicPartition(s"input-$stateTopic", Partition.min),
             groupMetadata           = IO.pure(ConsumerGroupMetadata.Empty),
+            assignedOffset          = Offset.min,
             maxWritesPerTransaction = maxWritesPerTransaction,
           )
           .map(_.writeDatabase)

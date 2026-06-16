@@ -145,29 +145,28 @@ commit into the same transaction as the snapshot writes: each transaction calls
 `sendOffsetsToTransaction` with the driving consumer's group metadata, so the broker rejects a commit
 from a stale consumer **generation** (KIP-447) and aborts the whole transaction. A stale owner can
 therefore neither advance offsets nor overwrite a newer snapshot; the rejected write surfaces as
-`KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict`. This is the mechanism that closes #732
-("solution 1"). Writes run group committed under concurrency (see the
+`KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict`. The offset-to-commit is **seeded** with the
+partition's assigned offset, so even the first flush carries an offset and is generation-gated — there
+is no ungated window, and generation fencing is the **sole, complete** guard for #732 ("solution 1").
+Writes run group committed under concurrency (see the
 [design doc](kafka-single-writer-design.md#write-path-group-committed-transactions)), and recovery
 reads the snapshot topic with `read_committed`, so the aborted records of a fenced writer are never
 observed.
 
 In this mode offsets are committed through the producer, not the consumer. It requires the
 `inputTopic` and a reader of the driving consumer's group metadata (`groupMetadata =
-consumer.groupMetadata`); offset binding activates once the consumer has joined the group.
-Output-topic produces stay outside the transaction, so output remains at-least-once (duplicates
-possible after a replay) — this is corruption prevention, not exactly-once. See the
+consumer.groupMetadata`). Output-topic produces stay outside the transaction, so output remains
+at-least-once (duplicates possible after a replay) — this is corruption prevention, not exactly-once.
+See the
 [design doc](kafka-single-writer-design.md#mechanism-transactional-write-and-offset-commit-generation-fencing)
 for details.
 
-`initTransactions` also bumps the producer epoch, fencing a previous producer with the same
-`transactional.id` — incidental defense-in-depth, not the primary guard. So the
-`transactionalIdPrefix` is **not** a correctness setting: a non-stable or colliding prefix cannot
-reintroduce #732. It must still uniquely identify the snapshot-writing flow, though: a prefix shared
-by two genuinely concurrent writers would make them epoch-fence each other — a *liveness* problem
-(repeated spurious `KafkaSnapshotWriteConflict`), not corruption — and it should be stable to bound
-transaction-coordinator state across restarts. `s"$groupId-$inputTopic"` is the right choice when
-there is one snapshot-writing flow per consumer group + input topic (the normal case); include the
-snapshot topic as well if an app runs several flows over the same group and input topic.
+There is **no producer-epoch fencing**: each producer uses a unique-per-producer `transactional.id`,
+so old and new owners of a partition never share one and cannot fence each other (which also avoids
+ever false-positive-fencing the true owner). `transactionalIdPrefix` is therefore just a readable
+label — it has no stability or uniqueness contract and cannot affect correctness. (The trade-off is
+that a unique id is registered per assignment and expires via `transactional.id.expiration.ms`;
+acceptable at normal rebalance rates.)
 
 **Cost of enabling:** every snapshot write goes through a Kafka transaction (a few milliseconds
 against real brokers). The cost is driven by the *number* of transactions, not the byte volume.

@@ -89,41 +89,42 @@ sequenceDiagram
     Note over ST: newer snapshot survives
 ```
 
-Each assigned partition gets a transactional producer (`initTransactions`, then group-committed
-writes). Two supporting pieces are **orthogonal** to the fencing: the **group commit** (throughput
-only — see [Write path](#write-path-group-committed-transactions)) and **`read_committed` recovery**
-(hides the aborted records of a fenced writer).
+Each assigned partition gets a transactional producer with a unique-per-producer `transactional.id`
+(the id is just a label — generation fencing, not the id, is the guard; see below), which calls
+`initTransactions` and then group-commits its writes. With the offset seeded (below), **every** snapshot
+write — including the first — is generation-gated, so this is the **sole, complete** guard for #732.
+Two supporting pieces are **orthogonal** to the fencing: the **group commit** (throughput only — see
+[Write path](#write-path-group-committed-transactions)) and **`read_committed` recovery** (hides the
+aborted records of a fenced writer).
 
 | Decision | Rationale |
 |---|---|
 | Commit offsets through the producer, not the consumer | The generation check on `sendOffsetsToTransaction` is what ties the fence to ownership; a consumer-side commit is not part of the transaction and cannot gate the snapshot writes. In transactional mode the partition is therefore never `consumer.commit`-ed. |
 | Piggyback: every transaction carries the latest committable offset | Chosen over a commit-driven model (one transaction per partition per commit tick, Streams-style) to reuse the group commit and keep the per-key flush unchanged. The committable offset is the partition's min held-offset (only persisted state), so it is always ≤ what is durably written; attaching it to every transaction makes every snapshot write generation-gated. A `ScheduleCommit` also forces an (offset-only) transaction so progress and the final on-revoke offset are committed even with no writes pending. The switch to commit-driven stays local: the transaction packing lives in `GroupCommit`, the offset source in `ScheduleCommit`. |
-| Offset binding activates once the consumer has joined the group | Before the first rebalance there is no generation to fence by (only the incidental epoch fencing below applies); a partition is only processed after assignment, so this window does not occur in normal operation. |
+| Seed the offset-to-commit with the assigned offset | The first flush runs before the first commit tick schedules an offset, so it would otherwise carry no offset and be ungated (the "None window"). Seeding `offsetToCommit = assignedAt` at assignment makes even the first write generation-gated, so generation fencing has no hole and is the sole guard. Committing `assignedAt` is a no-op (it is the already-committed offset) and only ever ≤ the snapshot's state; by assignment time the consumer has joined, so its group metadata (generation) is available. |
 | Recovery forced to `read_committed` | A fenced writer's transaction is aborted, but its records sit in the log until compaction; `read_uncommitted` would resurrect them as valid snapshots. (`initTransactions` also waits out any open transaction of the previous incarnation, so the read-to-end target is exact.) |
 
 Wiring requires the input topic and a reader of the driving consumer's group metadata
 (`Consumer.groupMetadata`, captured on each rebalance on the poll thread). A fenced offset commit
 surfaces as `KafkaSnapshotWriteConflict` (see "How a rejection surfaces").
 
-### Producer-epoch fencing is incidental
+### No epoch fencing; the `transactional.id` is a throwaway label
 
-`initTransactions` is required to use transactions at all, and as a side effect it bumps the producer
-epoch for the partition's stable `transactional.id` of `"{prefix}-{partition}"`, fencing a previous
-producer with the same id. This is **not** what closes #732. Epoch fencing is only *mutual
-exclusion*, and the epoch is allocated in `initTransactions` **arrival order** at the coordinator —
-independent of consumer-group **assignment order** — so under overlapping rebalances a delayed
-`initTransactions` from a stale owner can land a *higher* epoch than the true new owner and fence it.
-Generation fencing (above) is the load-bearing guarantee; epoch fencing remains only as cheap
-defense-in-depth, notably for the brief window before the first offset is scheduled / the consumer
-has joined, where no generation is available yet.
+With the seed, generation fencing is the **sole** mechanism — there is deliberately **no
+producer-epoch fencing**. Each producer uses a unique-per-producer `transactional.id`
+(`"{prefix}-{partition}-{uuid}"`), so old and new owners of a partition never share an id and cannot
+epoch-fence one another. `initTransactions` is still called — it is required to open transactions —
+but its epoch only ever fences the producer's own (non-existent) previous incarnation.
 
-Consequently the `transactional.id` is **not a correctness contract**: a non-stable or colliding
-prefix cannot reintroduce #732. It must still uniquely identify the snapshot-writing flow — a prefix
-shared by two genuinely concurrent writers makes them epoch-fence each other, a *liveness* problem
-(repeated spurious `KafkaSnapshotWriteConflict`), not corruption — and it should be stable to bound
-transaction-coordinator state across restarts. Within a single consumer group a partition has one
-owner at a time, so `s"$groupId-$inputTopic"` is a good choice when there is one snapshot-writing flow
-per group + input topic (include the snapshot topic too if an app runs several over the same pair).
+This is a deliberate choice over a *stable* per-partition id. A stable id would add cross-owner epoch
+fencing, but that is (a) redundant once generation fencing is complete, and (b) actively harmful: the
+epoch is allocated in `initTransactions` **arrival order**, independent of consumer-group **assignment
+order**, so a slow stale owner that inits late can hold the *winning* epoch and **false-positive-fence
+the true owner** (a liveness hit) — and in the first-flush window it could even let a stale write
+through. Generation fencing has neither problem: it tracks ownership directly. The price of unique ids
+is transaction-coordinator state (one id per assignment, expiring via `transactional.id.expiration.ms`),
+accepted at normal rebalance rates. `transactionalIdPrefix` survives only as a readable label /
+clientId component, with no stability or uniqueness contract.
 
 ### Write path: group-committed transactions
 
@@ -303,9 +304,10 @@ variance behind the caveat above.
   burst × snapshot size, unprotected against the coordinator timeout abort.
 - **Background committer fiber**: see the design table — liveness dependency on a supervised
   worker.
-- **Producer-epoch fencing alone (no offset commit)**: only mutual exclusion, and the epoch order can
-  diverge from ownership order (see "Producer-epoch fencing is incidental") — does not fully close
-  #732. It survives here only as incidental defense-in-depth.
+- **Producer-epoch fencing (stable per-partition `transactional.id`)**: only mutual exclusion, and the
+  epoch order can diverge from ownership order (see "No epoch fencing; the `transactional.id` is a
+  throwaway label") — does not fully close #732 and can false-positive-fence the true owner. Dropped
+  in favour of generation fencing + the seed; the id is now unique-per-producer.
 - **Transactional *output* produces (full exactly-once)**: see non-goals. We bind the input-offset
   commit into the snapshot transaction (`sendOffsetsToTransaction`) for ownership fencing, but leave
   output produces outside the transaction, so output stays at-least-once.

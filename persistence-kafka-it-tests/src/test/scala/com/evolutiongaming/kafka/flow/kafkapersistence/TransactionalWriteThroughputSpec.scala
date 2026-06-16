@@ -15,7 +15,7 @@ import com.evolutiongaming.skafka.consumer.{
   IsolationLevel
 }
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf}
-import com.evolutiongaming.skafka.{CommonConfig, Partition, TopicPartition}
+import com.evolutiongaming.skafka.{CommonConfig, Offset, Partition, TopicPartition}
 
 import scala.concurrent.duration.*
 
@@ -163,6 +163,7 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
                 producer                = producer,
                 inputTopicPartition     = TopicPartition(s"input-$stateTopic", Partition.min),
                 groupMetadata           = IO.pure(ConsumerGroupMetadata.Empty),
+                assignedOffset          = Offset.min,
                 maxWritesPerTransaction = maxWritesPerTransaction,
               )
               .map(_.writeDatabase)
@@ -238,6 +239,7 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
               producer               = producer,
               inputTopicPartition    = TopicPartition(s"input-$txTopic", Partition.min),
               groupMetadata          = IO.pure(ConsumerGroupMetadata.Empty),
+              assignedOffset         = Offset.min,
             )
             .map(_.writeDatabase)
           _          <- database.persist(kafkaKey(txTopic, "warm-up"), "warm-up")

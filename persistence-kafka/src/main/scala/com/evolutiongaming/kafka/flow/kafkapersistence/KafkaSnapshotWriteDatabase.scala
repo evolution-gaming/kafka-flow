@@ -68,6 +68,10 @@ object KafkaSnapshotWriteDatabase {
     *   the input topic-partition whose offset is committed (distinct from the snapshot topic-partition)
     * @param groupMetadata
     *   reads the current consumer group metadata (generation); see `Consumer.groupMetadata`
+    * @param assignedOffset
+    *   the partition's assigned (committed) offset; the offset-to-commit is seeded with it so the very first snapshot
+    *   write already carries `sendOffsetsToTransaction` and is generation-gated (no ungated first-flush window).
+    *   Committing it is a no-op (it is the already-committed offset) and never ahead of the snapshot's state.
     * @param maxWritesPerTransaction
     *   upper bound of writes per transaction, to keep its duration below `transaction.timeout.ms` (the coordinator
     *   aborts a transaction that exceeds it). Transaction bytes scale with this times the snapshot size: lower it for
@@ -78,6 +82,7 @@ object KafkaSnapshotWriteDatabase {
     producer: Producer[F],
     inputTopicPartition: TopicPartition,
     groupMetadata: F[ConsumerGroupMetadata],
+    assignedOffset: Offset,
     partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
     maxWritesPerTransaction: Int                     = DefaultMaxWritesPerTransaction,
   ): F[Transactional[F, S]] =
@@ -87,7 +92,8 @@ object KafkaSnapshotWriteDatabase {
         .whenA(maxWritesPerTransaction < 1)
       transactionLock <- Semaphore[F](1)
       pending         <- Queue.unbounded[F, Pending[F, S]]
-      offsetToCommit  <- Ref[F].of(none[Offset])
+      // seed with the assigned offset so the first flush is generation-gated (closes the "None window")
+      offsetToCommit <- Ref[F].of(assignedOffset.some)
       groupCommit = new GroupCommit(
         snapshotTopicPartition,
         producer,
