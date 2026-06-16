@@ -118,10 +118,12 @@ defense-in-depth, notably for the brief window before the first offset is schedu
 has joined, where no generation is available yet.
 
 Consequently the `transactional.id` is **not a correctness contract**: a non-stable or colliding
-prefix cannot reintroduce #732. It matters only operationally — keep it stable to bound
-transaction-coordinator state across restarts, and unique per consumer group + input topic + snapshot
-topic to avoid unrelated writers needlessly epoch-fencing each other. `s"$groupId-$inputTopic"` is a
-good choice.
+prefix cannot reintroduce #732. It must still uniquely identify the snapshot-writing flow — a prefix
+shared by two genuinely concurrent writers makes them epoch-fence each other, a *liveness* problem
+(repeated spurious `KafkaSnapshotWriteConflict`), not corruption — and it should be stable to bound
+transaction-coordinator state across restarts. Within a single consumer group a partition has one
+owner at a time, so `s"$groupId-$inputTopic"` is a good choice when there is one snapshot-writing flow
+per group + input topic (include the snapshot topic too if an app runs several over the same pair).
 
 ### Write path: group-committed transactions
 

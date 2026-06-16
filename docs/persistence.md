@@ -162,9 +162,12 @@ for details.
 `initTransactions` also bumps the producer epoch, fencing a previous producer with the same
 `transactional.id` — incidental defense-in-depth, not the primary guard. So the
 `transactionalIdPrefix` is **not** a correctness setting: a non-stable or colliding prefix cannot
-reintroduce #732. Keep it stable to bound transaction-coordinator state across restarts, and unique
-per consumer group + input topic + snapshot topic to avoid unrelated writers needlessly epoch-fencing
-each other. A good choice is `s"$groupId-$inputTopic"`.
+reintroduce #732. It must still uniquely identify the snapshot-writing flow, though: a prefix shared
+by two genuinely concurrent writers would make them epoch-fence each other — a *liveness* problem
+(repeated spurious `KafkaSnapshotWriteConflict`), not corruption — and it should be stable to bound
+transaction-coordinator state across restarts. `s"$groupId-$inputTopic"` is the right choice when
+there is one snapshot-writing flow per consumer group + input topic (the normal case); include the
+snapshot topic as well if an app runs several flows over the same group and input topic.
 
 **Cost of enabling:** every snapshot write goes through a Kafka transaction (a few milliseconds
 against real brokers). The cost is driven by the *number* of transactions, not the byte volume.

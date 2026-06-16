@@ -42,10 +42,13 @@ object KafkaPersistenceModule {
     *   `clientId` is suffixed per partition
     * @param transactionalIdPrefix
     *   prefix for `transactional.id` (the partition number is appended). Stale writers are fenced by the consumer
-    *   generation (see [[cachingTransactional]]), not by this id, so a non-stable or colliding prefix no longer risks
-    *   corruption - it only matters operationally: keep it stable to bound transaction-coordinator state across
-    *   restarts, and unique per consumer group + input topic + snapshot topic to avoid unrelated writers needlessly
-    *   epoch-fencing each other. A good choice is `s"$groupId-$inputTopic"`.
+    *   generation (see [[cachingTransactional]]), not by this id, so a non-stable or colliding prefix cannot cause
+    *   #732 corruption. It must still uniquely identify the snapshot-writing flow: a prefix shared by two genuinely
+    *   concurrent writers would make them epoch-fence each other (a liveness problem - repeated spurious
+    *   `KafkaSnapshotWriteConflict` - not corruption), and it should be stable to bound transaction-coordinator state
+    *   across restarts. `s"$groupId-$inputTopic"` is the right choice when there is one snapshot-writing flow per
+    *   consumer group + input topic (the normal case); include the snapshot topic too if an app runs several flows over
+    *   the same group and input topic.
     * @param maxWritesPerTransaction
     *   upper bound of snapshot writes group committed in one transaction, see
     *   [[KafkaSnapshotWriteDatabase.transactional]] for the trade-off
