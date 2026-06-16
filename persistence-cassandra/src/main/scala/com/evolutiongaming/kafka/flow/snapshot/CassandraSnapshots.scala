@@ -133,14 +133,7 @@ object CassandraSnapshots {
 
   /** Raised in compare-and-set mode (see [[CassandraSnapshots.withSchema]]) when the store already contains a newer
     * snapshot for the key - another writer (likely the new partition owner after a rebalance) persisted in parallel, so
-    * this writer is stale.
-    *
-    * @param key
-    *   key for which the conflict was detected
-    * @param attemptedOffset
-    *   offset of the snapshot that was attempted to be persisted
-    * @param persistedOffset
-    *   offset of the snapshot found in the store, if it could be determined
+    * this writer is stale. `persistedOffset` is the stored offset, if it could be determined.
     */
   final case class SnapshotWriteConflict(
     key: KafkaKey,
@@ -167,9 +160,9 @@ object CassandraSnapshots {
     *   optional TTL to set on inserted records
     * @param compareAndSet
     *   if `true`, each snapshot write is a Cassandra lightweight transaction asserting the stored offset is not greater
-    *   than the new one, protecting from stale writers (https://github.com/evolution-gaming/kafka-flow/issues/732); a
-    *   rejected write fails with [[SnapshotWriteConflict]]. See the persistence docs' "Single-writer guarantees" for
-    *   limitations and costs. Default `false` (last write wins).
+    *   than the new one, protecting from stale writers; a rejected write fails with [[SnapshotWriteConflict]]. See the
+    *   persistence docs' "Protecting against stale snapshot writes" for limitations and costs. Default `false` (last
+    *   write wins).
     * @param fromBytes
     *   deserializer function to convert array of bytes to the snapshot type T
     * @param toBytes

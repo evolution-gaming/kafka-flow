@@ -70,7 +70,7 @@ object KafkaModule {
             )
           ) evalMap { consumer =>
             LogOf[F].apply(Consumer.getClass) flatMap { log =>
-              Consumer(consumer.withLogging(log))
+              Consumer.of[F](consumer.withLogging(log))
             }
           }
       }

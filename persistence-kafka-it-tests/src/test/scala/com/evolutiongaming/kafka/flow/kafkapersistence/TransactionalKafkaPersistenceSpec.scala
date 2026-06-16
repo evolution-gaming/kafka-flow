@@ -6,7 +6,6 @@ import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
-import com.evolutiongaming.kafka.flow.kafkapersistence.KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
@@ -30,6 +29,7 @@ import com.evolutiongaming.skafka.consumer.{
 }
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf, ProducerRecord}
 import com.evolutiongaming.skafka.{CommonConfig, Offset, Partition, TopicPartition}
+import org.apache.kafka.clients.consumer.CommitFailedException
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.*
@@ -211,9 +211,9 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
           consumerConfig        = consumerConfig,
           producerConfig        = producerConfig,
           transactionalIdPrefix = s"$group-$inputTopic",
+          snapshotTopic         = stateTopic,
+          inputTopic            = inputTopic,
         ),
-        snapshotTopic = stateTopic,
-        inputTopic    = inputTopic,
         groupMetadata = IO.pure(gm.some),
       )
 
@@ -223,7 +223,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
       staleFlushScenario(moduleOf(stale), moduleOf(current), stateTopic, key).map {
         case (staleFlush, stored) =>
           // the release itself succeeds: the rejected write surfaces as a logged-and-swallowed cache entry release
-          // error ("scache: failed to release cache entry: ... KafkaSnapshotWriteConflict"), which is the desired
+          // error ("scache: failed to release cache entry: ... CommitFailedException"), which is the desired
           // outcome for a partition that is being given away anyway
           assertEquals(clue(staleFlush), Right(()))
           // the protection: the stale (older-generation) write did not land, the new owner's snapshot survived
@@ -254,9 +254,9 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
               consumerConfig        = consumerConfig,
               producerConfig        = producerConfig,
               transactionalIdPrefix = s"$group-$inputTopic",
+              snapshotTopic         = stateTopic,
+              inputTopic            = inputTopic,
             ),
-            snapshotTopic = stateTopic,
-            inputTopic    = inputTopic,
             groupMetadata = gmRef.get.map(_.some),
           )
           // flush on every records application, so the writer hits the conflict on its next poll cycle
@@ -276,8 +276,8 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
         } yield staleResult match {
           case Left(e) =>
             assert(
-              clue(causeChain(e)).exists(_.isInstanceOf[KafkaSnapshotWriteConflict]),
-              s"expected KafkaSnapshotWriteConflict in the cause chain of $e",
+              clue(causeChain(e)).exists(_.isInstanceOf[CommitFailedException]),
+              s"expected CommitFailedException in the cause chain of $e",
             )
           case Right(()) => fail("expected the fenced writer's periodic flush to fail fast, but it succeeded")
         }
@@ -317,17 +317,12 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     } yield {
       result match {
         case Left(e) =>
-          val chain    = causeChain(e)
-          val keywords = List("generation", "epoch", "fenced", "rebalanced")
-          val fenced = chain.exists(c =>
-            c.isInstanceOf[KafkaSnapshotWriteConflict] ||
-              c.isInstanceOf[org.apache.kafka.clients.consumer.CommitFailedException] ||
-              c.isInstanceOf[org.apache.kafka.common.errors.ProducerFencedException] ||
-              c.isInstanceOf[org.apache.kafka.common.errors.InvalidProducerEpochException]
-          ) || chain.exists(c => Option(c.getMessage).map(_.toLowerCase).exists(m => keywords.exists(m.contains)))
+          // the stale generation is rejected on sendOffsetsToTransaction with CommitFailedException
+          val chain = causeChain(e)
           assert(
-            fenced,
-            s"expected a generation/fencing rejection, got ${chain.map(_.getClass.getName)}: ${chain.map(_.getMessage)}",
+            chain.exists(_.isInstanceOf[CommitFailedException]),
+            s"expected CommitFailedException in the cause chain, " +
+              s"got ${chain.map(_.getClass.getName)}: ${chain.map(_.getMessage)}",
           )
         case Right(()) => fail("expected the stale-generation offset commit to be rejected, but it succeeded")
       }
@@ -372,18 +367,12 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     } yield {
       result match {
         case Left(e) =>
-          val keywords = List("generation", "epoch", "fenced", "rebalanced")
-          val chain    = causeChain(e)
-          val fenced = chain.exists(c =>
-            c.isInstanceOf[KafkaSnapshotWriteConflict] ||
-              c.isInstanceOf[org.apache.kafka.clients.consumer.CommitFailedException] ||
-              c.isInstanceOf[org.apache.kafka.common.errors.ProducerFencedException] ||
-              c.isInstanceOf[org.apache.kafka.common.errors.InvalidProducerEpochException]
-          ) || chain.exists(c => Option(c.getMessage).map(_.toLowerCase).exists(m => keywords.exists(m.contains)))
+          // even the first write carries the seeded offset, so the stale generation is rejected with CommitFailedException
+          val chain = causeChain(e)
           assert(
-            fenced,
-            s"expected the stale first flush to be generation-fenced, got ${chain.map(_.getClass.getName)}: ${chain
-                .map(_.getMessage)}",
+            chain.exists(_.isInstanceOf[CommitFailedException]),
+            s"expected the stale first flush to be generation-fenced (CommitFailedException), " +
+              s"got ${chain.map(_.getClass.getName)}: ${chain.map(_.getMessage)}",
           )
         case Right(()) =>
           fail("expected the stale writer's first (seeded) flush to be generation-fenced, but it landed")

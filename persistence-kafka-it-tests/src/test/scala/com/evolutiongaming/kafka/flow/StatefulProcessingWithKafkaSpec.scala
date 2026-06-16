@@ -151,9 +151,9 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
           ),
           producerConfig        = producerConfig,
           transactionalIdPrefix = s"$testGroupId-$inputTopic",
+          snapshotTopic         = stateTopic,
+          inputTopic            = inputTopic,
         ),
-        snapshotTopic = stateTopic,
-        inputTopic    = inputTopic,
         groupMetadata = consumer.groupMetadata,
       )
 

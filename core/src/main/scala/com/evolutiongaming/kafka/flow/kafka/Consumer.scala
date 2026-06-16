@@ -24,9 +24,8 @@ trait Consumer[F[_]] {
 
   def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit]
 
-  /** Last consumer group metadata observed on a rebalance (generation, member id). Needed to bind offset commits into a
-    * producer transaction so a stale owner is fenced by generation (KIP-447). `None` until the consumer has joined a
-    * group (i.e. until the first rebalance callback fires).
+  /** Last consumer group metadata observed on a rebalance, used to fence a stale owner by generation when binding
+    * offset commits into a producer transaction (KIP-447). `None` until the consumer has joined a group.
     */
   def groupMetadata: F[Option[ConsumerGroupMetadata]]
 
@@ -35,7 +34,7 @@ object Consumer {
 
   def apply[F[_]](implicit F: Consumer[F]): Consumer[F] = F
 
-  def apply[F[_]: Sync](
+  def of[F[_]: Sync](
     consumer: KafkaConsumer[F, String, ByteVector]
   ): F[Consumer[F]] =
     // capture the group metadata on each rebalance (on the poll thread, where it is safe to read) into a Ref so the

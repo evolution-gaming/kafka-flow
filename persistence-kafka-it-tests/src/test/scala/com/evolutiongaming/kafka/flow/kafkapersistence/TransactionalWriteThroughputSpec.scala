@@ -19,15 +19,10 @@ import com.evolutiongaming.skafka.{CommonConfig, Offset, Partition, TopicPartiti
 
 import scala.concurrent.duration.*
 
-/** Measures the cost of transactional snapshot writes for capacity planning: the per-transaction latency (a sequential
-  * write is one transaction), the effect of the group commit on a concurrent burst, and the burst cost at different
-  * `maxWritesPerTransaction` values - a flush burst of N dirty keys costs about N / maxWritesPerTransaction
-  * transactions on the poll path. Also demonstrates the failure mode motivating the cap: a transaction outliving
-  * `transaction.timeout.ms` is aborted by the coordinator.
-  *
-  * Each producer performs an untimed warm-up write before its measurement (first use pays metadata fetch and connection
-  * setup). Absolute numbers from a single-node testcontainers broker underestimate production latency (no network round
-  * trips, replication factor 1); the assertions are sanity-only.
+/** Measures the cost of transactional snapshot writes for capacity planning (numbers feed
+  * `docs/kafka-single-writer-design.md`) and demonstrates the failure mode motivating the cap: a transaction outliving
+  * `transaction.timeout.ms` is aborted by the coordinator. Single-node testcontainers numbers are a floor (no network,
+  * replication factor 1); the assertions are sanity-only.
   */
 class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
 

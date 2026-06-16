@@ -4,7 +4,7 @@ import cats.Monad
 import cats.data.NonEmptyMap
 import cats.effect.std.{Queue, Semaphore}
 import cats.effect.syntax.all.*
-import cats.effect.{Concurrent, Deferred, Poll, Ref}
+import cats.effect.{Concurrent, Deferred, Outcome, Poll, Ref}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.FromTry
 import com.evolutiongaming.kafka.flow.KafkaKey
@@ -13,28 +13,8 @@ import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
 import com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata
 import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord}
 import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, ToBytes, TopicPartition}
-import org.apache.kafka.clients.consumer.CommitFailedException
-import org.apache.kafka.common.errors.{InvalidProducerEpochException, ProducerFencedException}
-
-import scala.annotation.tailrec
-import scala.util.control.NoStackTrace
 
 object KafkaSnapshotWriteDatabase {
-
-  /** Raised in transactional mode (see [[KafkaPersistenceModule.cachingTransactional]]) when a snapshot write is
-    * fenced: the transaction's offset commit was rejected by a stale consumer generation, i.e. a newer owner has taken
-    * over the partition after a rebalance and this writer is stale.
-    */
-  final case class KafkaSnapshotWriteConflict(
-    key: KafkaKey,
-    topicPartition: TopicPartition,
-    cause: Throwable,
-  ) extends RuntimeException(
-        s"snapshot write for key $key to $topicPartition was fenced, " +
-          "another writer is likely owning the partition now",
-        cause
-      )
-      with NoStackTrace
 
   def of[F[_]: FromTry: Monad, S: ToBytes[F, *]](
     snapshotTopicPartition: TopicPartition,
@@ -51,30 +31,18 @@ object KafkaSnapshotWriteDatabase {
     scheduleCommit: ScheduleCommit[F],
   )
 
-  /** Variant of [[of]] performing writes as group-committed Kafka transactions that also commit the input offset, the
-    * mechanism that closes [[https://github.com/evolution-gaming/kafka-flow/issues/732 issue #732]].
+  /** Variant of [[of]] performing writes as group-committed Kafka transactions that also commit the input offset. The
+    * producer must be transactional with `initTransactions` already called. A stale consumer generation is rejected by
+    * the broker (KIP-447), aborting the transaction so neither the writes nor the offset land. See
+    * `docs/kafka-single-writer-design.md`.
     *
-    * The producer must be transactional with `initTransactions` already called. Writes are group committed: a lone
-    * write commits in its own transaction; writes arriving during a transaction's flight commit together in the next
-    * one (up to `maxWritesPerTransaction`) and share its outcome. Every transaction also commits the latest offset
-    * (recorded via the returned [[ScheduleCommit]], seeded with `assignedOffset`) through `sendOffsetsToTransaction`
-    * with the current consumer group metadata. The broker rejects a commit from a stale consumer generation (KIP-447),
-    * aborting the whole transaction - so a stale owner can neither advance offsets nor overwrite a newer snapshot. A
-    * fenced write fails with [[KafkaSnapshotWriteConflict]]. See `docs/kafka-single-writer-design.md`.
-    *
-    * @param inputTopicPartition
-    *   the input topic-partition whose offset is committed (distinct from the snapshot topic-partition)
     * @param groupMetadata
-    *   reads the current consumer group metadata (generation); see `Consumer.groupMetadata`. `None` (consumer not yet
-    *   joined) is unreachable on the flow path - assignment precedes any flush - and is failed loudly rather than bound
-    *   as an ungated commit.
+    *   current consumer group metadata (generation); see `Consumer.groupMetadata`. `None` (consumer not yet joined) is
+    *   unreachable on the flow path and fails loudly rather than committing ungated.
     * @param assignedOffset
-    *   the partition's assigned (committed) offset; seeds the offset-to-commit so even the first write is
-    *   generation-gated. Committing it is a no-op (already committed, never ahead of the snapshot).
+    *   seeds the offset-to-commit so even the first write is gated; committing it is a no-op.
     * @param maxWritesPerTransaction
-    *   upper bound of writes per transaction, to keep its duration below `transaction.timeout.ms` (the coordinator
-    *   aborts a transaction that exceeds it). Transaction bytes scale with this times the snapshot size: lower it for
-    *   large snapshots.
+    *   bounds a transaction's duration below `transaction.timeout.ms`; bytes scale with this times the snapshot size.
     */
   def transactional[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
     snapshotTopicPartition: TopicPartition,
@@ -82,8 +50,7 @@ object KafkaSnapshotWriteDatabase {
     inputTopicPartition: TopicPartition,
     groupMetadata: F[Option[ConsumerGroupMetadata]],
     assignedOffset: Offset,
-    partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
-    maxWritesPerTransaction: Int                     = DefaultMaxWritesPerTransaction,
+    maxWritesPerTransaction: Int = DefaultMaxWritesPerTransaction,
   ): F[Transactional[F, S]] =
     for {
       _ <- new IllegalArgumentException(s"maxWritesPerTransaction must be positive, got $maxWritesPerTransaction")
@@ -94,7 +61,6 @@ object KafkaSnapshotWriteDatabase {
       // seed with the assigned offset so the first flush already carries an offset and is generation-gated
       offsetToCommit <- Ref[F].of(assignedOffset)
       groupCommit = new GroupCommit(
-        snapshotTopicPartition,
         producer,
         maxWritesPerTransaction,
         transactionLock,
@@ -104,18 +70,21 @@ object KafkaSnapshotWriteDatabase {
         groupMetadata,
       )
     } yield Transactional(
-      writeDatabase  = apply(snapshotTopicPartition, partitionMapper, groupCommit.sendWrite),
+      // identity only: the single-writer/offset-binding guarantee assumes one input partition maps to one snapshot
+      // partition owned by one writer; a non-identity mapper breaks that, so it is not configurable here
+      writeDatabase  = apply(snapshotTopicPartition, KafkaPersistencePartitionMapper.identity, groupCommit.sendWrite),
       scheduleCommit = groupCommit.scheduleCommit,
     )
 
-  /** The group-commit machinery backing [[transactional]]: a snapshot write (or an offset-commit marker) enqueues into
-    * `pending` and competes for `transactionLock`; the leader drains the queue into one transaction and delivers its
-    * shared outcome to every drained item. Every transaction also commits the latest scheduled input offset via
-    * `sendOffsetsToTransaction`, so the snapshot writes in that transaction are gated by the consumer generation too.
+  /** Group-commit machinery backing [[transactional]]. The producer allows one open transaction at a time, so
+    * `transactionLock` serializes them: a write (or offset-only marker) enqueues and takes the lock, and the holder
+    * commits everything queued then - up to `maxWritesPerTransaction` - in one transaction, commits the latest offset
+    * to gate it, and completes each item's `done`. Two non-obvious cases follow: the queue may be empty (a prior holder
+    * already took this item), and an over-cap backlog is left for later holders - every queued item has its own waiting
+    * caller that takes the lock once, so none is left stranded. Each caller awaits its own `done`, whoever committed it.
     * See `docs/kafka-single-writer-design.md`.
     */
   private final class GroupCommit[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
-    snapshotTopicPartition: TopicPartition,
     producer: Producer[F],
     maxWritesPerTransaction: Int,
     transactionLock: Semaphore[F],
@@ -125,21 +94,64 @@ object KafkaSnapshotWriteDatabase {
     groupMetadata: F[Option[ConsumerGroupMetadata]],
   ) {
 
-    // best-effort
-    private val abort = producer.abortTransaction.voidError
+    val sendWrite: (KafkaKey, ProducerRecord[String, S]) => F[Unit] =
+      (_, record) => submit(record.some)
 
-    // fenced producers wrap the fencing exception in a generic KafkaException, so walk the cause chain; only a real
-    // write becomes a conflict keyed by its KafkaKey - an offset-only marker has no key, so it keeps the raw error
-    private def adapt(pending: Pending[F, S])(e: Throwable): Throwable =
-      if (isFenced(e))
-        pending match {
-          case Pending.Write(key, _, _) => KafkaSnapshotWriteConflict(key, snapshotTopicPartition, e)
-          case Pending.CommitMarker(_)  => e // offset-only marker: no key to attribute the fence to
+    // records the offset to commit, then forces a transaction so it commits even with no snapshot writes pending
+    // (e.g. on revoke). A stale generation is rejected by the broker (ILLEGAL_GENERATION), surfaced by the producer
+    // as CommitFailedException, which fails the transaction.
+    val scheduleCommit: ScheduleCommit[F] =
+      (offset: Offset) => offsetToCommit.set(offset) *> submit(none)
+
+    // enqueue one item, commit a batch under the lock, and block on the outcome (this item's, set by whichever holder
+    // took it)
+    private def submit(record: Option[ProducerRecord[String, S]]): F[Unit] =
+      Deferred[F, Either[Throwable, Unit]].flatMap { done =>
+        val item = Pending(record, done)
+        pending.offer(item) *>
+          transactionLock.permit.use(_ => commitQueued) *>
+          done.get.rethrow
+      }
+
+    // commit one transaction of everything queued (capped at maxWritesPerTransaction); empty means a prior holder
+    // already took our item. Uncancelable except the ack await, so a holder never drops a queued item without
+    // delivering its outcome.
+    private def commitQueued: F[Unit] =
+      Concurrent[F].uncancelable { poll =>
+        pending.tryTakeN(maxWritesPerTransaction.some).flatMap {
+          case Nil   => ().pure[F]
+          case batch => commitBatch(poll, batch)
         }
-      else e
+      }
 
-    // always commits the latest offset in the open transaction; a stale generation is rejected by the broker (KIP-447).
-    // There is no skip: a snapshot write is never committed without its generation-gated offset commit.
+    private def commitBatch(poll: Poll[F], batch: List[Pending[F, S]]): F[Unit] = {
+      // enqueue all sends, then await all acks (offset-only markers carry no record)
+      val sendAll =
+        batch
+          .flatMap(_.record)
+          .traverse(record => producer.send(record))
+          .flatMap(_.sequence_)
+
+      // only the ack await is cancelable (`poll`); begin/offsets/commit and the abort cleanup stay masked
+      val transaction =
+        (producer.beginTransaction *> poll(sendAll) *> commitOffsets *> producer.commitTransaction).guaranteeCase {
+          case Outcome.Succeeded(_) => ().pure[F]
+          // best-effort cleanup: abort fails on exactly the paths that trigger it (fenced producer, or no open
+          // transaction if begin failed); voidError keeps that from masking the real outcome being cleaned up after
+          case Outcome.Errored(_) | Outcome.Canceled() => producer.abortTransaction.voidError
+        }
+
+      def complete(result: Either[Throwable, Unit]): F[Unit] =
+        batch.traverse_(_.done.complete(result).void)
+
+      transaction
+        .attempt
+        .flatMap(complete)
+        .onCancel(complete(new InterruptedException("snapshot write batch canceled").asLeft))
+    }
+
+    // commits the latest offset in the open transaction; the broker rejects a stale generation (KIP-447). Never
+    // skipped: a snapshot write is never committed without its generation-gated offset commit.
     private def commitOffsets: F[Unit] =
       for {
         offset <- offsetToCommit.get
@@ -148,109 +160,25 @@ object KafkaSnapshotWriteDatabase {
           case Some(meta) =>
             producer.sendOffsetsToTransaction(NonEmptyMap.of(inputTopicPartition -> OffsetAndMetadata(offset)), meta)
           case None =>
-            // invariant: the flow's consumer joins (and its listener captures metadata) before any flush, so None is
-            // unreachable here; fail loud rather than send an ungated commit with no generation to fence by
+            // invariant: the consumer joins (and captures metadata) before any flush, so None is unreachable here;
+            // fail loud rather than send an ungated commit with no generation to fence by
             new IllegalStateException(
               s"cannot bind input offset $offset: the driving consumer has not joined a group " +
                 "(group metadata is None); transactional snapshot mode requires the flow's own consumer"
             ).raiseError[F, Unit]
         }
       } yield ()
-
-    private def commitBatch(poll: Poll[F], batch: List[Pending[F, S]]): F[Unit] = {
-      // enqueue all sends, then await all acks (offset-only markers carry no record)
-      val sendAll =
-        batch
-          .collect { case Pending.Write(_, record, _) => record }
-          .traverse(record => producer.send(record))
-          .flatMap(_.sequence_)
-
-      val transaction =
-        producer.beginTransaction *>
-          // only the ack await is cancelable (abort on cancel); begin/offsets/commit/abort stay masked
-          (poll(sendAll).onCancel(abort) *> commitOffsets *> producer.commitTransaction)
-            .handleErrorWith { e =>
-              // if this producer was fenced, abort fails as well
-              abort *> e.raiseError[F, Unit]
-            }
-
-      def complete(result: Either[Throwable, Unit]): F[Unit] =
-        batch.traverse_(pending => pending.done.complete(result.leftMap(adapt(pending))).void)
-
-      transaction
-        .attempt
-        .flatMap(complete)
-        .onCancel(complete(new InterruptedException("snapshot write batch canceled").asLeft))
-    }
-
-    // leads until the own item is done, draining whatever else is queued into the batch. Masked except the ack await,
-    // so a leader never drops a queued item without delivering its outcome.
-    private def lead(own: Pending[F, S]): F[Unit] =
-      own.done.tryGet.flatMap {
-        case Some(_) => ().pure[F]
-        case None =>
-          Concurrent[F]
-            .uncancelable { poll =>
-              pending.tryTakeN(maxWritesPerTransaction.some).flatMap {
-                case Nil =>
-                  // unreachable: own stays queued until a leader takes it; complete defensively rather than hang
-                  own.done.complete(new IllegalStateException("pending snapshot write disappeared").asLeft).void
-                case batch => commitBatch(poll, batch)
-              }
-            } *> lead(own)
-      }
-
-    private def run(item: Pending[F, S]): F[Unit] =
-      for {
-        _ <- pending.offer(item)
-        _ <- transactionLock.permit.use(_ => lead(item))
-        // lead returns only once own.done is completed - by this fiber leading the batch, or because a
-        // prior leader already drained and completed it - so get reads an already-set result, never hangs
-        result <- item.done.get
-        _      <- result.liftTo[F]
-      } yield ()
-
-    val sendWrite: (KafkaKey, ProducerRecord[String, S]) => F[Unit] =
-      (key, record) => Deferred[F, Either[Throwable, Unit]].flatMap(done => run(Pending.Write(key, record, done)))
-
-    // records the offset to commit and forces a transaction so it is committed even with no snapshot writes pending
-    // (e.g. on revoke). A fenced commit (stale generation) surfaces as a conflict, like a fenced snapshot write.
-    val scheduleCommit: ScheduleCommit[F] = (offset: Offset) =>
-      offsetToCommit.set(offset) *>
-        Deferred[F, Either[Throwable, Unit]].flatMap(done => run(Pending.CommitMarker(done)))
   }
 
   /** Default upper bound of snapshot writes committed in one transaction, see [[transactional]]. */
   val DefaultMaxWritesPerTransaction: Int = 256
 
-  // a queued unit of work for the group commit: either a real snapshot write or an offset-only commit marker. An ADT so
-  // "write" (always has a key and a record) and "marker" (has neither) cannot be confused or half-constructed.
-  private sealed abstract class Pending[F[_], S] {
-    def done: Deferred[F, Either[Throwable, Unit]]
-  }
-  private object Pending {
-    // a snapshot write: its record goes into the transaction, and a fence becomes a KafkaSnapshotWriteConflict for its key
-    final case class Write[F[_], S](
-      key: KafkaKey,
-      record: ProducerRecord[String, S],
-      done: Deferred[F, Either[Throwable, Unit]],
-    ) extends Pending[F, S]
-    // an offset-only marker: forces a transaction so the offset commits even with no snapshot writes pending (e.g. revoke)
-    final case class CommitMarker[F[_], S](
-      done: Deferred[F, Either[Throwable, Unit]]
-    ) extends Pending[F, S]
-  }
-
-  @tailrec
-  private def isFenced(e: Throwable, depth: Int = 16): Boolean = e match {
-    // CommitFailed: the stale consumer generation was rejected when committing offsets (KIP-447) - the partition was
-    // reassigned. ProducerFenced/InvalidProducerEpoch: also fenced (e.g. a transaction.timeout.ms abort).
-    case _: ProducerFencedException | _: InvalidProducerEpochException | _: CommitFailedException => true
-    case _ =>
-      val cause = e.getCause
-      // depth limit guards against (never observed) cause cycles longer than a self-reference
-      if (cause == null || (cause eq e) || depth <= 0) false else isFenced(cause, depth - 1)
-  }
+  // a queued unit of work for the group commit. A snapshot write carries its record; an offset-only commit marker
+  // carries None (it forces a transaction so the offset commits even with no writes pending, e.g. on revoke).
+  private final case class Pending[F[_], S](
+    record: Option[ProducerRecord[String, S]],
+    done: Deferred[F, Either[Throwable, Unit]],
+  )
 
   private def apply[F[_], S](
     snapshotTopicPartition: TopicPartition,
