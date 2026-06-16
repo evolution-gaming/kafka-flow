@@ -134,7 +134,7 @@ object KafkaSnapshotWriteDatabase {
       if (isFenced(e))
         pending match {
           case Pending.Write(key, _, _) => KafkaSnapshotWriteConflict(key, snapshotTopicPartition, e)
-          case _                        => e // offset-only marker: no key to attribute the fence to
+          case Pending.CommitMarker(_)  => e // offset-only marker: no key to attribute the fence to
         }
       else e
 
