@@ -128,9 +128,15 @@ object KafkaSnapshotWriteDatabase {
     // best-effort
     private val abort = producer.abortTransaction.voidError
 
-    private def adapt(key: Option[KafkaKey])(e: Throwable): Throwable =
-      // fenced producers wrap the fencing exception in a generic KafkaException, so walk the cause chain
-      if (isFenced(e)) key.fold(e)(k => KafkaSnapshotWriteConflict(k, snapshotTopicPartition, e)) else e
+    // fenced producers wrap the fencing exception in a generic KafkaException, so walk the cause chain; only a real
+    // write becomes a conflict keyed by its KafkaKey - an offset-only marker has no key, so it keeps the raw error
+    private def adapt(pending: Pending[F, S])(e: Throwable): Throwable =
+      if (isFenced(e))
+        pending match {
+          case Pending.Write(key, _, _) => KafkaSnapshotWriteConflict(key, snapshotTopicPartition, e)
+          case _                        => e // offset-only marker: no key to attribute the fence to
+        }
+      else e
 
     // always commits the latest offset in the open transaction; a stale generation is rejected by the broker (KIP-447).
     // There is no skip: a snapshot write is never committed without its generation-gated offset commit.
@@ -152,8 +158,12 @@ object KafkaSnapshotWriteDatabase {
       } yield ()
 
     private def commitBatch(poll: Poll[F], batch: List[Pending[F, S]]): F[Unit] = {
-      // enqueue all sends, then await all acks
-      val sendAll = batch.flatMap(_.record).traverse(record => producer.send(record)).flatMap(_.sequence_)
+      // enqueue all sends, then await all acks (offset-only markers carry no record)
+      val sendAll =
+        batch
+          .collect { case Pending.Write(_, record, _) => record }
+          .traverse(record => producer.send(record))
+          .flatMap(_.sequence_)
 
       val transaction =
         producer.beginTransaction *>
@@ -165,7 +175,7 @@ object KafkaSnapshotWriteDatabase {
             }
 
       def complete(result: Either[Throwable, Unit]): F[Unit] =
-        batch.traverse_(pending => pending.done.complete(result.leftMap(adapt(pending.key))).void)
+        batch.traverse_(pending => pending.done.complete(result.leftMap(adapt(pending))).void)
 
       transaction
         .attempt
@@ -201,23 +211,35 @@ object KafkaSnapshotWriteDatabase {
       } yield ()
 
     val sendWrite: (KafkaKey, ProducerRecord[String, S]) => F[Unit] =
-      (key, record) => Deferred[F, Either[Throwable, Unit]].flatMap(done => run(Pending(key.some, record.some, done)))
+      (key, record) => Deferred[F, Either[Throwable, Unit]].flatMap(done => run(Pending.Write(key, record, done)))
 
     // records the offset to commit and forces a transaction so it is committed even with no snapshot writes pending
     // (e.g. on revoke). A fenced commit (stale generation) surfaces as a conflict, like a fenced snapshot write.
     val scheduleCommit: ScheduleCommit[F] = (offset: Offset) =>
       offsetToCommit.set(offset) *>
-        Deferred[F, Either[Throwable, Unit]].flatMap(done => run(Pending(none, none, done)))
+        Deferred[F, Either[Throwable, Unit]].flatMap(done => run(Pending.CommitMarker(done)))
   }
 
   /** Default upper bound of snapshot writes committed in one transaction, see [[transactional]]. */
   val DefaultMaxWritesPerTransaction: Int = 256
 
-  private final case class Pending[F[_], S](
-    key: Option[KafkaKey],
-    record: Option[ProducerRecord[String, S]],
-    done: Deferred[F, Either[Throwable, Unit]],
-  )
+  // a queued unit of work for the group commit: either a real snapshot write or an offset-only commit marker. An ADT so
+  // "write" (always has a key and a record) and "marker" (has neither) cannot be confused or half-constructed.
+  private sealed abstract class Pending[F[_], S] {
+    def done: Deferred[F, Either[Throwable, Unit]]
+  }
+  private object Pending {
+    // a snapshot write: its record goes into the transaction, and a fence becomes a KafkaSnapshotWriteConflict for its key
+    final case class Write[F[_], S](
+      key: KafkaKey,
+      record: ProducerRecord[String, S],
+      done: Deferred[F, Either[Throwable, Unit]],
+    ) extends Pending[F, S]
+    // an offset-only marker: forces a transaction so the offset commits even with no snapshot writes pending (e.g. revoke)
+    final case class CommitMarker[F[_], S](
+      done: Deferred[F, Either[Throwable, Unit]]
+    ) extends Pending[F, S]
+  }
 
   @tailrec
   private def isFenced(e: Throwable, depth: Int = 16): Boolean = e match {
