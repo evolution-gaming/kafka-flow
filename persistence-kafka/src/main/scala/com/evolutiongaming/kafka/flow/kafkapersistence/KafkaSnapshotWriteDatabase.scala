@@ -21,9 +21,9 @@ import scala.util.control.NoStackTrace
 
 object KafkaSnapshotWriteDatabase {
 
-  /** Raised in transactional mode (see [[KafkaPersistenceModule.cachingTransactional]]) when a snapshot write is fenced
-    * because the transaction's offset commit was rejected by a stale consumer generation (a newer owner has taken over
-    * the partition after a rebalance), so this writer is stale. Also covers the incidental producer-epoch fencing.
+  /** Raised in transactional mode (see [[KafkaPersistenceModule.cachingTransactional]]) when a snapshot write is fenced:
+    * the transaction's offset commit was rejected by a stale consumer generation, i.e. a newer owner has taken over the
+    * partition after a rebalance and this writer is stale.
     */
   final case class KafkaSnapshotWriteConflict(
     key: KafkaKey,
@@ -51,27 +51,24 @@ object KafkaSnapshotWriteDatabase {
     scheduleCommit: ScheduleCommit[F],
   )
 
-  /** Variant of [[of]] performing writes as group-committed Kafka transactions, binding the input offset commit into
-    * the same transaction as the snapshot writes - the only Kafka mechanism that fully closes
-    * [[https://github.com/evolution-gaming/kafka-flow/issues/732 issue #732]].
+  /** Variant of [[of]] performing writes as group-committed Kafka transactions that also commit the input offset, the
+    * mechanism that closes [[https://github.com/evolution-gaming/kafka-flow/issues/732 issue #732]].
     *
     * The producer must be transactional with `initTransactions` already called. Writes are group committed: a lone
-    * write commits in its own transaction, while writes arriving during a transaction's flight are committed together
-    * in the next one (up to `maxWritesPerTransaction`) and share its outcome. The returned [[ScheduleCommit]] records
-    * the offset to commit; the group commit then calls `sendOffsetsToTransaction` with the current consumer group
-    * metadata inside the same transaction as the snapshot writes. The broker rejects a commit from a stale consumer
-    * generation (KIP-447), so a stale owner is fenced from advancing offsets and writing snapshots together - closing
-    * the producer-epoch ordering race that fencing alone leaves open. A fenced write fails with
-    * [[KafkaSnapshotWriteConflict]]. See `docs/kafka-single-writer-design.md` for the design and measurements.
+    * write commits in its own transaction; writes arriving during a transaction's flight commit together in the next
+    * one (up to `maxWritesPerTransaction`) and share its outcome. Every transaction also commits the latest offset
+    * (recorded via the returned [[ScheduleCommit]], seeded with `assignedOffset`) through `sendOffsetsToTransaction`
+    * with the current consumer group metadata. The broker rejects a commit from a stale consumer generation (KIP-447),
+    * aborting the whole transaction - so a stale owner can neither advance offsets nor overwrite a newer snapshot. A
+    * fenced write fails with [[KafkaSnapshotWriteConflict]]. See `docs/kafka-single-writer-design.md`.
     *
     * @param inputTopicPartition
     *   the input topic-partition whose offset is committed (distinct from the snapshot topic-partition)
     * @param groupMetadata
     *   reads the current consumer group metadata (generation); see `Consumer.groupMetadata`
     * @param assignedOffset
-    *   the partition's assigned (committed) offset; the offset-to-commit is seeded with it so the very first snapshot
-    *   write already carries `sendOffsetsToTransaction` and is generation-gated (no ungated first-flush window).
-    *   Committing it is a no-op (it is the already-committed offset) and never ahead of the snapshot's state.
+    *   the partition's assigned (committed) offset; seeds the offset-to-commit so even the first write is
+    *   generation-gated. Committing it is a no-op (already committed, never ahead of the snapshot).
     * @param maxWritesPerTransaction
     *   upper bound of writes per transaction, to keep its duration below `transaction.timeout.ms` (the coordinator
     *   aborts a transaction that exceeds it). Transaction bytes scale with this times the snapshot size: lower it for
@@ -133,16 +130,13 @@ object KafkaSnapshotWriteDatabase {
       // fenced producers wrap the fencing exception in a generic KafkaException, so walk the cause chain
       if (isFenced(e)) key.fold(e)(k => KafkaSnapshotWriteConflict(k, snapshotTopicPartition, e)) else e
 
-    // commits the latest scheduled offset within the open transaction; the generation in groupMetadata fences a stale
-    // owner (KIP-447). No-op until an offset has been scheduled, or before the consumer has joined a group.
+    // commits the latest offset in the open transaction; a stale generation is rejected by the broker (KIP-447)
     private def commitOffsets: F[Unit] =
       offsetToCommit.get.flatMap {
-        case None => ().pure[F]
+        case None => ().pure[F] // seeded in production, so only reachable with no offset ever set
         case Some(offset) =>
           groupMetadata.flatMap {
-            // before the consumer has joined a group there is no generation to fence by - only epoch fencing applies.
-            // This window does not occur in normal operation: a partition is processed only after it is assigned, by
-            // which point the group metadata is set.
+            // no joined consumer (only the tests that run without one) - no generation to fence by, skip
             case ConsumerGroupMetadata.Empty => ().pure[F]
             case meta =>
               producer.sendOffsetsToTransaction(
@@ -221,8 +215,8 @@ object KafkaSnapshotWriteDatabase {
 
   @tailrec
   private def isFenced(e: Throwable, depth: Int = 16): Boolean = e match {
-    // ProducerFenced/InvalidProducerEpoch: producer-epoch fencing (initTransactions). CommitFailed: the consumer
-    // generation was rejected when committing offsets in the transaction (KIP-447) - the partition was reassigned.
+    // CommitFailed: the stale consumer generation was rejected when committing offsets (KIP-447) - the partition was
+    // reassigned. ProducerFenced/InvalidProducerEpoch: also fenced (e.g. a transaction.timeout.ms abort).
     case _: ProducerFencedException | _: InvalidProducerEpochException | _: CommitFailedException => true
     case _ =>
       val cause = e.getCause

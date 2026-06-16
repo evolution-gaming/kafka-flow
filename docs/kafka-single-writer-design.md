@@ -100,8 +100,8 @@ aborted records of a fenced writer).
 | Decision | Rationale |
 |---|---|
 | Commit offsets through the producer, not the consumer | The generation check on `sendOffsetsToTransaction` is what ties the fence to ownership; a consumer-side commit is not part of the transaction and cannot gate the snapshot writes. In transactional mode the partition is therefore never `consumer.commit`-ed. |
-| Piggyback: every transaction carries the latest committable offset | Chosen over a commit-driven model (one transaction per partition per commit tick, Streams-style) to reuse the group commit and keep the per-key flush unchanged. The committable offset is the partition's min held-offset (only persisted state), so it is always ≤ what is durably written; attaching it to every transaction makes every snapshot write generation-gated. A `ScheduleCommit` also forces an (offset-only) transaction so progress and the final on-revoke offset are committed even with no writes pending. The switch to commit-driven stays local: the transaction packing lives in `GroupCommit`, the offset source in `ScheduleCommit`. |
-| Seed the offset-to-commit with the assigned offset | The first flush runs before the first commit tick schedules an offset, so it would otherwise carry no offset and be ungated (the "None window"). Seeding `offsetToCommit = assignedAt` at assignment makes even the first write generation-gated, so generation fencing has no hole and is the sole guard. Committing `assignedAt` is a no-op (it is the already-committed offset) and only ever ≤ the snapshot's state; by assignment time the consumer has joined, so its group metadata (generation) is available. |
+| Piggyback: every transaction carries the partition's committable offset | The offset is the min held-offset (only persisted state, so always behind the durable snapshot); attaching it to every transaction makes every snapshot write generation-gated. Chosen over a commit-driven (Streams-style) model to reuse the group commit and leave the per-key flush untouched. A `ScheduleCommit` also forces an offset-only transaction so progress — and the final on-revoke offset — commits even with no writes pending. |
+| Seed the offset-to-commit with the assigned offset | The first flush runs before the first commit tick, so without help it carries no offset and is ungated (the "None window"). Seeding `offsetToCommit = assignedAt` gates even the first write, so generation fencing has no hole. Committing `assignedAt` is a no-op (already committed, never ahead of the snapshot), and the consumer has joined by assignment time so its generation is available. |
 | Recovery forced to `read_committed` | A fenced writer's transaction is aborted, but its records sit in the log until compaction; `read_uncommitted` would resurrect them as valid snapshots. (`initTransactions` also waits out any open transaction of the previous incarnation, so the read-to-end target is exact.) |
 
 Wiring requires the input topic and a reader of the driving consumer's group metadata
@@ -110,21 +110,18 @@ surfaces as `KafkaSnapshotWriteConflict` (see "How a rejection surfaces").
 
 ### No epoch fencing; the `transactional.id` is a throwaway label
 
-With the seed, generation fencing is the **sole** mechanism — there is deliberately **no
-producer-epoch fencing**. Each producer uses a unique-per-producer `transactional.id`
-(`"{prefix}-{partition}-{uuid}"`), so old and new owners of a partition never share an id and cannot
-epoch-fence one another. `initTransactions` is still called — it is required to open transactions —
-but its epoch only ever fences the producer's own (non-existent) previous incarnation.
+Generation fencing is the sole mechanism — there is deliberately **no producer-epoch fencing**. Each
+producer gets a unique `transactional.id` (`"{prefix}-{partition}-{uuid}"`), so old and new owners of
+a partition never share one and cannot fence each other; `initTransactions` is still called (it is
+required to open transactions) but its epoch fences nothing real.
 
-This is a deliberate choice over a *stable* per-partition id. A stable id would add cross-owner epoch
-fencing, but that is (a) redundant once generation fencing is complete, and (b) actively harmful: the
-epoch is allocated in `initTransactions` **arrival order**, independent of consumer-group **assignment
-order**, so a slow stale owner that inits late can hold the *winning* epoch and **false-positive-fence
-the true owner** (a liveness hit) — and in the first-flush window it could even let a stale write
-through. Generation fencing has neither problem: it tracks ownership directly. The price of unique ids
-is transaction-coordinator state (one id per assignment, expiring via `transactional.id.expiration.ms`),
-accepted at normal rebalance rates. `transactionalIdPrefix` survives only as a readable label /
-clientId component, with no stability or uniqueness contract.
+A *stable* per-partition id would add cross-owner epoch fencing, but that is redundant once generation
+fencing is complete and actively harmful: the epoch is assigned in `initTransactions` arrival order,
+not assignment order, so a slow stale owner that inits late wins the epoch and would
+**false-positive-fence the true owner** (and could slip a stale first-flush write through). Generation
+fencing tracks ownership directly and has neither flaw. The cost of unique ids — transaction-coordinator
+state that expires via `transactional.id.expiration.ms` — is accepted at normal rebalance rates;
+`transactionalIdPrefix` is just a label, with no contract.
 
 ### Write path: group-committed transactions
 
@@ -174,27 +171,14 @@ the send/await-acks step is cancelable — everything else is masked, for the re
 | Fencing classified by walking the exception cause chain | A fenced producer moves to a fatal state; follow-up calls throw a generic `KafkaException` only *wrapping* the fencing exception. |
 | Leader-based lock instead of a background committer fiber | A worker fiber would simplify the write path but adds a Resource lifecycle and a liveness dependency (a dead worker hangs all writes); the leader protocol keeps failure handling local to the writes. |
 
-### Batch formation and back-pressure
+### Back-pressure
 
-A batch is whatever is queued **the instant the leader drains**, up to the cap — no linger or timer
-holds it open to fill:
-
-```
-batch size = min(maxWritesPerTransaction, writes queued during the previous transaction's flight)
-```
-
-So a lone write commits immediately as a batch of one, and a batch only grows when writes arrive
-*concurrently* faster than transactions complete — arrival concurrency drives batch size, not a
-delay.
-
-The `pending` queue also cannot grow without bound, which is the real answer to "can a fast
-partition outrun the drain?". A `persist` call does not complete until its transaction commits,
-and kafka-flow's flush awaits each `persist` before marking the key persisted, so the source is
-**back-pressured**: the queue holds at most the keys being flushed concurrently in one wave, not an
-open-ended backlog. If a partition genuinely produces writes faster than `cap / transaction-time`
-can drain them, the symptom is rising flush latency and consumer lag — not unbounded memory — and
-the remedy is more partitions (more parallel single-writers), not a longer transaction, which would
-only trade lag for the coordinator's timeout abort.
+`persist` does not complete until its transaction commits, and kafka-flow's flush awaits each
+`persist`, so the source is **back-pressured**: the `pending` queue holds at most the keys flushing
+concurrently in one wave, never an open-ended backlog. If a partition produces writes faster than
+`cap / transaction-time` can drain, the symptom is rising flush latency and consumer lag — not
+unbounded memory — and the remedy is more partitions, not a longer transaction (which would only
+trade lag for the coordinator's timeout abort).
 
 ### How a rejection surfaces
 
@@ -280,15 +264,15 @@ variance behind the caveat above.
 
 ## Testing strategy
 
-- **Issue reproduction first**: `TransactionalKafkaPersistenceSpec` replays the #732 mechanism
-  through the real machinery (PartitionFlow, eager recovery, fold, buffered snapshots,
-  flush-on-revoke) with two flows over one partition — the rebalance notification itself is
-  Kafka's guarantee and is simulated by construction. The *reproduction* test asserts the
-  corruption happens with the shared producer; the *prevention* test runs the identical scenario
-  transactionally and asserts the newer snapshot survives. Each test is the other's counterfactual.
-- **Failure-mode pins**: fenced writer fails fast on its next periodic flush; an open transaction
-  of a fenced writer neither blocks nor leaks into recovery; concurrent writes are safe on the
-  shared producer (both at the default cap and at cap = 1); the timeout abort demonstration.
+- **Reproduction vs prevention** (`TransactionalKafkaPersistenceSpec`, through the real PartitionFlow /
+  eager-recovery / flush-on-revoke machinery): the reproduction asserts the corruption with the plain
+  shared producer; the prevention drives the stale owner with an *older consumer generation* (the new
+  owner holds the current one) and asserts the newer snapshot survives. A None-window test pins that
+  even a stale writer's first flush is generation-gated (by the seed). Stubbing `sendOffsetsToTransaction`
+  off turns all of these red — proving they test the binding, not incidental fencing.
+- **Other pins**: a fenced writer fails fast on its next periodic flush; an open transaction of a
+  fenced writer neither blocks nor leaks into recovery; concurrent writes are safe (default cap and
+  cap = 1); the timeout abort demonstration.
 - **Performance**: `TransactionalWriteThroughputSpec` (numbers above) is a measurement experiment,
   not a regression test — it adds no coverage beyond the suites above, so it is excluded from the
   default test run and opt-in via the `KAFKA_FLOW_PERF` env var (see the reproduce command above).
