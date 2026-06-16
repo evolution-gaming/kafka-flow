@@ -7,7 +7,13 @@ import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
 import com.evolutiongaming.kafka.flow.{ForAllKafkaSuite, KafkaKey}
-import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf, IsolationLevel}
+import com.evolutiongaming.skafka.consumer.{
+  AutoOffsetReset,
+  ConsumerConfig,
+  ConsumerGroupMetadata,
+  ConsumerOf,
+  IsolationLevel
+}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf}
 import com.evolutiongaming.skafka.{CommonConfig, Offset, Partition, TopicPartition}
 
@@ -30,6 +36,9 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
   // Run on demand to refresh the numbers in docs/kafka-single-writer-design.md:
   //   KAFKA_FLOW_PERF=1 sbt "persistence-kafka-it-tests/testOnly *TransactionalWriteThroughputSpec"
   override def munitIgnore: Boolean = !sys.env.contains("KAFKA_FLOW_PERF")
+
+  // repeated interleaved bursts (esp. the cap=1 sweep) run well past munit's 30s default
+  override def munitTimeout: Duration = 5.minutes
 
   implicit val ioRuntime: IORuntime = IORuntime.global
   implicit val logOf: LogOf[IO]     = LogOf.slf4j[IO].unsafeRunSync()
@@ -80,6 +89,14 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
     database: SnapshotWriteDatabase[IO, KafkaKey, String],
   ): IO[FiniteDuration] =
     timed((1 to keyCount).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), s"state$i")))
+
+  // measured repeats per configuration; the min discards the cold first sample and transient broker/disk
+  // contention, leaving a stable floor (matching the "floor" framing in docs/kafka-single-writer-design.md)
+  private val iterations = 3
+
+  // min elapsed over `iterations` runs, each on its own fresh state topic ("<label>-<i>-state-topic")
+  private def best(label: String)(measureOnce: String => IO[FiniteDuration]): IO[FiniteDuration] =
+    (1 to iterations).toList.traverse(i => measureOnce(s"$label-$i-state-topic")).map(_.minBy(_.toNanos))
 
   // demonstrates the failure mode that motivates the maxWritesPerTransaction bound: a transaction kept open past
   // transaction.timeout.ms is aborted by the coordinator and its commit fails on a perfectly healthy producer
@@ -141,128 +158,133 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
     val burst   = 2000
     val payload = "x" * 10240 // 10 KiB, in the ballpark of a real serialized aggregate
 
-    def run(maxWritesPerTransaction: Int): IO[FiniteDuration] = {
-      val stateTopic = s"tx-burst-$maxWritesPerTransaction-state-topic"
-      val inputTopic = s"input-$stateTopic"
-      val group      = s"tx-burst-$maxWritesPerTransaction-group"
-      createTopic(stateTopic, 1) *> createTopic(inputTopic, 1) *>
-        withJoinedConsumer(group, inputTopic) { current =>
-          producerOf(
-            producerConfig.copy(transactionalId = s"tx-burst-$maxWritesPerTransaction".some, idempotence = true)
-          ).use { producer =>
-            for {
-              _ <- producer.initTransactions
-              // each transaction also commits the seeded offset with the current generation - part of the measured cost
-              database <- KafkaSnapshotWriteDatabase
-                .transactional[IO, String](
-                  snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
-                  producer                = producer,
-                  inputTopicPartition     = TopicPartition(inputTopic, Partition.min),
-                  groupMetadata           = IO.pure(current),
-                  assignedOffset          = Offset.min,
-                  maxWritesPerTransaction = maxWritesPerTransaction,
-                )
-                .map(_.writeDatabase)
-              _ <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
-              elapsed <- timed {
-                (1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload))
-              }
-              stored <- readSnapshots(stateTopic)
-              _       = assertEquals(clue(stored.size), burst + 1)
-            } yield elapsed
-          }
-        }
-    }
+    // the transactional configs do not consume - the input topic is only the offset-commit target and the source
+    // of a real generation - so a single joined consumer (heartbeating throughout, so its generation is stable)
+    // serves all of them
+    val sharedInput = "tx-burst-input-topic"
+    val sharedGroup = "tx-burst-group"
 
-    // safety-off baseline: the same burst on a plain shared batched producer (no transactions), so the cost of the
-    // transactional cap sweep above is comparable against the default mode on the realistic workload. Run after the
-    // cap sweep below so it does not pay the cold-JVM penalty the first burst eats (which would understate the cost).
-    val runPlain: IO[FiniteDuration] = {
-      val stateTopic = "tx-burst-plain-state-topic"
+    // safety-off baseline: the same burst on a plain shared batched producer (no transactions)
+    def measurePlain(stateTopic: String): IO[FiniteDuration] =
       createTopic(stateTopic, 1) *>
         producerOf(producerConfig).use { producer =>
           val database = KafkaSnapshotWriteDatabase.of[IO, String](TopicPartition(stateTopic, Partition.min), producer)
           for {
-            _ <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
-            elapsed <- timed {
-              (1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload))
-            }
-            stored <- readSnapshots(stateTopic)
-            _       = assertEquals(clue(stored.size), burst + 1)
+            _       <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
+            elapsed <- timed((1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload)))
+            stored  <- readSnapshots(stateTopic)
+            _        = assertEquals(clue(stored.size), burst + 1)
           } yield elapsed
         }
+
+    def measureTx(cap: Int, current: ConsumerGroupMetadata)(stateTopic: String): IO[FiniteDuration] =
+      createTopic(stateTopic, 1) *>
+        producerOf(producerConfig.copy(transactionalId = s"$stateTopic-tx".some, idempotence = true)).use { producer =>
+          for {
+            _ <- producer.initTransactions
+            // each transaction also commits the seeded offset with the current generation - part of the measured cost
+            database <- KafkaSnapshotWriteDatabase
+              .transactional[IO, String](
+                snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
+                producer                = producer,
+                inputTopicPartition     = TopicPartition(sharedInput, Partition.min),
+                groupMetadata           = IO.pure(current),
+                assignedOffset          = Offset.min,
+                maxWritesPerTransaction = cap,
+              )
+              .map(_.writeDatabase)
+            _       <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
+            elapsed <- timed((1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload)))
+            stored  <- readSnapshots(stateTopic)
+            _        = assertEquals(clue(stored.size), burst + 1)
+          } yield elapsed
+        }
+
+    val test = createTopic(sharedInput, 1) *> withJoinedConsumer(sharedGroup, sharedInput) { current =>
+      val configs: List[(String, String => IO[FiniteDuration])] = List(
+        "shared batched producer"          -> measurePlain,
+        "maxWritesPerTransaction=1"        -> measureTx(1, current),
+        "maxWritesPerTransaction=16"       -> measureTx(16, current),
+        "maxWritesPerTransaction=256"      -> measureTx(256, current),
+        s"maxWritesPerTransaction=$burst"  -> measureTx(burst, current),
+      )
+      for {
+        // discarded warm-up burst: warms JIT, the producer connection and the transaction path before timing
+        _ <- measureTx(burst, current)("tx-burst-warm-up-state-topic")
+        // interleave - each iteration runs every config once on a fresh topic, so no config is systematically
+        // penalised by accumulated broker load; the per-config min then picks its least-contended sample
+        samples <- (1 to iterations).toList.flatTraverse { i =>
+          configs.zipWithIndex.traverse { case ((label, measureOnce), idx) =>
+            measureOnce(s"tx-burst-c$idx-i$i-state-topic").map(label -> _)
+          }
+        }
+        _ <- IO.println {
+          configs
+            .map { case (label, _) =>
+              s"$label: ${samples.collect { case (`label`, d) => d }.minBy(_.toNanos).toMillis} ms"
+            }
+            .mkString(s"burst of $burst x ${payload.length / 1024} KiB snapshots (min of $iterations): ", ", ", "")
+        }
+      } yield ()
     }
-
-    val caps = List(1, 16, 256, burst)
-
-    val test = for {
-      capped <- caps.traverse(cap => run(cap).map(elapsed => cap -> elapsed))
-      plain  <- runPlain
-      _ <- IO.println {
-        capped
-          .map { case (cap, elapsed) => s"maxWritesPerTransaction=$cap: ${elapsed.toMillis} ms" }
-          .mkString(
-            s"burst of $burst x ${payload.length / 1024} KiB snapshots: shared batched producer: ${plain.toMillis} ms, ",
-            ", ",
-            "",
-          )
-      }
-    } yield ()
 
     test.unsafeRunSync()
   }
 
   test(s"persist $keyCount snapshots: shared batched producer vs transactions") {
-    val plainTopic = "throughput-plain-state-topic"
-    val txTopic    = "throughput-tx-state-topic"
+    // one shared joined consumer for the transactional measurements (see Experiment B above)
+    val sharedInput = "throughput-input-topic"
+    val sharedGroup = "throughput-group"
 
-    val test = for {
-      _ <- createTopic(plainTopic, 1)
-      _ <- createTopic(txTopic, 1)
-
-      plain <- producerOf(producerConfig).use { producer =>
-        val database = KafkaSnapshotWriteDatabase.of[IO, String](TopicPartition(plainTopic, Partition.min), producer)
-        database.persist(kafkaKey(plainTopic, "warm-up"), "warm-up") *> persistSequentially(plainTopic, database)
-      }
-
-      transactional <- {
-        val inputTopic = s"input-$txTopic"
-        createTopic(inputTopic, 1) *> withJoinedConsumer("throughput-tx-group", inputTopic) { current =>
-          producerOf(
-            producerConfig.copy(transactionalId = "throughput-tx".some, idempotence = true)
-          ).use { producer =>
-            for {
-              _ <- producer.initTransactions
-              database <- KafkaSnapshotWriteDatabase
-                .transactional[IO, String](
-                  snapshotTopicPartition = TopicPartition(txTopic, Partition.min),
-                  producer               = producer,
-                  inputTopicPartition    = TopicPartition(inputTopic, Partition.min),
-                  groupMetadata          = IO.pure(current),
-                  assignedOffset         = Offset.min,
-                )
-                .map(_.writeDatabase)
-              _          <- database.persist(kafkaKey(txTopic, "warm-up"), "warm-up")
-              sequential <- persistSequentially(txTopic, database)
-              concurrent <- persistConcurrently(txTopic, database)
-            } yield (sequential, concurrent)
-          }
+    def plainSequential(stateTopic: String): IO[FiniteDuration] =
+      createTopic(stateTopic, 1) *>
+        producerOf(producerConfig).use { producer =>
+          val database = KafkaSnapshotWriteDatabase.of[IO, String](TopicPartition(stateTopic, Partition.min), producer)
+          database.persist(kafkaKey(stateTopic, "warm-up"), "warm-up") *> persistSequentially(stateTopic, database)
         }
-      }
-      (sequential, concurrent) = transactional
 
-      // println instead of log: the test logback config suppresses info level
-      _ <- IO.println(
-        s"persisted $keyCount snapshots: shared batched producer in ${plain.toMillis} ms, " +
-          s"sequential transactions in ${sequential.toMillis} ms " +
-          s"(${(sequential / keyCount.toLong).toMicros} us per transaction), " +
-          s"concurrent group-committed transactions in ${concurrent.toMillis} ms"
-      )
-    } yield {
-      // sanity only: all modes complete, and the numbers are usable (non-zero measurements)
-      assert(clue(plain) > Duration.Zero)
-      assert(clue(sequential) > Duration.Zero)
-      assert(clue(concurrent) > Duration.Zero)
+    // builds a transactional database on a fresh state topic, does an untimed warm-up write, then times `measure`
+    def measureTx(stateTopic: String, current: ConsumerGroupMetadata)(
+      measure: SnapshotWriteDatabase[IO, KafkaKey, String] => IO[FiniteDuration]
+    ): IO[FiniteDuration] =
+      createTopic(stateTopic, 1) *>
+        producerOf(producerConfig.copy(transactionalId = s"$stateTopic-tx".some, idempotence = true)).use { producer =>
+          for {
+            _ <- producer.initTransactions
+            database <- KafkaSnapshotWriteDatabase
+              .transactional[IO, String](
+                snapshotTopicPartition = TopicPartition(stateTopic, Partition.min),
+                producer               = producer,
+                inputTopicPartition    = TopicPartition(sharedInput, Partition.min),
+                groupMetadata          = IO.pure(current),
+                assignedOffset         = Offset.min,
+              )
+              .map(_.writeDatabase)
+            _       <- database.persist(kafkaKey(stateTopic, "warm-up"), "warm-up")
+            elapsed <- measure(database)
+          } yield elapsed
+        }
+
+    val test = createTopic(sharedInput, 1) *> withJoinedConsumer(sharedGroup, sharedInput) { current =>
+      for {
+        // discarded warm-up: warms JIT and the transaction path before timing
+        _          <- measureTx("throughput-warm-up-state-topic", current)(db => persistConcurrently("throughput-warm-up-state-topic", db))
+        plain      <- best("throughput-plain")(plainSequential)
+        sequential <- best("throughput-tx-seq")(t => measureTx(t, current)(db => persistSequentially(t, db)))
+        concurrent <- best("throughput-tx-conc")(t => measureTx(t, current)(db => persistConcurrently(t, db)))
+        // println instead of log: the test logback config suppresses info level
+        _ <- IO.println(
+          s"persisted $keyCount snapshots (min of $iterations): shared batched producer in ${plain.toMillis} ms, " +
+            s"sequential transactions in ${sequential.toMillis} ms " +
+            s"(${(sequential / keyCount.toLong).toMicros} us per transaction), " +
+            s"concurrent group-committed transactions in ${concurrent.toMillis} ms"
+        )
+      } yield {
+        // sanity only: all modes complete, and the numbers are usable (non-zero measurements)
+        assert(clue(plain) > Duration.Zero)
+        assert(clue(sequential) > Duration.Zero)
+        assert(clue(concurrent) > Duration.Zero)
+      }
     }
 
     test.unsafeRunSync()

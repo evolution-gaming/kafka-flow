@@ -175,7 +175,7 @@ group committed into shared transactions, so a burst of N dirty keys costs about
 N / `maxWritesPerTransaction` (default 256, configurable via `TransactionalConfig`) sequential
 transaction round-trips on the poll path — size that against the changed-key population of a
 partition, which after a restart flushes in synchronized waves and in a busy partition approaches
-all active keys. On a realistic burst at the default cap the measured cost was level with the
+all active keys. On a realistic burst at the default cap the measured cost was within ~6% of the
 non-transactional producer; the full mechanism, methodology and numbers are in the
 [Kafka single-writer design](kafka-single-writer-design.md). Each
 assigned partition also holds its own producer and transaction-coordinator state on the brokers.
