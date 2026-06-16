@@ -25,10 +25,10 @@ trait Consumer[F[_]] {
   def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit]
 
   /** Last consumer group metadata observed on a rebalance (generation, member id). Needed to bind offset commits into a
-    * producer transaction so a stale owner is fenced by generation (KIP-447). [[ConsumerGroupMetadata.Empty]] until the
-    * first rebalance.
+    * producer transaction so a stale owner is fenced by generation (KIP-447). `None` until the consumer has joined a
+    * group (i.e. until the first rebalance callback fires).
     */
-  def groupMetadata: F[ConsumerGroupMetadata]
+  def groupMetadata: F[Option[ConsumerGroupMetadata]]
 
 }
 object Consumer {
@@ -39,14 +39,14 @@ object Consumer {
     consumer: KafkaConsumer[F, String, ByteVector]
   ): F[Consumer[F]] =
     // capture the group metadata on each rebalance (on the poll thread, where it is safe to read) into a Ref so the
-    // transactional snapshot writer can read the current generation off-thread
-    Ref[F].of(ConsumerGroupMetadata.Empty).map { groupMetadataRef =>
+    // transactional snapshot writer can read the current generation off-thread; None until the first rebalance
+    Ref[F].of(none[ConsumerGroupMetadata]).map { groupMetadataRef =>
       new Consumer[F] {
         def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener1[F]): F[Unit] = {
           val capturing = new RebalanceListener1WithConsumer[F] {
             import com.evolutiongaming.skafka.consumer.RebalanceCallback.syntax.*
             private def capture: RebalanceCallback[F, Unit] =
-              this.consumer.groupMetadata.flatMap(meta => groupMetadataRef.set(meta).lift)
+              this.consumer.groupMetadata.flatMap(meta => groupMetadataRef.set(meta.some).lift)
             def onPartitionsAssigned(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
               capture *> listener.onPartitionsAssigned(partitions)
             def onPartitionsRevoked(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
@@ -63,7 +63,7 @@ object Consumer {
         def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] =
           consumer.commit(offsets)
 
-        def groupMetadata: F[ConsumerGroupMetadata] = groupMetadataRef.get
+        def groupMetadata: F[Option[ConsumerGroupMetadata]] = groupMetadataRef.get
       }
     }
 
@@ -91,7 +91,7 @@ object Consumer {
       def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] =
         ().pure[F]
 
-      def groupMetadata: F[ConsumerGroupMetadata] = ConsumerGroupMetadata.Empty.pure[F]
+      def groupMetadata: F[Option[ConsumerGroupMetadata]] = none[ConsumerGroupMetadata].pure[F]
     }
   }
 

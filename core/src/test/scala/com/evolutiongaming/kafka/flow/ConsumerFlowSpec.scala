@@ -158,8 +158,8 @@ object ConsumerFlowSpec {
 
       def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] = ().pure[F]
 
-      def groupMetadata: F[com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata] =
-        com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata.Empty.pure[F]
+      def groupMetadata: F[Option[com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata]] =
+        Option.empty[com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata].pure[F]
     }
 
     def flow(topic: String) = new TopicFlow[F] {

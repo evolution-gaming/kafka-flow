@@ -61,10 +61,10 @@ abstract class ForAllKafkaSuite extends FunSuite with TestContainersFixtures {
   def withJoinedConsumer[A](group: String, inputTopic: Topic)(f: ConsumerGroupMetadata => IO[A]): IO[A] =
     kafkaModule().consumerOf(group).use { consumer =>
       def pollUntilJoined(attempts: Int): IO[ConsumerGroupMetadata] =
-        consumer.poll(100.millis) *> consumer.groupMetadata.flatMap { meta =>
-          if (meta.generationId >= 1) meta.pure[IO]
-          else if (attempts <= 0) IO.raiseError(new RuntimeException(s"consumer did not join the group: $meta"))
-          else IO.sleep(100.millis) *> pollUntilJoined(attempts - 1)
+        consumer.poll(100.millis) *> consumer.groupMetadata.flatMap {
+          case Some(meta) if meta.generationId >= 1 => meta.pure[IO]
+          case meta if attempts <= 0 => IO.raiseError(new RuntimeException(s"consumer did not join the group: $meta"))
+          case _                     => IO.sleep(100.millis) *> pollUntilJoined(attempts - 1)
         }
 
       consumer.subscribe(NonEmptySet.of(inputTopic), RebalanceListener1.empty[IO]) *> pollUntilJoined(50).flatMap(f)

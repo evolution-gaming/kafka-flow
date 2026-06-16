@@ -161,7 +161,7 @@ object KafkaPersistenceModule {
     config: TransactionalConfig,
     snapshotTopicPartition: TopicPartition,
     inputTopic: Topic,
-    groupMetadata: F[ConsumerGroupMetadata],
+    groupMetadata: F[Option[ConsumerGroupMetadata]],
     assignedAt: Offset,
     metrics: FlowMetrics[F] = FlowMetrics.empty[F],
   )(

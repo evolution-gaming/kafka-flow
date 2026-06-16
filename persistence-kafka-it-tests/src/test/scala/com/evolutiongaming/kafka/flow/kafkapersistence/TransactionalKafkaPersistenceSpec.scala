@@ -214,7 +214,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
         ),
         snapshotTopic = stateTopic,
         inputTopic    = inputTopic,
-        groupMetadata = IO.pure(gm),
+        groupMetadata = IO.pure(gm.some),
       )
 
     // the previous owner (flow A) carries a stale generation; the new owner (flow B) carries the current one
@@ -257,7 +257,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
             ),
             snapshotTopic = stateTopic,
             inputTopic    = inputTopic,
-            groupMetadata = gmRef.get,
+            groupMetadata = gmRef.get.map(_.some),
           )
           // flush on every records application, so the writer hits the conflict on its next poll cycle
           flow <- flowOf(
@@ -306,7 +306,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
               snapshotTopicPartition = TopicPartition(stateTopic, Partition.min),
               producer               = producer,
               inputTopicPartition    = tp,
-              groupMetadata          = IO.pure(stale),
+              groupMetadata          = IO.pure(stale.some),
               assignedOffset         = Offset.min,
             )
             attempt <- tx.scheduleCommit.schedule(Offset.unsafe(5)).attempt
@@ -357,7 +357,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
               snapshotTopicPartition = TopicPartition(stateTopic, Partition.min),
               producer               = producer,
               inputTopicPartition    = tp,
-              groupMetadata          = IO.pure(stale),
+              groupMetadata          = IO.pure(stale.some),
               // seeded: so even the FIRST write (below, with no prior scheduleCommit) carries the offset and is
               // generation-gated. Without the seed this would be the ungated "None window" and the stale write
               // would land.
@@ -420,7 +420,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
             snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
             producer                = producer,
             inputTopicPartition     = TopicPartition(inputTopic, Partition.min),
-            groupMetadata           = IO.pure(gm),
+            groupMetadata           = IO.pure(gm.some),
             assignedOffset          = Offset.min,
             maxWritesPerTransaction = maxWritesPerTransaction,
           )

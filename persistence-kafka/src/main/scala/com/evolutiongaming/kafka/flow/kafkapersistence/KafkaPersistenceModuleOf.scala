@@ -91,7 +91,7 @@ object KafkaPersistenceModuleOf {
     config: KafkaPersistenceModule.TransactionalConfig,
     snapshotTopic: Topic,
     inputTopic: Topic,
-    groupMetadata: F[ConsumerGroupMetadata],
+    groupMetadata: F[Option[ConsumerGroupMetadata]],
     metrics: FlowMetrics[F] = FlowMetrics.empty[F],
   )(
     implicit fromBytesKey: FromBytes[F, String],

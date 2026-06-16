@@ -65,7 +65,9 @@ object KafkaSnapshotWriteDatabase {
     * @param inputTopicPartition
     *   the input topic-partition whose offset is committed (distinct from the snapshot topic-partition)
     * @param groupMetadata
-    *   reads the current consumer group metadata (generation); see `Consumer.groupMetadata`
+    *   reads the current consumer group metadata (generation); see `Consumer.groupMetadata`. `None` (consumer not yet
+    *   joined) is unreachable on the flow path - assignment precedes any flush - and is failed loudly rather than bound
+    *   as an ungated commit.
     * @param assignedOffset
     *   the partition's assigned (committed) offset; seeds the offset-to-commit so even the first write is
     *   generation-gated. Committing it is a no-op (already committed, never ahead of the snapshot).
@@ -78,7 +80,7 @@ object KafkaSnapshotWriteDatabase {
     snapshotTopicPartition: TopicPartition,
     producer: Producer[F],
     inputTopicPartition: TopicPartition,
-    groupMetadata: F[ConsumerGroupMetadata],
+    groupMetadata: F[Option[ConsumerGroupMetadata]],
     assignedOffset: Offset,
     partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
     maxWritesPerTransaction: Int                     = DefaultMaxWritesPerTransaction,
@@ -120,7 +122,7 @@ object KafkaSnapshotWriteDatabase {
     pending: Queue[F, Pending[F, S]],
     offsetToCommit: Ref[F, Offset],
     inputTopicPartition: TopicPartition,
-    groupMetadata: F[ConsumerGroupMetadata],
+    groupMetadata: F[Option[ConsumerGroupMetadata]],
   ) {
 
     // best-effort
@@ -136,7 +138,17 @@ object KafkaSnapshotWriteDatabase {
       for {
         offset <- offsetToCommit.get
         meta   <- groupMetadata
-        _ <- producer.sendOffsetsToTransaction(NonEmptyMap.of(inputTopicPartition -> OffsetAndMetadata(offset)), meta)
+        _ <- meta match {
+          case Some(meta) =>
+            producer.sendOffsetsToTransaction(NonEmptyMap.of(inputTopicPartition -> OffsetAndMetadata(offset)), meta)
+          case None =>
+            // invariant: the flow's consumer joins (and its listener captures metadata) before any flush, so None is
+            // unreachable here; fail loud rather than send an ungated commit with no generation to fence by
+            new IllegalStateException(
+              s"cannot bind input offset $offset: the driving consumer has not joined a group " +
+                "(group metadata is None); transactional snapshot mode requires the flow's own consumer"
+            ).raiseError[F, Unit]
+        }
       } yield ()
 
     private def commitBatch(poll: Poll[F], batch: List[Pending[F, S]]): F[Unit] = {
@@ -180,8 +192,10 @@ object KafkaSnapshotWriteDatabase {
 
     private def run(item: Pending[F, S]): F[Unit] =
       for {
-        _      <- pending.offer(item)
-        _      <- transactionLock.permit.use(_ => lead(item))
+        _ <- pending.offer(item)
+        _ <- transactionLock.permit.use(_ => lead(item))
+        // lead returns only once own.done is completed - by this fiber leading the batch, or because a
+        // prior leader already drained and completed it - so get reads an already-set result, never hangs
         result <- item.done.get
         _      <- result.liftTo[F]
       } yield ()

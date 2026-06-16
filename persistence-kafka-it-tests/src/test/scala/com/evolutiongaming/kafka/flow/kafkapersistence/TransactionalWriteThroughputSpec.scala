@@ -190,7 +190,7 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
                 snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
                 producer                = producer,
                 inputTopicPartition     = TopicPartition(sharedInput, Partition.min),
-                groupMetadata           = IO.pure(current),
+                groupMetadata           = IO.pure(current.some),
                 assignedOffset          = Offset.min,
                 maxWritesPerTransaction = cap,
               )
@@ -262,7 +262,7 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
                 snapshotTopicPartition = TopicPartition(stateTopic, Partition.min),
                 producer               = producer,
                 inputTopicPartition    = TopicPartition(sharedInput, Partition.min),
-                groupMetadata          = IO.pure(current),
+                groupMetadata          = IO.pure(current.some),
                 assignedOffset         = Offset.min,
               )
               .map(_.writeDatabase)
