@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
-import cats.data.{NonEmptyList, NonEmptySet}
+import cats.data.NonEmptyList
 import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all.*
@@ -26,7 +26,6 @@ import com.evolutiongaming.skafka.consumer.{
   ConsumerOf,
   ConsumerRecord,
   IsolationLevel,
-  RebalanceListener1,
   WithSize
 }
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf, ProducerRecord}
@@ -287,24 +286,6 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     test.unsafeRunSync()
   }
 
-  /** Joins a real consumer to a fresh group and runs `f` with the group's current metadata (generation N). The
-    * consumer stays alive (heartbeating) for the duration so the current generation is stable while `f` runs.
-    */
-  private def withJoinedConsumer[A](group: String, inputTopic: String)(
-    f: ConsumerGroupMetadata => IO[A]
-  ): IO[A] =
-    kafkaModule().consumerOf(group).use { consumer =>
-      def pollUntilJoined(attempts: Int): IO[ConsumerGroupMetadata] =
-        consumer.poll(100.millis) *> consumer.groupMetadata.flatMap { meta =>
-          if (meta.generationId >= 1) meta.pure[IO]
-          else if (attempts <= 0) IO.raiseError(new RuntimeException(s"consumer did not join the group: $meta"))
-          else IO.sleep(100.millis) *> pollUntilJoined(attempts - 1)
-        }
-
-      consumer.subscribe(NonEmptySet.of(inputTopic), RebalanceListener1.empty[IO]) *>
-        pollUntilJoined(50).flatMap(f)
-    }
-
   test("issue #732 prevention: a stale consumer generation is fenced from committing offsets transactionally") {
     val stateTopic = "flow-732-tx-stale-generation-state-topic"
     val inputTopic = s"input-$stateTopic"
@@ -422,35 +403,38 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
         s"(maxWritesPerTransaction = $maxWritesPerTransaction)"
     ) {
       val stateTopic = s"tx-concurrent-$maxWritesPerTransaction-state-topic"
+      val inputTopic = s"input-$stateTopic"
+      val group      = s"$groupId-concurrent-$maxWritesPerTransaction"
       val keys       = (1 to 10).toList.map(i => s"key$i")
 
       def kafkaKey(key: String): KafkaKey =
-        KafkaKey(appId, groupId, TopicPartition(s"input-$stateTopic", Partition.min), key)
+        KafkaKey(appId, groupId, TopicPartition(inputTopic, Partition.min), key)
 
-      def writeDatabase(producer: Producer[IO]): IO[SnapshotWriteDatabase[IO, KafkaKey, String]] =
-        // no offsets are scheduled here, so the input partition and (empty) group metadata are inert - this exercises
-        // the snapshot-write/group-commit path only
+      def writeDatabase(producer: Producer[IO], gm: ConsumerGroupMetadata): IO[SnapshotWriteDatabase[IO, KafkaKey, String]] =
         KafkaSnapshotWriteDatabase
           .transactional[IO, String](
             snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
             producer                = producer,
-            inputTopicPartition     = TopicPartition(s"input-$stateTopic", Partition.min),
-            groupMetadata           = IO.pure(ConsumerGroupMetadata.Empty),
+            inputTopicPartition     = TopicPartition(inputTopic, Partition.min),
+            groupMetadata           = IO.pure(gm),
             assignedOffset          = Offset.min,
             maxWritesPerTransaction = maxWritesPerTransaction,
           )
           .map(_.writeDatabase)
 
-      val test = createTopic(stateTopic, 1) *>
-        transactionalProducer(s"tx-concurrent-$maxWritesPerTransaction").use { producer =>
-          for {
-            _        <- producer.initTransactions
-            database <- writeDatabase(producer)
-            // kafka-flow flushes keys of a partition in parallel by default: this must not corrupt or crash
-            _      <- keys.parTraverse_(key => database.persist(kafkaKey(key), s"state-of-$key"))
-            stored <- readSnapshots(stateTopic)
-          } yield keys.foreach { key =>
-            assertEquals(clue(stored.get(key)), utf8(s"state-of-$key"))
+      // a real generation is needed because every transaction commits the (seeded) offset
+      val test = createTopic(stateTopic, 1) *> createTopic(inputTopic, 1) *>
+        withJoinedConsumer(group, inputTopic) { current =>
+          transactionalProducer(s"tx-concurrent-$maxWritesPerTransaction").use { producer =>
+            for {
+              _        <- producer.initTransactions
+              database <- writeDatabase(producer, current)
+              // kafka-flow flushes keys of a partition in parallel by default: this must not corrupt or crash
+              _      <- keys.parTraverse_(key => database.persist(kafkaKey(key), s"state-of-$key"))
+              stored <- readSnapshots(stateTopic)
+            } yield keys.foreach { key =>
+              assertEquals(clue(stored.get(key)), utf8(s"state-of-$key"))
+            }
           }
         }
 

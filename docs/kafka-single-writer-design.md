@@ -167,7 +167,7 @@ the send/await-acks step is cancelable — everything else is masked, for the re
 |---|---|
 | Group commit, not time-window batching | Batching is purely opportunistic: sporadic writes pay zero added latency, bursts collapse to O(burst / cap) transactions. A batch shares its transaction's outcome — one failure fails them all (bounded by the cap). |
 | Drain and completion run masked, only the ack await is cancelable | A canceled leader must never remove writes from the queue without delivering their outcome (waiters would hang or get a nonsense error), and must never leave an open transaction holding the lock's next user hostage (`onCancel: abort`). |
-| `maxWritesPerTransaction` cap (default 256, configurable) | A *duration* bound, not a throughput knob — capping only lowers throughput (uncapped is ~15% faster, measured below), so it is never raised for speed. It keeps a transaction from outliving `transaction.timeout.ms` (default 1 minute), which the coordinator would abort (demonstrated below). Transaction bytes ≈ cap × snapshot size and this layer cannot see record sizes, so the bound is a count — lower it for large snapshots. |
+| `maxWritesPerTransaction` cap (default 256, configurable) | A *duration* bound, not a throughput knob — capping only lowers throughput (uncapped is ~12% faster, measured below), so it is never raised for speed. It keeps a transaction from outliving `transaction.timeout.ms` (default 1 minute), which the coordinator would abort (demonstrated below). Transaction bytes ≈ cap × snapshot size and this layer cannot see record sizes, so the bound is a count — lower it for large snapshots. |
 | Fencing classified by walking the exception cause chain | A fenced producer moves to a fatal state; follow-up calls throw a generic `KafkaException` only *wrapping* the fencing exception. |
 | Leader-based lock instead of a background committer fiber | A worker fiber would simplify the write path but adds a Resource lifecycle and a liveness dependency (a dead worker hangs all writes); the leader protocol keeps failure handling local to the writes. |
 
@@ -213,15 +213,15 @@ group commit buys on a concurrent burst.
 
 | Mode | Arrival | Batches | Result |
 |---|---|---|---|
-| Shared batched producer (default mode, no transactions) | sequential | — (no transactions) | 203 ms |
-| Group-committed transactions | sequential | 500 (one per write) | 669 ms (~1.3 ms per transaction) |
-| Group-committed transactions | concurrent burst | a handful | 9 ms |
+| Shared batched producer (default mode, no transactions) | sequential | — (no transactions) | 257 ms |
+| Group-committed transactions | sequential | 500 (one per write) | 1098 ms (~2.2 ms per transaction) |
+| Group-committed transactions | concurrent burst | a handful | 17 ms |
 
 The lower two rows are the **same** group commit — only the arrival pattern differs. Sequentially,
-every write forms a batch of one (500 transactions, measuring the raw ~1.3 ms per-transaction
-round-trip); concurrently, writes collapse into a few large batches, landing the same 500 writes
-below even the non-transactional producer. Cost tracks the number of transactions, and concurrency —
-the real flush pattern — drives the batching for free.
+every write forms a batch of one (500 transactions, measuring the raw ~2.2 ms per-transaction
+round-trip — each carrying the input-offset commit too); concurrently, writes collapse into a few
+large batches, landing the same 500 writes below even the non-transactional producer. Cost tracks the
+number of transactions, and concurrency — the real flush pattern — drives the batching for free.
 
 ### Experiment B — `maxWritesPerTransaction` sweep on a realistic burst
 
@@ -238,18 +238,19 @@ the timing:
 
 | Configuration | ≈ transactions | Result |
 |---|---|---|
-| Shared batched producer (safety off, baseline) | — (no transactions) | 340 ms |
-| `maxWritesPerTransaction = 1` | 2000 | 3 807 ms |
-| `maxWritesPerTransaction = 16` | 125 | 729 ms |
-| `maxWritesPerTransaction = 256` (default) | ≈ 8 | 395 ms |
-| `maxWritesPerTransaction = 2000` (uncapped) | 1 | 338 ms |
+| Shared batched producer (safety off, baseline) | — (no transactions) | 396 ms |
+| `maxWritesPerTransaction = 1` | 2000 | 6 174 ms |
+| `maxWritesPerTransaction = 16` | 125 | 800 ms |
+| `maxWritesPerTransaction = 256` (default) | ≈ 8 | 388 ms |
+| `maxWritesPerTransaction = 2000` (uncapped) | 1 | 343 ms |
 
 Reading of the numbers: cost tracks the transaction count until Kafka's own network batching
-floors it (~340 ms here regardless). At the default cap the transactional burst (395 ms, ≈ 8
-transactions) runs within ~16% of the safety-off baseline (340 ms) and essentially level with
-uncapped — on this workload the single-writer safety is not a meaningful throughput cost. Without
-the group commit (cap = 1) the burst pays one round trip per key — 2000 of them, an order of
-magnitude slower, and multi-second poll-path stalls at realistic key counts.
+floors it (~340-400 ms here regardless). At the default cap the transactional burst (388 ms, ≈ 8
+transactions, each also committing the input offset) runs level with the safety-off baseline
+(396 ms) and essentially level with uncapped — on this workload the single-writer safety is not a
+meaningful throughput cost. Without the group commit (cap = 1) the burst pays one round trip per
+key — 2000 of them, an order of magnitude slower, and multi-second poll-path stalls at realistic
+key counts.
 
 Reproduce: `KAFKA_FLOW_PERF=1 sbt "persistence-kafka-it-tests/testOnly *TransactionalWriteThroughputSpec"`
 (prints both experiments' timings; the suite spins up the testcontainers broker, ~2–3 min). The
@@ -284,7 +285,7 @@ variance behind the caveat above.
   produce.
 - **Transaction per write, serialized**: correct but burst cost is O(keys) transaction round-trips
   on the poll path (the cap = 1 row above).
-- **Unbounded batches**: ~15% faster than the default cap, but transaction duration then scales with
+- **Unbounded batches**: ~12% faster than the default cap, but transaction duration then scales with
   burst × snapshot size, unprotected against the coordinator timeout abort.
 - **Background committer fiber**: see the design table — liveness dependency on a supervised
   worker.

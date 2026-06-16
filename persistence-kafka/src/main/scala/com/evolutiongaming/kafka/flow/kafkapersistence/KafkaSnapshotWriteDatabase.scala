@@ -89,8 +89,8 @@ object KafkaSnapshotWriteDatabase {
         .whenA(maxWritesPerTransaction < 1)
       transactionLock <- Semaphore[F](1)
       pending         <- Queue.unbounded[F, Pending[F, S]]
-      // seed with the assigned offset so the first flush is generation-gated (closes the "None window")
-      offsetToCommit <- Ref[F].of(assignedOffset.some)
+      // seed with the assigned offset so the first flush already carries an offset and is generation-gated
+      offsetToCommit <- Ref[F].of(assignedOffset)
       groupCommit = new GroupCommit(
         snapshotTopicPartition,
         producer,
@@ -118,7 +118,7 @@ object KafkaSnapshotWriteDatabase {
     maxWritesPerTransaction: Int,
     transactionLock: Semaphore[F],
     pending: Queue[F, Pending[F, S]],
-    offsetToCommit: Ref[F, Option[Offset]],
+    offsetToCommit: Ref[F, Offset],
     inputTopicPartition: TopicPartition,
     groupMetadata: F[ConsumerGroupMetadata],
   ) {
@@ -130,21 +130,14 @@ object KafkaSnapshotWriteDatabase {
       // fenced producers wrap the fencing exception in a generic KafkaException, so walk the cause chain
       if (isFenced(e)) key.fold(e)(k => KafkaSnapshotWriteConflict(k, snapshotTopicPartition, e)) else e
 
-    // commits the latest offset in the open transaction; a stale generation is rejected by the broker (KIP-447)
+    // always commits the latest offset in the open transaction; a stale generation is rejected by the broker (KIP-447).
+    // There is no skip: a snapshot write is never committed without its generation-gated offset commit.
     private def commitOffsets: F[Unit] =
-      offsetToCommit.get.flatMap {
-        case None => ().pure[F] // seeded in production, so only reachable with no offset ever set
-        case Some(offset) =>
-          groupMetadata.flatMap {
-            // no joined consumer (only the tests that run without one) - no generation to fence by, skip
-            case ConsumerGroupMetadata.Empty => ().pure[F]
-            case meta =>
-              producer.sendOffsetsToTransaction(
-                NonEmptyMap.of(inputTopicPartition -> OffsetAndMetadata(offset)),
-                meta,
-              )
-          }
-      }
+      for {
+        offset <- offsetToCommit.get
+        meta   <- groupMetadata
+        _      <- producer.sendOffsetsToTransaction(NonEmptyMap.of(inputTopicPartition -> OffsetAndMetadata(offset)), meta)
+      } yield ()
 
     private def commitBatch(poll: Poll[F], batch: List[Pending[F, S]]): F[Unit] = {
       // enqueue all sends, then await all acks
@@ -200,7 +193,7 @@ object KafkaSnapshotWriteDatabase {
     // records the offset to commit and forces a transaction so it is committed even with no snapshot writes pending
     // (e.g. on revoke). A fenced commit (stale generation) surfaces as a conflict, like a fenced snapshot write.
     val scheduleCommit: ScheduleCommit[F] = (offset: Offset) =>
-      offsetToCommit.set(offset.some) *>
+      offsetToCommit.set(offset) *>
         Deferred[F, Either[Throwable, Unit]].flatMap(done => run(Pending(none, none, done)))
   }
 

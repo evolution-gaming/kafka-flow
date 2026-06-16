@@ -7,13 +7,7 @@ import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
 import com.evolutiongaming.kafka.flow.{ForAllKafkaSuite, KafkaKey}
-import com.evolutiongaming.skafka.consumer.{
-  AutoOffsetReset,
-  ConsumerConfig,
-  ConsumerGroupMetadata,
-  ConsumerOf,
-  IsolationLevel
-}
+import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf, IsolationLevel}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf}
 import com.evolutiongaming.skafka.{CommonConfig, Offset, Partition, TopicPartition}
 
@@ -149,31 +143,34 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
 
     def run(maxWritesPerTransaction: Int): IO[FiniteDuration] = {
       val stateTopic = s"tx-burst-$maxWritesPerTransaction-state-topic"
-      createTopic(stateTopic, 1) *>
-        producerOf(
-          producerConfig.copy(transactionalId = s"tx-burst-$maxWritesPerTransaction".some, idempotence = true)
-        ).use { producer =>
-          for {
-            _ <- producer.initTransactions
-            // offsets are never scheduled in this measurement, so the input partition and (empty) group metadata are
-            // inert; this isolates the snapshot-write/group-commit cost
-            database <- KafkaSnapshotWriteDatabase
-              .transactional[IO, String](
-                snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
-                producer                = producer,
-                inputTopicPartition     = TopicPartition(s"input-$stateTopic", Partition.min),
-                groupMetadata           = IO.pure(ConsumerGroupMetadata.Empty),
-                assignedOffset          = Offset.min,
-                maxWritesPerTransaction = maxWritesPerTransaction,
-              )
-              .map(_.writeDatabase)
-            _ <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
-            elapsed <- timed {
-              (1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload))
-            }
-            stored <- readSnapshots(stateTopic)
-            _       = assertEquals(clue(stored.size), burst + 1)
-          } yield elapsed
+      val inputTopic = s"input-$stateTopic"
+      val group      = s"tx-burst-$maxWritesPerTransaction-group"
+      createTopic(stateTopic, 1) *> createTopic(inputTopic, 1) *>
+        withJoinedConsumer(group, inputTopic) { current =>
+          producerOf(
+            producerConfig.copy(transactionalId = s"tx-burst-$maxWritesPerTransaction".some, idempotence = true)
+          ).use { producer =>
+            for {
+              _ <- producer.initTransactions
+              // each transaction also commits the seeded offset with the current generation - part of the measured cost
+              database <- KafkaSnapshotWriteDatabase
+                .transactional[IO, String](
+                  snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
+                  producer                = producer,
+                  inputTopicPartition     = TopicPartition(inputTopic, Partition.min),
+                  groupMetadata           = IO.pure(current),
+                  assignedOffset          = Offset.min,
+                  maxWritesPerTransaction = maxWritesPerTransaction,
+                )
+                .map(_.writeDatabase)
+              _ <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
+              elapsed <- timed {
+                (1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload))
+              }
+              stored <- readSnapshots(stateTopic)
+              _       = assertEquals(clue(stored.size), burst + 1)
+            } yield elapsed
+          }
         }
     }
 
@@ -228,24 +225,29 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
         database.persist(kafkaKey(plainTopic, "warm-up"), "warm-up") *> persistSequentially(plainTopic, database)
       }
 
-      transactional <- producerOf(
-        producerConfig.copy(transactionalId = "throughput-tx".some, idempotence = true)
-      ).use { producer =>
-        for {
-          _ <- producer.initTransactions
-          database <- KafkaSnapshotWriteDatabase
-            .transactional[IO, String](
-              snapshotTopicPartition = TopicPartition(txTopic, Partition.min),
-              producer               = producer,
-              inputTopicPartition    = TopicPartition(s"input-$txTopic", Partition.min),
-              groupMetadata          = IO.pure(ConsumerGroupMetadata.Empty),
-              assignedOffset         = Offset.min,
-            )
-            .map(_.writeDatabase)
-          _          <- database.persist(kafkaKey(txTopic, "warm-up"), "warm-up")
-          sequential <- persistSequentially(txTopic, database)
-          concurrent <- persistConcurrently(txTopic, database)
-        } yield (sequential, concurrent)
+      transactional <- {
+        val inputTopic = s"input-$txTopic"
+        createTopic(inputTopic, 1) *> withJoinedConsumer("throughput-tx-group", inputTopic) { current =>
+          producerOf(
+            producerConfig.copy(transactionalId = "throughput-tx".some, idempotence = true)
+          ).use { producer =>
+            for {
+              _ <- producer.initTransactions
+              database <- KafkaSnapshotWriteDatabase
+                .transactional[IO, String](
+                  snapshotTopicPartition = TopicPartition(txTopic, Partition.min),
+                  producer               = producer,
+                  inputTopicPartition    = TopicPartition(inputTopic, Partition.min),
+                  groupMetadata          = IO.pure(current),
+                  assignedOffset         = Offset.min,
+                )
+                .map(_.writeDatabase)
+              _          <- database.persist(kafkaKey(txTopic, "warm-up"), "warm-up")
+              sequential <- persistSequentially(txTopic, database)
+              concurrent <- persistConcurrently(txTopic, database)
+            } yield (sequential, concurrent)
+          }
+        }
       }
       (sequential, concurrent) = transactional
 
