@@ -170,10 +170,12 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
         producerOf(producerConfig).use { producer =>
           val database = KafkaSnapshotWriteDatabase.of[IO, String](TopicPartition(stateTopic, Partition.min), producer)
           for {
-            _       <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
-            elapsed <- timed((1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload)))
-            stored  <- readSnapshots(stateTopic)
-            _        = assertEquals(clue(stored.size), burst + 1)
+            _ <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
+            elapsed <- timed(
+              (1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload))
+            )
+            stored <- readSnapshots(stateTopic)
+            _       = assertEquals(clue(stored.size), burst + 1)
           } yield elapsed
         }
 
@@ -193,20 +195,22 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
                 maxWritesPerTransaction = cap,
               )
               .map(_.writeDatabase)
-            _       <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
-            elapsed <- timed((1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload)))
-            stored  <- readSnapshots(stateTopic)
-            _        = assertEquals(clue(stored.size), burst + 1)
+            _ <- database.persist(kafkaKey(stateTopic, "warm-up"), payload)
+            elapsed <- timed(
+              (1 to burst).toList.parTraverse_(i => database.persist(kafkaKey(stateTopic, s"key$i"), payload))
+            )
+            stored <- readSnapshots(stateTopic)
+            _       = assertEquals(clue(stored.size), burst + 1)
           } yield elapsed
         }
 
     val test = createTopic(sharedInput, 1) *> withJoinedConsumer(sharedGroup, sharedInput) { current =>
       val configs: List[(String, String => IO[FiniteDuration])] = List(
-        "shared batched producer"          -> measurePlain,
-        "maxWritesPerTransaction=1"        -> measureTx(1, current),
-        "maxWritesPerTransaction=16"       -> measureTx(16, current),
-        "maxWritesPerTransaction=256"      -> measureTx(256, current),
-        s"maxWritesPerTransaction=$burst"  -> measureTx(burst, current),
+        "shared batched producer"         -> measurePlain,
+        "maxWritesPerTransaction=1"       -> measureTx(1, current),
+        "maxWritesPerTransaction=16"      -> measureTx(16, current),
+        "maxWritesPerTransaction=256"     -> measureTx(256, current),
+        s"maxWritesPerTransaction=$burst" -> measureTx(burst, current),
       )
       for {
         // discarded warm-up burst: warms JIT, the producer connection and the transaction path before timing
@@ -214,14 +218,16 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
         // interleave - each iteration runs every config once on a fresh topic, so no config is systematically
         // penalised by accumulated broker load; the per-config min then picks its least-contended sample
         samples <- (1 to iterations).toList.flatTraverse { i =>
-          configs.zipWithIndex.traverse { case ((label, measureOnce), idx) =>
-            measureOnce(s"tx-burst-c$idx-i$i-state-topic").map(label -> _)
+          configs.zipWithIndex.traverse {
+            case ((label, measureOnce), idx) =>
+              measureOnce(s"tx-burst-c$idx-i$i-state-topic").map(label -> _)
           }
         }
         _ <- IO.println {
           configs
-            .map { case (label, _) =>
-              s"$label: ${samples.collect { case (`label`, d) => d }.minBy(_.toNanos).toMillis} ms"
+            .map {
+              case (label, _) =>
+                s"$label: ${samples.collect { case (`label`, d) => d }.minBy(_.toNanos).toMillis} ms"
             }
             .mkString(s"burst of $burst x ${payload.length / 1024} KiB snapshots (min of $iterations): ", ", ", "")
         }
@@ -268,7 +274,9 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
     val test = createTopic(sharedInput, 1) *> withJoinedConsumer(sharedGroup, sharedInput) { current =>
       for {
         // discarded warm-up: warms JIT and the transaction path before timing
-        _          <- measureTx("throughput-warm-up-state-topic", current)(db => persistConcurrently("throughput-warm-up-state-topic", db))
+        _ <- measureTx("throughput-warm-up-state-topic", current)(db =>
+          persistConcurrently("throughput-warm-up-state-topic", db)
+        )
         plain      <- best("throughput-plain")(plainSequential)
         sequential <- best("throughput-tx-seq")(t => measureTx(t, current)(db => persistSequentially(t, db)))
         concurrent <- best("throughput-tx-conc")(t => measureTx(t, current)(db => persistConcurrently(t, db)))

@@ -21,9 +21,9 @@ import scala.util.control.NoStackTrace
 
 object KafkaSnapshotWriteDatabase {
 
-  /** Raised in transactional mode (see [[KafkaPersistenceModule.cachingTransactional]]) when a snapshot write is fenced:
-    * the transaction's offset commit was rejected by a stale consumer generation, i.e. a newer owner has taken over the
-    * partition after a rebalance and this writer is stale.
+  /** Raised in transactional mode (see [[KafkaPersistenceModule.cachingTransactional]]) when a snapshot write is
+    * fenced: the transaction's offset commit was rejected by a stale consumer generation, i.e. a newer owner has taken
+    * over the partition after a rebalance and this writer is stale.
     */
   final case class KafkaSnapshotWriteConflict(
     key: KafkaKey,
@@ -43,8 +43,8 @@ object KafkaSnapshotWriteDatabase {
   ): SnapshotWriteDatabase[F, KafkaKey, S] =
     apply(snapshotTopicPartition, partitionMapper, (_, record) => producer.send(record).flatten.void)
 
-  /** Result of [[transactional]]: the snapshot write database plus a [[ScheduleCommit]] that routes
-    * input offset commits through the same per-partition transactions as the snapshot writes.
+  /** Result of [[transactional]]: the snapshot write database plus a [[ScheduleCommit]] that routes input offset
+    * commits through the same per-partition transactions as the snapshot writes.
     */
   final case class Transactional[F[_], S](
     writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
@@ -136,7 +136,7 @@ object KafkaSnapshotWriteDatabase {
       for {
         offset <- offsetToCommit.get
         meta   <- groupMetadata
-        _      <- producer.sendOffsetsToTransaction(NonEmptyMap.of(inputTopicPartition -> OffsetAndMetadata(offset)), meta)
+        _ <- producer.sendOffsetsToTransaction(NonEmptyMap.of(inputTopicPartition -> OffsetAndMetadata(offset)), meta)
       } yield ()
 
     private def commitBatch(poll: Poll[F], batch: List[Pending[F, S]]): F[Unit] = {
@@ -187,8 +187,7 @@ object KafkaSnapshotWriteDatabase {
       } yield ()
 
     val sendWrite: (KafkaKey, ProducerRecord[String, S]) => F[Unit] =
-      (key, record) =>
-        Deferred[F, Either[Throwable, Unit]].flatMap(done => run(Pending(key.some, record.some, done)))
+      (key, record) => Deferred[F, Either[Throwable, Unit]].flatMap(done => run(Pending(key.some, record.some, done)))
 
     // records the offset to commit and forces a transaction so it is committed even with no snapshot writes pending
     // (e.g. on revoke). A fenced commit (stale generation) surfaces as a conflict, like a fenced snapshot write.

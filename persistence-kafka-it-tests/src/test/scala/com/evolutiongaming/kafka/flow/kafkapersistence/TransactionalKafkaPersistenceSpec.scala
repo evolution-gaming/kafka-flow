@@ -263,7 +263,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
           flow <- flowOf(
             moduleOf,
             TimerFlowOf.persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds),
-            PartitionFlowConfig(triggerTimersInterval = 0.seconds),
+            PartitionFlowConfig(triggerTimersInterval     = 0.seconds),
           ).flatMap(_.apply(tp, Offset.min, ScheduleCommit.empty[IO]).allocated)
           (flow_, release) = flow
           // persists fine while the generation is current
@@ -382,7 +382,8 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
           ) || chain.exists(c => Option(c.getMessage).map(_.toLowerCase).exists(m => keywords.exists(m.contains)))
           assert(
             fenced,
-            s"expected the stale first flush to be generation-fenced, got ${chain.map(_.getClass.getName)}: ${chain.map(_.getMessage)}",
+            s"expected the stale first flush to be generation-fenced, got ${chain.map(_.getClass.getName)}: ${chain
+                .map(_.getMessage)}",
           )
         case Right(()) =>
           fail("expected the stale writer's first (seeded) flush to be generation-fenced, but it landed")
@@ -410,7 +411,10 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
       def kafkaKey(key: String): KafkaKey =
         KafkaKey(appId, groupId, TopicPartition(inputTopic, Partition.min), key)
 
-      def writeDatabase(producer: Producer[IO], gm: ConsumerGroupMetadata): IO[SnapshotWriteDatabase[IO, KafkaKey, String]] =
+      def writeDatabase(
+        producer: Producer[IO],
+        gm: ConsumerGroupMetadata
+      ): IO[SnapshotWriteDatabase[IO, KafkaKey, String]] =
         KafkaSnapshotWriteDatabase
           .transactional[IO, String](
             snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),

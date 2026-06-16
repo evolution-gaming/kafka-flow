@@ -178,7 +178,7 @@ object KafkaPersistenceModule {
 
     for {
       // unique per producer: fencing is by consumer generation, not this id, so a fresh id per assignment is fine
-      uuid <- Resource.eval(Async[F].delay(java.util.UUID.randomUUID().toString))
+      uuid           <- Resource.eval(Async[F].delay(java.util.UUID.randomUUID().toString))
       transactionalId = s"$transactionalIdPrefix-${snapshotTopicPartition.partition.value}-$uuid"
       transactionalProducerConfig = producerConfig.copy(
         transactionalId = transactionalId.some,
