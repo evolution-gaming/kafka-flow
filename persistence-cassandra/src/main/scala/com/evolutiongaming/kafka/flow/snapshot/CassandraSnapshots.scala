@@ -23,9 +23,8 @@ import scala.util.control.NoStackTrace
 
 /** Cassandra-backed implementation of [[SnapshotDatabase]].
   *
-  * When `insertStatement` is defined, the database works in compare-and-set mode: a snapshot is persisted only if the
-  * stored snapshot's offset is not greater than the offset of the new snapshot. See [[CassandraSnapshots.withSchema]]
-  * for details.
+  * In [[WriteMode.CompareAndSet]] mode a snapshot is persisted only if the stored snapshot's offset is not greater than
+  * the offset of the new snapshot. See [[CassandraSnapshots.withSchema]] for details.
   */
 class CassandraSnapshots[F[_]: Async, T](
   session: CassandraSession[F],
@@ -33,14 +32,14 @@ class CassandraSnapshots[F[_]: Async, T](
   persistStatement: PreparedStatement,
   deleteStatement: PreparedStatement,
   consistencyOverrides: ConsistencyOverrides = ConsistencyOverrides.none,
-  insertStatement: Option[PreparedStatement] = None,
+  writeMode: WriteMode                       = WriteMode.LastWriteWins,
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
   def persist(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
-    insertStatement match {
-      case None         => persistUnconditional(key, snapshot)
-      case Some(insert) => persistCompareAndSet(insert, key, snapshot)
+    writeMode match {
+      case WriteMode.LastWriteWins         => persistUnconditional(key, snapshot)
+      case WriteMode.CompareAndSet(insert) => persistCompareAndSet(insert, key, snapshot)
     }
 
   private def persistUnconditional(key: KafkaKey, snapshot: KafkaSnapshot[T]): F[Unit] =
@@ -122,6 +121,15 @@ class CassandraSnapshots[F[_]: Async, T](
 object CassandraSnapshots {
 
   val DefaultTableName = "snapshots_v2"
+
+  /** How a snapshot write is performed. [[WriteMode.CompareAndSet]] carries the extra statement used for the first
+    * write of a key, so the insert statement exists exactly when the database is in compare-and-set mode.
+    */
+  sealed trait WriteMode
+  object WriteMode {
+    case object LastWriteWins extends WriteMode
+    final case class CompareAndSet(insertStatement: PreparedStatement) extends WriteMode
+  }
 
   /** Raised in compare-and-set mode (see [[CassandraSnapshots.withSchema]]) when the store already contains a newer
     * snapshot for the key - another writer (likely the new partition owner after a rebalance) persisted in parallel, so
@@ -223,16 +231,17 @@ object CassandraSnapshots {
       getStatement     <- Statements.prepareGet(session, tableName)
       persistStatement <- Statements.preparePersist(session, tableName, ttl, compareAndSet)
       deleteStatement  <- Statements.prepareDelete(session, tableName, ifExists = compareAndSet)
-      insertStatement <-
-        if (compareAndSet) Statements.prepareInsertIfNotExists(session, tableName, ttl).map(_.some)
-        else none[PreparedStatement].pure[F]
+      writeMode <-
+        if (compareAndSet)
+          Statements.prepareInsertIfNotExists(session, tableName, ttl).map(WriteMode.CompareAndSet(_): WriteMode)
+        else (WriteMode.LastWriteWins: WriteMode).pure[F]
     } yield new CassandraSnapshots(
       session              = session,
       getStatement         = getStatement,
       persistStatement     = persistStatement,
       deleteStatement      = deleteStatement,
       consistencyOverrides = consistencyOverrides,
-      insertStatement      = insertStatement,
+      writeMode            = writeMode,
     )
 
   def truncate[F[_]: Monad](
