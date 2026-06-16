@@ -22,8 +22,8 @@ import scala.util.control.NoStackTrace
 object KafkaSnapshotWriteDatabase {
 
   /** Raised in transactional mode (see [[KafkaPersistenceModule.cachingTransactional]]) when a snapshot write is fenced
-    * by a newer producer with the same `transactional.id` - another instance (likely the new partition owner after a
-    * rebalance) has taken over, so this writer is stale.
+    * because the transaction's offset commit was rejected by a stale consumer generation (a newer owner has taken over
+    * the partition after a rebalance), so this writer is stale. Also covers the incidental producer-epoch fencing.
     */
   final case class KafkaSnapshotWriteConflict(
     key: KafkaKey,

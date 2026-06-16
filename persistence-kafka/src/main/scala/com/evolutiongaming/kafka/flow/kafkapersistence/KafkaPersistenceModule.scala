@@ -41,9 +41,11 @@ object KafkaPersistenceModule {
     *   base config for the snapshot producer; `transactionalId` and `idempotence` are overridden per partition and
     *   `clientId` is suffixed per partition
     * @param transactionalIdPrefix
-    *   stable prefix for `transactional.id` (the partition number is appended). It must not change across restarts and
-    *   deployments (otherwise fencing is lost) and must be unique per consumer group + input topic + snapshot topic
-    *   combination (otherwise unrelated writers fence each other). A good choice is `s"$groupId-$inputTopic"`.
+    *   prefix for `transactional.id` (the partition number is appended). Stale writers are fenced by the consumer
+    *   generation (see [[cachingTransactional]]), not by this id, so a non-stable or colliding prefix no longer risks
+    *   corruption - it only matters operationally: keep it stable to bound transaction-coordinator state across
+    *   restarts, and unique per consumer group + input topic + snapshot topic to avoid unrelated writers needlessly
+    *   epoch-fencing each other. A good choice is `s"$groupId-$inputTopic"`.
     * @param maxWritesPerTransaction
     *   upper bound of snapshot writes group committed in one transaction, see
     *   [[KafkaSnapshotWriteDatabase.transactional]] for the trade-off
@@ -129,16 +131,21 @@ object KafkaPersistenceModule {
     )
   }
 
-  /** Variant of [[caching]] protecting the snapshot topic from stale writers via Kafka transactions.
+  /** Variant of [[caching]] protecting the snapshot topic from stale writers by binding the input-offset commit into
+    * the snapshot transaction (issue #732 "solution 1").
     *
-    * One transactional producer is created per assigned partition with a stable `transactional.id` derived from
-    * `transactionalIdPrefix`, and `initTransactions` is called before the snapshot topic is read: the broker fences the
-    * previous owner of the partition, so a stale snapshot write fails with
-    * [[KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict]] instead of overwriting a newer snapshot
-    * (https://github.com/evolution-gaming/kafka-flow/issues/732). Writes run in transactions (group committed per
-    * partition, see [[KafkaSnapshotWriteDatabase.transactional]]), recovery reads with `read_committed`, and unlike
-    * [[caching]] the identity partition mapping is always used. See the "Single-writer guarantees" section of the
-    * persistence documentation for limitations and costs.
+    * Each assigned partition gets a transactional producer; snapshot writes run in Kafka transactions (group committed
+    * per partition, see [[KafkaSnapshotWriteDatabase.transactional]]) and each transaction also commits the input
+    * offset via `sendOffsetsToTransaction` with the consumer group metadata. The broker rejects a commit from a stale
+    * consumer generation (KIP-447), aborting the whole transaction - so a stale owner can neither advance offsets nor
+    * overwrite a newer snapshot, and the write fails with [[KafkaSnapshotWriteDatabase.KafkaSnapshotWriteConflict]]
+    * (https://github.com/evolution-gaming/kafka-flow/issues/732). Recovery reads with `read_committed` so the aborted
+    * records are invisible, and unlike [[caching]] the identity partition mapping is always used. `initTransactions`
+    * additionally bumps the producer epoch (incidental fencing / defense-in-depth). See the "Single-writer guarantees"
+    * section of the persistence documentation for limitations and costs.
+    *
+    * Output is at-least-once: the flow's output-topic produces are not part of the snapshot transaction, so a replayed
+    * batch re-emits them. This is corruption prevention, not exactly-once.
     *
     * A rolling deployment to or from this mode is safe: while the two modes coexist the protection is only partial -
     * the same stale-writer exposure as without it, not a new failure mode - and it becomes complete once every instance
@@ -180,7 +187,8 @@ object KafkaPersistenceModule {
 
     for {
       producer <- producerOf(transactionalProducerConfig)
-      // fences the previous owner before the snapshot topic is read, so a stale writer cannot write behind recovery
+      // required to use transactions; also bumps the producer epoch (incidental fencing). The real guard is the
+      // per-transaction offset commit fenced by the consumer generation (see KafkaSnapshotWriteDatabase.transactional)
       _ <- Resource.eval(producer.initTransactions)
       transactional <- Resource.eval(
         KafkaSnapshotWriteDatabase.transactional[F, S](
