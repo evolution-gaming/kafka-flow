@@ -162,6 +162,101 @@ class SnapshotSpec extends CassandraSpec {
     test.unsafeRunSync()
   }
 
+  test(
+    "compare-and-set: a stale resurrection after a legitimate delete is overwritten by a later higher-offset write"
+  ) {
+    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-resurrection-self-heal")
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        compareAndSet = true
+      )
+      _ <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      _ <- snapshots.delete(key, Offset.unsafe(10))
+      // guard row is gone, so a stale (lower-offset) write lands via INSERT IF NOT EXISTS
+      _           <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(3), value = "state-3"))
+      resurrected <- snapshots.get(key)
+      // a later legitimate write overwrites the stale resurrection (stored offset 3 <= 20 applies)
+      _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(20), value = "state-20"))
+      healed <- snapshots.get(key)
+    } yield {
+      assertEquals(clue(resurrected.map(_.value)), Some("state-3"))
+      assertEquals(clue(healed.map(_.value)), Some("state-20"))
+    }
+
+    test.unsafeRunSync()
+  }
+
+  test("compare-and-set: delete is rejected when the stored offset is strictly higher") {
+    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-delete-strictly-higher")
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        compareAndSet = true
+      )
+      _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      result <- snapshots.delete(key, Offset.unsafe(5)).attempt
+      stored <- snapshots.get(key)
+    } yield {
+      result match {
+        case Left(conflict: CassandraSnapshots.SnapshotWriteConflict) =>
+          assertEquals(clue(conflict.key), key)
+          assertEquals(clue(conflict.attemptedOffset), Offset.unsafe(5))
+          assertEquals(clue(conflict.persistedOffset), Some(Offset.unsafe(10)))
+        case other => fail(s"expected SnapshotWriteConflict, got $other")
+      }
+      assertEquals(clue(stored.map(_.value)), Some("state-10"))
+    }
+
+    test.unsafeRunSync()
+  }
+
+  test("compare-and-set: an equal-offset delete applies") {
+    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-equal-offset-delete")
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        compareAndSet = true
+      )
+      _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      _      <- snapshots.delete(key, Offset.unsafe(10))
+      stored <- snapshots.get(key)
+    } yield assert(clue(stored.isEmpty))
+
+    test.unsafeRunSync()
+  }
+
+  test("compare-and-set: a replayed stale delete cannot remove a newer snapshot") {
+    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-replayed-stale-delete")
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        compareAndSet = true
+      )
+      _ <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      _ <- snapshots.delete(key, Offset.unsafe(10))
+      _ <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(20), value = "state-20"))
+      // an at-least-once replay of the OLD delete (offset 10) must not erase the newer snapshot (offset 20)
+      result <- snapshots.delete(key, Offset.unsafe(10)).attempt
+      stored <- snapshots.get(key)
+    } yield {
+      result match {
+        case Left(conflict: CassandraSnapshots.SnapshotWriteConflict) =>
+          assertEquals(clue(conflict.key), key)
+          assertEquals(clue(conflict.attemptedOffset), Offset.unsafe(10))
+          assertEquals(clue(conflict.persistedOffset), Some(Offset.unsafe(20)))
+        case other => fail(s"expected SnapshotWriteConflict, got $other")
+      }
+      assertEquals(clue(stored.map(_.value)), Some("state-20"))
+    }
+
+    test.unsafeRunSync()
+  }
+
   test("compare-and-set: ttl is set on both insert and update paths") {
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-ttl")
     val test: IO[Unit] = for {
