@@ -21,7 +21,7 @@ object KafkaSnapshotWriteDatabase {
     producer: Producer[F],
     partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
   ): SnapshotWriteDatabase[F, KafkaKey, S] =
-    apply(snapshotTopicPartition, partitionMapper, (_, record) => producer.send(record).flatten.void)
+    apply(snapshotTopicPartition, partitionMapper, record => producer.send(record).flatten.void)
 
   /** Result of [[transactional]]: the snapshot write database plus a [[ScheduleCommit]] that routes input offset
     * commits through the same per-partition transactions as the snapshot writes.
@@ -94,8 +94,8 @@ object KafkaSnapshotWriteDatabase {
     groupMetadata: F[Option[ConsumerGroupMetadata]],
   ) {
 
-    val sendWrite: (KafkaKey, ProducerRecord[String, S]) => F[Unit] =
-      (_, record) => submit(record.some)
+    val sendWrite: ProducerRecord[String, S] => F[Unit] =
+      record => submit(record.some)
 
     // records the offset to commit, then forces a transaction so it commits even with no snapshot writes pending
     // (e.g. on revoke). A stale generation is rejected by the broker (ILLEGAL_GENERATION), surfaced by the producer
@@ -183,7 +183,7 @@ object KafkaSnapshotWriteDatabase {
   private def apply[F[_], S](
     snapshotTopicPartition: TopicPartition,
     partitionMapper: KafkaPersistencePartitionMapper,
-    send: (KafkaKey, ProducerRecord[String, S]) => F[Unit],
+    send: ProducerRecord[String, S] => F[Unit],
   ): SnapshotWriteDatabase[F, KafkaKey, S] = new SnapshotWriteDatabase[F, KafkaKey, S] {
     override def persist(key: KafkaKey, snapshot: S): F[Unit] = produce(key, snapshot.some)
 
@@ -198,7 +198,7 @@ object KafkaSnapshotWriteDatabase {
         key       = key.key.some,
         value     = snapshot
       )
-      send(key, record)
+      send(record)
     }
   }
 }

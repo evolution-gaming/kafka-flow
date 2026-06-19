@@ -85,7 +85,11 @@ never share one. A *stable* per-partition id would add cross-owner epoch fencing
 redundant and harmful: the epoch is assigned in `initTransactions` arrival order, not assignment
 order, so a slow stale owner that inits late wins the epoch and would false-positive-fence the true
 owner. The cost of unique ids — transaction-coordinator state expiring via
-`transactional.id.expiration.ms` — is accepted.
+`transactional.id.expiration.ms` — is accepted. A hard-crashed owner's in-flight transaction is, for
+the same reason, not fenced on the spot (a stable id would abort it through the new owner's
+`initTransactions`); the coordinator reclaims it only after `transaction.timeout.ms`, which bounds how
+long a `read_committed` reader (recovery, or a downstream consumer) can stall behind its
+last-stable-offset.
 
 ## Write path: group-committed transactions
 
@@ -160,3 +164,18 @@ its next flush, an open transaction neither blocks nor leaks into recovery, conc
 - **Producer-epoch fencing (stable `transactional.id`)**: epoch order can diverge from ownership
   order, so it does not fully close #732 and can false-positive-fence the true owner (above).
 - **Transactional output produces (full exactly-once)**: out of scope; output stays at-least-once.
+- **Static partition assignment** (`assign()` instead of `subscribe()`): no consumer group, no
+  rebalance, so no overlap window and no fence needed — the workaround [#732](https://github.com/evolution-gaming/kafka-flow/issues/732)
+  itself names. Rejected because it gives up automatic failover and elastic reassignment; letting
+  users keep dynamic assignment *safely* is the point of this design. (Static *membership* (KIP-345)
+  is not an alternative here: it suppresses rebalances only for graceful restarts within
+  `session.timeout.ms`, and does not fence a stuck owner whose session expired.)
+
+## Forward-looking
+
+[KIP-939 (participation in 2PC)](https://cwiki.apache.org/confluence/display/KAFKA/KIP-939:+Support+Participation+in+2PC)
+is the route to extend this fence to non-Kafka snapshot stores: a transactional producer in an
+externally-coordinated two-phase commit could bind a Cassandra/RDBMS snapshot write to the same
+generation-fenced Kafka offset commit, giving those backends the per-partition ownership guarantee
+this mode has — without the per-key compare-and-set the Cassandra backend uses today. Not actionable
+now; tracked as the convergence point for the two persistence backends.
