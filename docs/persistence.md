@@ -111,7 +111,8 @@ Limitations:
   newer snapshot, and a replayed delete on an already-absent row is a no-op. A *legitimate* delete
   still removes the guard row, so a stale write at a lower offset could re-create the key — but any
   legitimate re-creation arrives at a higher offset and wins, leaving at most a stale row for a key
-  that is deleted and never written again.
+  that is deleted and never written again — itself reclaimed by the TTL below, if one is configured;
+  without a TTL such a row persists until manually removed.
 - The guard is bounded by the TTL: the `offset` column lives in the snapshot row, so it expires with
   it. After a row's TTL lapses the guard is gone and a stale write lands a fresh `INSERT`, exactly as
   after a delete. Harmless when the TTL far exceeds the rebalance/zombie overlap window (the usual
