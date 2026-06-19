@@ -124,6 +124,64 @@ class SnapshotsSpec extends FunSuite {
     assertEquals(result.deletedOffset, offset.some)
   }
 
+  // Fix: a recovered key's snapshot offset can lead the committed offset the partition resumes from; while replaying
+  // events below it the buffer must stay at the high-water offset so a compare-and-set backend does not reject a
+  // legitimate delete or a re-persist as stale. `offsetOf` makes the Int state its own offset.
+
+  test("Snapshots keeps the higher-offset snapshot and drops a lower-offset (replayed) append") {
+    val f = new ConstFixture
+
+    val database  = SnapshotDatabase.memory(f.database)
+    val snapshots = Snapshots("key1", database, f.buffer, (s: Int) => Offset.unsafe(s.toLong))
+
+    // append at offset 5, then a replayed append at offset 3 (lower) which must be dropped, then flush
+    val program = snapshots.append(5) *> snapshots.append(3) *> snapshots.flush
+    val result  = program.runS(Context()).value
+
+    // the higher-offset snapshot survives; the lower-offset append did not regress the buffer
+    assertEquals(result.database.get("key1"), Some(5))
+    assertEquals(result.buffer.map(_.value), Some(5))
+  }
+
+  test("Snapshots does not re-persist after a lower-offset (replayed) append onto a persisted snapshot") {
+    val f = new ConstFixture
+
+    val database  = countingSnapshotDb(f.database)
+    val snapshots = Snapshots("key1", database, f.buffer, (s: Int) => Offset.unsafe(s.toLong))
+    // the key was recovered/persisted at offset 10
+    val context = Context(
+      database = Map("key1" -> 10),
+      buffer   = Some(Snapshots.Snapshot(10, persisted = true))
+    )
+
+    // a replayed event at offset 3 followed by a flush must not re-persist at the lower offset
+    val program = snapshots.append(3) *> snapshots.flush
+    val result  = program.runS(context).value
+
+    assert(database.persistsCounted == 0)
+    assertEquals(result.database.get("key1"), Some(10))
+  }
+
+  test("Snapshots fences a delete on the buffered snapshot's offset when it leads the requested offset") {
+    val f = new ConstFixture
+
+    val database = new SnapshotDatabase[F, K, S] {
+      def persist(key: K, snapshot: S)   = ().pure[F]
+      def get(key: K)                    = none[S].pure[F]
+      def delete(key: K, offset: Offset) = State.modify[Context](_.copy(deletedOffset = offset.some))
+    }
+    val snapshots = Snapshots("key1", database, f.buffer, (s: Int) => Offset.unsafe(s.toLong))
+    // buffer holds the recovered snapshot at offset 7
+    val context = Context(buffer = Some(Snapshots.Snapshot(7, persisted = true)))
+
+    // a delete requested at the (lower) processing offset 2 must be fenced on the buffered offset 7
+    val program = snapshots.delete(true, Offset.unsafe(2))
+    val result  = program.runS(context).value
+
+    assertEquals(result.deletedOffset, Offset.unsafe(7).some)
+    assert(result.buffer.isEmpty)
+  }
+
   test("Snapshots does not persist the same snapshot more than once") {
 
     val f = new ConstFixture

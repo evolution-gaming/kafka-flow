@@ -52,32 +52,45 @@ trait SnapshotWriter[F[_], S] {
 }
 object Snapshots {
 
-  /** Creates a buffer for a given writer */
+  /** Creates a buffer for a given writer.
+    *
+    * @param offsetOf
+    *   extracts the offset a snapshot is at; used to keep the buffered snapshot monotonic in offset so a delete is
+    *   fenced on the key's high-water offset (see [[apply]]'s `append` and `delete`). Defaults to `Offset.min` (no
+    *   effect) for snapshot types that do not carry an offset; the snapshot persistence passes `KafkaSnapshot.offset`.
+    */
   private[flow] def of[F[_]: Ref.Make: Monad, K: LogPrefix, S](
     key: K,
-    database: SnapshotDatabase[F, K, S]
+    database: SnapshotDatabase[F, K, S],
+    offsetOf: S => Offset = (_: S) => Offset.min,
   )(implicit log: Log[F]): F[Snapshots[F, S]] =
-    Ref.of[F, Option[Snapshot[S]]](None).map(buffer => Snapshots(key, database, buffer.stateInstance))
+    Ref.of[F, Option[Snapshot[S]]](None).map(buffer => Snapshots(key, database, buffer.stateInstance, offsetOf))
 
   private[snapshot] def apply[F[_]: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
-    buffer: Stateful[F, Option[Snapshot[S]]]
+    buffer: Stateful[F, Option[Snapshot[S]]],
+    offsetOf: S => Offset = (_: S) => Offset.min,
   )(implicit log: Log[F]): Snapshots[F, S] = new Snapshots[F, S] {
     private val prefixLog: Log[F] = log.prefixed(LogPrefix[K].extract(key))
 
     def read = database.get(key)
 
-    def append(snapshot: S) = {
+    def append(snapshot: S) =
       buffer.modify {
-        case Some(s) => s.updateValue(snapshot).some
-        case None    => Snapshot.init(snapshot).some
+        // Keep the buffered snapshot monotonic in offset. Replaying events below a recovered snapshot (the committed
+        // offset the partition resumes from can trail a key's snapshot offset) folds the same state under the
+        // determinism the snapshot model assumes, so a lower-offset append is dropped rather than regressing the
+        // buffer. This keeps the buffer at the key's high-water offset, so a delete is not fenced below it and a
+        // re-derived snapshot is not re-persisted at a stale offset - both of which a compare-and-set backend would
+        // reject as if the legitimate owner were stale.
+        case Some(s) if offsetOf(snapshot) < offsetOf(s.value) => s.some
+        case Some(s)                                           => s.updateValue(snapshot).some
+        case None                                              => Snapshot.init(snapshot).some
       }
-    }
 
-    def initPersisted(snapshot: S) = {
+    def initPersisted(snapshot: S) =
       buffer.set(Snapshot.initPersisted(snapshot).some)
-    }
 
     def flush = {
       for {
@@ -94,12 +107,20 @@ object Snapshots {
     }
 
     def delete(persist: Boolean, offset: Offset) = {
-      val delete = if (persist) {
-        database.delete(key, offset) *> prefixLog.info("deleted snapshot")
-      } else {
-        ().pure[F]
+      buffer.get.flatMap { buffered =>
+        // Fence the delete on the buffered snapshot's offset when it leads `offset` (the partition processing
+        // position). The buffer holds the key's high-water snapshot (see `append`), which after recovery can be ahead
+        // of the committed offset the partition resumes from until replay catches up; without this, a legitimate
+        // delete in that window is rejected by a compare-and-set backend as if it were stale. A genuinely stale writer
+        // only ever reached its own lower offset, so it stays fenced.
+        val fenceOffset = buffered.fold(offset)(snapshot => offset max offsetOf(snapshot.value))
+        val delete = if (persist) {
+          database.delete(key, fenceOffset) *> prefixLog.info("deleted snapshot")
+        } else {
+          ().pure[F]
+        }
+        buffer.set(None) *> delete
       }
-      buffer.set(None) *> delete
     }
 
   }
