@@ -35,7 +35,7 @@ object SnapshotDatabaseMetrics {
       )
       deleteSummary <- registry.summary(
         name      = "snapshot_database_delete_duration_seconds",
-        help      = "Time required to delete all snapshots for the key from a database",
+        help      = "Time required to delete the snapshot for the key from a database",
         quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
         labels    = LabelNames("topic", "partition")
       )

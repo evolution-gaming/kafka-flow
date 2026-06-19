@@ -90,7 +90,16 @@ with `CassandraSnapshots.SnapshotWriteConflict` and the newer snapshot is preser
 **Cost:** every snapshot write and delete becomes a lightweight transaction (Paxos) — several
 inter-replica round-trips, a few times slower and more coordinator-CPU-intensive than a quorum
 write. A `persistEvery` wave flushes a partition's whole changed-key population, so the added load
-scales with that wave. Measure it against your write rate first.
+scales with that wave. A key's *first* write costs two transactions (a conditional `UPDATE` that
+finds no row, then an `INSERT ... IF NOT EXISTS`); steady-state updates to an existing key cost one.
+Measure it against your write rate first.
+
+**Consistency:** the lightweight transaction reaches consensus at the *serial* consistency level,
+which is distinct from the read/write levels in `ConsistencyOverrides` and defaults to `SERIAL` (a
+cross-datacenter quorum). `ConsistencyOverrides.write` governs only the transaction's commit phase,
+not its consensus. For single-datacenter partition ownership (the common case) set the scassandra
+client's `query.serial-consistency = LOCAL_SERIAL` to keep the Paxos rounds in-DC; otherwise every
+conditional write and delete pays a cross-datacenter round-trip.
 
 Limitations:
 - Offsets must be monotonic per key: after a consumer-group offset reset, writes at lower offsets are
@@ -98,8 +107,15 @@ Limitations:
 - Writes at an *equal* offset are allowed (a snapshot may legitimately be replaced at the same offset,
   e.g. by a timer-driven state change), so a stale writer holding exactly the stored offset is not
   detected.
-- Deletes are not offset-guarded: a stale writer can delete a newer snapshot, and a delete resets the
-  guard, letting a subsequent stale write through — a much narrower window than the one this closes.
+- Deletes are offset-guarded too (`DELETE ... IF offset <= :offset`): a stale writer cannot delete a
+  newer snapshot, and a replayed delete on an already-absent row is a no-op. A *legitimate* delete
+  still removes the guard row, so a stale write at a lower offset could re-create the key — but any
+  legitimate re-creation arrives at a higher offset and wins, leaving at most a stale row for a key
+  that is deleted and never written again.
+- The guard is bounded by the TTL: the `offset` column lives in the snapshot row, so it expires with
+  it. After a row's TTL lapses the guard is gone and a stale write lands a fresh `INSERT`, exactly as
+  after a delete. Harmless when the TTL far exceeds the rebalance/zombie overlap window (the usual
+  case), but the monotonicity guarantee only holds within the TTL.
 
 #### Enabling on a running system
 

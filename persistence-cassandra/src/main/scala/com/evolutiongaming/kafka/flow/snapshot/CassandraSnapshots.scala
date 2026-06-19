@@ -60,42 +60,45 @@ class CassandraSnapshots[F[_]: Async, T](
     insertStatement: PreparedStatement,
     key: KafkaKey,
     snapshot: KafkaSnapshot[T],
-  ): F[Unit] = {
-
-    def execute(boundStatement: BoundStatement): F[Row] =
-      session.execute(boundStatement.withConsistencyLevel(consistencyOverrides.write)).map(_.one())
-
-    def applied(row: Row): Boolean = row.getBool("[applied]")
-
-    def conflict(persistedOffset: Option[Offset]): F[Unit] =
-      SnapshotWriteConflict(key, snapshot.offset, persistedOffset).raiseError[F, Unit]
-
+  ): F[Unit] =
     for {
       created   <- Clock[F].instant
       value     <- toBytes.apply(snapshot.value, key.topicPartition.topic)
       bind       = (statement: PreparedStatement) => Statements.bindPersist(statement, key, snapshot, created, value)
-      updateRow <- execute(bind(persistStatement))
-      _ <-
-        if (applied(updateRow)) ().pure[F]
-        else
-          persistedOffsetOf(updateRow) match {
-            case Some(persistedOffset) =>
-              // the stored snapshot is newer: this writer is stale
-              conflict(persistedOffset.some)
-            case None =>
-              // the row does not exist yet: first write for the key
-              execute(bind(insertStatement)).flatMap { insertRow =>
-                if (applied(insertRow)) ().pure[F]
-                else
-                  // lost the insert race to a concurrent writer: retry the conditional update once
-                  execute(bind(persistStatement)).flatMap { retryRow =>
-                    if (applied(retryRow)) ().pure[F]
-                    else conflict(persistedOffsetOf(retryRow))
-                  }
-              }
-          }
+      updateRow <- executeWrite(bind(persistStatement))
+      _ <- resolveConditional(key, updateRow, snapshot.offset) {
+        // the row does not exist yet: first write for the key
+        executeWrite(bind(insertStatement)).flatMap { insertRow =>
+          if (insertRow.getBool("[applied]")) ().pure[F]
+          else
+            // lost the insert race to a concurrent writer: retry the conditional update once
+            executeWrite(bind(persistStatement)).flatMap { retryRow =>
+              // a row deleted between the insert and the retry surfaces as a (spurious) conflict; the flow
+              // recovers from it on the next flush
+              resolveConditional(key, retryRow, snapshot.offset)(
+                SnapshotWriteConflict(key, snapshot.offset, none).raiseError[F, Unit]
+              )
+            }
+        }
+      }
     } yield ()
-  }
+
+  private def executeWrite(boundStatement: BoundStatement): F[Row] =
+    session.execute(boundStatement.withConsistencyLevel(consistencyOverrides.write)).map(_.one())
+
+  /** Interprets a conditional-write (lightweight transaction) result: unit if it applied, [[SnapshotWriteConflict]] if
+    * a newer stored offset rejected it, or `onAbsent` when the row is absent (no `offset` in the result) - the only
+    * branch that differs between persist (first-write insert, then retry) and delete (idempotent no-op).
+    */
+  private def resolveConditional(key: KafkaKey, row: Row, attemptedOffset: Offset)(onAbsent: => F[Unit]): F[Unit] =
+    if (row.getBool("[applied]")) ().pure[F]
+    else
+      persistedOffsetOf(row) match {
+        // the stored snapshot is newer: this writer is stale
+        case Some(persistedOffset) =>
+          SnapshotWriteConflict(key, attemptedOffset, persistedOffset.some).raiseError[F, Unit]
+        case None => onAbsent
+      }
 
   private def persistedOffsetOf(row: Row): Option[Offset] =
     if (row.getColumnDefinitions.contains("offset")) row.decode[Option[Offset]]("offset")
@@ -129,20 +132,11 @@ class CassandraSnapshots[F[_]: Async, T](
     * reported as success; a not-applied result carrying a higher stored offset means a newer writer owns the key, which
     * is raised as [[SnapshotWriteConflict]] exactly as for [[persistCompareAndSet]].
     */
-  private def deleteCompareAndSet(key: KafkaKey, offset: Offset): F[Unit] = {
-    val boundStatement =
-      Statements.bindDelete(deleteStatement, key, offset).withConsistencyLevel(consistencyOverrides.write)
-    session.execute(boundStatement).map(_.one()).flatMap { row =>
-      if (row.getBool("[applied]")) ().pure[F]
-      else
-        persistedOffsetOf(row) match {
-          // the row is already absent: an earlier delete (possibly this one, replayed) already removed it
-          case None => ().pure[F]
-          // the stored snapshot is newer: this writer is stale
-          case Some(persistedOffset) => SnapshotWriteConflict(key, offset, persistedOffset.some).raiseError[F, Unit]
-        }
+  private def deleteCompareAndSet(key: KafkaKey, offset: Offset): F[Unit] =
+    executeWrite(Statements.bindDelete(deleteStatement, key, offset)).flatMap { row =>
+      // an absent row means an earlier delete (possibly this one, replayed) already removed it: idempotent no-op
+      resolveConditional(key, row, offset)(().pure[F])
     }
-  }
 
 }
 
