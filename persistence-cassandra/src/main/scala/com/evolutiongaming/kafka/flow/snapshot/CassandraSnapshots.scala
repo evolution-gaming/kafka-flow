@@ -108,10 +108,7 @@ class CassandraSnapshots[F[_]: Async, T](
     val boundStatement =
       Statements.bindGet(getStatement, key).withConsistencyLevel(consistencyOverrides.read)
 
-    for {
-      row      <- session.executeStream(boundStatement).first
-      snapshot <- row.map(row => decode(row)).sequence
-    } yield snapshot
+    session.executeStream(boundStatement).first.flatMap(_.flatTraverse(row => decode(row)))
   }
 
   def delete(key: KafkaKey, offset: Offset): F[Unit] =
@@ -125,10 +122,12 @@ class CassandraSnapshots[F[_]: Async, T](
     session.execute(boundStatement).void
   }
 
-  /** Deletes the snapshot only if the stored one is not newer (gated by `IF offset <= :offset`), so a stale writer
-    * cannot erase a newer owner's snapshot.
+  /** Deletes the snapshot by writing an offset-carrying logical tombstone (`SET value = null` keeping the row's
+    * `offset`), gated by `IF offset <= :offset`. Keeping the row means the `offset` guard survives the delete, so a
+    * stale writer can neither erase a newer snapshot nor resurrect the key at a lower offset (a subsequent recovery
+    * would otherwise fold new events onto the resurrected stale state). `get` reads the tombstone back as `None`.
     *
-    * A not-applied result is benign when the row is already gone (an at-least-once replay re-issuing the delete) and is
+    * A not-applied result is benign when the row is absent (an at-least-once replay, or a key never persisted) and is
     * reported as success; a not-applied result carrying a higher stored offset means a newer writer owns the key, which
     * is raised as [[SnapshotWriteConflict]] exactly as for [[persistCompareAndSet]].
     */
@@ -245,7 +244,7 @@ object CassandraSnapshots {
       _                <- snapshotSchema.create
       getStatement     <- Statements.prepareGet(session, tableName)
       persistStatement <- Statements.preparePersist(session, tableName, ttl, compareAndSet)
-      deleteStatement  <- Statements.prepareDelete(session, tableName, compareAndSet = compareAndSet)
+      deleteStatement  <- Statements.prepareDelete(session, tableName, ttl, compareAndSet = compareAndSet)
       writeMode <-
         if (compareAndSet)
           Statements.prepareInsertIfNotExists(session, tableName, ttl).map(WriteMode.CompareAndSet(_): WriteMode)
@@ -265,17 +264,21 @@ object CassandraSnapshots {
     tableName: String = DefaultTableName,
   ): F[Unit] = SnapshotSchema.of(session, sync, tableName).truncate
 
-  // we cannot use DecodeRow here because Code[T].decode is effectful
-  protected def decode[F[_]: Monad, T](row: Row)(implicit fromBytes: FromBytes[F, T]): F[KafkaSnapshot[T]] = {
-    val value = row.decode[ByteVector]("value")
-    fromBytes.apply(value.toArray, "").map { value =>
-      KafkaSnapshot[T](
-        offset   = row.decode[Offset]("offset"),
-        metadata = row.decode[String]("metadata"),
-        value    = value
-      )
+  // we cannot use DecodeRow here because Code[T].decode is effectful.
+  // A null `value` is a logical tombstone (a compare-and-set delete, see Statements.prepareDelete): the row is kept so
+  // its `offset` keeps guarding against a stale lower-offset writer, but the key reads back as absent.
+  protected def decode[F[_]: Monad, T](row: Row)(implicit fromBytes: FromBytes[F, T]): F[Option[KafkaSnapshot[T]]] =
+    row.decode[Option[ByteVector]]("value") match {
+      case None => none[KafkaSnapshot[T]].pure[F]
+      case Some(value) =>
+        fromBytes.apply(value.toArray, "").map { value =>
+          KafkaSnapshot[T](
+            offset   = row.decode[Offset]("offset"),
+            metadata = row.decode[String]("metadata"),
+            value    = value
+          ).some
+        }
     }
-  }
 
   protected object Statements {
 
@@ -398,18 +401,36 @@ object CassandraSnapshots {
         .encode("partition", key.topicPartition.partition)
         .encode("key", key.key)
 
-    /** In compare-and-set mode the delete is gated by `IF offset <= :offset`, which both protects against stale writers
-      * (a delete cannot erase a newer owner's snapshot) and forces the delete through the Paxos path: mixing
-      * lightweight transactions and regular mutations on the same row is not safe in Cassandra (a regular mutation may
-      * shadow a later lightweight one), so all mutations have to go through Paxos.
+    /** In compare-and-set mode the delete is an offset-carrying logical tombstone: `UPDATE … SET value = null` keeping
+      * the row's `offset`, gated by `IF offset <= :offset`. Keeping the row preserves the `offset` guard across the
+      * delete (so a stale writer cannot resurrect the key at a lower offset) and forces the delete through the Paxos
+      * path (mixing lightweight transactions and regular mutations on the same row is not safe in Cassandra). The
+      * tombstone is reaped by the TTL, if configured. In last-write-wins mode the delete is an ordinary `DELETE`.
       */
     def prepareDelete[F[_]](
       session: CassandraSession[F],
       tableName: String,
+      ttl: Option[FiniteDuration],
       compareAndSet: Boolean = false,
     ): F[PreparedStatement] =
-      session
-        .prepare(
+      session.prepare(
+        if (compareAndSet)
+          s"""
+             |UPDATE
+             |  $tableName
+             |  ${StatementHelper.ttlFragment(ttl)}
+             |SET
+             |  value = null,
+             |  offset = :offset
+             |WHERE
+             |  application_id = :application_id
+             |  AND group_id = :group_id
+             |  AND topic = :topic
+             |  AND partition = :partition
+             |  AND key = :key
+             |  IF offset <= :offset
+          """.stripMargin
+        else
           s"""
              |DELETE FROM
              |  $tableName
@@ -419,9 +440,8 @@ object CassandraSnapshots {
              |  AND topic = :topic
              |  AND partition = :partition
              |  AND key = :key
-             |  ${if (compareAndSet) "IF offset <= :offset" else ""}
-        """.stripMargin
-        )
+          """.stripMargin
+      )
 
     def bindDelete(statement: PreparedStatement, key: KafkaKey): BoundStatement =
       statement

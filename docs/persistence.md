@@ -84,8 +84,12 @@ CassandraPersistence.withSchema[F, State](
 ```
 
 When enabled, every snapshot write is a Cassandra lightweight transaction asserting that the stored
-offset is not greater than the one being written (`IF offset <= :offset`). A stale write is rejected
-with `CassandraSnapshots.SnapshotWriteConflict` and the newer snapshot is preserved.
+offset is not greater than the one being written (`IF offset <= :offset`); a stale write is rejected
+with `CassandraSnapshots.SnapshotWriteConflict` and the newer snapshot is preserved. A delete is the
+same conditional write as a **logical tombstone** (`SET value = null`, keeping the row's `offset`), so
+the offset guard survives the delete: a stale writer can neither erase a newer snapshot nor resurrect
+the key at a lower offset. The tombstone reads back as absent (`get` returns `None`) and is reaped by
+the TTL.
 
 **Cost:** every snapshot write and delete becomes a lightweight transaction (Paxos) — several
 inter-replica round-trips, a few times slower and more coordinator-CPU-intensive than a quorum
@@ -107,16 +111,16 @@ Limitations:
 - Writes at an *equal* offset are allowed (a snapshot may legitimately be replaced at the same offset,
   e.g. by a timer-driven state change), so a stale writer holding exactly the stored offset is not
   detected.
-- Deletes are offset-guarded too (`DELETE ... IF offset <= :offset`): a stale writer cannot delete a
-  newer snapshot, and a replayed delete on an already-absent row is a no-op. A *legitimate* delete
-  still removes the guard row, so a stale write at a lower offset could re-create the key — but any
-  legitimate re-creation arrives at a higher offset and wins, leaving at most a stale row for a key
-  that is deleted and never written again — itself reclaimed by the TTL below, if one is configured;
-  without a TTL such a row persists until manually removed.
-- The guard is bounded by the TTL: the `offset` column lives in the snapshot row, so it expires with
-  it. After a row's TTL lapses the guard is gone and a stale write lands a fresh `INSERT`, exactly as
-  after a delete. Harmless when the TTL far exceeds the rebalance/zombie overlap window (the usual
-  case), but the monotonicity guarantee only holds within the TTL.
+- Deletes are offset-guarded and leave a tombstone (`UPDATE ... SET value = null ... IF offset <=
+  :offset`): a stale writer can neither erase a newer snapshot nor re-create the key at a lower offset
+  (the tombstone's `offset` keeps guarding), so a deleted-then-revived key cannot be corrupted by a
+  stale resurrection. A replayed delete is a no-op (same offset) or a conflict (a newer write exists),
+  never a resurrection. The tombstone reads back as `None` and is reclaimed by the TTL below; without
+  a TTL it persists until removed manually.
+- The guard is bounded by the TTL: the `offset` column and the tombstone live in the snapshot row, so
+  they expire with it. After a row's TTL lapses the guard is gone and a stale write can land a fresh
+  `INSERT`. Harmless when the TTL far exceeds the rebalance/zombie overlap window (the usual case),
+  but the monotonicity guarantee only holds within the TTL.
 
 #### Enabling on a running system
 
