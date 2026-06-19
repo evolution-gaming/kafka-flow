@@ -20,7 +20,7 @@ class SnapshotSpec extends CassandraSpec {
       _                    <- snapshots.persist(key, snapshot)
       snapshotAfterPersist <- snapshots.get(key)
       ttls                 <- getTtls(key)
-      _                    <- snapshots.delete(key)
+      _                    <- snapshots.delete(key, snapshot.offset)
       snapshotAfterDelete  <- snapshots.get(key)
     } yield {
       assert(clue(snapshotBeforeTest.isEmpty))
@@ -91,10 +91,73 @@ class SnapshotSpec extends CassandraSpec {
         compareAndSet = true
       )
       _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
-      _      <- snapshots.delete(key)
+      _      <- snapshots.delete(key, Offset.unsafe(10))
       _      <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(3), value = "state-3"))
       stored <- snapshots.get(key)
     } yield assertEquals(clue(stored.map(_.value)), Some("state-3"))
+
+    test.unsafeRunSync()
+  }
+
+  test("compare-and-set: stale delete is rejected and leaves the newer snapshot") {
+    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-stale-delete")
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        compareAndSet = true
+      )
+      _ <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      // a stale writer (lower offset) tries to delete: it must not erase the newer owner's snapshot
+      result <- snapshots.delete(key, Offset.unsafe(7)).attempt
+      stored <- snapshots.get(key)
+    } yield {
+      result match {
+        case Left(conflict: CassandraSnapshots.SnapshotWriteConflict) =>
+          assertEquals(clue(conflict.key), key)
+          assertEquals(clue(conflict.attemptedOffset), Offset.unsafe(7))
+          assertEquals(clue(conflict.persistedOffset), Some(Offset.unsafe(10)))
+        case other => fail(s"expected SnapshotWriteConflict, got $other")
+      }
+      assertEquals(clue(stored.map(_.value)), Some("state-10"))
+    }
+
+    test.unsafeRunSync()
+  }
+
+  test("compare-and-set: delete at an equal or higher offset removes the snapshot") {
+    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-authorized-delete")
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        compareAndSet = true
+      )
+      _           <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      _           <- snapshots.delete(key, Offset.unsafe(10))
+      afterDelete <- snapshots.get(key)
+    } yield assert(clue(afterDelete.isEmpty))
+
+    test.unsafeRunSync()
+  }
+
+  test("compare-and-set: deleting an absent key is an idempotent no-op") {
+    val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-idempotent-delete")
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        compareAndSet = true
+      )
+      _ <- snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(10), value = "state-10"))
+      _ <- snapshots.delete(key, Offset.unsafe(10))
+      // re-issuing the delete (e.g. an at-least-once replay after a crash before the offset commit) must not fail
+      result <- snapshots.delete(key, Offset.unsafe(10)).attempt
+      stored <- snapshots.get(key)
+    } yield {
+      assert(clue(result.isRight))
+      assert(clue(stored.isEmpty))
+    }
 
     test.unsafeRunSync()
   }

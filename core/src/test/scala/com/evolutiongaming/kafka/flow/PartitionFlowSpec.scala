@@ -177,7 +177,7 @@ class PartitionFlowSpec extends FunSuite {
           val (_, sent) = snapshot
           IO.whenA(key == "key2" && sent == 3)(IO.raiseError(new Exception("Test error")))
         }
-        def delete(key: String): IO[Unit] = IO.unit
+        def delete(key: String, offset: Offset): IO[Unit] = IO.unit
       }
 
       override def flow: Resource[IO, PartitionFlow[IO]] = makeFlow(
@@ -363,7 +363,7 @@ class PartitionFlowSpec extends FunSuite {
         // Fail snapshot persistence for the second key
         def persist(key: String, snapshot: (Offset, Int)): IO[Unit] =
           IO.raiseError(new Exception("Test error")).whenA(key == key2)
-        def delete(key: String): IO[Unit] = IO.unit
+        def delete(key: String, offset: Offset): IO[Unit] = IO.unit
       }
 
       override def flow: Resource[IO, PartitionFlow[IO]] = makeFlow(

@@ -111,9 +111,37 @@ class CassandraSnapshots[F[_]: Async, T](
     } yield snapshot
   }
 
-  def delete(key: KafkaKey): F[Unit] = {
+  def delete(key: KafkaKey, offset: Offset): F[Unit] =
+    writeMode match {
+      case WriteMode.LastWriteWins    => deleteUnconditional(key)
+      case WriteMode.CompareAndSet(_) => deleteCompareAndSet(key, offset)
+    }
+
+  private def deleteUnconditional(key: KafkaKey): F[Unit] = {
     val boundStatement = Statements.bindDelete(deleteStatement, key).withConsistencyLevel(consistencyOverrides.write)
     session.execute(boundStatement).void
+  }
+
+  /** Deletes the snapshot only if the stored one is not newer (gated by `IF offset <= :offset`), so a stale writer
+    * cannot erase a newer owner's snapshot.
+    *
+    * A not-applied result is benign when the row is already gone (an at-least-once replay re-issuing the delete) and is
+    * reported as success; a not-applied result carrying a higher stored offset means a newer writer owns the key, which
+    * is raised as [[SnapshotWriteConflict]] exactly as for [[persistCompareAndSet]].
+    */
+  private def deleteCompareAndSet(key: KafkaKey, offset: Offset): F[Unit] = {
+    val boundStatement =
+      Statements.bindDelete(deleteStatement, key, offset).withConsistencyLevel(consistencyOverrides.write)
+    session.execute(boundStatement).map(_.one()).flatMap { row =>
+      if (row.getBool("[applied]")) ().pure[F]
+      else
+        persistedOffsetOf(row) match {
+          // the row is already absent: an earlier delete (possibly this one, replayed) already removed it
+          case None => ().pure[F]
+          // the stored snapshot is newer: this writer is stale
+          case Some(persistedOffset) => SnapshotWriteConflict(key, offset, persistedOffset.some).raiseError[F, Unit]
+        }
+    }
   }
 
 }
@@ -140,7 +168,7 @@ object CassandraSnapshots {
     attemptedOffset: Offset,
     persistedOffset: Option[Offset],
   ) extends RuntimeException(
-        s"snapshot write conflict for key $key: attempted to persist snapshot with offset $attemptedOffset " +
+        s"snapshot write conflict for key $key: attempted to write with offset $attemptedOffset " +
           s"while the store contains offset ${persistedOffset.fold("unknown")(_.toString)}, " +
           "another writer is likely owning the key now"
       )
@@ -223,7 +251,7 @@ object CassandraSnapshots {
       _                <- snapshotSchema.create
       getStatement     <- Statements.prepareGet(session, tableName)
       persistStatement <- Statements.preparePersist(session, tableName, ttl, compareAndSet)
-      deleteStatement  <- Statements.prepareDelete(session, tableName, ifExists = compareAndSet)
+      deleteStatement  <- Statements.prepareDelete(session, tableName, compareAndSet = compareAndSet)
       writeMode <-
         if (compareAndSet)
           Statements.prepareInsertIfNotExists(session, tableName, ttl).map(WriteMode.CompareAndSet(_): WriteMode)
@@ -376,14 +404,15 @@ object CassandraSnapshots {
         .encode("partition", key.topicPartition.partition)
         .encode("key", key.key)
 
-    /** In compare-and-set mode the delete is performed as `DELETE ... IF EXISTS`: mixing lightweight transactions and
-      * regular mutations on the same row is not safe in Cassandra (a regular mutation may shadow a later lightweight
-      * one), so all mutations have to go through the Paxos path.
+    /** In compare-and-set mode the delete is gated by `IF offset <= :offset`, which both protects against stale writers
+      * (a delete cannot erase a newer owner's snapshot) and forces the delete through the Paxos path: mixing
+      * lightweight transactions and regular mutations on the same row is not safe in Cassandra (a regular mutation may
+      * shadow a later lightweight one), so all mutations have to go through Paxos.
       */
     def prepareDelete[F[_]](
       session: CassandraSession[F],
       tableName: String,
-      ifExists: Boolean = false,
+      compareAndSet: Boolean = false,
     ): F[PreparedStatement] =
       session
         .prepare(
@@ -396,7 +425,7 @@ object CassandraSnapshots {
              |  AND topic = :topic
              |  AND partition = :partition
              |  AND key = :key
-             |  ${if (ifExists) "IF EXISTS" else ""}
+             |  ${if (compareAndSet) "IF offset <= :offset" else ""}
         """.stripMargin
         )
 
@@ -408,5 +437,9 @@ object CassandraSnapshots {
         .encode("topic", key.topicPartition.topic)
         .encode("partition", key.topicPartition.partition)
         .encode("key", key.key)
+
+    /** Binds the delete for compare-and-set mode, adding the `:offset` the `IF offset <= :offset` guard checks. */
+    def bindDelete(statement: PreparedStatement, key: KafkaKey, offset: Offset): BoundStatement =
+      bindDelete(statement, key).encode("offset", offset)
   }
 }

@@ -7,6 +7,7 @@ import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.LogPrefix
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
+import com.evolutiongaming.skafka.Offset
 
 trait Snapshots[F[_], S] extends SnapshotReader[F, S] with SnapshotWriter[F, S]
 
@@ -42,8 +43,11 @@ trait SnapshotWriter[F[_], S] {
     *
     * @param persist
     *   if `true` then also calls underlying database, flushes buffers only otherwise.
+    * @param offset
+    *   offset of the state being deleted; passed to the database so a stale-writer-protecting backend can gate the
+    *   delete on it.
     */
-  def delete(persist: Boolean): F[Unit]
+  def delete(persist: Boolean, offset: Offset): F[Unit]
 
 }
 object Snapshots {
@@ -89,9 +93,9 @@ object Snapshots {
       } yield ()
     }
 
-    def delete(persist: Boolean) = {
+    def delete(persist: Boolean, offset: Offset) = {
       val delete = if (persist) {
-        database.delete(key) *> prefixLog.info("deleted snapshot")
+        database.delete(key, offset) *> prefixLog.info("deleted snapshot")
       } else {
         ().pure[F]
       }
@@ -101,11 +105,11 @@ object Snapshots {
   }
 
   def empty[F[_]: Applicative, S]: Snapshots[F, S] = new Snapshots[F, S] {
-    def read                     = none[S].pure[F]
-    def append(event: S)         = ().pure[F]
-    def initPersisted(event: S)  = ().pure[F]
-    def flush                    = ().pure[F]
-    def delete(persist: Boolean) = ().pure[F]
+    def read                                     = none[S].pure[F]
+    def append(event: S)                         = ().pure[F]
+    def initPersisted(event: S)                  = ().pure[F]
+    def flush                                    = ().pure[F]
+    def delete(persist: Boolean, offset: Offset) = ().pure[F]
   }
 
   final case class Snapshot[S](value: S, persisted: Boolean) { self =>

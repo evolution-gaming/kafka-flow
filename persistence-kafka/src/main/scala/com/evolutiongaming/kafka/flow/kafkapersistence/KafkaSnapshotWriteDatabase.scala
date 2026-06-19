@@ -81,8 +81,8 @@ object KafkaSnapshotWriteDatabase {
     * commits everything queued then - up to `maxWritesPerTransaction` - in one transaction, commits the latest offset
     * to gate it, and completes each item's `done`. Two non-obvious cases follow: the queue may be empty (a prior holder
     * already took this item), and an over-cap backlog is left for later holders - every queued item has its own waiting
-    * caller that takes the lock once, so none is left stranded. Each caller awaits its own `done`, whoever committed it.
-    * See `docs/kafka-single-writer-design.md`.
+    * caller that takes the lock once, so none is left stranded. Each caller awaits its own `done`, whoever committed
+    * it. See `docs/kafka-single-writer-design.md`.
     */
   private final class GroupCommit[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
     producer: Producer[F],
@@ -187,7 +187,8 @@ object KafkaSnapshotWriteDatabase {
   ): SnapshotWriteDatabase[F, KafkaKey, S] = new SnapshotWriteDatabase[F, KafkaKey, S] {
     override def persist(key: KafkaKey, snapshot: S): F[Unit] = produce(key, snapshot.some)
 
-    override def delete(key: KafkaKey): F[Unit] = produce(key, none)
+    // the Kafka path fences deletes by the producer's transactional generation, so the offset guard is not needed here
+    override def delete(key: KafkaKey, offset: Offset): F[Unit] = produce(key, none)
 
     private def produce(key: KafkaKey, snapshot: Option[S]): F[Unit] = {
       val targetPartition = partitionMapper.getStatePartition(key.topicPartition.partition)

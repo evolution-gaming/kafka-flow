@@ -7,6 +7,7 @@ import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.metrics.MetricsK
 import com.evolutiongaming.kafka.flow.metrics.MetricsKOf
 import com.evolutiongaming.kafka.flow.metrics.syntax.*
+import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.smetrics.LabelNames
 import com.evolutiongaming.smetrics.MetricsHelper.*
 import com.evolutiongaming.smetrics.Quantile
@@ -52,8 +53,8 @@ object SnapshotDatabaseMetrics {
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)
               .observe(duration.toNanos.nanosToSeconds)
           }
-        def delete(key: KafkaKey) =
-          database.delete(key) measureDuration { duration =>
+        def delete(key: KafkaKey, offset: Offset) =
+          database.delete(key, offset) measureDuration { duration =>
             deleteSummary
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)
               .observe(duration.toNanos.nanosToSeconds)

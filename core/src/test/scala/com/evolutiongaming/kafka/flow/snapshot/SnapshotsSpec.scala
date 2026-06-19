@@ -70,7 +70,7 @@ class SnapshotsSpec extends FunSuite {
     )
 
     // When("delete is requested")
-    val program = snapshots.delete(true)
+    val program = snapshots.delete(true, Offset.min)
     val result  = program.runS(context).value
 
     // Then("buffer is cleared")
@@ -93,7 +93,7 @@ class SnapshotsSpec extends FunSuite {
     )
 
     // When("delete is requested")
-    val program = snapshots.delete(false)
+    val program = snapshots.delete(false, Offset.min)
     val result  = program.runS(context).value
 
     // Then("buffer is cleared")
@@ -101,6 +101,27 @@ class SnapshotsSpec extends FunSuite {
     // And("key is not deleted")
     assert(result.database.contains("key1"))
 
+  }
+
+  test("Snapshots forwards the delete offset to the database") {
+
+    val f = new ConstFixture
+
+    // Given("a database capturing the offset passed to delete")
+    val database = new SnapshotDatabase[F, K, S] {
+      def persist(key: K, snapshot: S)   = ().pure[F]
+      def get(key: K)                    = none[S].pure[F]
+      def delete(key: K, offset: Offset) = State.modify[Context](_.copy(deletedOffset = offset.some))
+    }
+    val snapshots = Snapshots("key1", database, f.buffer)
+
+    // When("delete is requested with a specific offset")
+    val offset  = Offset.unsafe(77)
+    val program = snapshots.delete(true, offset)
+    val result  = program.runS(Context()).value
+
+    // Then("the database delete receives that offset")
+    assertEquals(result.deletedOffset, offset.some)
   }
 
   test("Snapshots does not persist the same snapshot more than once") {
@@ -157,7 +178,8 @@ object SnapshotsSpec {
 
   case class Context(
     database: Map[K, S]                   = Map.empty,
-    buffer: Option[Snapshots.Snapshot[S]] = None
+    buffer: Option[Snapshots.Snapshot[S]] = None,
+    deletedOffset: Option[Offset]         = None
   )
 
   class ConstFixture {
@@ -185,8 +207,8 @@ object SnapshotsSpec {
       def get(key: K) =
         db.get(key)
 
-      def delete(key: K) =
-        db.delete(key)
+      def delete(key: K, offset: Offset) =
+        db.delete(key, offset)
 
       def persistsCounted: SnapshotsSpec.S = persistCounter
     }

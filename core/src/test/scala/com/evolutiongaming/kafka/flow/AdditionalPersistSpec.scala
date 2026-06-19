@@ -148,8 +148,8 @@ class AdditionalPersistSpec extends FunSuite {
 
       override def snapshotDatabase: SnapshotDatabase[IO, KafkaKey, String] =
         new SnapshotDatabase[IO, KafkaKey, String] {
-          override def delete(key: KafkaKey): IO[Unit]        = snapshots.update(_ - key)
-          override def get(key: KafkaKey): IO[Option[String]] = snapshots.get.map(_.get(key))
+          override def delete(key: KafkaKey, offset: Offset): IO[Unit] = snapshots.update(_ - key)
+          override def get(key: KafkaKey): IO[Option[String]]          = snapshots.get.map(_.get(key))
           override def persist(key: KafkaKey, snapshot: String): IO[Unit] =
             if (key.key == "key1" && snapshot == "value10") {
               IO.raiseError(new Exception("Persist error"))
