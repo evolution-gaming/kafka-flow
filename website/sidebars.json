@@ -1,5 +1,5 @@
 {
   "docs": {
-    "Kafka-Flow": ["overview", "setup", "faq", "styleguide", "persistence", "kafka-single-writer-design"]
+    "Kafka-Flow": ["overview", "setup", "faq", "styleguide", "persistence", "kafka-single-writer-design", "cassandra-single-writer-design"]
   }
 }
