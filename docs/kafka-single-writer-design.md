@@ -151,9 +151,15 @@ Reproduce: `KAFKA_FLOW_PERF=1 sbt "persistence-kafka-it-tests/testOnly *Transact
 `TransactionalKafkaPersistenceSpec` runs through the real PartitionFlow / eager-recovery /
 flush-on-revoke machinery: the reproduction asserts corruption with the plain shared producer; the
 prevention drives a stale owner with an *older consumer generation* and asserts the newer snapshot
-survives. Stubbing `sendOffsetsToTransaction` off turns the prevention tests red — proving they test
-the binding, not incidental fencing. Other pins: first-flush gating (the seed), fenced writer fails
-its next flush, an open transaction neither blocks nor leaks into recovery, concurrent-write safety.
+survives. The paired non-transactional reproduction (the plain shared producer, no offset binding)
+shows the corruption, isolating the binding as the cause rather than incidental fencing. Other pins:
+first-flush gating (the seed), fenced writer fails its next flush, an open transaction neither blocks
+nor leaks into recovery, concurrent-write safety. The group-commit machinery is also exercised in
+isolation by a local `GroupCommitSpec` (a recording in-memory producer, no broker).
+
+Formal models in `models/`: `GenerationFencing` (the live group-metadata capture coupled to flow
+teardown) and `GroupCommitConc` (the group commit completes every write's outcome — no stranded write,
+no deadlock).
 
 ## Rejected alternatives
 

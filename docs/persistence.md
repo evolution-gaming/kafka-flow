@@ -83,52 +83,39 @@ CassandraPersistence.withSchema[F, State](
 )
 ```
 
-When enabled, every snapshot write is a Cassandra lightweight transaction asserting that the stored
-offset is not greater than the one being written (`IF offset <= :offset`); a stale write is rejected
-with `CassandraSnapshots.SnapshotWriteConflict` and the newer snapshot is preserved. A delete is the
-same conditional write as a **logical tombstone** (`SET value = null`, keeping the row's `offset`), so
-the offset guard survives the delete: a stale writer can neither erase a newer snapshot nor resurrect
-the key at a lower offset. The tombstone reads back as absent (`get` returns `None`) and is reaped by
-the TTL.
+When enabled, every snapshot write and delete is a Cassandra lightweight transaction guarded by the
+stored offset, so a newer snapshot is never overwritten by a stale one; a rejected write fails with
+`CassandraSnapshots.SnapshotWriteConflict` (handled as above). A delete leaves an offset-carrying
+tombstone — it cannot be resurrected at a lower offset — that reads back as `None` and is reaped by
+the TTL. See the [design doc](cassandra-single-writer-design.md) for the mechanism, the tombstone, the
+recovery/replay fence, and the consistency model.
 
 **Cost:** every snapshot write and delete becomes a lightweight transaction (Paxos) — several
-inter-replica round-trips, a few times slower and more coordinator-CPU-intensive than a quorum
-write. A `persistEvery` wave flushes a partition's whole changed-key population, so the added load
-scales with that wave. A key's *first* write costs two transactions (a conditional `UPDATE` that
-finds no row, then an `INSERT ... IF NOT EXISTS`); steady-state updates to an existing key cost one.
-Measure it against your write rate first.
+inter-replica round-trips, a few times slower and more coordinator-CPU-intensive than a quorum write.
+A `persistEvery` wave flushes a partition's whole changed-key population, so the added load scales with
+that wave. Measure it against your write rate first.
 
-**Consistency:** the lightweight transaction reaches consensus at the *serial* consistency level,
-which is distinct from the read/write levels in `ConsistencyOverrides` and defaults to `SERIAL` (a
-cross-datacenter quorum). `ConsistencyOverrides.write` governs only the transaction's commit phase,
-not its consensus. For single-datacenter partition ownership (the common case) set the scassandra
-client's `query.serial-consistency = LOCAL_SERIAL` to keep the Paxos rounds in-DC; otherwise every
-conditional write and delete pays a cross-datacenter round-trip.
+**Consistency:** for single-datacenter partition ownership (the common case) set the scassandra
+client's `query.serial-consistency = LOCAL_SERIAL`, or every conditional write pays a cross-datacenter
+round-trip — the lightweight transaction's serial level is separate from `ConsistencyOverrides` and
+defaults to cross-DC `SERIAL` (design doc).
 
 Limitations:
 - Offsets must be monotonic per key: after a consumer-group offset reset, writes at lower offsets are
   rejected until the stored snapshots are passed or truncated.
 - Writes at an *equal* offset are allowed (a snapshot may legitimately be replaced at the same offset,
   e.g. by a timer-driven state change), so a stale writer holding exactly the stored offset is not
-  detected.
-- Deletes are offset-guarded and leave a tombstone (`UPDATE ... SET value = null ... IF offset <=
-  :offset`): a stale writer can neither erase a newer snapshot nor re-create the key at a lower offset
-  (the tombstone's `offset` keeps guarding), so a deleted-then-revived key cannot be corrupted by a
-  stale resurrection. A replayed delete is a no-op (same offset) or a conflict (a newer write exists),
-  never a resurrection. The tombstone reads back as `None` and is reclaimed by the TTL below; without
-  a TTL it persists until removed manually.
-- The guard is bounded by the TTL: the `offset` column and the tombstone live in the snapshot row, so
-  they expire with it. After a row's TTL lapses the guard is gone and a stale write can land a fresh
-  `INSERT`. Harmless when the TTL far exceeds the rebalance/zombie overlap window (the usual case),
-  but the monotonicity guarantee only holds within the TTL.
+  detected. Safe under the deterministic folds the snapshot model already assumes.
+- The guard is bounded by the TTL: the `offset` and the tombstone live in the snapshot row, so they
+  expire with it. After a row's TTL lapses a stale write can land a fresh `INSERT`. Harmless when the
+  TTL far exceeds the rebalance/zombie overlap window (the usual case), but the monotonicity guarantee
+  only holds within the TTL.
 
 #### Enabling on a running system
 
-No migration is needed either direction (the condition reads the `offset` column every version
-already writes). Clock-skew caveat during a rolling deploy: regular writes carry client-side
-timestamps while lightweight transactions use coordinator-generated ones, so an application clock
-running ahead of the coordinators can let an old instance's plain write shadow a newer conditional
-one. Negligible with NTP-synced clocks.
+No migration is needed either direction (the condition reads the `offset` column every version already
+writes). A rolling deploy is safe, with a clock-skew caveat while the two modes coexist (see the design
+doc); negligible with NTP-synced clocks.
 
 ### Transactional snapshot writes (Kafka)
 

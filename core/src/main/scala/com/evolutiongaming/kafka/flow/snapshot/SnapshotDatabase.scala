@@ -90,8 +90,7 @@ object SnapshotDatabase {
       logOf: LogOf[F],
       logPrefix: LogPrefix[K]
     ): F[SnapshotsOf[F, K, KafkaSnapshot[S]]] =
-      // fence a delete on the snapshot's own offset (see Snapshots.delete): for a key recovered with a snapshot ahead
-      // of the committed offset, a delete must not be gated below that offset and rejected by a compare-and-set backend
+      // pass KafkaSnapshot.offset so a delete is fenced on the key's high-water offset (see Snapshots.delete/append)
       logOf(SnapshotDatabase.getClass) map { implicit log => key => Snapshots.of(key, self, _.offset) }
 
   }

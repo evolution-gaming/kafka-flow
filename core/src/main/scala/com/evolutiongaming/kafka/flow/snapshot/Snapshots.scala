@@ -78,12 +78,9 @@ object Snapshots {
 
     def append(snapshot: S) =
       buffer.modify {
-        // Keep the buffered snapshot monotonic in offset. Replaying events below a recovered snapshot (the committed
-        // offset the partition resumes from can trail a key's snapshot offset) folds the same state under the
-        // determinism the snapshot model assumes, so a lower-offset append is dropped rather than regressing the
-        // buffer. This keeps the buffer at the key's high-water offset, so a delete is not fenced below it and a
-        // re-derived snapshot is not re-persisted at a stale offset - both of which a compare-and-set backend would
-        // reject as if the legitimate owner were stale.
+        // keep the buffer monotonic in offset: a lower-offset append is replay onto a recovered snapshot (a no-op
+        // under deterministic folds), so dropping it holds the high-water offset that fences `delete`. See
+        // docs/cassandra-single-writer-design.md.
         case Some(s) if offsetOf(snapshot) < offsetOf(s.value) => s.some
         case Some(s)                                           => s.updateValue(snapshot).some
         case None                                              => Snapshot.init(snapshot).some
@@ -108,11 +105,9 @@ object Snapshots {
 
     def delete(persist: Boolean, offset: Offset) = {
       buffer.get.flatMap { buffered =>
-        // Fence the delete on the buffered snapshot's offset when it leads `offset` (the partition processing
-        // position). The buffer holds the key's high-water snapshot (see `append`), which after recovery can be ahead
-        // of the committed offset the partition resumes from until replay catches up; without this, a legitimate
-        // delete in that window is rejected by a compare-and-set backend as if it were stale. A genuinely stale writer
-        // only ever reached its own lower offset, so it stays fenced.
+        // fence on the buffer's high-water offset (see `append`), not `offset`: after recovery a key's snapshot can
+        // lead the partition's processing offset, and a compare-and-set backend would reject a delete gated below it
+        // as stale though the owner is legitimate. A genuinely stale writer only reached its own lower offset.
         val fenceOffset = buffered.fold(offset)(snapshot => offset max offsetOf(snapshot.value))
         val delete = if (persist) {
           database.delete(key, fenceOffset) *> prefixLog.info("deleted snapshot")
