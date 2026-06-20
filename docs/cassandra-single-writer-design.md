@@ -58,6 +58,16 @@ Result classification (`applied` / newer-stored-offset / row-absent) is shared b
 in `resolveConditional`; a not-applied result reports the stored `offset` when Cassandra returns it
 and treats its absence (or a null) as "row absent".
 
+This first-write path is the one place a persist is **not** a single atomic compare-and-set — it is a
+compound of separate Paxos transactions with interleaving gaps. It is still safe by construction: both
+`UPDATE`s are offset-gated and `INSERT ... IF NOT EXISTS` only ever writes to an absent cell (nothing to
+overwrite), so no interleaving can produce a stale overwrite. The only deviation from the atomic
+abstraction is a *spurious* conflict — the retry finding the row gone because a TTL reap (or a
+last-write-wins hard delete) removed it between the `INSERT` and the retry — which is benign: the flow
+recovers on its next flush. Model: `CasFirstWrite` checks the compound under every interleaving
+(`casfw_guarded` holds; `casfw_unguarded` shows the offset guard is load-bearing; `casfw_reap` keeps
+safety under a mid-protocol reap; `casfw_spurious` shows the spurious path is reachable but liveness-only).
+
 The guard is per **key** (per row), which is the right granularity: #732 corruption is per key, keys
 are independent, and per-key monotonic durability is exactly what prevents it. The conditional write
 is linearizable per partition key (Paxos), so concurrent writers to one key are correctly ordered
@@ -123,6 +133,12 @@ i.e. only in this replay window. Model: `ReplayFence` — `Fix=TRUE` holds (safe
 `Fix=FALSE` violates `INV_NoSelfFence` while `INV_NoStaleApply` still holds, confirming the bug is
 liveness-only and the fix never lets a stale writer through.
 
+This fence and the tombstone above are independent mechanisms; their *interaction* over one key's
+lifetime is checked by `CasReplayTombstone` (not just argued): with both on, the legitimate owner is
+never self-fenced and a zombie never revives; turning off either one violates exactly its own invariant.
+The two are complementary — presenting the higher `highWater` for a delete makes the tombstone it writes
+*more* protective against a lower-offset revive, never less.
+
 ## Equal-offset writes and determinism
 
 `IF offset <= :offset` admits an *equal* offset, so a stale writer holding exactly the stored offset is
@@ -171,7 +187,23 @@ conditional one. Negligible with NTP-synced clocks, and gone once every instance
   the unit spec directly, the flow spec under a mocked clock (`TestControl`) with an offset-gated
   in-memory store.
 - Formal models in `models/`: `CasCompareAndSet` (offset monotonicity), `CasDeleteRevive` (tombstone /
-  delete-then-revive), `ReplayFence` (the replay-window fence).
+  delete-then-revive), `CasFirstWrite` (the non-atomic first-write race refines the atomic CAS),
+  `ReplayFence` (the replay-window fence), and `CasReplayTombstone` (the replay fence and the tombstone
+  composed over one key). The models verify behaviour *under* their stated assumptions (below); they do
+  not prove those assumptions.
+
+## Assumptions
+
+The models and this design take three things as given:
+
+- **Per-key linearizable compare-and-set.** Each Cassandra lightweight transaction on a row is an atomic,
+  linearizable operation (Paxos). The first-write `UPDATE`/`INSERT`/retry compound is *not* atomic — that
+  is the one place modelled explicitly (`CasFirstWrite`).
+- **Deterministic, replayable folds (a user contract).** Re-folding a recovered base over the same events
+  reproduces the same state. This is what makes a lower-offset replay a no-op (so the buffer can stay
+  monotonic) and what makes equal-offset writes idempotent. A non-deterministic fold breaks both.
+- **Per-key independence.** #732 corruption is per key; keys are independent, so per-key monotonic
+  durability is the whole guarantee.
 
 ## Rejected alternatives
 

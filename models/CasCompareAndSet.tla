@@ -20,6 +20,10 @@
 (* delete(o):   absent -> no-op (idempotent); else DELETE IF offset <= o    *)
 (*              => GuardedDelete: applies iff stored.offset <= o            *)
 (*                 ~GuardedDelete (pre-R1 IF EXISTS): applies if present    *)
+(*                                                                          *)
+(* ASSUMES: the cell is a per-key linearizable register (Paxos LWT), so each *)
+(* persist/delete is atomic; folds are DETERMINISTIC (R6), so op[o] is a pure*)
+(* function of the offset and a persist at o always stores the value o.      *)
 (***************************************************************************)
 EXTENDS Naturals
 

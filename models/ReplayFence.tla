@@ -29,6 +29,12 @@
 (*                      not stale) is never rejected -- the liveness the fix *)
 (*                      restores. Holds with Fix; VIOLATED without it (the   *)
 (*                      legitimate owner presents cur < stored during replay)*)
+(*                                                                          *)
+(* ASSUMES: each CAS is an atomic per-key linearizable register operation;   *)
+(* folds are DETERMINISTIC and replayable -- re-folding offsets <= hw onto    *)
+(* the recovered base reproduces the same state, so a replay persist is a     *)
+(* no-op and the buffer can drop it (the monotonic-append premise that lets   *)
+(* `cur` never drag the presented offset below `hw`).                         *)
 (***************************************************************************)
 EXTENDS Naturals
 
@@ -81,4 +87,11 @@ Spec == Init /\ [][Next]_vars
 
 INV_NoStaleApply == ~staleApplied
 INV_NoSelfFence  == ~selfFenced
+
+TypeOK ==
+  /\ stored \in Offsets
+  /\ hw  \in [Writers -> Offsets]
+  /\ cur \in [Writers -> Offsets]
+  /\ staleApplied \in BOOLEAN
+  /\ selfFenced \in BOOLEAN
 =============================================================================

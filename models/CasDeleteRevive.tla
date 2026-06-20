@@ -24,6 +24,12 @@
 (*                     Present(N, deleted) gated by IF offset <= N, so the    *)
 (*                     zombie's lower-offset INSERT is rejected and recovery  *)
 (*                     reads "deleted" rather than a stale state.            *)
+(*                                                                          *)
+(* ASSUMES: each persist/delete is an atomic per-key linearizable Paxos       *)
+(* operation (the first-write UPDATE/INSERT/retry compound is abstracted as   *)
+(* one CanWrite check -- its interleavings are the separate CasFirstWrite     *)
+(* model); folds are DETERMINISTIC, so CorrectContents(o) is a function of    *)
+(* the log prefix and re-folding a recovered base reproduces it.             *)
 (***************************************************************************)
 EXTENDS Naturals
 
@@ -96,4 +102,12 @@ Spec == Init /\ [][Next]_vars
 
 \* Safety: no durable snapshot ever reflects the wrong set of folded events.
 INV_NoCorruptDurable == ~corrupted
+
+TypeOK ==
+  /\ op \in [Offsets -> {"persist", "delete"}]
+  /\ stored \in [present : BOOLEAN, deleted : BOOLEAN, offset : Offsets, contents : SUBSET Offsets]
+  /\ ownerPos \in 0 .. (MaxOffset + 1)
+  /\ ownerLoaded \in BOOLEAN
+  /\ ownerState \in SUBSET Offsets
+  /\ corrupted \in BOOLEAN
 =============================================================================

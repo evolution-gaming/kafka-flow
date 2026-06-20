@@ -84,7 +84,8 @@ producer gets a unique `transactional.id` (`"{prefix}-{partition}-{uuid}"`), so 
 never share one. A *stable* per-partition id would add cross-owner epoch fencing, which is both
 redundant and harmful: the epoch is assigned in `initTransactions` arrival order, not assignment
 order, so a slow stale owner that inits late wins the epoch and would false-positive-fence the true
-owner. The cost of unique ids — transaction-coordinator state expiring via
+owner (modelled in `models/EpochFencing.tla`: a stale write lands *and* the true owner is fenced). The
+cost of unique ids — transaction-coordinator state expiring via
 `transactional.id.expiration.ms` — is accepted. A hard-crashed owner's in-flight transaction is, for
 the same reason, not fenced on the spot (a stable id would abort it through the new owner's
 `initTransactions`); the coordinator reclaims it only after `transaction.timeout.ms`, which bounds how
@@ -158,8 +159,25 @@ nor leaks into recovery, concurrent-write safety. The group-commit machinery is 
 isolation by a local `GroupCommitSpec` (a recording in-memory producer, no broker).
 
 Formal models in `models/`: `GenerationFencing` (the live group-metadata capture coupled to flow
-teardown) and `GroupCommitConc` (the group commit completes every write's outcome — no stranded write,
-no deadlock).
+teardown, and the load-bearing seed) and `GroupCommitConc` (the group commit completes every write's
+outcome — no stranded write, no deadlock). The composition of the two — the real group commit, where a
+batch of N writes shares one offset commit — is checked by `GenerationFencing`'s `genfence_batch` config:
+a fenced batch lands *none* of its writes, because a rebalance tears the flow down and aborts its
+in-flight transaction (the coupling at the transaction level). This makes "the rejection aborts the
+writes too" a checked statement, not a relied-upon Kafka axiom; it is observationally equal to the
+single-write flush (a real batch is homogeneous in generation), which is why the single-write configs
+suffice. `genfence_decoupled_F` shows the causal chain directly: decoupling capture from teardown
+violates the coupling invariant `INV_F`, which is what then lets `INV_NoStaleDurable` break.
+
+The rejected designs are modelled too, so their holes are demonstrated rather than asserted:
+`EpochFencing` (stable `transactional.id` — `INV_NoStaleDurable` and `INV_OwnerNeverFenced` both
+violated) and `GenerationFencing` with `Seeded = FALSE` (the unseeded first-flush window —
+`INV_NoStaleDurable` violated).
+
+The models verify behaviour *under* their assumptions: the KIP-447 broker fence (a transaction is
+durable iff its offset commit's generation is current); poll-thread serialization of rebalance callbacks
+(so generation capture and flow teardown are one atomic step); and one open transaction at a time per
+partition (the producer's transaction lock). They do not re-derive these — they take them as given.
 
 ## Rejected alternatives
 

@@ -15,6 +15,12 @@
 (*                                                                          *)
 (* `tryTakeN(Cap)`: take min(Cap, len) items from the front; Nil (empty)    *)
 (* means a prior holder already took this writer's item.                    *)
+(*                                                                          *)
+(* ASSUMES: weak fairness on each writer (a writer that stays enabled        *)
+(* eventually runs), matching the cats-effect fibers making progress; the    *)
+(* uncancelable commit region (commitQueued) is taken as atomic. Termination *)
+(* is a temporal PROPERTY, so it is caught independently of TLC's deadlock    *)
+(* detector (safe to run with -deadlock).                                    *)
 (***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets
 

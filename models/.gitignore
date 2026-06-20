@@ -1,0 +1,6 @@
+# TLC model-checker artifacts
+*_TTrace_*.tla
+*_TTrace_*.bin
+states/
+*.st
+tla2tools.jar
