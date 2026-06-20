@@ -1,120 +1,243 @@
 # TLA+ models
 
-Formal models for the single-writer snapshot protections ([#732](https://github.com/evolution-gaming/kafka-flow/issues/732)),
-covering both backends. They are developer/reviewer artifacts, not user docs; the rationale they back is in
-[`docs/cassandra-single-writer-design.md`](../docs/cassandra-single-writer-design.md) and
-[`docs/kafka-single-writer-design.md`](../docs/kafka-single-writer-design.md).
+Formal models backing the single-writer snapshot protections for
+[#732](https://github.com/evolution-gaming/kafka-flow/issues/732), covering both backends (Cassandra
+compare-and-set, Kafka generation fencing). They are developer/reviewer artifacts, not user docs — the
+prose rationale is in [`docs/cassandra-single-writer-design.md`](../docs/cassandra-single-writer-design.md)
+and [`docs/kafka-single-writer-design.md`](../docs/kafka-single-writer-design.md).
 
-Each model isolates one design decision and checks it under all interleavings: the shipped mechanisms hold, and
-every rejected or early design has a config that **demonstrates** its hole rather than asserting it. The tables below
-are the conceptual map; [`run.sh`](run.sh) is the authoritative index — it pairs each config with its model, the
-exact flags, and the outcome it must produce, and asserts them.
+#732 is a rare rebalance race — a stale partition owner overwriting a newer snapshot — the kind of bug
+that survives code review and reproduces only under a precise interleaving. Each model isolates one design
+decision and lets TLC explore *every* interleaving, so a hole is a concrete counterexample trace, not an
+argument one has to trust.
+
+The property that makes the suite trustworthy is **pairing**: almost every mechanism that should *hold* has
+a sibling config that flips one constant and *violates* a named invariant. That violation is the negative
+control — it proves the invariant *can* fail, so the passing run means something rather than being
+vacuously green. 14 of the 27 configs are expected violations.
+
+## Map
+
+Each model lives in its own directory (`<Model>/`) with its `.cfg` configs. What each one abstracts, and
+the test that exercises that same code on real infrastructure — so the model-to-code correspondence is
+reviewable, not trusted (if the code stops matching, the cited test is where it should surface):
+
+| Model | Layer | What it abstracts (code) | Exercised by |
+|---|---|---|---|
+| [`CasCompareAndSet`](#cascompareandset) | Cassandra store | the offset-gated persist + the row-removing delete (`persistCompareAndSet`; `UPDATE … IF offset <= :offset` / `INSERT … IF NOT EXISTS`) | `SnapshotSpec` |
+| [`CasDeleteRevive`](#casdeleterevive) | Cassandra store | the **shipped** delete: offset-carrying tombstone (`deleteCompareAndSet`; `UPDATE SET value = null … IF offset <= :offset`) | `SnapshotSpec` |
+| [`CasFirstWrite`](#casfirstwrite) | Cassandra store | the non-atomic first-write compound (`UPDATE` → `INSERT IF NOT EXISTS` → retry) | `SnapshotSpec` |
+| [`CasReplayTombstone`](#casreplaytombstone) | Cassandra store | the replay fence **and** the tombstone composed over one key | — (composition; see above) |
+| [`ReplayFence`](#replayfence) | Replay buffer | monotonic buffer; delete fenced on `offset max hw` (`hw` = the buffer's high-water; `Snapshots.append` / `delete`) | `SnapshotReplayFencingSpec`, `SnapshotsSpec` |
+| [`GenerationFencing`](#generationfencing) | Kafka | input offset bound into the snapshot txn, seeded, live generation (`sendOffsetsToTransaction`; `Consumer.groupMetadata`) | `TransactionalKafkaPersistenceSpec` |
+| [`GroupCommitConc`](#groupcommitconc) | Kafka | the write orchestration (`Semaphore(1)` + `Queue` + per-item `Deferred`) | `GroupCommitSpec` |
+| [`GroupCommitOffset`](#groupcommitoffset) | Kafka | the committed offset never leads durable writes (`commitOffsets` binds the latest; flush-blocks-then-schedule in `PartitionFlow`) | — (model-only; see [What this does NOT verify](#what-this-does-not-verify)) |
+| [`EpochFencing`](#epochfencing) | Rejected designs | producer-epoch fencing with a stable `transactional.id` (no current code) | — (rejected; see `docs/kafka-single-writer-design.md`) |
 
 ## Running
 
-Needs a JRE and [`tla2tools.jar`](https://github.com/tlaplus/tlaplus/releases) (v1.8.0+) next to this README (it is
-git-ignored; download it once). Then:
+Needs a JRE and [`tla2tools.jar`](https://github.com/tlaplus/tlaplus/releases) (v1.8.0+) at the root of this
+folder (git-ignored; download it once). Then:
 
 ```sh
 ./run.sh             # check every config; one PASS/FAIL line each, non-zero exit on any failure
-./run.sh genfence    # only configs whose name contains the filter
+./run.sh genfence    # only configs whose path (`<Model>/<config>`) contains the filter
 ```
 
-To run a single config by hand:
+`run.sh` discovers every `*/*.cfg` automatically — no list to maintain. Each config declares its expected
+outcome (and any TLC flags) inline, so adding a `.cfg` to a model's directory is picked up and asserted on
+the next run:
+
+```
+\* expect: HOLDS                          -- model checking completes with no error
+\* expect: VIOLATES INV_SomeInvariant     -- that invariant is violated (a negative control)
+\* flags: -deadlock                       -- optional; for a "holds" run that reaches a terminal state
+```
+
+A config with no `expect:` directive fails loudly rather than being silently skipped, and a model/README
+drift shows up as a `FAIL`.
+
+To run one config by hand, from inside its model's directory:
 
 ```sh
-java -cp tla2tools.jar tlc2.TLC -config <config>.cfg <Model>.tla
+cd ReplayFence && java -cp ../tla2tools.jar tlc2.TLC -config replay_fix_on.cfg ReplayFence.tla
 ```
 
-Models whose "holds" run reaches a terminal state (the `CasFirstWrite` family and `CasCompareAndSet`'s
-`guarded_holds`) need `-deadlock`, or TLC reports the terminal state as a benign deadlock; `run.sh` adds the flag
-where needed. `GroupCommitConc.tla` already contains its translated PlusCal; the others are plain TLA+.
+A "holds" run that reaches a terminal state needs `-deadlock` (declared as `\* flags: -deadlock` in the
+config), or TLC reports the terminal state as a benign deadlock. `GroupCommitConc.tla` carries its
+translated PlusCal; the rest are plain TLA+.
 
-## Models
+## What each config checks
 
-The store models (`CasCompareAndSet`, `CasDeleteRevive`, `CasFirstWrite`) sit at the Cassandra store layer;
-`ReplayFence` is the in-memory buffer / processing-offset layer where the replay-window fence lives;
-`GenerationFencing` and `GroupCommitConc` are the Kafka side. All but `CasFirstWrite` treat a persist as atomic —
-`CasFirstWrite` is the one model that expands the non-atomic multi-LWT first-write race the others abstract away.
+One subsection per model (matching its directory). A row is a **mechanism** (holds) or a **broken/rejected
+variant** (violates a named `INV_…` — the control). Every one of the 27 configs appears exactly once.
 
-### Cassandra compare-and-set
+### Cassandra store
 
-| Model | Config | Demonstrates | Outcome |
-|---|---|---|---|
-| `CasCompareAndSet` | `guarded_holds` | offset-gated write + delete: no stale overwrite (`INV_NoStaleOverwrite`); once **all** writers catch up the store self-heals (`INV_AllDoneImpliesCorrect`) | holds |
-| `CasCompareAndSet` | `unguarded_gap` | a gated write but an **unconditional** delete (early design) | `INV_NoStaleOverwrite` violated — a stale delete erases a newer snapshot |
-| `CasCompareAndSet` | `guarded_residual` | an offset-gated delete with **no tombstone** (R1) | `INV_OwnerDoneImpliesCorrect` violated — the owner is caught up yet a lagging zombie resurrected the key; the residual the tombstone (R2) closes |
-| `CasDeleteRevive` | `revive_r1` (`Tombstone=FALSE`) | a delete that **removes the row** | `INV_NoCorruptDurable` violated — a stale `INSERT IF NOT EXISTS` revives the key |
-| `CasDeleteRevive` | `revive_r2` (`Tombstone=TRUE`) | the offset-carrying tombstone (`SET value = null`) | holds |
-| `CasFirstWrite` | `casfw_guarded` | the non-atomic first-write compound (`UPDATE` → `INSERT IF NOT EXISTS` → retry `UPDATE`) under all interleavings | holds — refines the atomic CAS, no stale overwrite |
-| `CasFirstWrite` | `casfw_unguarded` | the same compound with ungated `UPDATE`s | `INV_NoStaleOverwrite` violated — the offset guard is load-bearing |
-| `CasFirstWrite` | `casfw_reap` | the compound with a TTL reap / hard delete mid-protocol | holds — safety survives the reap |
-| `CasFirstWrite` | `casfw_spurious` | reachability of the spurious conflict (retry finds the row gone) | `INV_NeverSpurious` violated — reachable but liveness-only (safety held in `casfw_reap`) |
+`CasCompareAndSet`, `CasDeleteRevive`, and `CasFirstWrite` model the per-key offset-gated lightweight
+transaction (LWT); `CasReplayTombstone` composes two of its mechanisms. All treat a persist as atomic *except*
+`CasFirstWrite`, which expands the non-atomic first-write compound the others abstract away.
 
-### Replay-window fence
+Two safety-invariant names appear, the offset-level and contents-level views of "no stale write becomes
+durable": `INV_NoStaleOverwrite` (the stored offset never regresses) and `INV_NoCorruptDurable` (the durable
+folded contents are never wrong).
 
-| Model | Config | Demonstrates | Outcome |
-|---|---|---|---|
-| `ReplayFence` | `replay_fix_on` (`Fix=TRUE`) | the monotonic-buffer fence (present `max(cur,hw)`) | holds — `INV_NoStaleApply` and `INV_NoSelfFence` |
-| `ReplayFence` | `replay_fix_off` (`Fix=FALSE`) | fencing on `current.offset` instead | `INV_NoSelfFence` violated — the bug |
-| `ReplayFence` | `replay_fix_off_safety` (`Fix=FALSE`) | the same bug, safety only | `INV_NoStaleApply` holds — the bug is liveness-only |
+#### `CasCompareAndSet`
 
-`INV_NoSelfFence` is a state invariant standing in for "the owner is never spuriously fenced"; there is no temporal
-property here. The only true liveness check in the suite is `GroupCommitConc`'s `Termination`.
+The offset-gated persist and the **row-removing delete** — an *intermediate* design (a guarded `DELETE`
+that removes the row), not what shipped.
 
-### Kafka generation fencing
+| Config | Shows | Outcome |
+|---|---|---|
+| `guarded_holds` | offset-gated write + guarded delete: no stale overwrite, and once all writers catch up the store self-heals | holds (`INV_NoStaleOverwrite`, `INV_AllDoneImpliesCorrect`) |
+| `unguarded_gap` | a gated write but an **unconditional** delete | `INV_NoStaleOverwrite` violated — a stale delete erases a newer snapshot |
+| `guarded_residual` | a guarded delete with **no tombstone** (it removes the row) | `INV_OwnerDoneImpliesCorrect` violated — a lagging zombie resurrects the key after the owner's delete |
 
-| Model | Config | Demonstrates | Outcome |
-|---|---|---|---|
-| `GenerationFencing` | `genfence_coupled` (`Seeded=TRUE`) | live group-metadata capture coupled to flow teardown (invariant F), every flush seeded | holds |
-| `GenerationFencing` | `genfence_decoupled` | the refactor hazard: capture decoupled from teardown | `INV_NoStaleDurable` violated — #732 reopens |
-| `GenerationFencing` | `genfence_decoupled_F` | the same cause, checked at the coupling invariant | `INV_F` violated — the causal link: decoupling breaks F, which is what lets `INV_NoStaleDurable` break |
-| `GroupCommitConc` | `gc_3_1`, `gc_3_2`, `gc_3_3` | the group commit (queue + one-permit lock + per-item `Deferred`), at the three batching regimes — `Cap=1` (no batching), `Cap=2` (partial batch, leftover), `Cap=3=N` (one holder drains the queue) | `Termination` holds — no stranded write, no deadlock |
+The shipped delete is the tombstone, verified by `CasDeleteRevive` below.
 
-### Compositions
+#### `CasDeleteRevive`
 
-Two correctness properties depend on **two** mechanisms interacting, so they get their own models rather than a
-prose argument:
+The **shipped** delete: an offset-carrying logical tombstone (`SET value = null`, keeping the row's offset).
 
-| Model | Config | Composition | Outcome |
-|---|---|---|---|
-| `CasReplayTombstone` | `crt_holds` | the replay-window fence (present `max(cur,hw)`) **and** the offset-carrying tombstone, over one key | holds — both `INV_NoSelfFence` and `INV_NoCorruptDurable` |
-| `CasReplayTombstone` | `crt_nofix` (`Fix=FALSE`) | tombstone on, replay fix off | `INV_NoSelfFence` violated — the tick delete at `cur<hw` self-fences the owner |
-| `CasReplayTombstone` | `crt_notomb` (`Tombstone=FALSE`) | replay fix on, tombstone off | `INV_NoCorruptDurable` violated — the row-removing delete lets a zombie revive |
-| `GenerationFencing` | `genfence_batch` (`Batched=TRUE`) | group-commit batching **and** the generation fence — N writes + 1 offset commit, atomic | holds — a fenced batch lands none of its writes (teardown aborts the in-flight txn) |
+| Config | Shows | Outcome |
+|---|---|---|
+| `revive_tombstone` (`Tombstone=TRUE`) | the offset-carrying tombstone | holds (`INV_NoCorruptDurable`) |
+| `revive_remove` (`Tombstone=FALSE`) | a delete that **removes the row** | `INV_NoCorruptDurable` violated — a stale `INSERT IF NOT EXISTS` revives the key |
 
-The replay fix and the tombstone are complementary (presenting the higher `hw` only strengthens the tombstone's
-revive guard); each is shown load-bearing by turning the other off. The batch model makes "a fenced transaction
-aborts every staged write" a checked statement rather than a relied-upon Kafka axiom; it is observationally equal to
-the single-write `Flush` (a real batch is homogeneous in generation), which is *why* the single-write configs are a
-faithful projection.
+#### `CasFirstWrite`
 
-### Rejected / early designs
+The one model where a persist is *not* atomic: the first-write compound `UPDATE` → `INSERT IF NOT EXISTS` →
+retry `UPDATE`, under every interleaving.
 
-Models of approaches considered and rejected, so their flaws are demonstrated rather than asserted (cross-referenced
-from the "rejected alternatives" / "no epoch fencing" notes in the design docs):
+| Config | Shows | Outcome |
+|---|---|---|
+| `casfw_guarded` | the compound, no reap | holds — refines the atomic CAS, no stale overwrite |
+| `casfw_unguarded` | the same compound with ungated `UPDATE`s | `INV_NoStaleOverwrite` violated — the offset guard is load-bearing |
+| `casfw_reap` | the compound with a TTL reap mid-protocol | holds — safety survives the reap |
+| `casfw_spurious` | reachability of the spurious conflict (retry finds the row gone) | `INV_NeverSpurious` violated — reachable but liveness-only |
+| `casfw_3w` | three concurrent first-writers | holds — the only scope that stresses "one retry is enough" |
 
-| Model | Config | Rejected design | Demonstrated hole |
-|---|---|---|---|
-| `EpochFencing` | `epochfence` | Kafka producer-epoch fencing with a stable `transactional.id` (the initial approach, replaced by generation fencing) | `INV_OwnerNeverFenced` violated — init order ≠ ownership order, so a late-initialising stale owner wins the epoch and fences the true owner |
-| `EpochFencing` | `epochfence_stale` | the same design and run | `INV_NoStaleDurable` violated — and the stale owner's write lands. A separate config because TLC halts at the first violated invariant, so the two holes of epoch fencing need two configs to surface individually |
-| `GenerationFencing` | `genfence_unseeded` (`Seeded=FALSE`) | generation fencing with the offset-to-commit left unseeded (`Ref.of(none[Offset])`), so `commitOffsets` skips on `None` | `INV_NoStaleDurable` violated — a flush before the first scheduled commit carries no offset, so the broker does not fence it. Reachable when a flow loses ownership before its first offset commit (persist precedes commit per batch and on revoke). Narrow but real; closed by seeding the offset-to-commit with the assigned offset |
-| `CasCompareAndSet` | `unguarded_gap` | Cassandra CAS with a gated write but an unconditional `DELETE` | `INV_NoStaleOverwrite` violated (above); closed by gating the delete on the offset |
-| `CasDeleteRevive` | `revive_r1` | Cassandra offset-gated delete that *removes the row* (`DELETE … IF offset <= :offset`) | `INV_NoCorruptDurable` violated (above); closed by the offset-carrying tombstone (`revive_r2`) |
+#### `CasReplayTombstone`
 
-### Assumptions
+Composition: the replay-window fence **and** the offset-carrying tombstone, over one key's lifetime.
 
-Each model states in its header what it takes as given (it verifies behaviour *under* these, it does not prove them):
-per-key **Paxos linearizability** (each Cassandra LWT is one atomic register op); **deterministic, replayable folds**
-(the user contract — re-folding a recovered base reproduces the state, load-bearing for `ReplayFence` and the CAS
-models); **poll-thread serialization** of rebalance callbacks (so generation capture and flow teardown are atomic,
-the basis of `GenerationFencing`'s coupling); and the **KIP-447 broker fence** axiom.
+| Config | Shows | Outcome |
+|---|---|---|
+| `crt_holds` | both mechanisms on | holds (`INV_NoSelfFence`, `INV_NoCorruptDurable`) |
+| `crt_nofix` (`Fix=FALSE`) | tombstone on, replay fence off | `INV_NoSelfFence` violated — the tick delete at `cur<hw` self-fences the owner |
+| `crt_notomb` (`Tombstone=FALSE`) | replay fence on, tombstone off | `INV_NoCorruptDurable` violated — the row-removing delete lets a zombie revive |
 
-### Coverage notes
+The two are complementary: presenting the higher `hw` for a delete only strengthens the tombstone's revive
+guard. Each is shown load-bearing by turning the other off.
 
-- `run.sh` re-checks every outcome below in one pass (27 configs); a drift between a model and this README surfaces as
-  a `FAIL`.
+### Replay buffer
+
+#### `ReplayFence`
+
+The in-memory buffer / processing-offset layer (shared by both backends): after recovery a key's processing
+offset can lag its recovered snapshot offset, so a write must present the high-water `max(cur,hw)`, not the
+lagging current, or the owner fences itself.
+
+| Config | Shows | Outcome |
+|---|---|---|
+| `replay_fix_on` (`Fix=TRUE`) | the monotonic-buffer fence | holds (`INV_NoSelfFence`) |
+| `replay_fix_off` (`Fix=FALSE`) | fencing on `current.offset` instead | `INV_NoSelfFence` violated — the bug |
+
+The bug is **liveness-only**: it fences a legitimate owner but never lets a stale write through. The dual
+safety property — no stale overwrite — is *structural* in this frame (the CAS guard makes a regress
+impossible), so it would be a tautology here; it is checked with a working negative control where it can
+actually fail, in `CasCompareAndSet` (`unguarded_gap`) and `GenerationFencing` (`genfence_decoupled` /
+`genfence_unseeded`). The only true temporal (liveness) check in the suite is `GroupCommitConc`'s
+`Termination`.
+
+### Kafka
+
+The fence: the input-offset commit moves into the snapshot producer's transaction
+(`sendOffsetsToTransaction`, KIP-447), so the broker rejects a stale consumer generation and aborts the
+writes with it. Writes are group-committed (one transaction at a time per partition).
+
+#### `GenerationFencing`
+
+The fence itself, plus its two load-bearing details — the seed and the live-generation coupling.
+
+| Config | Shows | Outcome |
+|---|---|---|
+| `genfence_coupled` (`Seeded=TRUE`) | live generation capture coupled to flow teardown, every flush seeded | holds (`INV_CaptureCoupled`, `INV_NoStaleDurable`) |
+| `genfence_decoupled` | the refactor hazard: capture decoupled from teardown | `INV_NoStaleDurable` violated — #732 reopens |
+| `genfence_decoupled_coupling` | the same cause, at the coupling invariant | `INV_CaptureCoupled` violated — decoupling breaks the capture-coupling, which is what then lets `INV_NoStaleDurable` break |
+| `genfence_unseeded` (`Seeded=FALSE`) | the offset-to-commit left unseeded, so the first flush carries no offset | `INV_NoStaleDurable` violated — closed by seeding with the assigned offset |
+| `genfence_batch` (`Batched=TRUE`) | group-commit batching **and** the fence — N writes + 1 offset commit, atomic | holds (`INV_CaptureCoupled`, `INV_NoStaleDurable`) — a fenced batch lands none of its writes |
+
+`genfence_batch` makes "a fenced transaction aborts every staged write" a checked statement, not a
+relied-upon Kafka axiom; it is observationally equal to the single-write flush (a real batch is homogeneous
+in generation), which is why the single-write configs are a faithful projection.
+
+#### `GroupCommitConc`
+
+The write orchestration (queue + one-permit lock + per-item `Deferred`) terminates — every write's outcome
+is delivered, no stranded writer, no deadlock.
+
+| Config | Shows | Outcome |
+|---|---|---|
+| `gc_3_1` | `Cap=1` — no batching | `Termination` holds |
+| `gc_3_2` | `Cap=2` — partial batch with a leftover | `Termination` holds |
+| `gc_3_3` | `Cap=3=N` — one holder drains the whole queue | `Termination` holds |
+
+#### `GroupCommitOffset`
+
+The safety property `GroupCommitConc` abstracts away: binding the latest offset on every transaction never
+commits an offset ahead of the snapshots that justify it, even when a flush splits across capped batches.
+
+| Config | Shows | Outcome |
+|---|---|---|
+| `gco_gated` | flush-blocks-then-schedule keeps the committed offset within the durable write prefix, even at `Cap=1` (max split) | holds (`INV_OffsetWithinDurable`) |
+| `gco_ungated` | the same coupling dropped (schedule an offset before its writes are durable) | `INV_OffsetWithinDurable` violated — the committed offset leads the durable prefix, so recovery would lose writes |
+
+### Rejected designs
+
+Rejected approaches are modelled too, so their holes are demonstrated rather than asserted (cross-referenced
+from the design docs).
+
+#### `EpochFencing`
+
+Producer-epoch fencing with a stable `transactional.id` — the initial approach, replaced by generation
+fencing.
+
+| Config | Shows | Outcome |
+|---|---|---|
+| `epochfence` | the rejected design | `INV_OwnerNeverFenced` violated — init order ≠ ownership order, so a late-initialising stale owner wins the epoch and fences the true owner |
+| `epochfence_stale` | the same design and run | `INV_NoStaleDurable` violated — the stale write also lands. A separate config because TLC halts at the first violated invariant, so the two holes need two configs to surface |
+
+The other rejected designs surface as controls listed above: the unconditional delete (`unguarded_gap`), the
+row-removing delete (`revive_remove`), and the unseeded generation fence (`genfence_unseeded`).
+
+## Assumptions
+
+Each model states in its header what it takes as given (it verifies behaviour *under* these, it does not
+prove them): per-key **Paxos linearizability** (each Cassandra LWT is one atomic register op);
+**deterministic, replayable folds** (the user contract — re-folding a recovered base reproduces the state,
+load-bearing for `ReplayFence` and the CAS models); **poll-thread serialization** of rebalance callbacks
+(so generation capture and flow teardown are atomic, the basis of `GenerationFencing`'s coupling); and the
+**KIP-447 broker fence** (a transaction is durable iff its offset commit's generation is current).
+
+## What this does NOT verify
+
+The honest boundaries, so the green is not over-read:
+
+- **The axioms above** are assumed, not proven — Paxos linearizability, the KIP-447 broker fence, and
+  deterministic folds are vendor guarantees / a user contract.
+- **Abort and cancellation of the group commit.** `GroupCommitConc` models only a successful commit; the
+  property "every item's `done` completes even when the transaction aborts or the fiber is cancelled" rests
+  on the code's `guaranteeCase` + `onCancel` (reviewed, not modelled).
+- **The offset-vs-durability ordering has no integration test.** `GroupCommitOffset` is "model-only" in the
+  Map for this reason: the property that the committed offset never leads the durable write prefix is checked
+  only by TLA+ (and stated as a comment at `commitOffsets`), not by an IT spec.
+- **The model-to-code abstraction itself** is checked by the [Map](#map) (review + the IT, i.e. integration,
+  tests), not by TLA+. A model is only as faithful as that correspondence.
+
+## Coverage notes
+
+- `run.sh` re-checks every outcome above in one pass (27 configs); a model/README drift surfaces as a `FAIL`.
 - Most configs check `TypeOK` alongside their behavioural invariants.
-- The "holds" results were re-confirmed at a larger scope (`MaxOffset` 5–6, `MaxGen` 5; `GroupCommitConc` at `N` 4–5 across `Cap` 1..N) with no new behaviour.
-- `casfw_3w` runs `CasFirstWrite` with three concurrent first-writers — the only scope that stresses "one retry is
-  enough" (a third writer acting between a loser's `INSERT` and its retry); it holds.
+- The "holds" results were re-confirmed at a larger scope (`MaxOffset` 5–6, `MaxGen` 5; `GroupCommitConc`
+  and `GroupCommitOffset` at `N`/`MaxOffset` 4–6 across `Cap` 1..N) with no new behaviour.

@@ -82,7 +82,8 @@ object KafkaSnapshotWriteDatabase {
     * to gate it, and completes each item's `done`. Two non-obvious cases follow: the queue may be empty (a prior holder
     * already took this item), and an over-cap backlog is left for later holders - every queued item has its own waiting
     * caller that takes the lock once, so none is left stranded. Each caller awaits its own `done`, whoever committed
-    * it. See `docs/kafka-single-writer-design.md`.
+    * it. A `submit` canceled before its item is taken leaves the write for a later holder (or drops it if last); both
+    * are safe - the interrupted flush will not advance the offset. See `docs/kafka-single-writer-design.md`.
     */
   private final class GroupCommit[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
     producer: Producer[F],
@@ -152,6 +153,9 @@ object KafkaSnapshotWriteDatabase {
 
     // commits the latest offset in the open transaction; the broker rejects a stale generation (KIP-447). Never
     // skipped: a snapshot write is never committed without its generation-gated offset commit.
+    // Binding the *latest* offset is safe even when a flush's writes split across capped batches: the flow blocks on
+    // each persist (write durable) before scheduling the offset, so every write the committed offset relies on is
+    // already committed - the committed offset never leads durable state.
     private def commitOffsets: F[Unit] =
       for {
         offset <- offsetToCommit.get

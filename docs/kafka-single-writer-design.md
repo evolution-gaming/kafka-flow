@@ -166,8 +166,8 @@ a fenced batch lands *none* of its writes, because a rebalance tears the flow do
 in-flight transaction (the coupling at the transaction level). This makes "the rejection aborts the
 writes too" a checked statement, not a relied-upon Kafka axiom; it is observationally equal to the
 single-write flush (a real batch is homogeneous in generation), which is why the single-write configs
-suffice. `genfence_decoupled_F` shows the causal chain directly: decoupling capture from teardown
-violates the coupling invariant `INV_F`, which is what then lets `INV_NoStaleDurable` break.
+suffice. `genfence_decoupled_coupling` shows the causal chain directly: decoupling capture from teardown
+violates the coupling invariant `INV_CaptureCoupled`, which is what then lets `INV_NoStaleDurable` break.
 
 The rejected designs are modelled too, so their holes are demonstrated rather than asserted:
 `EpochFencing` (stable `transactional.id` — `INV_NoStaleDurable` and `INV_OwnerNeverFenced` both

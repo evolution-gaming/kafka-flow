@@ -91,8 +91,8 @@ keeping the row (and its `offset`). A stale lower-offset writer is then rejected
 replayed delete is a no-op (equal offset) or a conflict (a newer write exists), never a resurrection;
 `get` reads a null `value` back as `None`. The tombstone is reaped by the TTL, if configured. Keeping
 the row also routes the delete through Paxos, avoiding the well-known hazard of mixing lightweight
-transactions and regular mutations on the same row. Model: `CasDeleteRevive` — `revive_r1`
-(`Tombstone=FALSE`, plain delete) corrupts on delete-then-revive; `revive_r2` (`Tombstone=TRUE`) holds.
+transactions and regular mutations on the same row. Model: `CasDeleteRevive` — `revive_remove`
+(`Tombstone=FALSE`, plain delete) corrupts on delete-then-revive; `revive_tombstone` (`Tombstone=TRUE`) holds.
 
 ## The replay window
 
@@ -129,9 +129,10 @@ The `offset` extractor is threaded as `Snapshots.of(..., offsetOf = _.offset)` f
 `KafkaSnapshot`-specialised `SnapshotDatabase.snapshotsOf`; other snapshot types and the Kafka backend
 get a neutral default, so the change is inert for them. It is also surgical for Cassandra:
 `max(currentOffset, highWater)` differs from `currentOffset` only when `highWater > currentOffset`,
-i.e. only in this replay window. Model: `ReplayFence` — `Fix=TRUE` holds (safety and liveness);
-`Fix=FALSE` violates `INV_NoSelfFence` while `INV_NoStaleApply` still holds, confirming the bug is
-liveness-only and the fix never lets a stale writer through.
+i.e. only in this replay window. Model: `ReplayFence` — `Fix=TRUE` holds `INV_NoSelfFence` (the legitimate
+owner is never self-fenced); `Fix=FALSE` violates it, the bug. The bug is liveness-only: the dual safety
+property (no stale write becomes durable) is structural under the CAS guard, so it is checked — with a
+working negative control — where it can actually fail, in `CasCompareAndSet` (`unguarded_gap`).
 
 This fence and the tombstone above are independent mechanisms; their *interaction* over one key's
 lifetime is checked by `CasReplayTombstone` (not just argued): with both on, the legitimate owner is
@@ -161,12 +162,22 @@ write and delete pays a cross-datacenter round-trip. Recovery reads at `Consiste
 (`QUORUM` by default): #732 recovery happens after the stale writer is gone, so there is no in-flight
 Paxos for the read to race, and a serial read is not required.
 
+Compare-and-set does require read and write consistency at `QUORUM` or stronger (so `R + W > N`). The
+conditional write reaches consensus on a serial quorum but *materialises* at `ConsistencyOverrides.write`;
+with a weaker write level a (non-serial) `QUORUM` recovery read can miss the newest committed snapshot
+even with no in-flight Paxos, reintroducing #732 on the read side — which the write-side fence does not
+heal. The defaults satisfy this; do not lower either level below `QUORUM` in compare-and-set mode.
+
 ## TTL and rollout
 
 The `offset` guard lives in the snapshot row, so it expires with the row's TTL. After a row's TTL
 lapses the guard is gone and a stale write can land a fresh `INSERT`; this is harmless when the TTL far
 exceeds the rebalance/zombie overlap window (the usual case — a zombie outliving the TTL is not
 realistic), but the monotonicity guarantee only holds within the TTL.
+
+Without a TTL the offset-carrying tombstone is never reaped, so a deleted key leaves its row behind
+indefinitely and the table grows by one row per deleted key. Configure a TTL (comfortably above the
+overlap window) for workloads that delete keys.
 
 Enabling on a running system needs no migration (the condition reads the `offset` column every version
 already writes). The one rolling-deploy caveat: a lightweight transaction uses a coordinator-generated
