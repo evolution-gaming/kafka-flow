@@ -181,9 +181,10 @@ object CassandraSnapshots {
     *   optional TTL to set on inserted records
     * @param compareAndSet
     *   if `true`, each snapshot write is a Cassandra lightweight transaction asserting the stored offset is not greater
-    *   than the new one, protecting from stale writers; a rejected write fails with [[SnapshotWriteConflict]]. See the
-    *   persistence docs' "Protecting against stale snapshot writes" for limitations and costs. Default `false` (last
-    *   write wins).
+    *   than the new one, protecting from stale writers; a rejected write fails with [[SnapshotWriteConflict]]. In this
+    *   mode a delete keeps the row as an offset-carrying logical tombstone (see [[Statements.prepareDelete]]) reaped
+    *   only by `ttl`, so set `ttl` to bound the table and Paxos partition growth. See the persistence docs' "Protecting
+    *   against stale snapshot writes" for limitations and costs. Default `false` (last write wins).
     * @param fromBytes
     *   deserializer function to convert array of bytes to the snapshot type T
     * @param toBytes

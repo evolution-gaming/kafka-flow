@@ -175,7 +175,7 @@ object KafkaPersistenceModule {
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     val snapshotTopicPartition = TopicPartition(config.snapshotTopic, assignment.partition)
     for {
-      transactional <- transactionalWriteDatabase[F, S](producerOf, config, assignment)
+      transactional <- transactionalWriteDatabase[F, S](producerOf, config, assignment, snapshotTopicPartition)
       module <- of(
         consumerOf = consumerOf,
         // records of aborted transactions (e.g. of a fenced previous owner) must not be recovered as snapshots
@@ -195,14 +195,14 @@ object KafkaPersistenceModule {
     producerOf: ProducerOf[F],
     config: TransactionalConfig,
     assignment: PartitionAssignment[F],
+    snapshotTopicPartition: TopicPartition,
   )(
     implicit toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaSnapshotWriteDatabase.Transactional[F, S]] = {
     implicit val fromTry: FromTry[F] = FromTry.lift
-    import config.{inputTopic, maxWritesPerTransaction, producerConfig, snapshotTopic, transactionalIdPrefix}
+    import config.{inputTopic, maxWritesPerTransaction, producerConfig, transactionalIdPrefix}
     import assignment.{assignedAt, groupMetadata, partition}
 
-    val snapshotTopicPartition = TopicPartition(snapshotTopic, partition)
     // offsets are committed for the input partition with the same number as the assigned (snapshot) partition - the
     // mode forces the identity mapping
     val inputTopicPartition = TopicPartition(inputTopic, partition)

@@ -50,8 +50,11 @@ object Consumer {
               capture *> listener.onPartitionsAssigned(partitions)
             def onPartitionsRevoked(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
               capture *> listener.onPartitionsRevoked(partitions)
+            // no capture on lost: the consumer is fenced, so no transactional commit can succeed and a refreshed
+            // generation is useless; running only the wrapped listener guarantees its cleanup still runs (a capture
+            // failure cannot be recovered inside a RebalanceCallback and would suppress it)
             def onPartitionsLost(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
-              capture *> listener.onPartitionsLost(partitions)
+              listener.onPartitionsLost(partitions)
           }
           consumer.subscribe(topics, capturing)
         }
