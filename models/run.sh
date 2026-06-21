@@ -50,14 +50,14 @@ for cfg in *.cfg; do
   name="${cfg%.cfg}"
   spec="$(directive spec "$cfg")"
   expect="$(directive expect "$cfg")"
-  flags="$(directive flags "$cfg")"
+  read -r -a flags <<<"$(directive flags "$cfg")"   # optional; word-split into argv (empty -> no arg)
 
   if [[ -z $spec || -z $expect ]]; then
     printf '%-7s %-26s %s\n' FAIL "$name" "missing '\\* spec:' or '\\* expect:' directive"
     ((fail++)); continue
   fi
 
-  out="$(java -cp "$JAR" tlc2.TLC -workers "${WORKERS:-auto}" $flags -config "$cfg" "$spec.tla" 2>&1)"
+  out="$(java -cp "$JAR" tlc2.TLC -workers "${WORKERS:-auto}" "${flags[@]+"${flags[@]}"}" -config "$cfg" "$spec.tla" 2>&1)"
 
   case "$expect" in
     HOLDS)
