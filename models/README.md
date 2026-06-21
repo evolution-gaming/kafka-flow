@@ -16,25 +16,27 @@ grain-of-atomicity refinement underneath a backend (Sec. 7.3).
 ## The tower
 
 ```
-                       SingleWriterStore                 -- THE spec: the durable store is always a
-                      (INV_DurableCorrect, SafeSpec,         correct, non-stale fold; LIVE_Progress
-                       LIVE_Progress)
-                         ^          ^          ✗ (false)
-            Cassandra ===/  Kafka ==/  Epoch ==X
-            (offset CAS +    (generation fence  (producer epoch -- REJECTED)
-             tombstone)       + capture-coupling
-                              + seed)
-               ^   ^                    ^
-   CasFirstWrite   ReplayFence       GroupCommit
-   (atomic CAS)    (replay self-     (orchestration:
-                    fence, liveness)   termination + offset)
+SingleWriterStore — THE spec
+  the durable store is always a correct, non-stale fold
+  (INV_DurableCorrect, SafeSpec, LIVE_Progress)
+  │
+  │   a backend is correct iff  Backend ⇒ SingleWriterStore  (checked by a refinement mapping)
+  │
+  ├─ Cassandra  ✓   offset compare-and-set + offset-carrying tombstone
+  │    ├─ CasFirstWrite   the non-atomic first-write compound ⇒ one atomic CAS (grain of atomicity)
+  │    └─ ReplayFence     replay-window self-fence (liveness)
+  │
+  ├─ Kafka      ✓   consumer-generation fence + capture-coupling + offset seed
+  │    └─ GroupCommit     write orchestration: termination + offset ordering
+  │
+  └─ Epoch      ✗   REJECTED: producer epoch / stable transactional.id (the theorem is false)
 ```
 
-Each `===/` is a checked theorem; `==X` is a theorem that *fails* (with a counterexample). The
+`✓` marks a refinement theorem that holds; `✗` one that *fails* (TLC returns a counterexample). The
 backends differ only in the fence — Cassandra a per-key offset compare-and-set, Kafka the consumer
 generation (KIP-447) — and each models its mechanism faithfully enough that removing it is a
-reachable refinement violation. The replay self-fence and the grain-of-atomicity refinements sit
-under the backend they belong to.
+reachable refinement violation. `CasFirstWrite` and `ReplayFence` sit under Cassandra, `GroupCommit`
+under Kafka — the finer-grained models of the backend they belong to.
 
 ## Map
 
