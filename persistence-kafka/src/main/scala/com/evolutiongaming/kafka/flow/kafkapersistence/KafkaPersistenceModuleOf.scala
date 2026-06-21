@@ -7,6 +7,7 @@ import com.evolutiongaming.kafka.flow.FlowMetrics
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerGroupMetadata, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerOf}
 import com.evolutiongaming.skafka.*
+import com.evolutiongaming.kafka.flow.kafka.ToOffset
 
 /** Convenience factory trait to create an instance of [[KafkaPersistenceModule]] for an assigned partition.
   * `assignedAt` is the offset the partition was assigned at; the transactional module seeds it as the initial
@@ -34,7 +35,7 @@ object KafkaPersistenceModuleOf {
     * @param metrics
     *   instance of `FlowMetrics` for [[KafkaPersistenceModule]]
     */
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S: ToOffset](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
@@ -58,7 +59,7 @@ object KafkaPersistenceModuleOf {
       )
   }
 
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S: ToOffset](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
@@ -78,7 +79,7 @@ object KafkaPersistenceModuleOf {
     *   group metadata of the SAME consumer that drives this flow (use `Consumer.groupMetadata`); its generation is what
     *   fences a stale owner (KIP-447)
     */
-  def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S](
+  def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S: ToOffset](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
     config: KafkaPersistenceModule.TransactionalConfig,

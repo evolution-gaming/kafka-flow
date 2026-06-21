@@ -127,9 +127,10 @@ stays at the key's high-water `X`, so
 - a re-derived snapshot is not re-persisted below `X` (the buffer stays `persisted`), so the flush is
   a no-op.
 
-The `offset` extractor is threaded as `Snapshots.of(..., offsetOf = _.offset)` from the
-`KafkaSnapshot`-specialised `SnapshotDatabase.snapshotsOf`; other snapshot types and the Kafka backend
-get a neutral default, so the change is inert for them. It is also surgical for Cassandra:
+The `offset` extractor is the snapshot type's `ToOffset` instance: `KafkaSnapshot` supplies `_.offset`
+(from its companion), so the fence is live for the compare-and-set Cassandra backend; offset-less snapshot
+types — the Kafka backend and in-memory — use a `ToOffset` returning `Offset.min`, so the change is inert
+for them. It is also surgical for Cassandra:
 `max(currentOffset, highWater)` differs from `currentOffset` only when `highWater > currentOffset`,
 i.e. only in this replay window. Model: `ReplayFence` — `replay_fix_on` holds `INV_NoSelfFence` (the
 legitimate owner is never self-fenced) and `OwnerCompletes` (the liveness framing of the same bug);

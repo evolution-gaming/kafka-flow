@@ -19,6 +19,7 @@ import scodec.bits.ByteVector
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
 
 import java.util.UUID
+import com.evolutiongaming.kafka.flow.kafka.ToOffset
 
 /** A module, necessary to create a Kafka snapshot persistence.
   */
@@ -79,7 +80,7 @@ object KafkaPersistenceModule {
     groupMetadata: F[Option[ConsumerGroupMetadata]],
   )
 
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S: ToOffset](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
@@ -130,7 +131,7 @@ object KafkaPersistenceModule {
     * @see
     *   com.evolutiongaming.kafka.flow.KeyFlow.of for implementation details of state recovery for a specific key
     */
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S: ToOffset](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
@@ -162,7 +163,7 @@ object KafkaPersistenceModule {
     * at-least-once. See the "Protecting against stale snapshot writes" persistence docs and
     * `docs/kafka-single-writer-design.md` for limitations, costs and rollout.
     */
-  def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S](
+  def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S: ToOffset](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
     config: TransactionalConfig,
@@ -250,7 +251,7 @@ object KafkaPersistenceModule {
     }
   }
 
-  private def of[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  private def of[F[_]: LogOf: Concurrent: Parallel: Runtime, S: ToOffset](
     consumerOf: ConsumerOf[F],
     consumerConfig: ConsumerConfig,
     snapshotTopicPartition: TopicPartition,
@@ -319,7 +320,7 @@ object KafkaPersistenceModule {
       }
     }
 
-  private def makeSnapshotPersistenceOf[F[_]: LogOf: Concurrent, S](
+  private def makeSnapshotPersistenceOf[F[_]: LogOf: Concurrent, S: ToOffset](
     keysOf: KeysOf[F, KafkaKey],
     cache: Cache[F, String, ByteVector],
     snapshotTopicPartition: TopicPartition,

@@ -90,8 +90,9 @@ object SnapshotDatabase {
       logOf: LogOf[F],
       logPrefix: LogPrefix[K]
     ): F[SnapshotsOf[F, K, KafkaSnapshot[S]]] =
-      // pass KafkaSnapshot.offset so a delete is fenced on the key's high-water offset (see Snapshots.delete/append)
-      logOf(SnapshotDatabase.getClass) map { implicit log => key => Snapshots.of(key, self, _.offset) }
+      // KafkaSnapshot's ToOffset (its companion) fences a delete on the key's high-water offset (see
+      // Snapshots.append/delete)
+      logOf(SnapshotDatabase.getClass) map { implicit log => key => Snapshots.of(key, self) }
 
   }
 

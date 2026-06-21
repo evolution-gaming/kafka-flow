@@ -428,6 +428,8 @@ class PartitionFlowSpec extends FunSuite {
       val keyStorage       = Ref.unsafe[IO, Set[KafkaKey]](initialData.keySet)
       val keysOf           = KeysOf.of[IO, KafkaKey](KeyDatabase.memory[IO, KafkaKey](keyStorage.stateInstance))
       val snapshotsStorage = Ref.unsafe[IO, Map[KafkaKey, String]](initialData)
+      // the String snapshot carries no offset; this test does not exercise the stale-writer fence
+      implicit val stringToOffset: ToOffset[String] = _ => Offset.min
       val persistenceOf =
         PersistenceOf
           .snapshotsOnly[IO, KafkaKey, String, ConsumerRecord[String, ByteVector]](

@@ -126,13 +126,13 @@ class SnapshotsSpec extends FunSuite {
 
   // Fix: a recovered key's snapshot offset can lead the committed offset the partition resumes from; while replaying
   // events below it the buffer must stay at the high-water offset so a compare-and-set backend does not reject a
-  // legitimate delete or a re-persist as stale. `offsetOf` makes the Int state its own offset.
+  // legitimate delete or a re-persist as stale. `ToOffset[Int]` makes the Int state its own offset.
 
   test("Snapshots keeps the higher-offset snapshot and drops a lower-offset (replayed) append") {
     val f = new ConstFixture
 
     val database  = SnapshotDatabase.memory(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer, (s: Int) => Offset.unsafe(s.toLong))
+    val snapshots = Snapshots("key1", database, f.buffer)
 
     // append at offset 5, then a replayed append at offset 3 (lower) which must be dropped, then flush
     val program = snapshots.append(5) *> snapshots.append(3) *> snapshots.flush
@@ -147,7 +147,7 @@ class SnapshotsSpec extends FunSuite {
     val f = new ConstFixture
 
     val database  = countingSnapshotDb(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer, (s: Int) => Offset.unsafe(s.toLong))
+    val snapshots = Snapshots("key1", database, f.buffer)
     // the key was recovered/persisted at offset 10
     val context = Context(
       database = Map("key1" -> 10),
@@ -170,7 +170,7 @@ class SnapshotsSpec extends FunSuite {
       def get(key: K)                    = none[S].pure[F]
       def delete(key: K, offset: Offset) = State.modify[Context](_.copy(deletedOffset = offset.some))
     }
-    val snapshots = Snapshots("key1", database, f.buffer, (s: Int) => Offset.unsafe(s.toLong))
+    val snapshots = Snapshots("key1", database, f.buffer)
     // buffer holds the recovered snapshot at offset 7
     val context = Context(buffer = Some(Snapshots.Snapshot(7, persisted = true)))
 
@@ -234,6 +234,9 @@ object SnapshotsSpec {
   type K = String
   type S = Int
 
+  // the Int state is its own offset, so appends order monotonically and a delete is fenced on the buffered value
+  implicit val withOffset: ToOffset[S] = Offset.unsafe(_)
+
   case class Context(
     database: Map[K, S]                   = Map.empty,
     buffer: Option[Snapshots.Snapshot[S]] = None,
@@ -246,8 +249,6 @@ object SnapshotsSpec {
   }
 
   implicit val log: Log[F] = Log.empty[F]
-
-  implicit val withOffset: ToOffset[S] = Offset.unsafe(_)
 
   trait SnapshotDatabaseWithPersistCount extends SnapshotDatabase[F, K, S] {
     def persistsCounted: Int
@@ -268,7 +269,7 @@ object SnapshotsSpec {
       def delete(key: K, offset: Offset) =
         db.delete(key, offset)
 
-      def persistsCounted: SnapshotsSpec.S = persistCounter
+      def persistsCounted: Int = persistCounter
     }
   }
 
