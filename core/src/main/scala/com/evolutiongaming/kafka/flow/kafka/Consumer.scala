@@ -37,22 +37,24 @@ object Consumer {
   def of[F[_]: Sync](
     consumer: KafkaConsumer[F, String, ByteVector]
   ): F[Consumer[F]] =
-    // capture the group metadata on each rebalance (on the poll thread, where it is safe to read) into a Ref so the
-    // transactional snapshot writer can read the current generation off-thread; None until the first rebalance
+    // capture the group metadata on assignment (on the poll thread, where it is safe to read) into a Ref so the
+    // transactional snapshot writer can read the current generation off-thread; None until the first assignment
     Ref[F].of(none[ConsumerGroupMetadata]).map { groupMetadataRef =>
       new Consumer[F] {
         def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener1[F]): F[Unit] = {
           val capturing = new RebalanceListener1WithConsumer[F] {
             import com.evolutiongaming.skafka.consumer.RebalanceCallback.syntax.*
+            // capture before the listener: assignment establishes the generation the listener (recovery, then every
+            // later flush) is gated by, and on a freshly assigned consumer groupMetadata cannot fail
             private def capture: RebalanceCallback[F, Unit] =
               this.consumer.groupMetadata.flatMap(meta => groupMetadataRef.set(meta.some).lift)
             def onPartitionsAssigned(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
               capture *> listener.onPartitionsAssigned(partitions)
+            // no capture on revoke/lost: the generation only changes at the next assignment (which re-captures), so a
+            // refresh here is redundant; running only the wrapped listener guarantees its cleanup (flush, commit-on-
+            // revoke) still runs - a capture failure cannot be recovered inside a RebalanceCallback and would suppress it
             def onPartitionsRevoked(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
-              capture *> listener.onPartitionsRevoked(partitions)
-            // no capture on lost: the consumer is fenced, so no transactional commit can succeed and a refreshed
-            // generation is useless; running only the wrapped listener guarantees its cleanup still runs (a capture
-            // failure cannot be recovered inside a RebalanceCallback and would suppress it)
+              listener.onPartitionsRevoked(partitions)
             def onPartitionsLost(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
               listener.onPartitionsLost(partitions)
           }

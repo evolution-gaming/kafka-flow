@@ -56,8 +56,8 @@ Both reject a stale write with a conflict error, handled the same way regardless
 - During a **periodic flush**, the conflict fails the flow of the stale instance — safe, it no longer
   owns the partition — unless `persistPeriodically(ignorePersistErrors = true)`, when it is logged
   and swallowed.
-- During **flush-on-revoke**, the conflict is logged and swallowed by the key release (the partition
-  is being given away anyway).
+- During **flush-on-revoke**, the conflict surfaces as a cache-entry release error that the cache
+  (scache) logs and swallows, so the partition is handed off cleanly (it is being given away anyway).
 
 Either way the rejected write does not land and no offsets are committed for it, so the new owner
 replays the affected events.

@@ -164,8 +164,8 @@ class GroupCommitSpec extends FunSuite {
   }
 
   test("each transaction reads the consumer generation live (the writer never caches it)") {
-    // invariant F (read-live half): the generation that fences the commit is read fresh per transaction, so a
-    // legitimate owner that survives a generation bump commits under the current generation rather than a cached one
+    // the generation that fences the commit is read fresh per transaction, so a legitimate owner that survives a
+    // generation bump commits under the current generation rather than a cached one
     val test = for {
       events <- Ref.of[IO, Vector[Event]](Vector.empty)
       gmRef  <- Ref.of[IO, Option[ConsumerGroupMetadata]](generation(1).some)

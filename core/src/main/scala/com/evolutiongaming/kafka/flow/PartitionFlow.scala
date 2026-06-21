@@ -280,6 +280,8 @@ object PartitionFlow {
 
         _ <- log.debug(s"offset to commit: ${offsetToCommit.show}")
 
+        // not error-handled like the revoke path below: in transactional mode a fenced periodic commit
+        // (CommitFailedException) must crash the stale instance - that is the fencing. A legitimate owner never fails.
         _ <- offsetToCommit.traverse_(offset => scheduleCommit.schedule(offset))
 
         _ <- log.debug("done with commits")

@@ -79,5 +79,9 @@ for cfg in *.cfg; do
 done
 
 echo "----"
+if (( pass + fail == 0 )); then
+  echo "no configs matched${filter:+ filter '$filter'}; nothing verified" >&2
+  exit 2
+fi
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]
