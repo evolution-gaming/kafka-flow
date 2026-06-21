@@ -82,6 +82,36 @@ class SnapshotSpec extends CassandraSpec {
     test.unsafeRunSync()
   }
 
+  test("compare-and-set: concurrent first-writers race on a fresh key; the highest offset wins, no corruption") {
+    // Exercises persistCompareAndSet's first-write compound under real contention: every writer hits
+    // UPDATE-absent then `INSERT ... IF NOT EXISTS` for the same new key; one INSERT wins and the losers
+    // take the retry-`UPDATE` path (the branch single-threaded tests never reach). The offset guard keeps
+    // it safe -- the durable snapshot ends at the highest offset, never clobbered by a lower one, and any
+    // rejected writer fails cleanly with SnapshotWriteConflict. (Exhaustive interleaving coverage, plus
+    // the TTL-reap spurious-conflict edge this test can't force, is the CasFirstWrite model.)
+    val key     = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-first-write-race")
+    val offsets = (1 to 8).toList
+    val test: IO[Unit] = for {
+      snapshots <- CassandraSnapshots.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        compareAndSet = true
+      )
+      results <- offsets.parTraverse(o =>
+        snapshots.persist(key, KafkaSnapshot(offset = Offset.unsafe(o.toLong), value = s"state-$o")).attempt
+      )
+      stored <- snapshots.get(key)
+    } yield {
+      assertEquals(clue(stored.map(_.value)), Some(s"state-${offsets.max}")) // highest wins, no stale overwrite
+      results.collect { case Left(e) => e }.foreach {
+        case _: CassandraSnapshots.SnapshotWriteConflict => ()
+        case other                                       => fail(s"unexpected failure (not a conflict): $other")
+      }
+    }
+
+    test.unsafeRunSync()
+  }
+
   test("compare-and-set: a legitimate re-creation after a delete uses a higher offset") {
     val key = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-delete")
     val test: IO[Unit] = for {

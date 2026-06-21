@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 #
-# Discover and run every TLC config under models/<Model>/, asserting the outcome each config
-# declares inline. Add a config to a model's directory and it is picked up automatically.
+# Discover and run every TLC config in this folder, asserting the outcome each config declares
+# inline. The models form a refinement tower (one abstract spec, everything else a refinement), so
+# the layout is flat and each config names its module:
 #
-# Each .cfg declares its expected outcome (and any TLC flags) in a comment (keep it the leading
-# comment: the first line containing "expect:" / "flags:" wins):
-#   \* expect: HOLDS                         -- model checking completes with no error
-#   \* expect: VIOLATES INV_SomeInvariant    -- that invariant is violated (a negative control)
-#   \* flags: -deadlock                      -- optional; for "holds" runs that reach a terminal state
-#
-# The model is the parent directory; its single .tla is the spec. Runs happen from that directory.
+#   \* spec: Cassandra                       -- the module to run (required)
+#   \* expect: HOLDS                          -- model checking completes with no error
+#   \* expect: VIOLATES INV_Some               -- that state invariant is violated (a safety control)
+#   \* expect: VIOLATES-TEMPORAL Prop          -- that temporal property is violated (a liveness control)
+#   \* expect: VIOLATES-REFINEMENT Prop        -- the refinement (step simulation) fails: a rejected
+#                                                design, or a removed fence -- Impl does NOT imply the spec
+#   \* flags:  -deadlock                       -- optional; for a HOLDS run that reaches a terminal state
 #
 #   ./run.sh            check every config; one PASS/FAIL line each, non-zero exit on any failure
-#   ./run.sh genfence   only configs whose path contains the filter
+#   ./run.sh refines    only configs whose name contains the filter
 #
 # Needs a JRE and tla2tools.jar (v1.8.0+) at this folder's root:
 #   https://github.com/tlaplus/tlaplus/releases
@@ -27,50 +28,54 @@ if [[ ! -f $JAR ]]; then
   exit 2
 fi
 
-# value after "<keyword>:" on the first comment line that has it, trimmed; empty if absent
-directive() {
-  local v
-  v=$(grep -E "$1:" "$2" 2>/dev/null | head -1) || true
-  [[ -z $v ]] && return
-  v=${v#*:}
-  v="${v#"${v%%[![:space:]]*}"}"   # ltrim
-  v="${v%"${v##*[![:space:]]}"}"   # rtrim
-  printf '%s' "$v"
+directive() {  # value after a leading "\* <keyword>:" directive line, trimmed; empty if absent.
+  # Anchored to the directive form (keyword is the first token after the comment marker), so a prose
+  # comment that merely mentions "expect:"/"spec:" cannot be mistaken for the directive.
+  awk -v k="$1" '
+    /^[[:space:]]*\\\*[[:space:]]*/ {
+      s = $0; sub(/^[[:space:]]*\\\*[[:space:]]*/, "", s)
+      if (index(s, k ":") == 1) {
+        v = substr(s, length(k) + 2)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+        print v; exit
+      }
+    }' "$2"
 }
 
 filter="${1:-}"
-pass=0
-fail=0
+pass=0; fail=0
 
-for cfg in */*.cfg; do
+for cfg in *.cfg; do
   [[ -n $filter && $cfg != *"$filter"* ]] && continue
-  model="${cfg%%/*}"
-  base="$(basename "$cfg")"
-  name="${base%.cfg}"
-
+  name="${cfg%.cfg}"
+  spec="$(directive spec "$cfg")"
   expect="$(directive expect "$cfg")"
   flags="$(directive flags "$cfg")"
-  tla="$(cd "$model" && ls -1 *.tla 2>/dev/null | head -1)"
 
-  if [[ -z $expect ]]; then
-    printf '%-7s %-22s %-18s %s\n' FAIL "$name" "$model" "no '\\* expect:' directive"
+  if [[ -z $spec || -z $expect ]]; then
+    printf '%-7s %-26s %s\n' FAIL "$name" "missing '\\* spec:' or '\\* expect:' directive"
     ((fail++)); continue
   fi
 
-  out="$( (cd "$model" && java -cp "$JAR" tlc2.TLC $flags -config "$base" "$tla") 2>&1 )"
+  out="$(java -cp "$JAR" tlc2.TLC -workers "${WORKERS:-auto}" $flags -config "$cfg" "$spec.tla" 2>&1)"
 
   case "$expect" in
     HOLDS)
-      grep -q "Model checking completed. No error has been found." <<<"$out" && result=PASS || result=FAIL ;;
+      grep -q "Model checking completed. No error has been found." <<<"$out" && r=PASS || r=FAIL ;;
+    VIOLATES-TEMPORAL\ *)
+      grep -q "Temporal property ${expect#VIOLATES-TEMPORAL } was violated" <<<"$out" && r=PASS || r=FAIL ;;
+    VIOLATES-REFINEMENT\ *)
+      # a refinement (step-simulation) failure: TLC reports the violated abstract module + location,
+      # not the property's alias, so we match that signature rather than the declared name.
+      grep -Eq "Action property .* of module .* is violated" <<<"$out" && r=PASS || r=FAIL ;;
     VIOLATES\ *)
-      want="${expect#VIOLATES }"
-      grep -q "Invariant $want is violated" <<<"$out" && result=PASS || result=FAIL ;;
-    *)
-      result=FAIL ;;
+      grep -q "Invariant ${expect#VIOLATES } is violated" <<<"$out" && r=PASS || r=FAIL ;;
+    *) r=FAIL ;;
   esac
 
-  if [[ $result == PASS ]]; then ((pass++)); else ((fail++)); fi
-  printf '%-7s %-22s %-18s %s\n' "$result" "$name" "$model" "$expect"
+  if [[ $r == PASS ]]; then ((pass++)); else ((fail++)); fi
+  printf '%-7s %-26s %-18s %s\n' "$r" "$name" "$spec" "$expect"
+  rm -rf states "${spec}_TTrace_"*.tla "${spec}_TTrace_"*.bin 2>/dev/null
 done
 
 echo "----"

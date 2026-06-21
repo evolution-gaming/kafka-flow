@@ -71,8 +71,8 @@ safety under a mid-protocol reap; `casfw_spurious` shows the spurious path is re
 The guard is per **key** (per row), which is the right granularity: #732 corruption is per key, keys
 are independent, and per-key monotonic durability is exactly what prevents it. The conditional write
 is linearizable per partition key (Paxos), so concurrent writers to one key are correctly ordered
-without relying on clock synchronisation. Models: `CasCompareAndSet` (`unguarded_gap` shows the
-unguarded path corrupts; `guarded_holds` shows the guard holds).
+without relying on clock synchronisation. Model: the `Cassandra` refinement (`cassandra_unguarded`
+shows the unguarded path breaks `Cassandra ⇒ SingleWriterStore`; `cassandra_refines` shows the guard holds).
 
 ## Delete: offset-carrying tombstone
 
@@ -91,8 +91,10 @@ keeping the row (and its `offset`). A stale lower-offset writer is then rejected
 replayed delete is a no-op (equal offset) or a conflict (a newer write exists), never a resurrection;
 `get` reads a null `value` back as `None`. The tombstone is reaped by the TTL, if configured. Keeping
 the row also routes the delete through Paxos, avoiding the well-known hazard of mixing lightweight
-transactions and regular mutations on the same row. Model: `CasDeleteRevive` — `revive_remove`
-(`Tombstone=FALSE`, plain delete) corrupts on delete-then-revive; `revive_tombstone` (`Tombstone=TRUE`) holds.
+transactions and regular mutations on the same row. Model: `Cassandra` — `cassandra_notomb`
+(`Tombstone=FALSE`, plain delete) violates `INV_NoCorruptDurable`: a zombie revives the row-removed key,
+the owner reloads that stale base and folds forward onto it, persisting wrong contents. `cassandra_refines`
+(`Tombstone=TRUE`) holds (and the durable cell stays the correct fold).
 
 ## The replay window
 
@@ -129,16 +131,18 @@ The `offset` extractor is threaded as `Snapshots.of(..., offsetOf = _.offset)` f
 `KafkaSnapshot`-specialised `SnapshotDatabase.snapshotsOf`; other snapshot types and the Kafka backend
 get a neutral default, so the change is inert for them. It is also surgical for Cassandra:
 `max(currentOffset, highWater)` differs from `currentOffset` only when `highWater > currentOffset`,
-i.e. only in this replay window. Model: `ReplayFence` — `Fix=TRUE` holds `INV_NoSelfFence` (the legitimate
-owner is never self-fenced); `Fix=FALSE` violates it, the bug. The bug is liveness-only: the dual safety
-property (no stale write becomes durable) is structural under the CAS guard, so it is checked — with a
-working negative control — where it can actually fail, in `CasCompareAndSet` (`unguarded_gap`).
+i.e. only in this replay window. Model: `ReplayFence` — `replay_fix_on` holds `INV_NoSelfFence` (the
+legitimate owner is never self-fenced) and `OwnerCompletes` (the liveness framing of the same bug);
+`replay_fix_off` violates it. The bug is liveness-only: the dual safety property (no stale write becomes
+durable) is structural under the CAS guard, so it is checked — with a working negative control — where it
+can actually fail, in the `Cassandra` refinement (`cassandra_unguarded`).
 
-This fence and the tombstone above are independent mechanisms; their *interaction* over one key's
-lifetime is checked by `CasReplayTombstone` (not just argued): with both on, the legitimate owner is
-never self-fenced and a zombie never revives; turning off either one violates exactly its own invariant.
-The two are complementary — presenting the higher `highWater` for a delete makes the tombstone it writes
-*more* protective against a lower-offset revive, never less.
+This fence and the tombstone above are independent mechanisms, both checked on the `Cassandra` machine
+(`cassandra_refines` holds): the offset guard at the refinement (`cassandra_unguarded` breaks it via a
+regressed offset), the tombstone at the contents invariant (`cassandra_notomb` violates
+`INV_NoCorruptDurable`); the replay fence is the separate `ReplayFence` lemma. The mechanisms are complementary —
+presenting the higher `highWater` for a delete makes the tombstone it writes *more* protective against a
+lower-offset revive, never less.
 
 ## Equal-offset writes and determinism
 
@@ -189,7 +193,8 @@ conditional one. Negligible with NTP-synced clocks, and gone once every instance
 
 - `SnapshotSpec` (persistence-cassandra-it-tests) — store-level against real Cassandra: monotonic
   writes, stale-write rejection, the tombstone (no resurrection, replayed/stale delete, equal-offset),
-  idempotent delete, TTL on both the insert and update paths.
+  idempotent delete, TTL on both the insert and update paths, and concurrent first-writers racing on a
+  fresh key (the highest offset wins, no corruption — exercising the first-write retry path).
 - `FlowSpec` (persistence-cassandra-it-tests) — through the real PartitionFlow / eager-recovery /
   flush-on-revoke machinery: the #732 reproduction asserts corruption under last-write-wins; the
   prevention asserts the stale flush is rejected; and a delete during replay below the recovered
@@ -197,11 +202,14 @@ conditional one. Negligible with NTP-synced clocks, and gone once every instance
 - `SnapshotsSpec` / `SnapshotReplayFencingSpec` (core) — the monotonic buffer and the delete fence:
   the unit spec directly, the flow spec under a mocked clock (`TestControl`) with an offset-gated
   in-memory store.
-- Formal models in `models/`: `CasCompareAndSet` (offset monotonicity), `CasDeleteRevive` (tombstone /
-  delete-then-revive), `CasFirstWrite` (the non-atomic first-write race refines the atomic CAS),
-  `ReplayFence` (the replay-window fence), and `CasReplayTombstone` (the replay fence and the tombstone
-  composed over one key). The models verify behaviour *under* their stated assumptions (below); they do
-  not prove those assumptions.
+- Formal models in `models/`, organised as one abstract spec with refinements: `SingleWriterStore` (what a
+  correct single-writer store means — the durable cell always equals the correct fold), which the `Cassandra`
+  backend is model-checked to refine (`cassandra_refines`; the offset guard is load-bearing —
+  `cassandra_unguarded` breaks the refinement — and the offset-carrying tombstone is too — `cassandra_notomb`
+  violates `INV_NoCorruptDurable`, the delete-then-revive contents corruption); `CasFirstWrite`
+  (the non-atomic first-write race, model-checked to refine the atomic CAS `CasFirstWriteAtomic`); and
+  `ReplayFence` (the monotone recovery buffer / replay self-fence, in both its safety and liveness framings).
+  The models verify behaviour *under* their stated assumptions (below); they do not prove those assumptions.
 
 ## Assumptions
 

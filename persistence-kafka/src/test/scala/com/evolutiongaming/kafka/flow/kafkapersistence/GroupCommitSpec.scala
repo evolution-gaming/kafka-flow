@@ -126,6 +126,28 @@ class GroupCommitSpec extends FunSuite {
     test.unsafeRunSync()
   }
 
+  test("the committed offset never leads the writes it covers (flush-blocks-then-schedule, cap=1)") {
+    // The flow blocks on each persist (write made durable) before scheduling the offset commit, so the
+    // committed input offset never runs ahead of the writes it covers. At cap=1 each persist is its own
+    // transaction committing the seeded Offset.min; the later scheduleCommit(10) is the only transaction
+    // that advances the offset - and only after all three writes are already durable.
+    val keys = List("key1", "key2", "key3")
+    val test = for {
+      events <- Ref.of[IO, Vector[Event]](Vector.empty)
+      tx <- buildTransactional(recordingProducer(events), ConsumerGroupMetadata.Empty.some, maxWritesPerTransaction = 1)
+      _  <- keys.parTraverse(k => tx.writeDatabase.persist(kafkaKey(k), s"state-$k"))
+      _  <- tx.scheduleCommit.schedule(Offset.unsafe(10))
+      log <- events.get
+    } yield {
+      val committed = offsetsCommitted(log)
+      assertEquals(sentKeys(log).toSet, keys.toSet) // all three writes sent
+      // each write's transaction committed the seeded offset; only the trailing schedule advances to 10
+      assertEquals(committed.dropRight(1), List.fill(keys.size)(Offset.min))
+      assertEquals(committed.lastOption, Offset.unsafe(10).some)
+    }
+    test.unsafeRunSync()
+  }
+
   test("missing group metadata fails loudly and aborts without committing") {
     val test = for {
       events <- Ref.of[IO, Vector[Event]](Vector.empty)

@@ -84,7 +84,7 @@ producer gets a unique `transactional.id` (`"{prefix}-{partition}-{uuid}"`), so 
 never share one. A *stable* per-partition id would add cross-owner epoch fencing, which is both
 redundant and harmful: the epoch is assigned in `initTransactions` arrival order, not assignment
 order, so a slow stale owner that inits late wins the epoch and would false-positive-fence the true
-owner (modelled in `models/EpochFencing.tla`: a stale write lands *and* the true owner is fenced). The
+owner (modelled in `models/Epoch.tla`, whose refinement theorem `Epoch ⇒ SingleWriterStore` is false: the stale write lands). The
 cost of unique ids — transaction-coordinator state expiring via
 `transactional.id.expiration.ms` — is accepted. A hard-crashed owner's in-flight transaction is, for
 the same reason, not fenced on the spot (a stable id would abort it through the new owner's
@@ -158,21 +158,20 @@ first-flush gating (the seed), fenced writer fails its next flush, an open trans
 nor leaks into recovery, concurrent-write safety. The group-commit machinery is also exercised in
 isolation by a local `GroupCommitSpec` (a recording in-memory producer, no broker).
 
-Formal models in `models/`: `GenerationFencing` (the live group-metadata capture coupled to flow
-teardown, and the load-bearing seed) and `GroupCommitConc` (the group commit completes every write's
-outcome — no stranded write, no deadlock). The composition of the two — the real group commit, where a
-batch of N writes shares one offset commit — is checked by `GenerationFencing`'s `genfence_batch` config:
-a fenced batch lands *none* of its writes, because a rebalance tears the flow down and aborts its
-in-flight transaction (the coupling at the transaction level). This makes "the rejection aborts the
-writes too" a checked statement, not a relied-upon Kafka axiom; it is observationally equal to the
-single-write flush (a real batch is homogeneous in generation), which is why the single-write configs
-suffice. `genfence_decoupled_coupling` shows the causal chain directly: decoupling capture from teardown
-violates the coupling invariant `INV_CaptureCoupled`, which is what then lets `INV_NoStaleDurable` break.
+Formal models in `models/`, organised as one abstract spec with refinements: `SingleWriterStore` (what a
+correct single-writer store means), which the `Kafka` backend is model-checked to refine. `Kafka` models
+the generation fence's two load-bearing details directly, each a reachable refinement violation when
+removed: the live group-metadata **capture coupled to flow teardown** (`kafka_decoupled` breaks the
+refinement; `kafka_decoupled_coupling` shows the causal chain at the coupling invariant
+`INV_CaptureCoupled`) and the offset **seed** (`kafka_unseeded` breaks the refinement). `kafka_refines`
+holds with both in place. The write orchestration is the separate finer refinement `GroupCommit` (the
+group commit completes every write's outcome — no stranded write, no deadlock — and binds the committed
+offset within the durable prefix); a fenced batch landing *none* of its writes follows from the
+transaction abort the generation fence already models, so it is not modelled per-write.
 
-The rejected designs are modelled too, so their holes are demonstrated rather than asserted:
-`EpochFencing` (stable `transactional.id` — `INV_NoStaleDurable` and `INV_OwnerNeverFenced` both
-violated) and `GenerationFencing` with `Seeded = FALSE` (the unseeded first-flush window —
-`INV_NoStaleDurable` violated).
+The rejected design is modelled too, as a spec whose refinement theorem is *false*: `Epoch` (stable
+`transactional.id` — `epoch_refines` shows `Epoch ⇒ SingleWriterStore` does not hold, the stale write
+lands).
 
 The models verify behaviour *under* their assumptions: the KIP-447 broker fence (a transaction is
 durable iff its offset commit's generation is current); poll-thread serialization of rebalance callbacks
