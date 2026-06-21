@@ -80,7 +80,7 @@ object KafkaPersistenceModule {
     groupMetadata: F[Option[ConsumerGroupMetadata]],
   )
 
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S: ToOffset](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
@@ -88,7 +88,8 @@ object KafkaPersistenceModule {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S]
+    toBytesState: ToBytes[F, S],
+    toOffset: ToOffset[S]
   ): Resource[F, KafkaPersistenceModule[F, S]] =
     caching(consumerOf, producer, consumerConfig, snapshotTopicPartition, FlowMetrics.empty[F])
 
@@ -131,7 +132,7 @@ object KafkaPersistenceModule {
     * @see
     *   com.evolutiongaming.kafka.flow.KeyFlow.of for implementation details of state recovery for a specific key
     */
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S: ToOffset](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
@@ -141,7 +142,8 @@ object KafkaPersistenceModule {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S]
+    toBytesState: ToBytes[F, S],
+    toOffset: ToOffset[S]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     implicit val fromTry: FromTry[F] = FromTry.lift
     of(
@@ -163,7 +165,7 @@ object KafkaPersistenceModule {
     * at-least-once. See the "Protecting against stale snapshot writes" persistence docs and
     * `docs/kafka-single-writer-design.md` for limitations, costs and rollout.
     */
-  def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S: ToOffset](
+  def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
     config: TransactionalConfig,
@@ -172,7 +174,8 @@ object KafkaPersistenceModule {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S]
+    toBytesState: ToBytes[F, S],
+    toOffset: ToOffset[S]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     val snapshotTopicPartition = TopicPartition(config.snapshotTopic, assignment.partition)
     for {
@@ -251,7 +254,7 @@ object KafkaPersistenceModule {
     }
   }
 
-  private def of[F[_]: LogOf: Concurrent: Parallel: Runtime, S: ToOffset](
+  private def of[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     consumerConfig: ConsumerConfig,
     snapshotTopicPartition: TopicPartition,
@@ -261,6 +264,7 @@ object KafkaPersistenceModule {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
+    toOffset: ToOffset[S],
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     for {
       partitionDataCache <- Cache.loading[F, String, ByteVector]
@@ -320,14 +324,15 @@ object KafkaPersistenceModule {
       }
     }
 
-  private def makeSnapshotPersistenceOf[F[_]: LogOf: Concurrent, S: ToOffset](
+  private def makeSnapshotPersistenceOf[F[_]: LogOf: Concurrent, S](
     keysOf: KeysOf[F, KafkaKey],
     cache: Cache[F, String, ByteVector],
     snapshotTopicPartition: TopicPartition,
     metrics: FlowMetrics[F],
     writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
   )(
-    implicit fromBytesState: FromBytes[F, S]
+    implicit fromBytesState: FromBytes[F, S],
+    toOffset: ToOffset[S]
   ): F[SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]]] =
     LogOf[F].apply(classOf[KafkaPersistenceModule[F, S]]).map { implicit log =>
       val read =

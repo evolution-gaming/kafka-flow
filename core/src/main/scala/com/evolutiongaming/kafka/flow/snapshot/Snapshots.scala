@@ -57,10 +57,10 @@ object Snapshots {
     * delete on the key's high-water offset (see [[apply]]'s `append`/`delete`); an offset-less snapshot type supplies a
     * `ToOffset` returning `Offset.min`, which makes the fence inert.
     */
-  private[flow] def of[F[_]: Ref.Make: Monad, K: LogPrefix, S: ToOffset](
+  private[flow] def of[F[_]: Ref.Make: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
-  )(implicit log: Log[F]): F[Snapshots[F, S]] =
+  )(implicit log: Log[F], toOffset: ToOffset[S]): F[Snapshots[F, S]] =
     Ref.of[F, Option[Snapshot[S]]](None).map(buffer => Snapshots(key, database, buffer.stateInstance))
 
   private[snapshot] def apply[F[_]: Monad, K: LogPrefix, S](

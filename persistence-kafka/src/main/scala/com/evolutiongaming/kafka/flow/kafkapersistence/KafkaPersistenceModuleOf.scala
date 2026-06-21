@@ -35,7 +35,7 @@ object KafkaPersistenceModuleOf {
     * @param metrics
     *   instance of `FlowMetrics` for [[KafkaPersistenceModule]]
     */
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S: ToOffset](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
@@ -45,7 +45,8 @@ object KafkaPersistenceModuleOf {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S]
+    toBytesState: ToBytes[F, S],
+    toOffset: ToOffset[S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     // assignedAt is unused: the non-transactional caching module does not commit offsets through a producer
     override def make(partition: Partition, assignedAt: Offset): Resource[F, KafkaPersistenceModule[F, S]] =
@@ -59,7 +60,7 @@ object KafkaPersistenceModuleOf {
       )
   }
 
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S: ToOffset](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
@@ -67,7 +68,8 @@ object KafkaPersistenceModuleOf {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S]
+    toBytesState: ToBytes[F, S],
+    toOffset: ToOffset[S]
   ): KafkaPersistenceModuleOf[F, S] =
     caching(consumerOf, producer, consumerConfig, snapshotTopic, FlowMetrics.empty[F])
 
@@ -79,7 +81,7 @@ object KafkaPersistenceModuleOf {
     *   group metadata of the SAME consumer that drives this flow (use `Consumer.groupMetadata`); its generation is what
     *   fences a stale owner (KIP-447)
     */
-  def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S: ToOffset](
+  def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
     producerOf: ProducerOf[F],
     config: KafkaPersistenceModule.TransactionalConfig,
@@ -88,7 +90,8 @@ object KafkaPersistenceModuleOf {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S]
+    toBytesState: ToBytes[F, S],
+    toOffset: ToOffset[S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     override def make(partition: Partition, assignedAt: Offset): Resource[F, KafkaPersistenceModule[F, S]] =
       KafkaPersistenceModule.cachingTransactional(
