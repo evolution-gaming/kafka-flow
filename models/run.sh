@@ -80,7 +80,7 @@ done
 
 echo "----"
 if (( pass + fail == 0 )); then
-  echo "no configs matched${filter:+ filter '$filter'}; nothing verified" >&2
+  echo "no configs matched${filter:+ for filter \"$filter\"}; nothing verified" >&2
   exit 2
 fi
 echo "$pass passed, $fail failed"

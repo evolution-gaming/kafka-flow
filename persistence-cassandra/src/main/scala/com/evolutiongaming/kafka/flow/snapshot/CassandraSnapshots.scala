@@ -402,10 +402,10 @@ object CassandraSnapshots {
         .encode("partition", key.topicPartition.partition)
         .encode("key", key.key)
 
-    /** In compare-and-set mode the delete is an offset-carrying logical tombstone: `UPDATE ... SET value = null` keeping
-      * the row's `offset`, gated by `IF offset <= :offset`. Keeping the row preserves the `offset` guard across the
-      * delete (so a stale writer cannot resurrect the key at a lower offset) and forces the delete through the Paxos
-      * path (mixing lightweight transactions and regular mutations on the same row is not safe in Cassandra). The
+    /** In compare-and-set mode the delete is an offset-carrying logical tombstone: `UPDATE ... SET value = null`
+      * keeping the row's `offset`, gated by `IF offset <= :offset`. Keeping the row preserves the `offset` guard across
+      * the delete (so a stale writer cannot resurrect the key at a lower offset) and forces the delete through the
+      * Paxos path (mixing lightweight transactions and regular mutations on the same row is not safe in Cassandra). The
       * tombstone is reaped by the TTL, if configured. In last-write-wins mode the delete is an ordinary `DELETE`.
       */
     def prepareDelete[F[_]](
