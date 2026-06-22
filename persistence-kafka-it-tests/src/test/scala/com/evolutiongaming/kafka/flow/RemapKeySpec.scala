@@ -13,13 +13,9 @@ import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.skafka.CommonConfig
 import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf, ConsumerRecord}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf, ProducerRecord, RecordMetadata}
-import org.apache.kafka.clients.admin.{AdminClient, AdminClientConfig, NewTopic}
 import scodec.bits.ByteVector
 
-import java.util.Properties
-import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.*
-import scala.jdk.CollectionConverters.*
 import com.evolutiongaming.skafka.Partition
 import scala.util.Random
 
@@ -91,17 +87,6 @@ class RemapKeySpec extends ForAllKafkaSuite {
         } yield ()
       }
       .unsafeRunSync()
-  }
-
-  private def createTopic(topic: String, partitions: Int) = {
-    val props = new Properties
-    props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.container.bootstrapServers)
-
-    Resource.make(IO.delay(AdminClient.create(props)))(cl => IO(cl.close())).use { client =>
-      IO(client.createTopics(List(new NewTopic(topic, partitions, 1.toShort)).asJava)).map(res =>
-        res.all().get(10, TimeUnit.SECONDS)
-      )
-    }
   }
 
   private def consume(n: Int, inputTopic: String): IO[List[ConsumerRecord[String, String]]] = {

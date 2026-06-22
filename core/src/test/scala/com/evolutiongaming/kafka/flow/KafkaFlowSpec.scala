@@ -201,6 +201,9 @@ object KafkaFlowSpec {
         def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]) =
           state update (_ + Action.Commit(offsets))
 
+        def groupMetadata: F[Option[com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata]] =
+          Option.empty[com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata].pure[F]
+
         def revoke(partitions: NonEmptySet[Partition]) =
           state.get flatMap { state =>
             val revoke = state.actions collectFirst {
