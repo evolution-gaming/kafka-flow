@@ -190,24 +190,25 @@ disappears once every instance is transactional.
 ### Custom snapshot storage
 
 You can plug in your own snapshot store: implement `SnapshotDatabase` and wire it through
-`SnapshotsOf.backedBy` into `PersistenceOf.snapshotsOnly`/`restoreEvents`. The single-argument
-`backedBy(db)` is **last-write-wins** with no stale-writer fence, so a custom store wired that way has the
-same rebalance-overlap exposure as last-write-wins Cassandra
-([#732](https://github.com/evolution-gaming/kafka-flow/issues/732)): an outgoing owner's flush can overwrite
-the new owner's snapshot. The built-in protections do not extend to it —
-compare-and-set lives in `CassandraSnapshots`, generation fencing in the transactional Kafka module.
+`SnapshotsOf.backedBy` into `PersistenceOf.snapshotsOnly`/`restoreEvents`. A custom store is
+**last-write-wins** — exposed to the rebalance-overlap stale write
+([#732](https://github.com/evolution-gaming/kafka-flow/issues/732)), the same as last-write-wins
+Cassandra — unless its own `persist`/`delete` reject a write when the store already holds a newer offset,
+the way `CassandraSnapshots` compare-and-set does. **That conditional write is the stale-writer fence**; the
+buffer wiring does not provide it (the built-in protections live in `CassandraSnapshots` and the
+transactional Kafka module).
 
-To fence a custom store, gate its `persist`/`delete` on the snapshot offset, the way `CassandraSnapshots`
-compare-and-set does — but note where the offset comes from in each, because it differs:
+Once your writes are conditional you also need the buffer's **replay fence**, or the owner fences itself
+during recovery: while replaying events below a recovered snapshot's offset its current offset lags the
+stored one, so its own conditional `persist`/`delete` get rejected and crash the flow — a liveness bug, not
+a correctness one. Enable the replay fence by giving the buffer an `offsetOf`: `SnapshotsOf.backedBy(db,
+offsetOf)` for your own offset-carrying type, or `KafkaSnapshot[S]` via `SnapshotDatabase.snapshotsOf`. It
+keeps the buffered snapshot monotonic and gates `delete(key, offset)` on the key's high-water offset instead
+of the lagging current one.
 
-- `delete(key, offset)` receives the offset as a parameter; wiring `SnapshotsOf.backedBy(db, offsetOf)` also
-  keeps the buffer monotonic and gates the delete on the key's high-water offset.
-- `persist(key, snapshot)` receives only the snapshot value — no offset parameter — so to gate it the offset
-  must be **part of the value**: an offset-carrying snapshot type, either your own (with
-  `backedBy(db, offsetOf)`) or `KafkaSnapshot[S]` via `SnapshotDatabase.snapshotsOf`.
-
-A plain offset-less domain state can therefore gate deletes but not persists — and since `persist` is the
-stale-write vector, such a store stays effectively last-write-wins.
+The offset has to reach both writes, and they differ: `delete` gets it as the `offset` parameter, but
+`persist` gets only the snapshot value — so for `persist` to gate, the offset must live in that value (hence
+an offset-carrying snapshot type). A plain offset-less domain state can gate deletes but not persists.
 
 ## Compression
 Kafka-flow has a built-in support for compressing application's state
