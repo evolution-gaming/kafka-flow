@@ -127,6 +127,15 @@ stays at the key's high-water `X`, so
 - a re-derived snapshot is not re-persisted below `X` (the buffer stays `persisted`), so the flush is
   a no-op.
 
+Of these two, only the **delete** is irreducible. `SnapshotFold` already filters replayed events
+(`record.offset > snapshot.offset`), so when the fold is built that way a re-derived snapshot below `X`
+is never even appended — the monotonic `append` is belt-and-suspenders for the persist case (and the
+safety net for a raw `KafkaSnapshot` fold that omits the filter). The delete, by contrast, comes from a
+**tick** (`TickToState`), which is timer-driven and bypasses the fold's offset filter entirely; nothing
+else keeps its offset from regressing to the processing offset, so the monotonic buffer is the only thing
+that lets a legitimate tick-delete apply during replay. (Skipping replayed events and the offset-carrying
+tombstone — see above — cover the persist and resurrection cases respectively, but not this one.)
+
 The `offset` extractor is the `offsetOf` passed to the per-key buffer: the `KafkaSnapshot` wiring
 (`SnapshotDatabase.snapshotsOf`) passes `_.offset`, so the fence is live for the compare-and-set Cassandra
 backend; the generic `SnapshotsOf.backedBy` (Kafka and in-memory) passes `_ => Offset.min`, so the fence is
