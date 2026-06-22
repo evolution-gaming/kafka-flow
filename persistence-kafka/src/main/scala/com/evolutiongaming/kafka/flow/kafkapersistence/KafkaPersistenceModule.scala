@@ -19,7 +19,6 @@ import scodec.bits.ByteVector
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
 
 import java.util.UUID
-import com.evolutiongaming.kafka.flow.kafka.ToOffset
 
 /** A module, necessary to create a Kafka snapshot persistence.
   */
@@ -88,8 +87,7 @@ object KafkaPersistenceModule {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S],
-    toOffset: ToOffset[S]
+    toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] =
     caching(consumerOf, producer, consumerConfig, snapshotTopicPartition, FlowMetrics.empty[F])
 
@@ -142,8 +140,7 @@ object KafkaPersistenceModule {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S],
-    toOffset: ToOffset[S]
+    toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     implicit val fromTry: FromTry[F] = FromTry.lift
     of(
@@ -174,8 +171,7 @@ object KafkaPersistenceModule {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S],
-    toOffset: ToOffset[S]
+    toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     val snapshotTopicPartition = TopicPartition(config.snapshotTopic, assignment.partition)
     for {
@@ -264,7 +260,6 @@ object KafkaPersistenceModule {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toOffset: ToOffset[S],
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     for {
       partitionDataCache <- Cache.loading[F, String, ByteVector]
@@ -331,8 +326,7 @@ object KafkaPersistenceModule {
     metrics: FlowMetrics[F],
     writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
   )(
-    implicit fromBytesState: FromBytes[F, S],
-    toOffset: ToOffset[S]
+    implicit fromBytesState: FromBytes[F, S]
   ): F[SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]]] =
     LogOf[F].apply(classOf[KafkaPersistenceModule[F, S]]).map { implicit log =>
       val read =

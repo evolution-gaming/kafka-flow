@@ -5,7 +5,7 @@ import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
-import com.evolutiongaming.kafka.flow.kafka.{ScheduleCommit, ToOffset}
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
@@ -46,8 +46,6 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
   implicit val logOf: LogOf[IO]     = LogOf.slf4j[IO].unsafeRunSync()
   implicit val log: Log[IO]         = logOf(this.getClass).unsafeRunSync()
   implicit val fromTry: FromTry[IO] = FromTry.lift
-  // the snapshot is fenced by transactional generation (KIP-447), not a per-value offset
-  implicit val stringToOffset: ToOffset[String] = _ => Offset.min
 
   private val appId   = "app-id"
   private val groupId = "group-id"

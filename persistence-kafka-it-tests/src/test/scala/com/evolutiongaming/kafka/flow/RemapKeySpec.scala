@@ -5,7 +5,7 @@ import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Resource}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{Log, LogOf}
-import com.evolutiongaming.kafka.flow.kafka.{KafkaModule, ToOffset}
+import com.evolutiongaming.kafka.flow.kafka.KafkaModule
 import com.evolutiongaming.kafka.flow.kafkapersistence.{KafkaPersistenceModuleOf, kafkaEagerRecovery}
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
@@ -16,15 +16,13 @@ import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf, Producer
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.*
-import com.evolutiongaming.skafka.{Offset, Partition}
+import com.evolutiongaming.skafka.Partition
 import scala.util.Random
 
 class RemapKeySpec extends ForAllKafkaSuite {
   implicit val ioRuntime: IORuntime = IORuntime.global
   implicit val logOf: LogOf[IO]     = LogOf.slf4j[IO].unsafeRunSync()
   implicit val log: Log[IO]         = logOf(this.getClass).unsafeRunSync()
-  // the String snapshot carries no offset for the buffer fence
-  implicit val stringToOffset: ToOffset[String] = _ => Offset.min
 
   private def producerConfig =
     ProducerConfig(common = CommonConfig(bootstrapServers = NonEmptyList.one(kafka.container.bootstrapServers)))

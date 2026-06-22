@@ -9,7 +9,7 @@ import com.evolutiongaming.kafka.flow.PartitionFlow.{FilterRecord, PartitionKey}
 import com.evolutiongaming.kafka.flow.PartitionFlowSpec.*
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.journal.JournalsOf
-import com.evolutiongaming.kafka.flow.kafka.{ScheduleCommit, ToOffset}
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.{KeyDatabase, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -428,8 +428,6 @@ class PartitionFlowSpec extends FunSuite {
       val keyStorage       = Ref.unsafe[IO, Set[KafkaKey]](initialData.keySet)
       val keysOf           = KeysOf.of[IO, KafkaKey](KeyDatabase.memory[IO, KafkaKey](keyStorage.stateInstance))
       val snapshotsStorage = Ref.unsafe[IO, Map[KafkaKey, String]](initialData)
-      // the String snapshot carries no offset; this test does not exercise the stale-writer fence
-      implicit val stringToOffset: ToOffset[String] = _ => Offset.min
       val persistenceOf =
         PersistenceOf
           .snapshotsOnly[IO, KafkaKey, String, ConsumerRecord[String, ByteVector]](
@@ -486,13 +484,6 @@ object PartitionFlowSpec {
   class ConstFixture(waitForN: Int) {
     implicit val logOf: LogOf[IO] = LogOf.empty
     implicit val log: Log[IO]     = Log.empty
-
-    implicit val stateToOffset: ToOffset[State] = new ToOffset[State] {
-      def offset(state: State): Offset = {
-        val (offset, _) = state
-        offset
-      }
-    }
 
     type State = (Offset, Int)
 

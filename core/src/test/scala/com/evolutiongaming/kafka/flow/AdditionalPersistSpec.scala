@@ -5,7 +5,7 @@ import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
-import com.evolutiongaming.kafka.flow.kafka.{ScheduleCommit, ToOffset}
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -262,9 +262,6 @@ object AdditionalPersistSpec {
 
     val snapshots: Ref[IO, Map[KafkaKey, String]]                = Ref.unsafe[IO, Map[KafkaKey, String]](Map.empty)
     def snapshotDatabase: SnapshotDatabase[IO, KafkaKey, String] = SnapshotDatabase.memory(snapshots.stateInstance)
-
-    // the String snapshot carries no offset; this test does not exercise the stale-writer fence
-    implicit val stringToOffset: ToOffset[String] = _ => Offset.min
 
     val commits = Ref.unsafe[IO, List[Offset]](List.empty)
     val scheduleCommit = new ScheduleCommit[IO] {

@@ -7,7 +7,6 @@ import com.evolutiongaming.kafka.flow.FlowMetrics
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerGroupMetadata, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerOf}
 import com.evolutiongaming.skafka.*
-import com.evolutiongaming.kafka.flow.kafka.ToOffset
 
 /** Convenience factory trait to create an instance of [[KafkaPersistenceModule]] for an assigned partition.
   * `assignedAt` is the offset the partition was assigned at; the transactional module seeds it as the initial
@@ -45,8 +44,7 @@ object KafkaPersistenceModuleOf {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S],
-    toOffset: ToOffset[S]
+    toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     // assignedAt is unused: the non-transactional caching module does not commit offsets through a producer
     override def make(partition: Partition, assignedAt: Offset): Resource[F, KafkaPersistenceModule[F, S]] =
@@ -68,8 +66,7 @@ object KafkaPersistenceModuleOf {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S],
-    toOffset: ToOffset[S]
+    toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] =
     caching(consumerOf, producer, consumerConfig, snapshotTopic, FlowMetrics.empty[F])
 
@@ -90,8 +87,7 @@ object KafkaPersistenceModuleOf {
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
-    toBytesState: ToBytes[F, S],
-    toOffset: ToOffset[S]
+    toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     override def make(partition: Partition, assignedAt: Offset): Resource[F, KafkaPersistenceModule[F, S]] =
       KafkaPersistenceModule.cachingTransactional(

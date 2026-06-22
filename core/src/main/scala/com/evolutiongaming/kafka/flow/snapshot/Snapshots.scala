@@ -6,7 +6,6 @@ import cats.syntax.all.*
 import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.LogPrefix
-import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.skafka.Offset
 
@@ -53,21 +52,27 @@ trait SnapshotWriter[F[_], S] {
 }
 object Snapshots {
 
-  /** Per-key snapshot buffer over `database`. `S`'s [[ToOffset]] keeps the buffer monotonic in offset and fences a
-    * delete on the key's high-water offset (see [[apply]]'s `append`/`delete`); an offset-less snapshot type supplies a
-    * `ToOffset` returning `Offset.min`, which makes the fence inert.
+  /** Per-key snapshot buffer over `database`.
+    *
+    * @param offsetOf
+    *   the offset a snapshot sits at, used to keep the buffer monotonic and to fence a delete on the key's high-water
+    *   offset (see [[apply]]'s `append`/`delete`). A `KafkaSnapshot`-backed store passes `_.offset` (see
+    *   [[SnapshotDatabase.snapshotsOf]]); other stores pass `_ => Offset.min`, which makes the fence inert
+    *   (last-write-wins).
     */
   private[flow] def of[F[_]: Ref.Make: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
-  )(implicit log: Log[F], toOffset: ToOffset[S]): F[Snapshots[F, S]] =
-    Ref.of[F, Option[Snapshot[S]]](None).map(buffer => Snapshots(key, database, buffer.stateInstance))
+    offsetOf: S => Offset,
+  )(implicit log: Log[F]): F[Snapshots[F, S]] =
+    Ref.of[F, Option[Snapshot[S]]](None).map(buffer => Snapshots(key, database, buffer.stateInstance, offsetOf))
 
   private[snapshot] def apply[F[_]: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
     buffer: Stateful[F, Option[Snapshot[S]]],
-  )(implicit log: Log[F], toOffset: ToOffset[S]): Snapshots[F, S] = new Snapshots[F, S] {
+    offsetOf: S => Offset,
+  )(implicit log: Log[F]): Snapshots[F, S] = new Snapshots[F, S] {
     private val prefixLog: Log[F] = log.prefixed(LogPrefix[K].extract(key))
 
     def read = database.get(key)
@@ -77,9 +82,9 @@ object Snapshots {
         // keep the buffer monotonic in offset: a lower-offset append is replay onto a recovered snapshot (a no-op
         // under deterministic folds), so dropping it holds the high-water offset that fences `delete`. See
         // docs/cassandra-single-writer-design.md.
-        case Some(s) if toOffset.offset(snapshot) < toOffset.offset(s.value) => s.some
-        case Some(s)                                                         => s.updateValue(snapshot).some
-        case None                                                            => Snapshot.init(snapshot).some
+        case Some(s) if offsetOf(snapshot) < offsetOf(s.value) => s.some
+        case Some(s)                                           => s.updateValue(snapshot).some
+        case None                                              => Snapshot.init(snapshot).some
       }
 
     def initPersisted(snapshot: S) =
@@ -104,7 +109,7 @@ object Snapshots {
         // fence on the buffer's high-water offset (see `append`), not `offset`: after recovery a key's snapshot can
         // lead the partition's processing offset, and a compare-and-set backend would reject a delete gated below it
         // as stale though the owner is legitimate. A genuinely stale writer only reached its own lower offset.
-        val fenceOffset = buffered.fold(offset)(snapshot => offset max toOffset.offset(snapshot.value))
+        val fenceOffset = buffered.fold(offset)(snapshot => offset max offsetOf(snapshot.value))
         val delete = if (persist) {
           database.delete(key, fenceOffset) *> prefixLog.info("deleted snapshot")
         } else {

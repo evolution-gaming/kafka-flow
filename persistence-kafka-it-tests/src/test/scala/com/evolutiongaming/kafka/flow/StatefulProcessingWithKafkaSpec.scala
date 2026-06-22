@@ -8,7 +8,7 @@ import cats.syntax.all.*
 import com.evolution.playjson.jsoniter.PlayJsonJsoniter
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec.*
-import com.evolutiongaming.kafka.flow.kafka.{Consumer, KafkaModule, ToOffset}
+import com.evolutiongaming.kafka.flow.kafka.{Consumer, KafkaModule}
 import com.evolutiongaming.kafka.flow.kafkapersistence.{
   KafkaPersistenceModule,
   KafkaPersistenceModuleOf,
@@ -328,9 +328,6 @@ object StatefulProcessingWithKafkaSpec {
   final case class State(n: Int)
   object State {
     implicit val StateFormat: OFormat[State] = Json.format[State]
-
-    // the Kafka snapshot backend fences stale writers by transactional generation, not a per-snapshot offset
-    implicit val toOffset: ToOffset[State] = _ => Offset.min
 
     // Implementations for both toBytes and fromBytes are copied from kafka-journal by inlining some intermediate KJ's
     // typeclass implementations to make the test closer to how it's going to be used in production.
