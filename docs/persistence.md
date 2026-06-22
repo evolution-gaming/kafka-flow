@@ -190,10 +190,11 @@ disappears once every instance is transactional.
 ### Custom snapshot storage
 
 You can plug in your own snapshot store: implement `SnapshotDatabase` and wire it through
-`SnapshotsOf.backedBy` into `PersistenceOf.snapshotsOnly`/`restoreEvents`. By default `backedBy` is
-**last-write-wins** with no stale-writer fence, so a custom store has the same rebalance-overlap exposure as
-last-write-wins Cassandra ([#732](https://github.com/evolution-gaming/kafka-flow/issues/732)): an outgoing
-owner's flush can overwrite the new owner's snapshot. The built-in protections do not extend to it —
+`SnapshotsOf.backedBy` into `PersistenceOf.snapshotsOnly`/`restoreEvents`. The single-argument
+`backedBy(db)` is **last-write-wins** with no stale-writer fence, so a custom store wired that way has the
+same rebalance-overlap exposure as last-write-wins Cassandra
+([#732](https://github.com/evolution-gaming/kafka-flow/issues/732)): an outgoing owner's flush can overwrite
+the new owner's snapshot. The built-in protections do not extend to it —
 compare-and-set lives in `CassandraSnapshots`, generation fencing in the transactional Kafka module.
 
 To fence a custom store, gate its `persist`/`delete` on the snapshot offset, the way `CassandraSnapshots`
