@@ -10,7 +10,7 @@ import com.evolutiongaming.kafka.flow.kafka.{Consumer, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.key.CassandraKeys
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
-import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
+import com.evolutiongaming.kafka.flow.snapshot.{CassandraSnapshots, KafkaSnapshot}
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, ConsumerRecords, WithSize}
@@ -173,6 +173,66 @@ class FlowSpec extends CassandraSpec {
           value            = Some(WithSize(ByteVector.encodeUtf8(event).toOption.get)),
         )
     }
+
+  // a fold that deletes the key (returns None) on a "DELETE" event, otherwise behaves like staleFlowFold
+  private val deleteOnMarkerFold: FoldOption[IO, KafkaSnapshot[String], ConsumerRecord[String, ByteVector]] =
+    FoldOption.of { (state, record) =>
+      IO {
+        val event = record.value.flatMap(_.value.decodeUtf8.toOption).getOrElse(sys.error("event payload missing"))
+        if (event == "DELETE") none[KafkaSnapshot[String]]
+        else KafkaSnapshot(offset = record.offset, value = state.fold(event)(s => s"${s.value},$event")).some
+      }
+    }
+
+  // Real-Cassandra counterpart of the (timer-driven) core SnapshotReplayFencingSpec: it covers the flow -> real
+  // CassandraSnapshots delete seam for the replay-window fix. TestControl cannot drive the real driver's async I/O, so
+  // the delete is triggered deterministically (no sleep) by a fold returning None on a replayed-offset record - the
+  // same Snapshots.delete fence path the tick would hit. A delete whose processing offset (2) trails the key's
+  // recovered snapshot offset (5) must be fenced on the high-water (5) and apply against real Cassandra, not be
+  // rejected as stale.
+  test(
+    "compare-and-set: a delete during replay below the recovered snapshot offset applies (fenced on the high-water)"
+  ) {
+    val appId            = "FlowSpec-cas-replay-delete"
+    val groupId          = "integration-tests-1"
+    val tp               = TopicPartition.empty
+    val key              = "key-replay-delete"
+    val events           = (1 to 6).toList.map(i => s"e$i") // land at offsets 0..5
+    val recoveredAt      = Offset.unsafe(5) // the recovered snapshot's high-water offset (the last event)
+    val replayedDeleteAt = Offset.unsafe(2) // a replayed DELETE that trails the recovered offset (2 < 5)
+
+    val test: IO[(Either[Throwable, Unit], Option[KafkaSnapshot[String]])] = for {
+      storage <- CassandraPersistence.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        ConsistencyOverrides.none,
+        CassandraKeys.DefaultSegments,
+        snapshotCompareAndSet = true,
+      )
+      // an owner persists the key's snapshot at offset 5 and registers the key
+      flowA             <- allocateStaleFlow(storage, appId, groupId, tp)
+      (flowA_, releaseA) = flowA
+      _                 <- flowA_(staleFlowRecords(events, key, tp))
+      _                 <- releaseA
+      stored            <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
+      _                  = assertEquals(clue(stored.map(_.offset)), Some(recoveredAt))
+      // a new flow recovers the key (snapshot offset 5) at assignedAt = 0; the replayed "DELETE" makes the fold
+      // return None -> delete at the replayed offset, which must be fenced on the high-water (recoveredAt)
+      flowB             <- allocateStaleFlow(storage, appId, groupId, tp, deleteOnMarkerFold)
+      (flowB_, releaseB) = flowB
+      deleteResult <- flowB_(staleFlowRecords(List("DELETE"), key, tp).map(_.copy(offset = replayedDeleteAt))).attempt
+      _            <- releaseB.attempt
+      afterDelete  <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
+    } yield (deleteResult, afterDelete)
+
+    val (deleteResult, afterDelete) = test.unsafeRunSync()
+    deleteResult match {
+      case Left(conflict: CassandraSnapshots.SnapshotWriteConflict) =>
+        fail(s"the replay-window delete was rejected by CAS instead of being fenced on the high-water: $conflict")
+      case Left(e)  => fail(s"unexpected error: $e")
+      case Right(_) => assert(clue(afterDelete.isEmpty)) // deleted; the tombstone reads back as None
+    }
+  }
 
   private def allocateStaleFlow(
     storage: PersistenceModule[IO, String],

@@ -7,6 +7,7 @@ import cats.{Applicative, Monad}
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.LogPrefix
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
+import com.evolutiongaming.skafka.Offset
 
 trait Snapshots[F[_], S] extends SnapshotReader[F, S] with SnapshotWriter[F, S]
 
@@ -42,38 +43,52 @@ trait SnapshotWriter[F[_], S] {
     *
     * @param persist
     *   if `true` then also calls underlying database, flushes buffers only otherwise.
+    * @param offset
+    *   offset of the state being deleted; passed to the database so a stale-writer-protecting backend can gate the
+    *   delete on it.
     */
-  def delete(persist: Boolean): F[Unit]
+  def delete(persist: Boolean, offset: Offset): F[Unit]
 
 }
 object Snapshots {
 
-  /** Creates a buffer for a given writer */
+  /** Per-key snapshot buffer over `database`.
+    *
+    * @param offsetOf
+    *   the offset a snapshot sits at, used to keep the buffer monotonic and to fence a delete on the key's high-water
+    *   offset (see [[apply]]'s `append`/`delete`). A `KafkaSnapshot`-backed store passes `_.offset` (see
+    *   [[SnapshotDatabase.snapshotsOf]]); other stores pass `_ => Offset.min`, which makes the fence inert
+    *   (last-write-wins).
+    */
   private[flow] def of[F[_]: Ref.Make: Monad, K: LogPrefix, S](
     key: K,
-    database: SnapshotDatabase[F, K, S]
+    database: SnapshotDatabase[F, K, S],
+    offsetOf: S => Offset,
   )(implicit log: Log[F]): F[Snapshots[F, S]] =
-    Ref.of[F, Option[Snapshot[S]]](None).map(buffer => Snapshots(key, database, buffer.stateInstance))
+    Ref.of[F, Option[Snapshot[S]]](None).map(buffer => Snapshots(key, database, buffer.stateInstance, offsetOf))
 
   private[snapshot] def apply[F[_]: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
-    buffer: Stateful[F, Option[Snapshot[S]]]
+    buffer: Stateful[F, Option[Snapshot[S]]],
+    offsetOf: S => Offset,
   )(implicit log: Log[F]): Snapshots[F, S] = new Snapshots[F, S] {
     private val prefixLog: Log[F] = log.prefixed(LogPrefix[K].extract(key))
 
     def read = database.get(key)
 
-    def append(snapshot: S) = {
+    def append(snapshot: S) =
       buffer.modify {
-        case Some(s) => s.updateValue(snapshot).some
-        case None    => Snapshot.init(snapshot).some
+        // keep the buffer monotonic in offset: a lower-offset append is replay onto a recovered snapshot (a no-op
+        // under deterministic folds), so dropping it holds the high-water offset that fences `delete`. See
+        // docs/cassandra-single-writer-design.md.
+        case Some(s) if offsetOf(snapshot) < offsetOf(s.value) => s.some
+        case Some(s)                                           => s.updateValue(snapshot).some
+        case None                                              => Snapshot.init(snapshot).some
       }
-    }
 
-    def initPersisted(snapshot: S) = {
+    def initPersisted(snapshot: S) =
       buffer.set(Snapshot.initPersisted(snapshot).some)
-    }
 
     def flush = {
       for {
@@ -89,23 +104,29 @@ object Snapshots {
       } yield ()
     }
 
-    def delete(persist: Boolean) = {
-      val delete = if (persist) {
-        database.delete(key) *> prefixLog.info("deleted snapshot")
-      } else {
-        ().pure[F]
+    def delete(persist: Boolean, offset: Offset) = {
+      buffer.get.flatMap { buffered =>
+        // fence on the buffer's high-water offset (see `append`), not `offset`: after recovery a key's snapshot can
+        // lead the partition's processing offset, and a compare-and-set backend would reject a delete gated below it
+        // as stale though the owner is legitimate. A genuinely stale writer only reached its own lower offset.
+        val fenceOffset = buffered.fold(offset)(snapshot => offset max offsetOf(snapshot.value))
+        val delete = if (persist) {
+          database.delete(key, fenceOffset) *> prefixLog.info("deleted snapshot")
+        } else {
+          ().pure[F]
+        }
+        buffer.set(None) *> delete
       }
-      buffer.set(None) *> delete
     }
 
   }
 
   def empty[F[_]: Applicative, S]: Snapshots[F, S] = new Snapshots[F, S] {
-    def read                     = none[S].pure[F]
-    def append(event: S)         = ().pure[F]
-    def initPersisted(event: S)  = ().pure[F]
-    def flush                    = ().pure[F]
-    def delete(persist: Boolean) = ().pure[F]
+    def read                                     = none[S].pure[F]
+    def append(event: S)                         = ().pure[F]
+    def initPersisted(event: S)                  = ().pure[F]
+    def flush                                    = ().pure[F]
+    def delete(persist: Boolean, offset: Offset) = ().pure[F]
   }
 
   final case class Snapshot[S](value: S, persisted: Boolean) { self =>

@@ -87,8 +87,8 @@ class CassandraSnapshots[F[_]: Async, T](
     session.execute(boundStatement.withConsistencyLevel(consistencyOverrides.write)).map(_.one())
 
   /** Interprets a conditional-write (lightweight transaction) result: unit if it applied, [[SnapshotWriteConflict]] if
-    * a newer stored offset rejected it, or runs `onAbsent` when the row is absent (no `offset` in the result) - the
-    * first-write path inserts there, and its retry treats a still-absent row as a (spurious) conflict.
+    * a newer stored offset rejected it, or `onAbsent` when the row is absent (no `offset` in the result) - the only
+    * branch that differs between persist (first-write insert, then retry) and delete (idempotent no-op).
     */
   private def resolveConditional(key: KafkaKey, row: Row, attemptedOffset: Offset)(onAbsent: => F[Unit]): F[Unit] =
     if (row.getBool("[applied]")) ().pure[F]
@@ -108,18 +108,31 @@ class CassandraSnapshots[F[_]: Async, T](
     val boundStatement =
       Statements.bindGet(getStatement, key).withConsistencyLevel(consistencyOverrides.read)
 
-    for {
-      row      <- session.executeStream(boundStatement).first
-      snapshot <- row.map(row => decode(row)).sequence
-    } yield snapshot
+    session.executeStream(boundStatement).first.flatMap(_.flatTraverse(row => decode(row)))
   }
 
-  // persist-only mode: a delete is an ordinary last-write-wins DELETE (the offset guard protects persists, not
-  // deletes). Gating deletes on an offset is out of scope here (it would need a delete(key, offset) signature).
-  def delete(key: KafkaKey): F[Unit] = {
+  def delete(key: KafkaKey, offset: Offset): F[Unit] =
+    writeMode match {
+      case WriteMode.LastWriteWins    => deleteUnconditional(key)
+      case WriteMode.CompareAndSet(_) => deleteCompareAndSet(key, offset)
+    }
+
+  private def deleteUnconditional(key: KafkaKey): F[Unit] = {
     val boundStatement = Statements.bindDelete(deleteStatement, key).withConsistencyLevel(consistencyOverrides.write)
     session.execute(boundStatement).void
   }
+
+  /** Deletes via an offset-gated logical tombstone (see [[Statements.prepareDelete]]); `get` reads it back as `None`.
+    *
+    * A not-applied result is a benign no-op when the row is absent (an at-least-once replay, or a key never persisted)
+    * and is reported as success; a not-applied result with a higher stored offset means a newer writer owns the key,
+    * raised as [[SnapshotWriteConflict]] as in [[persistCompareAndSet]].
+    */
+  private def deleteCompareAndSet(key: KafkaKey, offset: Offset): F[Unit] =
+    executeWrite(Statements.bindDelete(deleteStatement, key, offset)).flatMap { row =>
+      // an absent row means an earlier delete (possibly this one, replayed) already removed it: idempotent no-op
+      resolveConditional(key, row, offset)(().pure[F])
+    }
 
 }
 
@@ -164,10 +177,11 @@ object CassandraSnapshots {
     * @param ttl
     *   optional TTL to set on inserted records
     * @param compareAndSet
-    *   if `true`, each snapshot *persist* is a Cassandra lightweight transaction asserting the stored offset is not
-    *   greater than the new one, protecting from stale writers; a rejected write fails with [[SnapshotWriteConflict]].
-    *   Deletes remain ordinary last-write-wins (gating deletes on an offset is out of scope for this mode). See the
-    *   persistence docs' "Protecting against stale snapshot writes" for limitations and costs. Default `false`.
+    *   if `true`, each snapshot write is a Cassandra lightweight transaction asserting the stored offset is not greater
+    *   than the new one, protecting from stale writers; a rejected write fails with [[SnapshotWriteConflict]]. In this
+    *   mode a delete keeps the row as an offset-carrying logical tombstone (see [[Statements.prepareDelete]]) reaped
+    *   only by `ttl`, so set `ttl` to bound the table and Paxos partition growth. See the persistence docs' "Protecting
+    *   against stale snapshot writes" for limitations and costs. Default `false` (last write wins).
     * @param fromBytes
     *   deserializer function to convert array of bytes to the snapshot type T
     * @param toBytes
@@ -228,7 +242,7 @@ object CassandraSnapshots {
       _                <- snapshotSchema.create
       getStatement     <- Statements.prepareGet(session, tableName)
       persistStatement <- Statements.preparePersist(session, tableName, ttl, compareAndSet)
-      deleteStatement  <- Statements.prepareDelete(session, tableName)
+      deleteStatement  <- Statements.prepareDelete(session, tableName, ttl, compareAndSet = compareAndSet)
       writeMode <-
         if (compareAndSet)
           Statements.prepareInsertIfNotExists(session, tableName, ttl).map(WriteMode.CompareAndSet(_): WriteMode)
@@ -248,17 +262,21 @@ object CassandraSnapshots {
     tableName: String = DefaultTableName,
   ): F[Unit] = SnapshotSchema.of(session, sync, tableName).truncate
 
-  // we cannot use DecodeRow here because Code[T].decode is effectful
-  protected def decode[F[_]: Monad, T](row: Row)(implicit fromBytes: FromBytes[F, T]): F[KafkaSnapshot[T]] = {
-    val value = row.decode[ByteVector]("value")
-    fromBytes.apply(value.toArray, "").map { value =>
-      KafkaSnapshot[T](
-        offset   = row.decode[Offset]("offset"),
-        metadata = row.decode[String]("metadata"),
-        value    = value
-      )
+  // we cannot use DecodeRow here because Code[T].decode is effectful.
+  // A null `value` is a logical tombstone (a compare-and-set delete, see Statements.prepareDelete): the row is kept so
+  // its `offset` keeps guarding against a stale lower-offset writer, but the key reads back as absent.
+  protected def decode[F[_]: Monad, T](row: Row)(implicit fromBytes: FromBytes[F, T]): F[Option[KafkaSnapshot[T]]] =
+    row.decode[Option[ByteVector]]("value") match {
+      case None => none[KafkaSnapshot[T]].pure[F]
+      case Some(value) =>
+        fromBytes.apply(value.toArray, "").map { value =>
+          KafkaSnapshot[T](
+            offset   = row.decode[Offset]("offset"),
+            metadata = row.decode[String]("metadata"),
+            value    = value
+          ).some
+        }
     }
-  }
 
   protected object Statements {
 
@@ -381,9 +399,36 @@ object CassandraSnapshots {
         .encode("partition", key.topicPartition.partition)
         .encode("key", key.key)
 
-    def prepareDelete[F[_]](session: CassandraSession[F], tableName: String): F[PreparedStatement] =
-      session
-        .prepare(
+    /** In compare-and-set mode the delete is an offset-carrying logical tombstone: `UPDATE ... SET value = null`
+      * keeping the row's `offset`, gated by `IF offset <= :offset`. Keeping the row preserves the `offset` guard across
+      * the delete (so a stale writer cannot resurrect the key at a lower offset) and forces the delete through the
+      * Paxos path (mixing lightweight transactions and regular mutations on the same row is not safe in Cassandra). The
+      * tombstone is reaped by the TTL, if configured. In last-write-wins mode the delete is an ordinary `DELETE`.
+      */
+    def prepareDelete[F[_]](
+      session: CassandraSession[F],
+      tableName: String,
+      ttl: Option[FiniteDuration],
+      compareAndSet: Boolean = false,
+    ): F[PreparedStatement] =
+      session.prepare(
+        if (compareAndSet)
+          s"""
+             |UPDATE
+             |  $tableName
+             |  ${StatementHelper.ttlFragment(ttl)}
+             |SET
+             |  value = null,
+             |  offset = :offset
+             |WHERE
+             |  application_id = :application_id
+             |  AND group_id = :group_id
+             |  AND topic = :topic
+             |  AND partition = :partition
+             |  AND key = :key
+             |  IF offset <= :offset
+          """.stripMargin
+        else
           s"""
              |DELETE FROM
              |  $tableName
@@ -393,8 +438,8 @@ object CassandraSnapshots {
              |  AND topic = :topic
              |  AND partition = :partition
              |  AND key = :key
-        """.stripMargin
-        )
+          """.stripMargin
+      )
 
     def bindDelete(statement: PreparedStatement, key: KafkaKey): BoundStatement =
       statement
@@ -404,5 +449,9 @@ object CassandraSnapshots {
         .encode("topic", key.topicPartition.topic)
         .encode("partition", key.topicPartition.partition)
         .encode("key", key.key)
+
+    /** Binds the delete for compare-and-set mode, adding the `:offset` the `IF offset <= :offset` guard checks. */
+    def bindDelete(statement: PreparedStatement, key: KafkaKey, offset: Offset): BoundStatement =
+      bindDelete(statement, key).encode("offset", offset)
   }
 }

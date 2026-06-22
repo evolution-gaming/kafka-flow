@@ -194,7 +194,8 @@ object KafkaSnapshotWriteDatabase {
   ): SnapshotWriteDatabase[F, KafkaKey, S] = new SnapshotWriteDatabase[F, KafkaKey, S] {
     override def persist(key: KafkaKey, snapshot: S): F[Unit] = produce(key, snapshot.some)
 
-    override def delete(key: KafkaKey): F[Unit] = produce(key, none)
+    // the Kafka path fences deletes by the producer's transactional generation, so the offset guard is not needed here
+    override def delete(key: KafkaKey, offset: Offset): F[Unit] = produce(key, none)
 
     private def produce(key: KafkaKey, snapshot: Option[S]): F[Unit] = {
       val targetPartition = partitionMapper.getStatePartition(key.topicPartition.partition)

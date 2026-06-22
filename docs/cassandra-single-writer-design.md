@@ -14,41 +14,53 @@ backend solves the same problem differently — see [Kafka single-writer design]
 previous owner that has not yet observed the revocation keeps flushing snapshots alongside the new
 owner, and the last-write-wins snapshots table lets a stale write overwrite a newer one — the next
 recovery then loads stale state and skips the events in between. The
-[Kafka design doc](kafka-single-writer-design.md) covers the failure in full.
+[Kafka design doc](kafka-single-writer-design.md) covers the failure in full. The Cassandra-specific
+point: Cassandra has a conditional write (a Paxos lightweight transaction) but no transaction to bind
+the input-offset commit to, so the fence is **per write**, not a transaction.
 
 ## Mechanism: compare-and-set
 
-Cassandra has no transaction to bind the input-offset commit to, the way the Kafka backend does — but
-it does offer a conditional write (a Paxos lightweight transaction), so the fence is **per write**. The
-stored offset is the per-key [fencing token](https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html):
+The stored offset is a per-key [fencing token](https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html):
 every persist asserts the stored offset is not greater than the one being written, so the
-newest-by-offset write wins, whoever issued it. The write is linearizable per partition key, so
-concurrent writers to one key are ordered without relying on clock synchronisation:
+newest-by-offset writer wins regardless of who it is. The write is a Paxos lightweight transaction,
+linearizable per partition key, so concurrent writers to one key are ordered without relying on clock
+synchronisation:
 
 ```sql
 UPDATE snapshots_v2 SET ... , offset = :offset WHERE <key> IF offset <= :offset
 ```
 
-A key's first write finds no row, so the `UPDATE` does not apply and it falls back to
-`INSERT ... IF NOT EXISTS` (retried once via the `UPDATE` if it loses an insert race). This is the one
-non-atomic path — a compound of separate Paxos transactions — but it is safe by construction: both
-`UPDATE`s are offset-gated and the `INSERT` only writes an absent cell, so no interleaving overwrites a
-newer snapshot. A rejected write raises `SnapshotWriteConflict` — including a spurious one if a delete
-slips between the first-write `INSERT` and its retry (an over-rejection, never corruption, cleared on
-the next flush).
+The first write of a key finds no row, so the conditional `UPDATE` does not apply; it falls back to
+`INSERT ... IF NOT EXISTS`. If that loses a race to a concurrent insert, the conditional `UPDATE` is
+retried once, so the newest snapshot still wins a first-write race. A rejected write raises
+`SnapshotWriteConflict` (handled uniformly, see [Persistence](persistence.md#protecting-against-stale-snapshot-writes)).
+Result classification (`applied` / newer-stored-offset / row-absent) is shared by persist and delete
+in `resolveConditional`; a not-applied result reports the stored `offset` when Cassandra returns it
+and treats its absence (or a null) as "row absent".
 
 The guard is per **key**, the right granularity: #732 corruption is per key and keys are independent,
 so per-key monotonic durability is exactly what prevents it.
 
 ## Scope: persist-only — and fencing a deletion without gating delete
 
-This mode fences **persists** only. A delete is an ordinary last-write-wins `DELETE`; the
-`IF offset <= :offset` guard does not apply to it. The residual gap, for anyone who hard-deletes: a
-lagging zombie can resurrect a just-deleted key by inserting at a lower offset, and a later recovery then
-folds new events onto that revived base — #732 for that one key.
+## Delete: offset-carrying tombstone
 
-Fencing a deletion, though, needs no gated `delete`. The obvious way to gate one — a logical *tombstone*
-that keeps the row and its `offset` instead of removing it — is just a persisted null:
+A delete cannot be a plain `DELETE`. Removing the row removes the `offset` guard with it, so a lagging
+zombie's `INSERT ... IF NOT EXISTS` at a lower offset would then succeed — resurrecting a stale
+snapshot. A later recovery would fold new events onto that resurrected base, silently losing the
+delete: #732 reintroduced for that key.
+
+So the compare-and-set delete (`deleteCompareAndSet`) writes an offset-carrying logical **tombstone**
+
+```sql
+UPDATE snapshots_v2 SET value = null, offset = :offset WHERE <key> IF offset <= :offset
+```
+
+keeping the row (and its `offset`). A stale lower-offset writer is then rejected, not resurrected; a
+replayed delete is a no-op (equal offset) or a conflict (a newer write exists), never a resurrection;
+`get` reads a null `value` back as `None`. The tombstone is reaped by the TTL, if configured. Keeping
+the row also routes the delete through Paxos, avoiding the well-known hazard of mixing lightweight
+transactions and regular mutations on the same row.
 
 ```sql
 -- gating delete (the rejected route): a value-less logical tombstone
@@ -57,66 +69,100 @@ UPDATE snapshots_v2 SET value = null,   offset = :offset WHERE <key> IF offset <
 UPDATE snapshots_v2 SET value = :empty, offset = :offset WHERE <key> IF offset <= :offset
 ```
 
-It is the same gated write, and the row survives until its TTL either way — the guard has to outlive the
-rebalance overlap window, so neither reclaims sooner. So model a deletion as an offset-carrying *empty*
-snapshot and persist it through the already-fenced persist path: a lower-offset zombie write is rejected
-exactly as it is for any persist. Routing the same thing through `delete` instead would cost on two
-fronts to buy nothing.
+A delete and a re-persist are fenced on an offset that, just after recovery, can legitimately trail
+the key's own stored snapshot. The partition resumes from the committed offset `C` (the minimum offset
+still held across all of its keys); a single slow key can hold `C` well below a fast key's durable
+snapshot offset `X` (the offset-lags-state invariant only guarantees `C <= X`). On recovery the
+partition's processing offset starts at `C`, while the recovered snapshot's offset is `X`.
 
-**A breaking API.** The offset has to reach the store through `SnapshotWriteDatabase.delete`, forcing a
-source/binary-breaking `delete(key, offset)` signature and offset plumbing through every delete path.
-Persisting an empty snapshot makes **no public API change** and needs no major-version bump.
+```mermaid
+sequenceDiagram
+    participant F as Owner<br/>(just recovered)
+    participant B as Snapshot buffer
+    participant DB as snapshots_v2<br/>(IF offset <= :offset)
 
-**A replay-window livelock.** A value-less tombstone recovers with no offset *floor*. A partition resumes
-from the committed offset `C` (the minimum still held across its keys), which a slow key can hold well
-below a fast key's durable snapshot offset `X`; the buffer then climbs from the replayed offsets (all
-`< X`), a tick-delete or flush mid-replay writes below `X`, and `IF offset <= X` rejects the **legitimate
-owner**, which tears down, re-recovers the same floorless tombstone, and loops — safety holds (`X` never
-regresses), but it is a pure **liveness** failure. Closing it needs a snapshot buffer kept *monotonic in
-offset* with a floor seeded from the tombstone's offset (a dedicated recovery type), plus the same floor
-on the journal (events-recovery) path. A persisted snapshot has all of this already: `SnapshotFold`
-deduplicates replayed records by offset (`record.offset > snapshot.offset`), so a key recovered at `X`
-drops events `<= X` before the fold and never re-derives a snapshot below `X` to persist — the floor for
-free.
+    Note over DB,F: key recovered at snapshot offset X.<br/>partition resumes at committed offset C < X (a slow key held C back)
+    F->>B: replay event at offset < X
+    Note over B: buffer kept monotonic — holds high-water X,<br/>does not regress to the replayed offset
+    F->>B: tick deletes the key (processing offset < X)
+    B->>DB: delete gated on max(processing offset, X) = X
+    Note over DB: IF offset <= X holds, the legitimate owner applies.<br/>Gating on the processing offset (< X) would be rejected<br/>as stale — the owner fencing itself.
+```
 
-Gating `delete` would therefore rebuild, behind a breaking API, the offset floor the persist path already
-gives — which is why offset-gated deletes are **unnecessary**, not merely deferred (see *Rejected
-alternatives*). The plain last-write-wins `delete` stays for callers who want a real row removal and have
-no need to fence it.
+If, in this window, the owner issues a write for that key:
+
+- a **time-driven tick** that deletes the key would gate the delete on the processing offset `C` —
+  `IF offset <= C` against the stored `X > C` rejects it, **crashing the legitimate owner** with a
+  `SnapshotWriteConflict` that reads as if another writer owned the key;
+- a **periodic flush** during replay would re-derive the snapshot and try to persist it at the
+  replayed offset (`< X`) — the same rejection.
+
+Neither is a safety problem (the durable snapshot stays at `X`), but both are a liveness problem: the
+owner fences *itself*. The cause is that the in-memory snapshot buffer's offset *regresses* while
+replaying events below `X` (a naive buffer `append` would overwrite it with the replayed, lower offset).
+
+The fix keeps the buffered snapshot **monotonic in offset**: `Snapshots.append` drops a lower-offset
+append rather than regressing the buffer (sound because, under the determinism the design already
+assumes, re-folding events `<= X` reproduces the same state — see below). The buffer therefore stays
+at the key's high-water `X`, so
+
+- a delete is fenced on `max(currentOffset, highWater)` — the legitimate owner presents `X` and
+  applies, while a genuinely stale writer (which only ever *reached* its own lower offset, never `X`)
+  still presents that lower offset and stays fenced;
+- a re-derived snapshot is not re-persisted below `X` (the buffer stays `persisted`), so the flush is
+  a no-op.
+
+Of these two, only the **delete** is irreducible. `SnapshotFold` already drops replayed events
+(`record.offset > snapshot.offset`), so a re-derived snapshot below `X` is never even appended — the
+monotonic `append` is belt-and-suspenders for the persist case. A **tick-delete** (`TickToState`) is
+timer-driven and bypasses that filter, so only the monotonic buffer lets a legitimate tick-delete
+apply during replay.
+
+The fence is live only for the offset-carrying `KafkaSnapshot` / compare-and-set wiring; other stores
+pass `Offset.min` as the offset, making it inert (last-write-wins). It is surgical even when live:
+`max(currentOffset, highWater)` differs from `currentOffset` only inside this replay window.
+
+This fence and the tombstone above are independent and complementary: presenting the higher `highWater`
+for a delete makes the tombstone it writes *more* protective against a lower-offset revive, never less.
 
 ## Equal-offset writes and determinism
 
 `IF offset <= :offset` admits an *equal* offset, so a stale writer holding exactly the stored offset is
-not detected. This is deliberate. The legitimate owner can act at an offset it has already stored — a
-re-persist of the high-water `X` equals the stored offset, and a strict `<` would reject it and fence the
-owner against itself. Admitting equal is safe not because the new value is identical but because a
-same-offset write does not move the recovery point — unlike a lower-offset write it cannot drop committed
-events (#732). The *records* folded into any two snapshots at the same offset are the same, so a
-same-offset re-persist differs at most in time-driven tick state, never in event data. Deterministic,
-replayable folds are therefore a precondition of the compare-and-set mode (as they already are of
-recovery generally).
+not detected. This is deliberate. The legitimate owner can act at an offset it has already stored: a
+tick can change state — or delete — without consuming a new record, and in the replay window above a
+tick-delete is fenced on the high-water `X`, which equals the stored offset; a strict `<` would reject
+these and fence the owner against itself. Admitting equal is safe not because the new value is identical
+but because a same-offset write does not move the recovery point — unlike a lower-offset write it cannot
+drop committed events (#732). The *records* folded into any two snapshots at the same offset are the
+same, so a same-offset re-persist differs at most in time-driven tick state, never in event data; a
+replayed delete is a no-op. Deterministic, replayable folds are therefore a precondition of the CAS
+mode (as they already are of recovery generally) — the same property that lets the monotonic buffer
+drop a lower-offset replay as a no-op.
 
 ## Consistency
 
-A lightweight transaction has two consistency levels. The *serial* level (`SERIAL` by default — a
-quorum across all replicas, which spans datacenters under multi-DC replication) runs the Paxos
-consensus; `ConsistencyOverrides.write` governs only the commit that materialises the agreed value. So
-the serial level decides *agreement*, not *visibility*: the value becomes readable to a normal read
-only once that commit lands at the write level. Recovery uses a non-serial read
-(`ConsistencyOverrides.read`), so it sees the latest committed snapshot only when **`R + W > N`** on the
-regular levels — the write side must be a quorum, not just the serial consensus. (A non-serial read can
-also miss an *accepted-but-not-yet-committed* LWT left by a failed coordinator — but that coincides with
-an incomplete `persist`, which never held its offset, so recovery just re-folds those events. A serial
-read would avoid both cases; the design forgoes that cost.)
+The lightweight transaction reaches consensus at the *serial* consistency level, which is distinct
+from the read/write levels in `ConsistencyOverrides` and defaults to `SERIAL` (a cross-datacenter
+quorum). `ConsistencyOverrides.write` governs only the transaction's commit phase, not its consensus.
+For single-datacenter partition ownership (the common case) set the scassandra client's
+`query.serial-consistency = LOCAL_SERIAL` to keep the Paxos rounds in-DC; otherwise every conditional
+write and delete pays a cross-datacenter round-trip. Recovery reads at `ConsistencyOverrides.read`;
+a serial read is not required, because `R + W > N` makes a non-serial read see every committed
+snapshot, and a still-in-flight write — one whose `persist` has not completed — is safe to miss
+(recovery re-folds from the committed offset).
 
-So configure `ConsistencyOverrides` read **and** write to a quorum — `LOCAL_QUORUM` for single-DC,
-paired with the scassandra client's `query.serial-consistency = LOCAL_SERIAL` to keep Paxos in-DC
-(otherwise each conditional write pays a cross-DC round-trip; a plain delete is unaffected). This is
-**not** a default: `ConsistencyOverrides` is empty unless you set it, so the table inherits the session
-default (often `LOCAL_ONE`), which reintroduces #732 on the read side — the write-side fence does not
-heal that. What matters is access locality (a key's writers and its recovery read in one DC), not the
-replication footprint, which may still span DCs for DR; ownership that fails over between DCs needs the
-cross-DC `SERIAL` / `QUORUM` levels.
+Compare-and-set does require read and write consistency at `QUORUM` or stronger (so `R + W > N`).
+For single-datacenter ownership, `LOCAL_QUORUM` at both levels satisfies `R + W > N` within the
+local DC and pairs with `LOCAL_SERIAL`. What matters is access locality — a key's writers and its
+recovery read all in one DC — not the replication footprint, which may still span DCs for DR. The
+conditional write reaches consensus on a serial quorum but *materialises* at `ConsistencyOverrides.write`;
+with a weaker write level a (non-serial) `QUORUM` recovery read can miss the newest committed snapshot
+even with no in-flight Paxos, reintroducing #732 on the read side — which the write-side fence does not
+heal. This is not a default: `ConsistencyOverrides` is empty unless you set it, so the snapshot table
+inherits the session's default level (often `LOCAL_ONE`) — you must configure read and write to a
+quorum. Keep `R + W > N` within one consistency domain and a key's Paxos in one DC: the `LOCAL_*` set
+is for single-DC ownership, while ownership that can fail over between DCs (or write a key from two
+DCs) needs the cross-DC `SERIAL` / `QUORUM` levels.
 
 ## TTL and rollout
 
@@ -124,6 +170,10 @@ The `offset` guard lives in the snapshot row, so it expires with the row's TTL. 
 lapses the guard is gone and a stale write can land a fresh `INSERT`; this is harmless when the TTL far
 exceeds the rebalance/zombie overlap window (the usual case — a zombie outliving the TTL is not
 realistic), but the monotonicity guarantee only holds within the TTL.
+
+Without a TTL the offset-carrying tombstone is never reaped, so a deleted key leaves its row behind
+indefinitely and the table grows by one row per deleted key. Configure a TTL (comfortably above the
+overlap window) for workloads that delete keys.
 
 Enabling on a running system needs no migration (the condition reads the `offset` column every version
 already writes). The one rolling-deploy caveat: a lightweight transaction uses a coordinator-generated
@@ -141,16 +191,16 @@ carries the extra `INSERT` statement, so it exists exactly in compare-and-set mo
 
 ## Testing
 
-- Store-level against real Cassandra (`SnapshotSpec`, persistence-cassandra-it-tests) — monotonic
-  persists applied (including an equal-offset re-persist), stale-write rejection, TTL on both the insert
-  and update paths, and concurrent first-writers racing on a fresh key (the highest offset wins, no
-  corruption — exercising the first-write retry path). The persist-only delete gap is pinned by a
-  characterization test: a lower-offset write after a delete resurrects the key — the residual of the
-  unfenced last-write-wins delete (a caller who needs the deletion fenced persists an empty snapshot
-  instead; see *Scope*).
-- Through the real PartitionFlow / eager-recovery / flush-on-revoke machinery (`FlowSpec`,
-  persistence-cassandra-it-tests) — the #732 reproduction asserts corruption under last-write-wins;
-  the prevention asserts the stale flush is rejected.
+- Store-level against real Cassandra (persistence-cassandra-it-tests) — monotonic writes,
+  stale-write rejection, the tombstone (no resurrection, replayed/stale delete, equal-offset),
+  idempotent delete, TTL on both the insert and update paths, and concurrent first-writers racing on a
+  fresh key (the highest offset wins, no corruption — exercising the first-write retry path).
+- Through the real PartitionFlow / eager-recovery / flush-on-revoke machinery
+  (persistence-cassandra-it-tests) — the #732 reproduction asserts corruption under last-write-wins;
+  the prevention asserts the stale flush is rejected; and a delete during replay below the recovered
+  snapshot offset applies (fenced on the high-water), not rejected.
+- In core — the monotonic buffer and the delete fence: a unit test directly, and a flow-level test
+  against an offset-gated in-memory store.
 
 ## Assumptions
 
@@ -159,8 +209,8 @@ This design takes three things as given:
 - **Per-key linearizable compare-and-set.** Each Cassandra lightweight transaction on a row is an atomic,
   linearizable operation (Paxos). The first-write `UPDATE`/`INSERT`/retry compound is *not* atomic.
 - **Deterministic, replayable folds (a user contract).** Re-folding a recovered base over the same events
-  reproduces the same state. This is what makes equal-offset writes idempotent. A non-deterministic fold
-  breaks it.
+  reproduces the same state. This is what makes a lower-offset replay a no-op (so the buffer can stay
+  monotonic) and what makes equal-offset writes idempotent. A non-deterministic fold breaks both.
 - **Per-key independence.** #732 corruption is per key; keys are independent, so per-key monotonic
   durability is the whole guarantee.
 
@@ -191,6 +241,9 @@ This design takes three things as given:
 
 ## Forward-looking
 
+- **Offset-gated deletes** — a future mode could close the delete-resurrection gap by gating deletes on
+  an offset-carrying tombstone exactly as persists are; deferred here for the breaking API and
+  replay-window machinery it brings (see *Scope* above).
 - **Per-partition ownership** — the equal-offset gap and per-key (rather than per-partition) granularity
   could be closed by a composite `(offset, generation)` token (see Rejected alternatives) or, further out, by
   [KIP-939 (participation in 2PC)](https://cwiki.apache.org/confluence/display/KAFKA/KIP-939:+Support+Participation+in+2PC):

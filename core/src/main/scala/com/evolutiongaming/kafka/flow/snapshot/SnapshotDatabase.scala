@@ -7,6 +7,7 @@ import cats.{Applicative, Functor, Monad}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.LogPrefix
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
+import com.evolutiongaming.skafka.Offset
 
 trait SnapshotDatabase[F[_], K, S] extends SnapshotReadDatabase[F, K, S] with SnapshotWriteDatabase[F, K, S]
 
@@ -21,8 +22,13 @@ trait SnapshotWriteDatabase[F[_], K, S] { self =>
   /** Adds or replaces the snapshot in a database */
   def persist(key: K, snapshot: S): F[Unit]
 
-  /** Deletes snapshot for they key, if any */
-  def delete(key: K): F[Unit]
+  /** Deletes snapshot for the key, if any.
+    *
+    * `offset` is the offset of the state being deleted; a database protecting against stale writers (see
+    * [[com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots]] compare-and-set mode) gates the delete on it, so a
+    * stale writer cannot erase a newer owner's snapshot.
+    */
+  def delete(key: K, offset: Offset): F[Unit]
 
 }
 
@@ -50,7 +56,7 @@ object SnapshotDatabase {
       def get(key: K) =
         storage.get map (_ get key)
 
-      def delete(key: K) =
+      def delete(key: K, offset: Offset) =
         storage modify (_ - key)
 
     }
@@ -63,16 +69,16 @@ object SnapshotDatabase {
     new SnapshotDatabase[F, K, S] {
       override def persist(key: K, snapshot: S): F[Unit] = write.persist(key, snapshot)
 
-      override def delete(key: K): F[Unit] = write.delete(key)
+      override def delete(key: K, offset: Offset): F[Unit] = write.delete(key, offset)
 
       override def get(key: K): F[Option[S]] = read.get(key)
     }
 
   def empty[F[_]: Applicative, K, S]: SnapshotDatabase[F, K, S] =
     new SnapshotDatabase[F, K, S] {
-      def get(key: K)                  = none[S].pure
-      def persist(key: K, snapshot: S) = ().pure
-      def delete(key: K)               = ().pure
+      def get(key: K)                    = none[S].pure
+      def persist(key: K, snapshot: S)   = ().pure
+      def delete(key: K, offset: Offset) = ().pure
     }
 
   implicit class SnapshotDatabaseKafkaSnapshotOps[F[_], K, S](
@@ -84,7 +90,9 @@ object SnapshotDatabase {
       logOf: LogOf[F],
       logPrefix: LogPrefix[K]
     ): F[SnapshotsOf[F, K, KafkaSnapshot[S]]] =
-      logOf(SnapshotDatabase.getClass) map { implicit log => key => Snapshots.of(key, self) }
+      // pass KafkaSnapshot.offset so the buffer fences a delete on the key's high-water offset (see
+      // Snapshots.append/delete)
+      logOf(SnapshotDatabase.getClass) map { implicit log => key => Snapshots.of(key, self, _.offset) }
 
   }
 

@@ -9,7 +9,7 @@ import com.evolutiongaming.kafka.flow.PartitionFlow.{FilterRecord, PartitionKey}
 import com.evolutiongaming.kafka.flow.PartitionFlowSpec.*
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.journal.JournalsOf
-import com.evolutiongaming.kafka.flow.kafka.{ScheduleCommit, ToOffset}
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.{KeyDatabase, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -177,7 +177,7 @@ class PartitionFlowSpec extends FunSuite {
           val (_, sent) = snapshot
           IO.whenA(key == "key2" && sent == 3)(IO.raiseError(new Exception("Test error")))
         }
-        def delete(key: String): IO[Unit] = IO.unit
+        def delete(key: String, offset: Offset): IO[Unit] = IO.unit
       }
 
       override def flow: Resource[IO, PartitionFlow[IO]] = makeFlow(
@@ -363,7 +363,7 @@ class PartitionFlowSpec extends FunSuite {
         // Fail snapshot persistence for the second key
         def persist(key: String, snapshot: (Offset, Int)): IO[Unit] =
           IO.raiseError(new Exception("Test error")).whenA(key == key2)
-        def delete(key: String): IO[Unit] = IO.unit
+        def delete(key: String, offset: Offset): IO[Unit] = IO.unit
       }
 
       override def flow: Resource[IO, PartitionFlow[IO]] = makeFlow(
@@ -484,13 +484,6 @@ object PartitionFlowSpec {
   class ConstFixture(waitForN: Int) {
     implicit val logOf: LogOf[IO] = LogOf.empty
     implicit val log: Log[IO]     = Log.empty
-
-    implicit val stateToOffset: ToOffset[State] = new ToOffset[State] {
-      def offset(state: State): Offset = {
-        val (offset, _) = state
-        offset
-      }
-    }
 
     type State = (Offset, Int)
 

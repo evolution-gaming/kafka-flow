@@ -11,6 +11,7 @@ import com.evolutiongaming.kafka.flow.key.Keys
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotReader
 import com.evolutiongaming.kafka.flow.snapshot.Snapshots
 import com.evolutiongaming.kafka.flow.timer.Timestamps
+import com.evolutiongaming.skafka.Offset
 
 /** Provides persistence for keys, events and snapshots.
   *
@@ -35,8 +36,10 @@ trait Buffers[F[_], S, E] extends WriteToBuffers[F, S, E] {
     *
     * @param persist
     *   if `true` then also calls underlying database, flushes buffers only otherwise.
+    * @param offset
+    *   offset of the state being deleted, forwarded to the snapshot database for stale-writer protection.
     */
-  def delete(persist: Boolean): F[Unit]
+  def delete(persist: Boolean, offset: Offset): F[Unit]
 
   /** Initialize an already persisted state, used to store a state in buffers that was fetched from the database.
     *
@@ -110,14 +113,17 @@ object Persistence {
     //
     // It causes less calls to the storage and avoid producing unnecessary
     // tombstones in such databases as Cassandra.
-    def delete = Timestamps[F].persistedAt flatMap { persistedAt =>
-      if (persistedAt.isDefined) {
-        Timestamps[F].onPersisted *>
-          buffers.delete(true)
-      } else {
-        buffers.delete(false)
-      }
-    }
+    def delete = for {
+      persistedAt <- Timestamps[F].persistedAt
+      current     <- Timestamps[F].current
+      _ <-
+        if (persistedAt.isDefined) {
+          Timestamps[F].onPersisted *>
+            buffers.delete(true, current.offset)
+        } else {
+          buffers.delete(false, current.offset)
+        }
+    } yield ()
 
     def flush = Timestamps[F].persistedAt flatMap { persistedAt =>
       val flushAll = if (persistedAt.isEmpty) {
@@ -140,12 +146,12 @@ object Persistence {
 object Buffers {
 
   def empty[F[_]: Applicative, S, E]: Buffers[F, S, E] = new Buffers[F, S, E] {
-    def appendEvent(event: E)        = ().pure[F]
-    def replaceState(state: S)       = ().pure[F]
-    def initPersistedState(state: S) = ().pure[F]
-    def flushKeys                    = ().pure[F]
-    def flushState                   = ().pure[F]
-    def delete(persist: Boolean)     = ().pure[F]
+    def appendEvent(event: E)                    = ().pure[F]
+    def replaceState(state: S)                   = ().pure[F]
+    def initPersistedState(state: S)             = ().pure[F]
+    def flushKeys                                = ().pure[F]
+    def flushState                               = ().pure[F]
+    def delete(persist: Boolean, offset: Offset) = ().pure[F]
   }
 
   def apply[F[_]: Monad, S, E](
@@ -160,8 +166,8 @@ object Buffers {
 
     def initPersistedState(state: S) = snapshots.initPersisted(state)
 
-    def delete(persist: Boolean) =
-      snapshots.delete(persist) *> journals.delete(persist) *> keys.delete(persist)
+    def delete(persist: Boolean, offset: Offset) =
+      snapshots.delete(persist, offset) *> journals.delete(persist) *> keys.delete(persist)
 
     def flushKeys =
       keys.flush
