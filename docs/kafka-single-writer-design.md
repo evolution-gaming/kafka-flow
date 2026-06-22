@@ -207,6 +207,25 @@ fenced writer fails its next flush, an open transaction neither blocks nor leaks
 concurrent-write safety. The group commit is exercised in isolation by `GroupCommitSpec`, a unit test
 with a recording in-memory producer (no broker).
 
+### Formal models
+
+The mechanism is model-checked in `models/` (TLA+), as a refinement tower: one abstract
+`SingleWriterStore` spec that each design refines.
+
+- **`Kafka`** — the generation fence. Its two load-bearing details are negative controls: the
+  group-metadata capture coupled to flow teardown (`kafka_decoupled`) and the seeded offset
+  (`kafka_unseeded`) each break the refinement, while `kafka_refines` holds. The write orchestration
+  is the separate finer `GroupCommit` refinement (no stranded write, no deadlock; the committed offset
+  stays within the durable prefix).
+- **`Epoch`** — the *rejected* producer-epoch design, encoded as a refinement that must **fail**
+  (`epoch_refines`): epochs are handed out in `initTransactions` order, not ownership order, so a late
+  stale owner wins the epoch and its write lands. This is why the fence is on the consumer generation,
+  not the producer epoch.
+
+The models verify behaviour *under* their assumptions (the KIP-447 broker fence, poll-thread
+serialization of rebalance callbacks, one open transaction per partition); they do not re-derive them.
+See `models/README.md` for the full config catalogue.
+
 ## Rejected alternatives
 
 - **Transactional snapshot read + snapshot write**: fence a stale writer with a compare-and-set on the

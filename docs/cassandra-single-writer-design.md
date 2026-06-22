@@ -249,6 +249,22 @@ Entry point: `CassandraSnapshots.withSchema(compareAndSet = true)` (or
   `SnapshotsOfSpec` (the offset-of fencing wiring), with `SnapshotReplayFencingSpec` driving the
   replay-window cases flow-level against an offset-gated in-memory store.
 
+### Formal models
+
+The mechanisms above are model-checked in `models/` (TLA+), as a refinement tower: one abstract
+`SingleWriterStore` spec (the durable cell always equals the correct fold) that each design refines.
+
+- **`Cassandra`** — the offset compare-and-set with the tombstone. Both guards are load-bearing
+  negative controls: `cassandra_unguarded` (no offset guard) and `cassandra_notomb` (plain delete)
+  each break the refinement / `INV_NoCorruptDurable`, while `cassandra_refines` holds.
+- **`CasFirstWrite`** — the non-atomic first-write `UPDATE`/`INSERT`/retry compound, checked under
+  every interleaving against the atomic CAS it stands in for (`CasFirstWriteAtomic`).
+- **`ReplayFence`** — the monotone recovery buffer (the replay-window self-fence), in both its safety
+  and liveness framings (`replay_fix_on` holds `INV_NoSelfFence`; `replay_fix_off` violates it).
+
+The models verify behaviour *under* the assumptions below; they do not prove them. See `models/README.md`
+for the full config catalogue and the rejected designs that must *fail* checking.
+
 ## Assumptions
 
 This design takes three things as given:
