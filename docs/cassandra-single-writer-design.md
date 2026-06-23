@@ -254,13 +254,23 @@ Entry point: `CassandraSnapshots.withSchema(compareAndSet = true)` (or
 The mechanisms above are model-checked in `models/` (TLA+), as a refinement tower: one abstract
 `SingleWriterStore` spec (the durable cell always equals the correct fold) that each design refines.
 
-- **`Cassandra`** — the offset compare-and-set with the tombstone. Both guards are load-bearing
-  negative controls: `cassandra_unguarded` (no offset guard) and `cassandra_notomb` (plain delete)
-  each break the refinement / `INV_NoCorruptDurable`, while `cassandra_refines` holds.
+- **`Cassandra`** — the offset compare-and-set, the tombstone, and the replay-window monotone buffer.
+  All three are load-bearing negative controls: `cassandra_unguarded` (no offset guard) and
+  `cassandra_notomb` (plain delete) each break the refinement / `INV_NoCorruptDurable`, and
+  `cassandra_replay_fixoff` (no monotone buffer) makes the legitimate owner livelock mid-replay — the
+  rejected flush raises, the flow tears down, re-recovers the same snapshot, resumes below it and
+  conflicts again (a conflict→recover→retry loop that never commits; `RefLive` violated) — while
+  `cassandra_refines` holds with all three. It is modelled *with the zombie present*, so a genuinely
+  stale writer is still correctly rejected; only the legitimate owner livelocks. (The Kafka backend has
+  the same replay window, but a different protection: the offset commit is bound atomically into the
+  snapshot transaction, closing the window — `kafka_replay`; remove that binding and the owner's re-flush
+  regresses the snapshot, `kafka_replay_unbound`. Cassandra can't bind atomically — its snapshot and
+  offset live in different stores — which is why it needs the offset-CAS and monotone buffer instead.)
 - **`CasFirstWrite`** — the non-atomic first-write `UPDATE`/`INSERT`/retry compound, checked under
-  every interleaving against the atomic CAS it stands in for (`CasFirstWriteAtomic`).
-- **`ReplayFence`** — the monotone recovery buffer (the replay-window self-fence), in both its safety
-  and liveness framings (`replay_fix_on` holds `INV_NoSelfFence`; `replay_fix_off` violates it).
+  every interleaving against the atomic CAS it stands in for (`CasFirstWriteAtomic`). Its one deviation,
+  a spurious conflict (the retry finds the row gone), is fed into the conflict/recover loop in
+  `cassandra_firstwrite_spurious`: it leaves the row absent, so no replay window arises and it converges
+  (it recovers on the next flush) — in contrast to the replay-window livelock.
 
 The models verify behaviour *under* the assumptions below; they do not prove them. See `models/README.md`
 for the full config catalogue and the rejected designs that must *fail* checking.

@@ -15,17 +15,36 @@
 #   ./run.sh            check every config; one PASS/FAIL line each, non-zero exit on any failure
 #   ./run.sh refines    only configs whose name contains the filter
 #
-# Needs a JRE and tla2tools.jar (v1.8.0+) at this folder's root:
-#   https://github.com/tlaplus/tlaplus/releases
+# Needs a JRE. tla2tools.jar is downloaded to this folder on first run if missing (git-ignored);
+# override the version/URL with the JAR_VERSION/JAR_URL vars below.
 #
 set -u
 cd "$(dirname "$0")" || exit 2
 
 JAR="$PWD/tla2tools.jar"
+JAR_VERSION="v1.8.0"
+JAR_URL="https://github.com/tlaplus/tlaplus/releases/download/${JAR_VERSION}/tla2tools.jar"
 if [[ ! -f $JAR ]]; then
-  echo "tla2tools.jar not found. Download v1.8.0+ from" >&2
-  echo "  https://github.com/tlaplus/tlaplus/releases  (place it at this folder's root)" >&2
-  exit 2
+  echo "tla2tools.jar not found; downloading ${JAR_VERSION} -> $JAR" >&2
+  tmp="$JAR.tmp.$$"
+  if command -v curl >/dev/null 2>&1; then
+    dl=(curl -fSL -o "$tmp" "$JAR_URL")
+  elif command -v wget >/dev/null 2>&1; then
+    dl=(wget -qO "$tmp" "$JAR_URL")
+  else
+    echo "neither curl nor wget found; download manually from" >&2
+    echo "  $JAR_URL  (place it at this folder's root)" >&2
+    exit 2
+  fi
+  # "PK" = the zip/jar magic; guards against an HTML error page or a partial download
+  if "${dl[@]}" && [[ -s $tmp && "$(head -c2 "$tmp")" == "PK" ]]; then
+    mv "$tmp" "$JAR"
+  else
+    rm -f "$tmp"
+    echo "download failed; fetch it manually from" >&2
+    echo "  $JAR_URL  (place it at this folder's root)" >&2
+    exit 2
+  fi
 fi
 
 directive() {  # value after a leading "\* <keyword>:" directive line, trimmed; empty if absent.

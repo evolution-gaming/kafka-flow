@@ -6,37 +6,26 @@
 (* ARRIVAL order, independent of ownership.  A revoked owner that inits LATE wins *)
 (* the max epoch, so its stale write is accepted.                                *)
 (*                                                                             *)
+(* EXTENDS SnapshotFlow for the shared cell type, fold and refinement mapping.   *)
 (* In Lamport's terms this is a spec whose refinement theorem is FALSE:          *)
 (* `Epoch => SingleWriterStore` does NOT hold -- the stale write regresses the    *)
 (* mapped hwm, so RefSafeSpec (step simulation) fails, with a counterexample.    *)
 (* That failed theorem IS the proof the design is wrong (no separate invariant   *)
 (* needed).  Contrast Cassandra and Kafka, whose theorems hold.                  *)
 (*******************************************************************************)
-EXTENDS Naturals
-CONSTANTS MaxOffset
-Offsets == 0 .. MaxOffset
-Ops     == {"persist", "delete"}
-TheKey  == "k"
+EXTENDS SnapshotFlow
 
-VARIABLES op, topic, ownerPos, ownerLoaded, ownerState, rebalanced, zEpoch, maxEpoch
+VARIABLES rebalanced, zEpoch, maxEpoch
+  \* (op, store, ownerPos, ownerLoaded, ownerState are the shared flow state from SnapshotFlow)
   \* zEpoch   : the zombie's producer epoch (0 = not yet init'd)
   \* maxEpoch : the coordinator's max epoch (the owner inited first, at 1)
 
-vars == <<op, topic, ownerPos, ownerLoaded, ownerState, rebalanced, zEpoch, maxEpoch>>
+vars == <<op, store, ownerPos, ownerLoaded, ownerState, rebalanced, zEpoch, maxEpoch>>
 
-Absent     == [present |-> FALSE, deleted |-> FALSE, offset |-> 0, contents |-> {}]
-Snap(o, c) == [present |-> TRUE,  deleted |-> FALSE, offset |-> o, contents |-> c]
-Tomb(o)    == [present |-> TRUE,  deleted |-> TRUE,  offset |-> o, contents |-> {}]
-
-CorrectContents(o) == { j \in 1 .. o : op[j] = "persist" /\ \A k \in (j+1) .. o : op[k] /= "delete" }
-Folded(o)          == IF op[o] = "persist" THEN Snap(o, CorrectContents(o)) ELSE Tomb(o)
+Folded(o) == IF op[o] = "persist" THEN Snap(o, CorrectContents(o)) ELSE Tomb(o)
 
 Init ==
-  /\ op \in [1 .. MaxOffset -> Ops]
-  /\ topic = Absent
-  /\ ownerPos = 0
-  /\ ownerLoaded = TRUE
-  /\ ownerState = {}
+  /\ FlowInit
   /\ rebalanced = FALSE
   /\ zEpoch = 0
   /\ maxEpoch = 1
@@ -46,7 +35,7 @@ OwnerFold ==
   /\ ownerPos < MaxOffset
   /\ ownerLoaded
   /\ LET o == ownerPos + 1 IN
-       /\ topic' = Folded(o)
+       /\ store' = Folded(o)
        /\ IF op[o] = "persist"
             THEN /\ ownerState' = ownerState \cup {o}
                  /\ ownerLoaded' = TRUE
@@ -57,14 +46,14 @@ OwnerFold ==
 
 OwnerRecover ==
   /\ ~ownerLoaded
-  /\ ownerState' = IF topic.present /\ ~topic.deleted THEN topic.contents ELSE {}
+  /\ ownerState' = RecoveredState
   /\ ownerLoaded' = TRUE
-  /\ UNCHANGED <<op, topic, ownerPos, rebalanced, zEpoch, maxEpoch>>
+  /\ UNCHANGED <<op, store, ownerPos, rebalanced, zEpoch, maxEpoch>>
 
 Rebalance ==
   /\ ~rebalanced
   /\ rebalanced' = TRUE
-  /\ UNCHANGED <<op, topic, ownerPos, ownerLoaded, ownerState, zEpoch, maxEpoch>>
+  /\ UNCHANGED <<op, store, ownerPos, ownerLoaded, ownerState, zEpoch, maxEpoch>>
 
 \* the zombie inits LATE -> gets the higher epoch (the flaw: arrival order != ownership order).
 ZombieInit ==
@@ -72,14 +61,14 @@ ZombieInit ==
   /\ zEpoch = 0
   /\ zEpoch' = maxEpoch + 1
   /\ maxEpoch' = maxEpoch + 1
-  /\ UNCHANGED <<op, topic, ownerPos, ownerLoaded, ownerState, rebalanced>>
+  /\ UNCHANGED <<op, store, ownerPos, ownerLoaded, ownerState, rebalanced>>
 
 \* holding the max epoch, the zombie's stale write is accepted -> a lower offset regresses the topic.
 ZombieCommit(m) ==
   /\ rebalanced
   /\ zEpoch = maxEpoch
   /\ zEpoch > 0
-  /\ topic' = Folded(m)
+  /\ store' = Folded(m)
   /\ UNCHANGED <<op, ownerPos, ownerLoaded, ownerState, rebalanced, zEpoch, maxEpoch>>
 
 Next ==
@@ -92,29 +81,8 @@ Next ==
 Spec == Init /\ [][Next]_vars /\ WF_vars(OwnerFold)
 
 ----------------------------------------------------------------------------
-(* The refinement theorem -- expected to be FALSE. *)
-AbsCell == IF topic.present /\ ~topic.deleted
-             THEN [present |-> TRUE, offset |-> topic.offset, value |-> topic.contents]
-             ELSE [present |-> FALSE, offset |-> 0, value |-> {}]
-
-SWS == INSTANCE SingleWriterStore
-         WITH Keys     <- {TheKey},
-              MaxOffset <- MaxOffset,
-              input     <- [i \in 1 .. MaxOffset |-> [key |-> TheKey, op |-> op[i]]],
-              durable   <- [k \in {TheKey} |-> AbsCell],
-              hwm       <- [k \in {TheKey} |-> topic.offset]
-
-RefSafeSpec  == SWS!SafeSpec
-RefDurableOK == SWS!INV_DurableCorrect
-RefTypeOK    == SWS!TypeOK
-RefLive     == SWS!LIVE_Progress
-
 TypeOK ==
-  /\ op \in [1 .. MaxOffset -> Ops]
-  /\ topic \in [present : BOOLEAN, deleted : BOOLEAN, offset : Offsets, contents : SUBSET Offsets]
-  /\ ownerPos \in 0 .. MaxOffset
-  /\ ownerLoaded \in BOOLEAN
-  /\ ownerState \in SUBSET Offsets
+  /\ FlowTypeOK
   /\ rebalanced \in BOOLEAN
   /\ zEpoch \in 0 .. (MaxOffset + 2)
   /\ maxEpoch \in 1 .. (MaxOffset + 2)
