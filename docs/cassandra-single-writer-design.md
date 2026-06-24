@@ -147,6 +147,16 @@ absent — and the floor is re-established on every recovery, so the livelock ca
 defaults to `get` for stores without tombstones; a wrapper such as the metrics one must delegate to the
 underlying `recover`, or it silently downgrades a tombstone back to `Absent`.)
 
+The same hazard reaches the **events-recovery** mode (`restoreEvents`), where state is restored by folding
+the journal rather than reading the snapshot. A delete clears the key's journal, so the fold yields `None`
+and the high-water `X` survives only on the snapshot tombstone — the buffer would again start with no floor.
+So events-recovery reads the snapshot store for its tombstone floor (`ReadState` runs `Snapshots.read` for
+that side-effect) before folding the journal; the recovered state still comes from the journal. A *live* key
+needs no floor here — its journal is intact, so the fold reconstructs `X` itself. Note compare-and-set
+protects the snapshot store, which events-recovery does not read for state, so pairing the two buys no
+stale-writer safety; seeding the floor only removes the deleted-key livelock for setups that nonetheless
+enable both.
+
 ## Equal-offset writes and determinism
 
 `IF offset <= :offset` admits an *equal* offset, so a stale writer holding exactly the stored offset is

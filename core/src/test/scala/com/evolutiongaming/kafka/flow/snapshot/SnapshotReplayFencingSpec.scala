@@ -7,6 +7,7 @@ import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
+import com.evolutiongaming.kafka.flow.journal.JournalsOf
 import com.evolutiongaming.kafka.flow.key.{KeyDatabase, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -232,6 +233,60 @@ class SnapshotReplayFencingSpec extends FunSuite {
     TestControl.executeEmbed(program).unsafeRunSync()
   }
 
+  /** The events-recovery counterpart of [[runRecoveredFromTombstone]]: state is restored by folding the journal
+    * (`restoreEvents`), not from the snapshot. A deleted key's journal is empty, so the fold yields `None` and only the
+    * snapshot store still carries the deletion's high-water offset. `restoreEvents` must seed the buffer floor from
+    * that tombstone, or a replayed flush self-fences on the offset-gated tombstone exactly as the snapshot path did
+    * before its fix. The journal starts empty (the delete cleared it); the snapshot store starts holding the tombstone.
+    */
+  private def runRecoveredFromTombstoneViaEvents(
+    timerFlowOf: TimerFlowOf[IO],
+    records: List[ConsumerRecord[String, ByteVector]],
+  ): (Either[Throwable, Unit], Option[Stored]) = {
+    val program = for {
+      keyStorage      <- Ref.of[IO, Set[KafkaKey]](Set(key))
+      snapshotStorage <- Ref.of[IO, Map[KafkaKey, Stored]](Map(key -> Stored.Tombstone(recoveredAt)))
+      keysOf           = KeysOf.of[IO, KafkaKey](KeyDatabase.memory[IO, KafkaKey](keyStorage.stateInstance))
+      snapshotsOf     <- tombstoneGatedDb(snapshotStorage).snapshotsOf
+      journalsOf      <- JournalsOf.memory[IO, KafkaKey, ConsumerRecord[String, ByteVector]]
+      persistenceOf <- PersistenceOf
+        .restoreEvents[IO, KafkaKey, KafkaSnapshot[String], ConsumerRecord[String, ByteVector]](
+          keysOf,
+          journalsOf,
+          snapshotsOf,
+        )
+        .allocated
+        .map(_._1)
+      timersOf <- TimersOf.memory[IO, KafkaKey]
+      keyStateOf = KeyStateOf.eagerRecovery[IO, KafkaSnapshot[String]](
+        applicationId = "app",
+        groupId       = "group",
+        keysOf        = keysOf,
+        timersOf      = timersOf,
+        persistenceOf = persistenceOf,
+        timerFlowOf   = timerFlowOf,
+        fold          = fold,
+        tick          = TickOption.id[IO, KafkaSnapshot[String]],
+        registry      = EntityRegistry.empty[IO, KafkaKey, KafkaSnapshot[String]],
+      )
+      outcome <- PartitionFlow
+        .resource[IO](
+          topicPartition = tp,
+          assignedAt     = Offset.min,
+          keyStateOf     = keyStateOf,
+          config         = PartitionFlowConfig(triggerTimersInterval = 0.seconds),
+          scheduleCommit = ScheduleCommit.empty[IO],
+        )
+        .use { flow =>
+          IO.sleep(1.minute) *> flow(records)
+        }
+        .attempt
+      stored <- snapshotStorage.get.map(_.get(key))
+    } yield (outcome, stored)
+
+    TestControl.executeEmbed(program).unsafeRunSync()
+  }
+
   // flushes only on the timer, never periodically, so the tick is what acts
   private val deleteOnTimer = TimerFlowOf.persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 1.hour)
   // flushes on every timer tick, so a re-derived snapshot would be (re)persisted
@@ -305,6 +360,17 @@ class SnapshotReplayFencingSpec extends FunSuite {
     val (outcome, stored) =
       runRecoveredFromTombstone(deletingTick, deleteOnTimer, records = List(replayedRecord(2, "e3")))
     assert(clue(outcome).isRight, "a buffer-only delete must not reach the store")
+    assertEquals(stored, Stored.Tombstone(recoveredAt).some)
+  }
+
+  test("FIXED (events recovery): a deleted key replayed below its tombstone offset no longer fences the owner") {
+    // The `restoreEvents` counterpart of the persist-path tombstone test: the delete cleared the key's journal, so
+    // events recovery yields `None` and the high-water offset survives only on the snapshot tombstone. restoreEvents
+    // seeds the buffer floor from it, so the re-derived snapshot at the replayed offset 2 is dropped at the floor (5)
+    // and the flush is a no-op; without the seed the flush would persist below 5 and the offset-5 tombstone would
+    // reject the legitimate owner (the deleted-key journal-recovery replay window).
+    val (outcome, stored) = runRecoveredFromTombstoneViaEvents(flushOnTimer, List(replayedRecord(2, "e3")))
+    assert(clue(outcome).isRight, s"expected the legitimate owner to make progress, got ${clue(outcome)}")
     assertEquals(stored, Stored.Tombstone(recoveredAt).some)
   }
 

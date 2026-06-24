@@ -69,7 +69,10 @@ object PersistenceOf {
         snapshots <- snapshotsOf(key)
         keys       = keysOf(key)
       } yield Persistence(
-        readState = ReadState(journals, fold),
+        // seed the replay-window floor from the snapshot store (a deleted key's tombstone offset) before folding the
+        // journal: a delete clears the journal, so without this a compare-and-set snapshot store would self-fence the
+        // legitimate owner on a deleted-key replay. See ReadState and docs/cassandra-single-writer-design.md.
+        readState = ReadState(journals, fold, snapshots),
         buffers   = Buffers(keys, journals, snapshots)
       )
     }

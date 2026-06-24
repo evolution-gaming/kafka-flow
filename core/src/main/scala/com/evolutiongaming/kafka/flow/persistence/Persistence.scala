@@ -196,6 +196,23 @@ object ReadState {
 
   }
 
+  /** Restores state from previously saved events, after seeding the snapshot buffer's replay-window floor from the
+    * snapshot store. A delete clears a key's journal, so events-recovery alone cannot reconstruct a deleted key's
+    * high-water offset; reading the snapshot store surfaces the deletion tombstone's offset as the floor. Without it a
+    * replayed event below that offset would be re-derived and persisted, which a compare-and-set snapshot store rejects
+    * as stale though the owner is legitimate -- the deleted-key replay-window self-fence. A live key needs no floor
+    * here (its journal is intact, so the fold reconstructs the high-water). See docs/cassandra-single-writer-design.md.
+    */
+  def apply[F[_]: Monad: Log, S, E](
+    journals: JournalReader[F, E],
+    fold: FoldOption[F, S, E],
+    snapshots: SnapshotReader[F, S],
+  ): ReadState[F, S] = new ReadState[F, S] {
+    // `snapshots.read` is run for its floor side-effect only (it sets the buffer floor on a recovered tombstone); the
+    // recovered state comes from folding the journal, the events-recovery source, so its returned value is discarded.
+    def read = snapshots.read *> ReadState(journals, fold).read
+  }
+
   /** Restores state using previously saved snapshot */
   def apply[F[_], S](
     snapshots: SnapshotReader[F, S]
