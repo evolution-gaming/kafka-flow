@@ -268,8 +268,8 @@ object SnapshotsSpec {
   type S = Int
 
   // no offset fence (last-write-wins); and the Int state as its own offset (fence active)
-  val noFence: S => Offset   = _ => Offset.min
-  val intOffset: S => Offset = i => Offset.unsafe(i.toLong)
+  val noFence: Option[S => Offset]   = None
+  val intOffset: Option[S => Offset] = Some(i => Offset.unsafe(i.toLong))
 
   case class Context(
     database: Map[K, S]                   = Map.empty,

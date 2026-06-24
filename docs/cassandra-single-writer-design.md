@@ -118,8 +118,8 @@ appended — the monotonic `append` is belt-and-suspenders for the persist case.
 (`TickToState`) is timer-driven and bypasses that filter, so only the monotonic buffer lets a legitimate
 tick-delete apply during replay.
 
-The fence is live only for the offset-carrying `KafkaSnapshot` / compare-and-set wiring; other stores
-pass `Offset.min` as the offset, making it inert (last-write-wins). It is surgical even when live:
+The fence is live only for the offset-carrying `KafkaSnapshot` / compare-and-set wiring, which passes
+`Some(_.offset)`; other stores pass `None` (unfenced, last-write-wins). It is surgical even when live:
 `max(currentOffset, highWater)` differs from `currentOffset` only inside this replay window.
 
 This fence and the tombstone above are independent and complementary: presenting the higher `highWater`

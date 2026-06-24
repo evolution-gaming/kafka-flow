@@ -24,7 +24,7 @@ object SnapshotsOf {
   def backedBy[F[_]: Ref.Make: Monad: Log, K: LogPrefix, S](
     db: SnapshotDatabase[F, K, S]
   ): SnapshotsOf[F, K, S] = { key =>
-    Snapshots.of(key, db, _ => Offset.min)
+    Snapshots.of(key, db, None)
   }
 
   /** Wires a database into the per-key buffer fenced on the offset `offsetOf` extracts from each snapshot: the buffer
@@ -36,7 +36,7 @@ object SnapshotsOf {
     db: SnapshotDatabase[F, K, S],
     offsetOf: S => Offset,
   ): SnapshotsOf[F, K, S] = { key =>
-    Snapshots.of(key, db, offsetOf)
+    Snapshots.of(key, db, Some(offsetOf))
   }
 
 }
