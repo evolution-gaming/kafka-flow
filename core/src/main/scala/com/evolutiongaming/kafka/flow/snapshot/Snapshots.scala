@@ -52,15 +52,15 @@ trait SnapshotWriter[F[_], S] {
 }
 object Snapshots {
 
-  /** The per-key buffer cell: a live snapshot (with its `persisted` flag), a value-less high-water floor recovered from
-    * or left by a delete, or nothing yet. Folding the live snapshot and the tombstone floor into one monotonic cell
-    * lets `read`/`append`/`delete` reason about a single high-water (see `highWater`), so a deleted key's offset is
-    * held even though it carries no value. Parallels [[Recovered]] but keeps the `persisted` flag `flush` needs, so it
-    * is a separate type.
+  /** The per-key buffer cell: a live snapshot value (with whether it is already persisted), a value-less high-water
+    * floor recovered from or left by a delete, or nothing yet. Folding the live snapshot and the tombstone floor into
+    * one monotonic cell lets `read`/`append`/`delete` reason about a single high-water (see `highWater`), so a deleted
+    * key's offset is held even though it carries no value. Parallels [[Recovered]], but `Live` also carries the
+    * `persisted` flag `flush` needs.
     */
   private[flow] sealed trait Buffered[+S]
   private[flow] object Buffered {
-    final case class Live[S](snapshot: Snapshot[S]) extends Buffered[S]
+    final case class Live[S](value: S, persisted: Boolean) extends Buffered[S]
     final case class Deleted(offset: Offset) extends Buffered[Nothing]
     case object Empty extends Buffered[Nothing]
   }
@@ -90,9 +90,9 @@ object Snapshots {
 
     // the replay-window high-water: a live snapshot's offset (when fenced), or the recovered/left tombstone floor.
     private def highWater(current: Buffered[S]): Option[Offset] = current match {
-      case Buffered.Live(s)    => offsetOf.map(_(s.value))
-      case Buffered.Deleted(o) => o.some
-      case Buffered.Empty      => none
+      case Buffered.Live(value, _) => offsetOf.map(_(value))
+      case Buffered.Deleted(o)     => o.some
+      case Buffered.Empty          => none
     }
 
     def read =
@@ -115,19 +115,19 @@ object Snapshots {
         else
           current match {
             // an unchanged value keeps the existing cell (and its `persisted` flag); anything else becomes a fresh,
-            // not-yet-persisted live snapshot. (Matches `Snapshot.updateValue`, without reanchoring the covariant type.)
-            case Buffered.Live(existing) if existing.value == snapshot => current
-            case _                                                     => Buffered.Live(Snapshot.init(snapshot))
+            // not-yet-persisted live snapshot
+            case Buffered.Live(existing, _) if existing == snapshot => current
+            case _                                                  => Buffered.Live(snapshot, persisted = false)
           }
       }
 
     def initPersisted(snapshot: S) =
-      state.set(Buffered.Live(Snapshot.initPersisted(snapshot)))
+      state.set(Buffered.Live(snapshot, persisted = true))
 
     def flush =
       state.get.flatMap {
-        case Buffered.Live(snapshot) if !snapshot.persisted =>
-          database.persist(key, snapshot.value) *> state.set(Buffered.Live(snapshot.copy(persisted = true)))
+        case Buffered.Live(value, false) =>
+          database.persist(key, value) *> state.set(Buffered.Live(value, persisted = true))
         case _ => ().pure[F]
       }
 
@@ -154,17 +154,6 @@ object Snapshots {
     def initPersisted(event: S)                  = ().pure[F]
     def flush                                    = ().pure[F]
     def delete(persist: Boolean, offset: Offset) = ().pure[F]
-  }
-
-  final case class Snapshot[S](value: S, persisted: Boolean) { self =>
-    def updateValue(newValue: S): Snapshot[S] =
-      if (value == newValue) self
-      else copy(value = newValue, persisted = false)
-  }
-
-  object Snapshot {
-    def init[S](value: S): Snapshot[S]          = Snapshot(value, persisted = false)
-    def initPersisted[S](value: S): Snapshot[S] = Snapshot(value, persisted = true)
   }
 
 }

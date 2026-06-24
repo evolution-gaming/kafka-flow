@@ -66,7 +66,7 @@ class SnapshotsSpec extends FunSuite {
     val snapshots = Snapshots("key1", database, f.state, noFence)
     val context = Context(
       database = Map("key1" -> 102),
-      state    = Buffered.Live(Snapshots.Snapshot(103, persisted = false))
+      state    = Buffered.Live(103, persisted = false)
     )
 
     // When("delete is requested")
@@ -89,7 +89,7 @@ class SnapshotsSpec extends FunSuite {
     val snapshots = Snapshots("key1", database, f.state, noFence)
     val context = Context(
       database = Map("key1" -> 102),
-      state    = Buffered.Live(Snapshots.Snapshot(103, persisted = false))
+      state    = Buffered.Live(103, persisted = false)
     )
 
     // When("delete is requested")
@@ -151,7 +151,7 @@ class SnapshotsSpec extends FunSuite {
     // the key was recovered/persisted at offset 10
     val context = Context(
       database = Map("key1" -> 10),
-      state    = Buffered.Live(Snapshots.Snapshot(10, persisted = true))
+      state    = Buffered.Live(10, persisted = true)
     )
 
     // a replayed event at offset 3 followed by a flush must not re-persist at the lower offset
@@ -172,7 +172,7 @@ class SnapshotsSpec extends FunSuite {
     }
     val snapshots = Snapshots("key1", database, f.state, intOffset)
     // buffer holds the recovered snapshot at offset 7
-    val context = Context(state = Buffered.Live(Snapshots.Snapshot(7, persisted = true)))
+    val context = Context(state = Buffered.Live(7, persisted = true))
 
     // a delete requested at the (lower) processing offset 2 must be fenced on the buffered offset 7
     val program = snapshots.delete(true, Offset.unsafe(2))
@@ -225,7 +225,7 @@ class SnapshotsSpec extends FunSuite {
     val snapshots = Snapshots("key1", database, f.state, noFence)
     val context = Context(
       database = Map("key1" -> 102),
-      state    = Buffered.Live(Snapshots.Snapshot(103, persisted = false))
+      state    = Buffered.Live(103, persisted = false)
     )
 
     // When("flush is requested multiple times")
@@ -274,7 +274,7 @@ object SnapshotsSpec {
 
   // the live snapshot's value if the buffer holds one, else None (a tombstone floor or an empty cell holds no value)
   def liveValue(state: Buffered[S]): Option[S] = state match {
-    case Buffered.Live(snapshot) => snapshot.value.some
+    case Buffered.Live(value, _) => value.some
     case _                       => none[S]
   }
 
