@@ -52,6 +52,19 @@ trait SnapshotWriter[F[_], S] {
 }
 object Snapshots {
 
+  /** The per-key buffer cell: a live snapshot (with its `persisted` flag), a value-less high-water floor recovered from
+    * or left by a delete, or nothing yet. Folding the live snapshot and the tombstone floor into one monotonic cell
+    * lets `read`/`append`/`delete` reason about a single high-water (see `highWater`), so a deleted key's offset is
+    * held even though it carries no value. Parallels [[Recovered]] but keeps the `persisted` flag `flush` needs, so it
+    * is a separate type.
+    */
+  private[flow] sealed trait Buffered[+S]
+  private[flow] object Buffered {
+    final case class Live[S](snapshot: Snapshot[S]) extends Buffered[S]
+    final case class Deleted(offset: Offset) extends Buffered[Nothing]
+    case object Empty extends Buffered[Nothing]
+  }
+
   /** Per-key snapshot buffer over `database`.
     *
     * @param offsetOf
@@ -65,87 +78,73 @@ object Snapshots {
     database: SnapshotDatabase[F, K, S],
     offsetOf: Option[S => Offset],
   )(implicit log: Log[F]): F[Snapshots[F, S]] =
-    for {
-      buffer <- Ref.of[F, Option[Snapshot[S]]](None)
-      // the high-water offset recovered for a key that has no buffered snapshot (a deleted key recovered from an
-      // offset-carrying tombstone). A buffered snapshot carries its own high-water via `offsetOf`; this floor covers
-      // the value-less case. See `read`/`append`/`delete` and docs/cassandra-single-writer-design.md.
-      floor <- Ref.of[F, Option[Offset]](None)
-    } yield Snapshots(key, database, buffer.stateInstance, floor.stateInstance, offsetOf)
+    Ref.of[F, Buffered[S]](Buffered.Empty).map(state => Snapshots(key, database, state.stateInstance, offsetOf))
 
   private[snapshot] def apply[F[_]: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
-    buffer: Stateful[F, Option[Snapshot[S]]],
-    floor: Stateful[F, Option[Offset]],
+    state: Stateful[F, Buffered[S]],
     offsetOf: Option[S => Offset],
   )(implicit log: Log[F]): Snapshots[F, S] = new Snapshots[F, S] {
     private val prefixLog: Log[F] = log.prefixed(LogPrefix[K].extract(key))
 
-    // the replay-window high-water: the buffered snapshot's offset (when fenced), else the recovered tombstone floor.
-    private def highWater(buffered: Option[Snapshot[S]], floored: Option[Offset]): Option[Offset] =
-      buffered.flatMap(s => offsetOf.map(_(s.value))) orElse floored
+    // the replay-window high-water: a live snapshot's offset (when fenced), or the recovered/left tombstone floor.
+    private def highWater(current: Buffered[S]): Option[Offset] = current match {
+      case Buffered.Live(s)    => offsetOf.map(_(s.value))
+      case Buffered.Deleted(o) => o.some
+      case Buffered.Empty      => none
+    }
 
     def read =
       database.recover(key).flatMap {
-        case Recovered.Present(snapshot) => snapshot.some.pure[F]
+        case Recovered.Present(snapshot) => snapshot.some.pure[F] // `initPersistedState` seeds `Live` right after
         // a tombstone reads back absent, but its offset is the replay-window floor: hold it so a re-derived snapshot
         // (or delete) below it is dropped rather than persisted as a stale, self-fencing write. See
         // docs/cassandra-single-writer-design.md.
-        case Recovered.Deleted(offset) => floor.set(offset.some).as(none[S])
+        case Recovered.Deleted(offset) => state.set(Buffered.Deleted(offset)).as(none[S])
         case Recovered.Absent          => none[S].pure[F]
       }
 
     def append(snapshot: S) =
-      floor.get.flatMap { floored =>
-        buffer.modify {
-          // keep the buffer monotonic in offset: a lower-offset append is replay onto a recovered snapshot (a no-op
-          // under deterministic folds), so dropping it holds the high-water offset that fences `delete`. See
-          // docs/cassandra-single-writer-design.md.
-          case Some(s) if offsetOf.exists(f => f(snapshot) < f(s.value)) => s.some
-          case Some(s)                                                   => s.updateValue(snapshot).some
-          // a fresh buffer below the recovered tombstone floor is a replayed event onto a deleted key: drop it so the
-          // floor holds and the re-derived snapshot is not persisted below it (the self-fence).
-          case None if floored.exists(o => offsetOf.exists(f => f(snapshot) < o)) => none
-          case None                                                               => Snapshot.init(snapshot).some
-        }
+      // keep the buffer monotonic in offset: a lower-offset append is replay onto a recovered snapshot (a no-op under
+      // deterministic folds), so dropping it holds the high-water offset that fences `delete` and drops a re-derived
+      // snapshot below a recovered tombstone floor. See docs/cassandra-single-writer-design.md.
+      state.modify { current =>
+        val below = (offsetOf.map(_(snapshot)), highWater(current)).mapN(_ < _).getOrElse(false)
+        if (below) current
+        else
+          current match {
+            // an unchanged value keeps the existing cell (and its `persisted` flag); anything else becomes a fresh,
+            // not-yet-persisted live snapshot. (Matches `Snapshot.updateValue`, without reanchoring the covariant type.)
+            case Buffered.Live(existing) if existing.value == snapshot => current
+            case _                                                     => Buffered.Live(Snapshot.init(snapshot))
+          }
       }
 
     def initPersisted(snapshot: S) =
-      buffer.set(Snapshot.initPersisted(snapshot).some)
+      state.set(Buffered.Live(Snapshot.initPersisted(snapshot)))
 
-    def flush = {
-      for {
-        snapshot <- buffer.get
-        _ <- snapshot traverse_ { snapshot =>
-          if (!snapshot.persisted) {
-            for {
-              _ <- database.persist(key, snapshot.value)
-              _ <- buffer.set(snapshot.copy(persisted = true).some)
-            } yield ()
-          } else ().pure[F]
-        }
-      } yield ()
-    }
-
-    def delete(persist: Boolean, offset: Offset) = {
-      (buffer.get, floor.get).tupled.flatMap {
-        case (buffered, floored) =>
-          // fence on the key's high-water offset (the buffered snapshot's, or the recovered tombstone floor), not
-          // `offset`: after recovery a key's snapshot can lead the partition's processing offset, and a compare-and-set
-          // backend would reject a delete gated below it as stale though the owner is legitimate. A genuinely stale
-          // writer only reached its own lower offset.
-          val fenceOffset = highWater(buffered, floored).fold(offset)(offset max _)
-          val delete = if (persist) {
-            database.delete(key, fenceOffset) *> prefixLog.info("deleted snapshot")
-          } else {
-            ().pure[F]
-          }
-          // the delete writes a tombstone at `fenceOffset`; hold it as the floor so a later replayed re-persist below it
-          // is still dropped (the buffer is cleared and no longer carries the high-water).
-          buffer.set(None) *> floor.set(fenceOffset.some) *> delete
+    def flush =
+      state.get.flatMap {
+        case Buffered.Live(snapshot) if !snapshot.persisted =>
+          database.persist(key, snapshot.value) *> state.set(Buffered.Live(snapshot.copy(persisted = true)))
+        case _ => ().pure[F]
       }
-    }
+
+    def delete(persist: Boolean, offset: Offset) =
+      state.get.flatMap { current =>
+        // fence on the key's high-water offset (the live snapshot's, or the recovered/left tombstone floor), not
+        // `offset`: after recovery a key's snapshot can lead the partition's processing offset, and a compare-and-set
+        // backend would reject a delete gated below it as stale though the owner is legitimate. A genuinely stale
+        // writer only reached its own lower offset.
+        val fenceOffset = highWater(current).fold(offset)(offset max _)
+        val delete =
+          if (persist) database.delete(key, fenceOffset) *> prefixLog.info("deleted snapshot")
+          else ().pure[F]
+        // leave the tombstone offset as the floor so a later replayed re-persist below it is still dropped (the cell no
+        // longer carries a live snapshot's high-water).
+        state.set(Buffered.Deleted(fenceOffset)) *> delete
+      }
 
   }
 

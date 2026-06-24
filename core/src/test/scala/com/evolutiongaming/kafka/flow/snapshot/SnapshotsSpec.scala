@@ -5,6 +5,7 @@ import cats.mtl.Stateful
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.MonadStateHelper.*
+import com.evolutiongaming.kafka.flow.snapshot.Snapshots.Buffered
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotsSpec.*
 import com.evolutiongaming.skafka.Offset
 import monocle.macros.GenLens
@@ -18,7 +19,7 @@ class SnapshotsSpec extends FunSuite {
 
     // Given("empty database")
     val database  = SnapshotDatabase.memory(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, noFence)
+    val snapshots = Snapshots("key1", database, f.state, noFence)
 
     // When("buffer is filled with state")
     val program =
@@ -39,7 +40,7 @@ class SnapshotsSpec extends FunSuite {
 
     // Given("empty database")
     val database  = SnapshotDatabase.memory(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, noFence)
+    val snapshots = Snapshots("key1", database, f.state, noFence)
 
     // When("buffer is filled with state")
     // And("Snapshots is flushed")
@@ -62,18 +63,18 @@ class SnapshotsSpec extends FunSuite {
 
     // Given("database with contents")
     val database  = SnapshotDatabase.memory(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, noFence)
+    val snapshots = Snapshots("key1", database, f.state, noFence)
     val context = Context(
       database = Map("key1" -> 102),
-      buffer   = Some(Snapshots.Snapshot(103, persisted = false))
+      state    = Buffered.Live(Snapshots.Snapshot(103, persisted = false))
     )
 
     // When("delete is requested")
     val program = snapshots.delete(true, Offset.min)
     val result  = program.runS(context).value
 
-    // Then("buffer is cleared")
-    assert(result.buffer.isEmpty)
+    // Then("buffer no longer holds a live snapshot")
+    assert(liveValue(result.state).isEmpty)
     // And("key is deleted")
     assert(!result.database.contains("key1"))
 
@@ -85,18 +86,18 @@ class SnapshotsSpec extends FunSuite {
 
     // Given("database with contents")
     val database  = SnapshotDatabase.memory(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, noFence)
+    val snapshots = Snapshots("key1", database, f.state, noFence)
     val context = Context(
       database = Map("key1" -> 102),
-      buffer   = Some(Snapshots.Snapshot(103, persisted = false))
+      state    = Buffered.Live(Snapshots.Snapshot(103, persisted = false))
     )
 
     // When("delete is requested")
     val program = snapshots.delete(false, Offset.min)
     val result  = program.runS(context).value
 
-    // Then("buffer is cleared")
-    assert(result.buffer.isEmpty)
+    // Then("buffer no longer holds a live snapshot")
+    assert(liveValue(result.state).isEmpty)
     // And("key is not deleted")
     assert(result.database.contains("key1"))
 
@@ -112,7 +113,7 @@ class SnapshotsSpec extends FunSuite {
       def get(key: K)                    = none[S].pure[F]
       def delete(key: K, offset: Offset) = State.modify[Context](_.copy(deletedOffset = offset.some))
     }
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, noFence)
+    val snapshots = Snapshots("key1", database, f.state, noFence)
 
     // When("delete is requested with a specific offset")
     val offset  = Offset.unsafe(77)
@@ -131,7 +132,7 @@ class SnapshotsSpec extends FunSuite {
     val f = new ConstFixture
 
     val database  = SnapshotDatabase.memory(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, intOffset)
+    val snapshots = Snapshots("key1", database, f.state, intOffset)
 
     // append at offset 5, then a replayed append at offset 3 (lower) which must be dropped, then flush
     val program = snapshots.append(5) *> snapshots.append(3) *> snapshots.flush
@@ -139,18 +140,18 @@ class SnapshotsSpec extends FunSuite {
 
     // the higher-offset snapshot survives; the lower-offset append did not regress the buffer
     assertEquals(result.database.get("key1"), Some(5))
-    assertEquals(result.buffer.map(_.value), Some(5))
+    assertEquals(liveValue(result.state), Some(5))
   }
 
   test("Snapshots does not re-persist after a lower-offset (replayed) append onto a persisted snapshot") {
     val f = new ConstFixture
 
     val database  = countingSnapshotDb(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, intOffset)
+    val snapshots = Snapshots("key1", database, f.state, intOffset)
     // the key was recovered/persisted at offset 10
     val context = Context(
       database = Map("key1" -> 10),
-      buffer   = Some(Snapshots.Snapshot(10, persisted = true))
+      state    = Buffered.Live(Snapshots.Snapshot(10, persisted = true))
     )
 
     // a replayed event at offset 3 followed by a flush must not re-persist at the lower offset
@@ -169,16 +170,16 @@ class SnapshotsSpec extends FunSuite {
       def get(key: K)                    = none[S].pure[F]
       def delete(key: K, offset: Offset) = State.modify[Context](_.copy(deletedOffset = offset.some))
     }
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, intOffset)
+    val snapshots = Snapshots("key1", database, f.state, intOffset)
     // buffer holds the recovered snapshot at offset 7
-    val context = Context(buffer = Some(Snapshots.Snapshot(7, persisted = true)))
+    val context = Context(state = Buffered.Live(Snapshots.Snapshot(7, persisted = true)))
 
     // a delete requested at the (lower) processing offset 2 must be fenced on the buffered offset 7
     val program = snapshots.delete(true, Offset.unsafe(2))
     val result  = program.runS(context).value
 
     assertEquals(result.deletedOffset, Offset.unsafe(7).some)
-    assert(result.buffer.isEmpty)
+    assert(liveValue(result.state).isEmpty)
   }
 
   test("Snapshots recovers an offset-carrying tombstone as the high-water floor (reads back absent)") {
@@ -192,27 +193,27 @@ class SnapshotsSpec extends FunSuite {
       override def recover(key: K)(implicit F0: cats.Functor[F]) =
         (Recovered.Deleted(Offset.unsafe(5)): Recovered[S]).pure[F]
     }
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, intOffset)
+    val snapshots = Snapshots("key1", database, f.state, intOffset)
 
     // read returns no state (the key is deleted) but seeds the floor at 5
     val result = snapshots.read.runS(Context()).value
-    assertEquals(result.floor, Offset.unsafe(5).some)
+    assertEquals(result.state, Buffered.Deleted(Offset.unsafe(5)): Buffered[S])
   }
 
   test("Snapshots drops a replayed append below the recovered tombstone floor, keeps one at/above it") {
     val f = new ConstFixture
 
     val database  = SnapshotDatabase.memory(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, intOffset)
+    val snapshots = Snapshots("key1", database, f.state, intOffset)
     // recovered from a tombstone at offset 5 (no buffered snapshot, floor = 5)
-    val context = Context(floor = Offset.unsafe(5).some)
+    val context = Context(state = Buffered.Deleted(Offset.unsafe(5)))
 
     // a replayed event at offset 3 (< 5) must be dropped; a later event at offset 7 (>= 5) is buffered and persisted
     val program = snapshots.append(3) *> snapshots.flush *> snapshots.append(7) *> snapshots.flush
     val result  = program.runS(context).value
 
     assertEquals(result.database.get("key1"), Some(7))
-    assertEquals(result.buffer.map(_.value), Some(7))
+    assertEquals(liveValue(result.state), Some(7))
   }
 
   test("Snapshots does not persist the same snapshot more than once") {
@@ -221,10 +222,10 @@ class SnapshotsSpec extends FunSuite {
 
     // Given("database with contents")
     val database  = countingSnapshotDb(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, noFence)
+    val snapshots = Snapshots("key1", database, f.state, noFence)
     val context = Context(
       database = Map("key1" -> 102),
-      buffer   = Some(Snapshots.Snapshot(103, persisted = false))
+      state    = Buffered.Live(Snapshots.Snapshot(103, persisted = false))
     )
 
     // When("flush is requested multiple times")
@@ -244,10 +245,10 @@ class SnapshotsSpec extends FunSuite {
 
     // Given("database without contents")
     val database  = countingSnapshotDb(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer, f.floor, noFence)
+    val snapshots = Snapshots("key1", database, f.state, noFence)
     val context = Context(
       database = Map.empty,
-      buffer   = None
+      state    = Buffered.Empty
     )
 
     // When("snapshot is initialized and flush is requested")
@@ -271,17 +272,21 @@ object SnapshotsSpec {
   val noFence: Option[S => Offset]   = None
   val intOffset: Option[S => Offset] = Some(i => Offset.unsafe(i.toLong))
 
+  // the live snapshot's value if the buffer holds one, else None (a tombstone floor or an empty cell holds no value)
+  def liveValue(state: Buffered[S]): Option[S] = state match {
+    case Buffered.Live(snapshot) => snapshot.value.some
+    case _                       => none[S]
+  }
+
   case class Context(
-    database: Map[K, S]                   = Map.empty,
-    buffer: Option[Snapshots.Snapshot[S]] = None,
-    floor: Option[Offset]                 = None,
-    deletedOffset: Option[Offset]         = None
+    database: Map[K, S]           = Map.empty,
+    state: Buffered[S]            = Buffered.Empty,
+    deletedOffset: Option[Offset] = None
   )
 
   class ConstFixture {
     val database = Stateful[F, Context] focus GenLens[Context](_.database)
-    val buffer   = Stateful[F, Context] focus GenLens[Context](_.buffer)
-    val floor    = Stateful[F, Context] focus GenLens[Context](_.floor)
+    val state    = Stateful[F, Context] focus GenLens[Context](_.state)
   }
 
   implicit val log: Log[F] = Log.empty[F]
