@@ -112,11 +112,11 @@ at the key's high-water `X`, so
 - a re-derived snapshot is not re-persisted below `X` (the buffer stays `persisted`), so the flush is
   a no-op.
 
-Of these two, only the **delete** is irreducible. `SnapshotFold` already drops replayed events
-(`record.offset > snapshot.offset`), so a re-derived snapshot below `X` is never even appended — the
-monotonic `append` is belt-and-suspenders for the persist case. A **tick-delete** (`TickToState`) is
-timer-driven and bypasses that filter, so only the monotonic buffer lets a legitimate tick-delete
-apply during replay.
+Of these two, only the **delete** is irreducible *for a live recovered snapshot*. `SnapshotFold` drops
+replayed events (`record.offset > snapshot.offset`), so a re-derived snapshot below `X` is never even
+appended — the monotonic `append` is belt-and-suspenders for the persist case. A **tick-delete**
+(`TickToState`) is timer-driven and bypasses that filter, so only the monotonic buffer lets a legitimate
+tick-delete apply during replay.
 
 The fence is live only for the offset-carrying `KafkaSnapshot` / compare-and-set wiring; other stores
 pass `Offset.min` as the offset, making it inert (last-write-wins). It is surgical even when live:
@@ -124,6 +124,28 @@ pass `Offset.min` as the offset, making it inert (last-write-wins). It is surgic
 
 This fence and the tombstone above are independent and complementary: presenting the higher `highWater`
 for a delete makes the tombstone it writes *more* protective against a lower-offset revive, never less.
+
+### Recovering a deleted key
+
+Both protections above are keyed on the high-water `X`, which a recovery establishes from the *recovered
+snapshot's* offset. But a deleted key's row is a tombstone — `get` reads its null `value` back as `None`
+(absent) — so a recovery that only knew `get` would establish no floor: the buffer would start empty and
+`Snapshots.append` would climb from the replayed offsets (all `< X`), re-persisting below `X`. The
+offset-`X` tombstone then rejects that write, fencing the *legitimate* owner; the flow tears down,
+re-recovers the same tombstone (again no floor), and loops — a livelock. (`SnapshotFold`'s filter is keyed
+on the same recovered offset, so it too has no floor for a tombstone; the monotonic buffer is what carries
+the deleted-key case. The tick-**delete** path does not arise here: after a `None` recovery nothing is yet
+persisted, so a replay-window tick-delete is dispatched `persist = false` — buffer-only, never reaching the
+store.)
+
+So recovery must surface the tombstone's offset as the floor, not collapse it to "nothing there".
+`SnapshotDatabase.recover` returns `Recovered.Deleted(X)` for a tombstone (distinct from `Recovered.Absent`
+for a reaped or never-written key); `Snapshots` holds `X` as the buffer high-water even with no buffered
+value, so a re-derived snapshot below `X` is dropped exactly as for a live snapshot and the owner makes
+progress. The deleted-key recovery is thus symmetric with the live one — same floor, only the value is
+absent — and the floor is re-established on every recovery, so the livelock cannot form. (`recover`
+defaults to `get` for stores without tombstones; a wrapper such as the metrics one must delegate to the
+underlying `recover`, or it silently downgrades a tombstone back to `Absent`.)
 
 ## Equal-offset writes and determinism
 

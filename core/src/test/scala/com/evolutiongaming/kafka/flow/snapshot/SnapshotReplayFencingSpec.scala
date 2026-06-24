@@ -84,6 +84,17 @@ class SnapshotReplayFencingSpec extends FunSuite {
       def get(key: KafkaKey): IO[Option[KafkaSnapshot[String]]] =
         storage.get.map(_.get(key).collect { case Stored.Live(snapshot) => snapshot })
 
+      // recovery surfaces the tombstone's offset as the replay-window floor (mirrors CassandraSnapshots.recover); a
+      // present row recovers as Present, a tombstone as Deleted(offset), no row as Absent
+      override def recover(key: KafkaKey)(implicit F: cats.Functor[IO]): IO[Recovered[KafkaSnapshot[String]]] =
+        storage
+          .get
+          .map(_.get(key) match {
+            case Some(Stored.Live(snapshot)) => Recovered.Present(snapshot)
+            case Some(Stored.Tombstone(o))   => Recovered.Deleted(o)
+            case None                        => Recovered.Absent
+          })
+
       def persist(key: KafkaKey, snapshot: KafkaSnapshot[String]): IO[Unit] =
         storage.modify { snapshots =>
           snapshots.get(key) match {
@@ -247,25 +258,27 @@ class SnapshotReplayFencingSpec extends FunSuite {
     assertEquals(stored.map(_.value), "recovered".some)
   }
 
-  // --- Tombstone replay-window finding -------------------------------------------------------------------------------
+  // --- Tombstone replay-window: the fix ------------------------------------------------------------------------------
   //
   // The three tests above show the replay-window fix (monotonic buffer + delete fenced on the high-water offset) for a
-  // *live* recovered snapshot. The fix needs that high-water offset X to be in the buffer after recovery. A tombstone
-  // is recovered as `None` (Cassandra's null `value`), so the buffer starts empty with no high-water: `SnapshotFold`'s
-  // `record.offset > snapshot.offset` filter is bypassed for a `None` state and the monotonic buffer climbs from the
-  // re-folded replayed offsets (all < X) instead of holding X. The store's offset guard still rejects a write/delete
-  // below X, so the *legitimate* owner fences itself. Each test below is the tombstone counterpart of a passing live
-  // test above; the only changed variable is live-snapshot vs tombstone. Safety is unaffected (the durable offset X
-  // never regresses); this is a liveness defect.
+  // *live* recovered snapshot, where the high-water offset X seeds the buffer. A tombstone reads back as `None`
+  // (Cassandra's null `value`), so before the fix the buffer started empty with no high-water and the monotonic buffer
+  // climbed from the re-folded replayed offsets (all < X); a flush mid-replay then persisted below X, which the
+  // offset-X tombstone rejected, fencing the *legitimate* owner (a livelock; safety was never at risk).
+  //
+  // The fix: recovery surfaces the tombstone's offset as the buffer floor (`SnapshotDatabase.recover` ->
+  // `Recovered.Deleted`, held by `Snapshots`), so a re-derived snapshot below X is dropped and the owner makes
+  // progress. Each test below is the tombstone counterpart of a passing live test above; the only changed variable is
+  // live-snapshot vs tombstone.
 
-  test("FINDING (persist path): a periodic flush during replay below a tombstoned key fences the legitimate owner") {
-    // counterpart of "a periodic flush during replay below a recovered snapshot does not conflict" (which passes):
-    // with a live snapshot the re-derived snapshot is dropped and the flush is a no-op; with a tombstone the re-derived
-    // snapshot is persisted at the replayed offset 2, which the offset-5 tombstone rejects
+  test("FIXED (persist path): a periodic flush during replay below a tombstoned key no longer fences the owner") {
+    // counterpart of "a periodic flush during replay below a recovered snapshot does not conflict": the re-derived
+    // snapshot at the replayed offset 2 is dropped at the recovered floor (5), so the flush is a no-op and the owner
+    // makes progress instead of self-fencing on the offset-5 tombstone
     val (outcome, stored) =
       runRecoveredFromTombstone(TickOption.id[IO, KafkaSnapshot[String]], flushOnTimer, List(replayedRecord(2, "e3")))
-    assert(clue(outcome).isLeft, "expected the legitimate owner to self-fence, but the flow completed")
-    assert(outcome.swap.exists(_.isInstanceOf[StaleWrite]), s"expected a StaleWrite conflict, got ${clue(outcome)}")
+    assert(clue(outcome).isRight, s"expected the legitimate owner to make progress, got ${clue(outcome)}")
+    // the floor held: nothing was persisted below the tombstone's offset, so the row is unchanged
     assertEquals(stored, Stored.Tombstone(recoveredAt).some)
   }
 
@@ -283,14 +296,12 @@ class SnapshotReplayFencingSpec extends FunSuite {
     assertEquals(stored, Stored.Live(KafkaSnapshot(offset = Offset.unsafe(2), value = "e3")).some)
   }
 
-  test("OBSERVATION (delete path is shadowed): a tick-delete during replay on a tombstone is a buffer-only delete") {
-    // The design doc calls the tick-delete the irreducible replay-window case for a *live* snapshot (`SnapshotFold`
-    // drops a re-derived snapshot, so only a delete reaches the store). For a tombstone that does not hold: after a
-    // `None` recovery nothing is marked persisted (`Persistence.read` calls `onPersisted` only for a `Some` state), so
-    // a tick-delete during replay is dispatched with persist=false - a buffer-only delete that never reaches the
-    // offset-gated store, hence no conflict. The persist path above reaches the store first and is the manifesting
-    // defect; the delete path is shadowed by it. Contrast the live counterpart, where the same tick issues a real
-    // store delete fenced on the high-water offset.
+  test("REGRESSION (delete path): a tick-delete during replay on a tombstone stays a buffer-only no-op") {
+    // The persist path was the only one that ever reached the store for a tombstone: after a `None` recovery nothing is
+    // marked persisted (`Persistence.read` calls `onPersisted` only for a `Some` state), so a tick-delete during replay
+    // is dispatched with persist=false - a buffer-only delete that never touches the offset-gated store. This holds
+    // before and after the fix; the test pins it so a future change to the recovered floor cannot turn it into a
+    // store delete fenced below the tombstone's offset.
     val (outcome, stored) =
       runRecoveredFromTombstone(deletingTick, deleteOnTimer, records = List(replayedRecord(2, "e3")))
     assert(clue(outcome).isRight, "a buffer-only delete must not reach the store")

@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
-import cats.Monad
+import cats.{Functor, Monad}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.KafkaKey
@@ -49,6 +49,13 @@ object SnapshotDatabaseMetrics {
           }
         def get(key: KafkaKey) =
           database.get(key) measureDuration { duration =>
+            getSummary
+              .labels(key.topicPartition.topic, key.topicPartition.partition.show)
+              .observe(duration.toNanos.nanosToSeconds)
+          }
+        // delegate to the underlying recover so an offset-carrying tombstone is not downgraded to Absent through `get`
+        override def recover(key: KafkaKey)(implicit functor: Functor[F]) =
+          database.recover(key) measureDuration { duration =>
             getSummary
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)
               .observe(duration.toNanos.nanosToSeconds)

@@ -65,26 +65,50 @@ object Snapshots {
     database: SnapshotDatabase[F, K, S],
     offsetOf: S => Offset,
   )(implicit log: Log[F]): F[Snapshots[F, S]] =
-    Ref.of[F, Option[Snapshot[S]]](None).map(buffer => Snapshots(key, database, buffer.stateInstance, offsetOf))
+    for {
+      buffer <- Ref.of[F, Option[Snapshot[S]]](None)
+      // the high-water offset recovered for a key that has no buffered snapshot (a deleted key recovered from an
+      // offset-carrying tombstone). A buffered snapshot carries its own high-water via `offsetOf`; this floor covers
+      // the value-less case. See `read`/`append`/`delete` and docs/cassandra-single-writer-design.md.
+      floor <- Ref.of[F, Option[Offset]](None)
+    } yield Snapshots(key, database, buffer.stateInstance, floor.stateInstance, offsetOf)
 
   private[snapshot] def apply[F[_]: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
     buffer: Stateful[F, Option[Snapshot[S]]],
+    floor: Stateful[F, Option[Offset]],
     offsetOf: S => Offset,
   )(implicit log: Log[F]): Snapshots[F, S] = new Snapshots[F, S] {
     private val prefixLog: Log[F] = log.prefixed(LogPrefix[K].extract(key))
 
-    def read = database.get(key)
+    // the replay-window high-water: the buffered snapshot's offset, else the recovered tombstone floor.
+    private def highWater(buffered: Option[Snapshot[S]], floored: Option[Offset]): Option[Offset] =
+      buffered.map(s => offsetOf(s.value)) orElse floored
+
+    def read =
+      database.recover(key).flatMap {
+        case Recovered.Present(snapshot) => snapshot.some.pure[F]
+        // a tombstone reads back absent, but its offset is the replay-window floor: hold it so a re-derived snapshot
+        // (or delete) below it is dropped rather than persisted as a stale, self-fencing write. See
+        // docs/cassandra-single-writer-design.md.
+        case Recovered.Deleted(offset) => floor.set(offset.some).as(none[S])
+        case Recovered.Absent          => none[S].pure[F]
+      }
 
     def append(snapshot: S) =
-      buffer.modify {
-        // keep the buffer monotonic in offset: a lower-offset append is replay onto a recovered snapshot (a no-op
-        // under deterministic folds), so dropping it holds the high-water offset that fences `delete`. See
-        // docs/cassandra-single-writer-design.md.
-        case Some(s) if offsetOf(snapshot) < offsetOf(s.value) => s.some
-        case Some(s)                                           => s.updateValue(snapshot).some
-        case None                                              => Snapshot.init(snapshot).some
+      floor.get.flatMap { floored =>
+        buffer.modify {
+          // keep the buffer monotonic in offset: a lower-offset append is replay onto a recovered snapshot (a no-op
+          // under deterministic folds), so dropping it holds the high-water offset that fences `delete`. See
+          // docs/cassandra-single-writer-design.md.
+          case Some(s) if offsetOf(snapshot) < offsetOf(s.value) => s.some
+          case Some(s)                                           => s.updateValue(snapshot).some
+          // a fresh buffer below the recovered tombstone floor is a replayed event onto a deleted key: drop it so the
+          // floor holds and the re-derived snapshot is not persisted below it (the self-fence).
+          case None if floored.exists(offsetOf(snapshot) < _) => none
+          case None                                           => Snapshot.init(snapshot).some
+        }
       }
 
     def initPersisted(snapshot: S) =
@@ -105,17 +129,21 @@ object Snapshots {
     }
 
     def delete(persist: Boolean, offset: Offset) = {
-      buffer.get.flatMap { buffered =>
-        // fence on the buffer's high-water offset (see `append`), not `offset`: after recovery a key's snapshot can
-        // lead the partition's processing offset, and a compare-and-set backend would reject a delete gated below it
-        // as stale though the owner is legitimate. A genuinely stale writer only reached its own lower offset.
-        val fenceOffset = buffered.fold(offset)(snapshot => offset max offsetOf(snapshot.value))
-        val delete = if (persist) {
-          database.delete(key, fenceOffset) *> prefixLog.info("deleted snapshot")
-        } else {
-          ().pure[F]
-        }
-        buffer.set(None) *> delete
+      (buffer.get, floor.get).tupled.flatMap {
+        case (buffered, floored) =>
+          // fence on the key's high-water offset (the buffered snapshot's, or the recovered tombstone floor), not
+          // `offset`: after recovery a key's snapshot can lead the partition's processing offset, and a compare-and-set
+          // backend would reject a delete gated below it as stale though the owner is legitimate. A genuinely stale
+          // writer only reached its own lower offset.
+          val fenceOffset = highWater(buffered, floored).fold(offset)(offset max _)
+          val delete = if (persist) {
+            database.delete(key, fenceOffset) *> prefixLog.info("deleted snapshot")
+          } else {
+            ().pure[F]
+          }
+          // the delete writes a tombstone at `fenceOffset`; hold it as the floor so a later replayed re-persist below it
+          // is still dropped (the buffer is cleared and no longer carries the high-water).
+          buffer.set(None) *> floor.set(fenceOffset.some) *> delete
       }
     }
 

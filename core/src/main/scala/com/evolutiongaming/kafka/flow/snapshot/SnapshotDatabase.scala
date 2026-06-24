@@ -11,10 +11,40 @@ import com.evolutiongaming.skafka.Offset
 
 trait SnapshotDatabase[F[_], K, S] extends SnapshotReadDatabase[F, K, S] with SnapshotWriteDatabase[F, K, S]
 
+/** Outcome of recovering a key from the snapshot store.
+  *
+  * A compare-and-set store (see [[CassandraSnapshots]]) keeps a deleted key as an offset-carrying logical tombstone: it
+  * reads back as absent, but its stored offset still fences a later write. Recovery must surface that offset as the
+  * replay-window floor (`Deleted`) rather than collapse it to "nothing there" (`Absent`) - otherwise the buffer starts
+  * with no high-water and a legitimate owner re-persisting (or deleting) below it self-fences with a write conflict, a
+  * livelock. See `docs/cassandra-single-writer-design.md`.
+  */
+sealed trait Recovered[+S]
+object Recovered {
+
+  /** A live snapshot was recovered. */
+  final case class Present[S](snapshot: S) extends Recovered[S]
+
+  /** The key was deleted; the store kept an offset-carrying tombstone at `offset` (reads back as absent). */
+  final case class Deleted(offset: Offset) extends Recovered[Nothing]
+
+  /** No row for the key at all (never written, or the tombstone was reaped). */
+  case object Absent extends Recovered[Nothing]
+}
+
 trait SnapshotReadDatabase[F[_], K, S] {
 
   /** Restores snapshot for the key, if any */
   def get(key: K): F[Option[S]]
+
+  /** Recovers the key, distinguishing an offset-carrying tombstone ([[Recovered.Deleted]]) from a truly absent key
+    * ([[Recovered.Absent]]). The default derives from [[get]] and never reports `Deleted` - a store that keeps deleted
+    * keys as offset-carrying tombstones (compare-and-set [[CassandraSnapshots]]) overrides it so recovery can
+    * re-establish the replay-window floor for a deleted key. A wrapper (e.g. metrics) must delegate to the underlying
+    * `recover`, or it silently downgrades a tombstone to `Absent` through its own `get`.
+    */
+  def recover(key: K)(implicit F: Functor[F]): F[Recovered[S]] =
+    get(key).map(_.fold(Recovered.Absent: Recovered[S])(Recovered.Present(_)))
 }
 
 trait SnapshotWriteDatabase[F[_], K, S] { self =>

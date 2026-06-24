@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
-import cats.Monad
+import cats.{Functor, Monad}
 import cats.effect.{Async, Clock}
 import cats.syntax.all.*
 import com.datastax.driver.core.{BoundStatement, PreparedStatement, Row}
@@ -109,6 +109,26 @@ class CassandraSnapshots[F[_]: Async, T](
       Statements.bindGet(getStatement, key).withConsistencyLevel(consistencyOverrides.read)
 
     session.executeStream(boundStatement).first.flatMap(_.flatTraverse(row => decode(row)))
+  }
+
+  /** Surfaces a tombstone's offset as the replay-window floor. A present row decodes to [[Recovered.Present]]; a
+    * tombstone (null `value`, kept by [[deleteCompareAndSet]]) decodes to [[Recovered.Deleted]] carrying the stored
+    * offset, even though [[get]] reads it back as absent; no row is [[Recovered.Absent]]. Without this a deleted key
+    * recovers with no floor and a legitimate owner re-persisting below the tombstone's offset self-fences (a livelock);
+    * see `docs/cassandra-single-writer-design.md`.
+    */
+  override def recover(key: KafkaKey)(implicit F: Functor[F]): F[Recovered[KafkaSnapshot[T]]] = {
+    val boundStatement =
+      Statements.bindGet(getStatement, key).withConsistencyLevel(consistencyOverrides.read)
+
+    session.executeStream(boundStatement).first.flatMap {
+      case None => (Recovered.Absent: Recovered[KafkaSnapshot[T]]).pure[F]
+      case Some(row) =>
+        decode(row).map {
+          case Some(snapshot) => Recovered.Present(snapshot)
+          case None           => Recovered.Deleted(row.decode[Offset]("offset"))
+        }
+    }
   }
 
   def delete(key: KafkaKey, offset: Offset): F[Unit] =
