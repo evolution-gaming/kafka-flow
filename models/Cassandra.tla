@@ -34,6 +34,14 @@
 (*     (`offset max highWater`), so a replay write is dropped (held at the high-water) *)
 (*     instead of conflicting, and the owner makes progress. Remove it (Fix=FALSE)    *)
 (*     and the loop never commits -> the mapped liveness RefLive fails.               *)
+(*   - the tombstone-recovery FLOOR (TombFloor): the replay-window fix needs the     *)
+(*     recovered high-water, which a recovery takes from the recovered cell's offset. *)
+(*     A tombstone reads back as None (null `value`), so recovery surfaces its offset *)
+(*     only when the read path is tombstone-aware (the code fix: recover ->           *)
+(*     Recovered.Deleted). Without it (TombFloor=FALSE) a DELETED key recovers with   *)
+(*     no floor and self-fences exactly like Fix=FALSE, but reached through a         *)
+(*     tombstone rather than a live snapshot -> RefLive fails (cassandra_tombstone_   *)
+(*     replay). With it the deleted-key recovery is symmetric with the live one.      *)
 (*                                                                             *)
 (* The replay window is REACHED, not posited: the owner folds to some offset, then  *)
 (* `Handover` resets BOTH its processing offset and `committed` DOWN to a (possibly   *)
@@ -48,7 +56,7 @@
 (*******************************************************************************)
 EXTENDS SnapshotFlow
 
-CONSTANTS Guarded, Tombstone, Fix, Spurious
+CONSTANTS Guarded, Tombstone, Fix, Spurious, TombFloor
 
 VARIABLES overwrote, recoveredAt, committed, handedOver, spuriousUsed
   \* (op, store, ownerPos, ownerLoaded, ownerState are the shared flow state from SnapshotFlow)
@@ -64,6 +72,13 @@ vars == <<op, store, ownerPos, ownerLoaded, ownerState, overwrote, recoveredAt, 
 
 Max(a, b)   == IF a >= b THEN a ELSE b
 CanWrite(o) == (~store.present) \/ (~Guarded) \/ (store.offset <= o)
+\* the monotone-buffer floor a recovery establishes from the durable cell. A live snapshot recovers its
+\* offset. A tombstone reads back as None (its `value` is null), so recovery surfaces its offset only when
+\* the recovery path is tombstone-aware (TombFloor -- the code fix: SnapshotDatabase.recover returns
+\* Recovered.Deleted, held by Snapshots as the buffer floor). Without it a deleted key recovers with NO
+\* floor (0), and a re-derived replay write below the durable offset CAS-conflicts -- the replay-window
+\* self-fence for a deleted key (cassandra_tombstone_replay). A live recovery is unaffected.
+RecoveredFloor == IF store.present /\ (~store.deleted \/ TombFloor) THEN store.offset ELSE 0
 \* the cell that folding event at offset o produces (a tombstone for a delete, gated elsewhere)
 Folded(o)   == IF op[o] = "persist" THEN Snap(o, CorrectContents(o))
                ELSE IF Tombstone THEN Tomb(o) ELSE Absent
@@ -124,22 +139,24 @@ OwnerFold ==
   /\ UNCHANGED <<op, handedOver, spuriousUsed>>
 
 \* recover the base from the store (a cache miss after a delete-evict, or after a conflict teardown).
-\* The recovered snapshot becomes the monotone-buffer floor. The base may be a revived/stale snapshot.
+\* The recovered snapshot becomes the monotone-buffer floor (RecoveredFloor: the stored offset for a live
+\* snapshot, and for a tombstone too only when TombFloor surfaces it). The base may be a revived/stale snapshot.
 OwnerRecover ==
   /\ ~ownerLoaded
   /\ ownerState' = RecoveredState
-  /\ recoveredAt' = store.offset
+  /\ recoveredAt' = RecoveredFloor
   /\ ownerLoaded' = TRUE
   /\ UNCHANGED <<op, store, ownerPos, overwrote, committed, handedOver, spuriousUsed>>
 
-\* a new owner takes over: it recovers the durable snapshot (at offset store.offset) but resumes
-\* consuming from a committed input offset that may LAG it -- the Cassandra snapshot persist and the
-\* consumer-offset commit are separate, so `committed` can trail the snapshot. committed < recoveredAt
-\* is the replay window. A SingleWriterStore stutter (the durable store is unchanged). Bounded to once.
+\* a new owner takes over: it recovers the durable snapshot but resumes consuming from a committed input
+\* offset that may LAG it -- the Cassandra snapshot persist and the consumer-offset commit are separate, so
+\* `committed` can trail the snapshot. committed < recoveredAt is the replay window. The recovered floor is
+\* RecoveredFloor (the stored offset for a live snapshot, or for a tombstone only when TombFloor surfaces
+\* it). A SingleWriterStore stutter (the durable store is unchanged). Bounded to once.
 Handover ==
   /\ ~handedOver
   /\ store.present
-  /\ recoveredAt' = store.offset
+  /\ recoveredAt' = RecoveredFloor
   /\ \E c \in 0 .. store.offset :
        /\ ownerPos'  = c
        /\ committed' = c

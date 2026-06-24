@@ -96,7 +96,7 @@ Each config declares its module and expected outcome inline:
 
 The property that makes the suite trustworthy is **pairing**: almost every theorem/invariant that
 should hold has a sibling config that flips one knob and makes it *fail* (a removed guard / tombstone
-/ fence / fix / fairness), so a passing run means something. 12 of the 24 configs are expected
+/ fence / fix / fairness), so a passing run means something. 13 of the 25 configs are expected
 failures.
 
 ## What each model checks
@@ -132,6 +132,7 @@ that `Kafka` otherwise has too (without the binding the owner's re-flush below t
 | `cassandra_unguarded` | the offset guard removed | VIOLATES-REFINEMENT `RefSafeSpec` |
 | `cassandra_notomb` | a row-removing delete: zombie revives, owner folds onto the stale base | VIOLATES `INV_NoCorruptDurable` |
 | `cassandra_replay_fixoff` | the replay monotone buffer removed: a legitimate owner livelocks (conflict→recover→retry, never commits; the zombie is still correctly rejected) | VIOLATES-TEMPORAL `RefLive` |
+| `cassandra_tombstone_replay` | the same livelock for a *deleted* key: recovery does not surface the tombstone's offset as the buffer floor (`TombFloor` off), so the legitimate owner re-derives below it and self-fences (the zombie is still correctly rejected) | VIOLATES-TEMPORAL `RefLive` |
 | `cassandra_firstwrite_spurious` | the first-write compound's spurious conflict fed into the conflict/recover loop: leaves the row absent → no replay window → converges (the contrast to the livelock above) | HOLDS |
 | `kafka_refines` | the generation fence (coupled + seeded) implements the spec | HOLDS |
 | `kafka_decoupled` | capture decoupled from teardown — a stale flow keeps flushing | VIOLATES-REFINEMENT `RefSafeSpec` |
