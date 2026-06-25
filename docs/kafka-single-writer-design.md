@@ -169,7 +169,9 @@ isolation by a unit test with a recording in-memory producer (no broker).
 
 ## Rejected alternatives
 
-- **Cassandra-style compare-and-set**: no conditional produce on a Kafka topic.
+- **Transactional snapshot read + write**: write only if the stored snapshot is still the expected
+  previous value, fencing a stale writer. No conditional produce on a Kafka topic, so the
+  assert-and-write cannot be atomic.
 - **Transaction per write**: correct but O(keys) round-trips on the poll path (cap = 1 above).
 - **Unbounded batches**: ~7% faster, but transaction duration then scales unbounded against the
   coordinator timeout.
@@ -187,7 +189,6 @@ isolation by a unit test with a recording in-memory producer (no broker).
 
 [KIP-939 (participation in 2PC)](https://cwiki.apache.org/confluence/display/KAFKA/KIP-939:+Support+Participation+in+2PC)
 is the route to extend this fence to non-Kafka snapshot stores: a transactional producer in an
-externally-coordinated two-phase commit could bind a Cassandra/RDBMS snapshot write to the same
-generation-fenced Kafka offset commit, giving those backends the per-partition ownership guarantee
-this mode has — without the per-key compare-and-set the Cassandra backend uses today. Not actionable
-now; tracked as the convergence point for the two persistence backends.
+externally-coordinated two-phase commit could bind a snapshot write in another store (e.g. Cassandra or
+an RDBMS) to the same generation-fenced Kafka offset commit, giving that store the per-partition
+ownership guarantee this mode has. Not actionable now.
