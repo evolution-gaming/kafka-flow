@@ -26,9 +26,9 @@ trait KafkaPersistenceModule[F[_], S] {
   def keysOf: KeysOf[F, KafkaKey]
   def persistenceOf: SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]]
 
-  /** A `ScheduleCommit` that commits input offsets transactionally with the snapshot writes, when the module provides
-    * single-writer offset binding (transactional mode). `None` means offsets are committed the default way (by the
-    * consumer). See [[cachingTransactional]].
+  /** A `ScheduleCommit` that overrides the default way input offsets are committed (by the consumer), binding them to
+    * the snapshot writes for single-writer offset safety. `None` means the module does not override it and offsets are
+    * committed the default way. See [[cachingTransactional]].
     */
   def scheduleCommit: Option[ScheduleCommit[F]]
 }

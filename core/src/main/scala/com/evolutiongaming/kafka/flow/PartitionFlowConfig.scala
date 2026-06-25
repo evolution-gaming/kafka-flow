@@ -46,7 +46,8 @@ import scala.concurrent.duration.*
   *     fibers to prevent CPU starvation and overwhelming the underlying storage with too many parallel executions.
   *
   * @param commitOnRevoke
-  *   Try committing everything when partition is revoked.
+  *   On revoke, try committing the partition's offset (the minimum held offset) so the next owner reprocesses fewer
+  *   events on handoff.
   */
 case class PartitionFlowConfig(
   triggerTimersInterval: FiniteDuration         = 1.second,

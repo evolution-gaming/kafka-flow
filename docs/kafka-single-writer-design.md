@@ -30,16 +30,22 @@ sequenceDiagram
     B->>ST: recover: read to end (no newer snapshot)
     B->>B: fold input up to offset 150
     B->>ST: write snapshot @150 ✓
+    Note over B: commit input offset 150
     A-->>ST: flush buffered snapshot @100<br/>(stale: A no longer owns the partition)
     Note over ST: last write wins — @100 overwrites @150
-    Note over ST,B: next recovery loads @100<br/>(events 101 to 150 lost)
+    Note over ST,B: next recovery resumes from committed offset 150<br/>but loads snapshot @100 — events 101 to 150 never replayed (lost)
 ```
 
 ## Mechanism: generation fencing
 
-The input-offset commit moves out of the consumer and **into the snapshot producer's transaction**
-via `sendOffsetsToTransaction(offsets, consumerGroupMetadata)` (KIP-447): the group coordinator
-validates the consumer **generation** and rejects a commit from a stale one (`ILLEGAL_GENERATION`).
+Normally kafka-flow commits input offsets through the **consumer**: `TopicFlow` collects the
+per-partition offsets the flow scheduled and issues a `consumer.commit`. In this mode that commit is
+performed by the snapshot producer instead: the consumer commit path is left a no-op, and the offset
+moves **into the producer's transaction** via
+`sendOffsetsToTransaction(offsets, consumerGroupMetadata)`
+([KIP-447](https://cwiki.apache.org/confluence/display/KAFKA/KIP-447%3A+Producer+scalability+for+exactly+once+semantics)):
+the group coordinator validates the consumer **generation** and rejects a commit from a stale one
+(`ILLEGAL_GENERATION`).
 Since that commit and the snapshot writes share a transaction, the rejection aborts the writes too.
 The generation — authoritative for partition ownership — gates both, so a stale owner can neither
 advance offsets nor overwrite a newer snapshot.
@@ -58,16 +64,19 @@ sequenceDiagram
     Note over ST: newer snapshot survives
 ```
 
-This is corruption prevention, not exactly-once: output produces stay outside the transaction, so
-output is at-least-once (see [Persistence](persistence.md#protecting-against-stale-snapshot-writes) non-goals). The
+This is corruption prevention, not exactly-once. Output produces go through the application's own
+producer, and the transaction wraps only the snapshot write and the offset commit, so they stay outside
+it — enrolling them would be full transactional output, an explicit non-goal (see Rejected alternatives).
+Output is therefore at-least-once: a replayed batch re-emits it, so the consuming side must tolerate
+duplicates (see [Persistence](persistence.md#protecting-against-stale-snapshot-writes) non-goals). The
 committed offset is the minimum held offset, always behind durable state, so it can never outrun the
 snapshots on disk even though offset and writes may land in different transactions.
 
 Key points:
 
-- **Every** transaction carries the partition's committable offset, so every write is gated. A
-  `ScheduleCommit` forces an offset-only transaction so progress and the on-revoke offset commit
-  even with no writes pending.
+- **Every** transaction carries the partition's committable offset, so every write is gated. When the
+  committed offset needs to advance but no snapshot writes are pending — a periodic commit tick, or a
+  revoke — `ScheduleCommit` forces an *offset-only* transaction so the offset still moves.
 - The offset-to-commit is **seeded with the assigned offset**, so even the first flush (before the
   first commit tick) is gated. Committing `assignedAt` is a no-op.
 - Recovery is forced to `read_committed` so a fenced writer's aborted records are invisible.

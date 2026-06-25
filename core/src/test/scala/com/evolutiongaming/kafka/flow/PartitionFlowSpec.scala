@@ -323,7 +323,7 @@ class PartitionFlowSpec extends FunSuite {
   }
 
   test(
-    "PartitionFlow commits latest consumed offset on release when commitOnRevoke=true, " +
+    "PartitionFlow schedules a commit of the latest consumed offset on release when commitOnRevoke=true, " +
       "a TimerFlow with flushOnRevoke=true is used, and all keys successfully persisted their state on release"
   ) {
 
@@ -347,7 +347,7 @@ class PartitionFlowSpec extends FunSuite {
   }
 
   test(
-    "PartitionFlow commits an offset corresponding to the oldest successfully persisted key on release" +
+    "PartitionFlow schedules a commit of the offset corresponding to the oldest successfully persisted key on release" +
       "when commitOnRevoke=true, a TimerFlow with flushOnRevoke=true is used," +
       "and some keys failed to persist their state on release"
   ) {
