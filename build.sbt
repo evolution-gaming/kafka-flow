@@ -148,7 +148,8 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
   .settings(
     name := "kafka-flow-persistence-kafka",
     libraryDependencies ++= Seq(
-      Testing.munit % Test,
+      Cats.effectTestkit % Test,
+      Testing.munit      % Test,
     ),
   )
 

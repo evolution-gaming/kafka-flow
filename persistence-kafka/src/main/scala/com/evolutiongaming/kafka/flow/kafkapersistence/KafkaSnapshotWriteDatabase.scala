@@ -42,7 +42,8 @@ object KafkaSnapshotWriteDatabase {
     * @param assignedOffset
     *   seeds the offset-to-commit so even the first write is gated; committing it is a no-op.
     * @param maxWritesPerTransaction
-    *   bounds a transaction's duration below `transaction.timeout.ms`; bytes scale with this times the snapshot size.
+    *   bounds the per-partition, serialized transaction's duration below `transaction.timeout.ms`; bytes scale with
+    *   this times the snapshot size.
     */
   def transactional[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
     snapshotTopicPartition: TopicPartition,
@@ -57,14 +58,18 @@ object KafkaSnapshotWriteDatabase {
         .raiseError[F, Unit]
         .whenA(maxWritesPerTransaction < 1)
       transactionLock <- Semaphore[F](1)
-      pending         <- Queue.unbounded[F, Pending[F, S]]
+      // writes are bounded by maxWritesPerTransaction per transaction; offset-only markers ride on a separate
+      // unbounded lane so they never consume a write slot (periodic offset commits must not cut write throughput)
+      writes  <- Queue.unbounded[F, Pending[F, S]]
+      markers <- Queue.unbounded[F, Pending[F, S]]
       // seed with the assigned offset so the first flush already carries an offset and is generation-gated
       offsetToCommit <- Ref[F].of(assignedOffset)
       groupCommit = new GroupCommit(
         producer,
         maxWritesPerTransaction,
         transactionLock,
-        pending,
+        writes,
+        markers,
         offsetToCommit,
         inputTopicPartition,
         groupMetadata,
@@ -77,45 +82,53 @@ object KafkaSnapshotWriteDatabase {
     )
 
   /** Group-commit machinery backing [[transactional]]. The producer allows one open transaction at a time, so
-    * `transactionLock` serializes them and each holder group-commits everything queued (up to
-    * `maxWritesPerTransaction`) in one transaction, binding the latest offset to gate it. The over-cap backlog, empty
-    * batches and cancellation are handled at the methods below; all paths are safe - an interrupted flush never
-    * advances the offset. See `docs/kafka-single-writer-design.md`.
+    * `transactionLock` serializes them and each holder group-commits up to `maxWritesPerTransaction` writes plus all
+    * queued offset-only markers in one transaction, binding the latest offset to gate it. Markers ride a separate lane
+    * so they never consume a write slot. The over-cap backlog, empty batches and cancellation are handled at the
+    * methods below; all paths are safe - an interrupted flush never advances the offset. See
+    * `docs/kafka-single-writer-design.md`.
     */
   private final class GroupCommit[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
     producer: Producer[F],
     maxWritesPerTransaction: Int,
     transactionLock: Semaphore[F],
-    pending: Queue[F, Pending[F, S]],
+    writes: Queue[F, Pending[F, S]],
+    markers: Queue[F, Pending[F, S]],
     offsetToCommit: Ref[F, Offset],
     inputTopicPartition: TopicPartition,
     groupMetadata: F[Option[ConsumerGroupMetadata]],
   ) {
 
     val sendWrite: ProducerRecord[String, S] => F[Unit] =
-      record => submit(record.some)
+      record => submit(writes, record.some)
 
-    // offset-only marker: commits the offset even with no writes pending (e.g. on revoke)
+    // offset-only marker: commits the offset even with no writes pending (e.g. on revoke). It rides the markers
+    // lane, not `writes`, so periodic offset commits never displace writes from the per-transaction cap
     val scheduleCommit: ScheduleCommit[F] =
-      (offset: Offset) => offsetToCommit.set(offset) *> submit(none)
+      (offset: Offset) => offsetToCommit.set(offset) *> submit(markers, none)
 
     // this item's `done` is completed by whichever holder's batch happens to take it, not necessarily this caller's
-    private def submit(record: Option[ProducerRecord[String, S]]): F[Unit] =
+    private def submit(queue: Queue[F, Pending[F, S]], record: Option[ProducerRecord[String, S]]): F[Unit] =
       Deferred[F, Either[Throwable, Unit]].flatMap { done =>
         val item = Pending(record, done)
-        pending.offer(item) *>
+        queue.offer(item) *>
           transactionLock.permit.use(_ => commitQueued) *>
           done.get.rethrow
       }
 
-    // empty means a prior holder already took our item; uncancelable (except the ack await) so a holder never drops a
-    // queued item without delivering its outcome
+    // a holder drains up to `maxWritesPerTransaction` writes plus *all* queued offset-only markers (they only
+    // commit the latest offset, so any number collapse into the one `commitOffsets`). empty means a prior holder
+    // already took everything; uncancelable (except the ack await) so a holder never drops a queued item undelivered
     private def commitQueued: F[Unit] =
       Concurrent[F].uncancelable { poll =>
-        pending.tryTakeN(maxWritesPerTransaction.some).flatMap {
-          case Nil   => ().pure[F]
-          case batch => commitBatch(poll, batch)
-        }
+        for {
+          writeBatch  <- writes.tryTakeN(maxWritesPerTransaction.some)
+          markerBatch <- markers.tryTakeN(none)
+          _ <- (writeBatch ++ markerBatch) match {
+            case Nil   => ().pure[F]
+            case batch => commitBatch(poll, batch)
+          }
+        } yield ()
       }
 
     private def commitBatch(poll: Poll[F], batch: List[Pending[F, S]]): F[Unit] = {

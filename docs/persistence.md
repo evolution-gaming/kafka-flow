@@ -97,10 +97,11 @@ fencing is avoided).
   so a burst of N dirty keys is ≈ N / `maxWritesPerTransaction` transactions (default 256) — at the
   default cap the overhead is small (see the design doc's Measurements). Each partition also holds its
   own producer and transaction-coordinator state on the brokers.
-- **Tuning for large snapshots** — a transaction must commit within `transaction.timeout.ms` (a producer
-  config, default 1 min, kept ≤ the broker's `transaction.max.timeout.ms`). If snapshots are large or
-  brokers slow, lower `maxWritesPerTransaction` or raise the timeout — a higher timeout lengthens the
-  post-crash stall (below).
+- **Tuning for transaction time** — a transaction must commit within `transaction.timeout.ms` (a
+  producer config, default 1 min, ≤ the broker's `transaction.max.timeout.ms`). Large snapshots lengthen
+  it with the batch — lower `maxWritesPerTransaction` (at a throughput cost) or raise the timeout. Slow
+  brokers lengthen it regardless of batch, so raise the timeout, not lower the cap. A higher timeout
+  lengthens the post-crash stall (below).
 - **Output is at-least-once** — output produces stay outside the snapshot transaction, so a replayed
   batch re-emits them; the consuming side must tolerate duplicates. Only the snapshot store and the
   input-offset commit are kept consistent (corruption prevention, not exactly-once).

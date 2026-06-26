@@ -51,7 +51,7 @@ object KafkaPersistenceModule {
     *   the input topic kafka-flow consumes; its offsets are committed transactionally with the snapshot writes (same
     *   partition number as the snapshot partition - the mode forces the identity mapping)
     * @param maxWritesPerTransaction
-    *   upper bound of snapshot writes group committed in one transaction, see
+    *   upper bound of snapshot writes group committed in one per-partition, serialized transaction, see
     *   [[KafkaSnapshotWriteDatabase.transactional]]
     */
   final case class TransactionalConfig(
@@ -162,8 +162,8 @@ object KafkaPersistenceModule {
     * commit the input offset. A stale consumer generation is rejected by the broker (KIP-447), aborting the
     * transaction, so a stale owner can neither advance offsets nor overwrite a newer snapshot. Recovery reads with
     * `read_committed`, and unlike [[caching]] the identity partition mapping is always used; output stays
-    * at-least-once. See the "Protecting against stale snapshot writes" persistence docs for guarantees,
-    * limitations, costs and rollout, and `docs/kafka-single-writer-design.md` for the mechanism.
+    * at-least-once. See the "Protecting against stale snapshot writes" persistence docs for guarantees, limitations,
+    * costs and rollout, and `docs/kafka-single-writer-design.md` for the mechanism.
     */
   def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],

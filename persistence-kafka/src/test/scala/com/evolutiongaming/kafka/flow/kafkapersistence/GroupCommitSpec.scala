@@ -1,8 +1,9 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
 import cats.data.NonEmptyMap
+import cats.effect.testkit.TestControl
 import cats.effect.unsafe.implicits.global
-import cats.effect.{IO, Ref}
+import cats.effect.{Deferred, IO, Ref}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.FromTry
 import com.evolutiongaming.kafka.flow.KafkaKey
@@ -12,7 +13,7 @@ import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord, RecordMeta
 import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, Partition, ToBytes, Topic, TopicPartition}
 import munit.FunSuite
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.*
 
 /** Local (no broker) tests of the group-commit orchestration behind `KafkaSnapshotWriteDatabase.transactional`:
   * batching under the cap, committing the input offset on every transaction, the offset-only commit marker, the seeded
@@ -106,6 +107,42 @@ class GroupCommitSpec extends FunSuite {
       assertEquals(log.count(_ == Event.Abort), 0)
     }
     test.unsafeRunSync()
+  }
+
+  test("offset-only markers ride a write transaction without consuming the write cap") {
+    // Deterministic under TestControl (virtual time): hold the first transaction open, queue a marker then `cap`
+    // writes behind the lock, release. Markers share the commit's outcome but live off the write lane, so one drain
+    // takes all `cap` writes in a single transaction; if markers counted against the cap, the marker would displace
+    // a write into another transaction. The virtual `IO.sleep` is the enqueue barrier - TestControl runs every
+    // ready fiber (each `submit` offers then blocks on the held lock) before advancing the clock.
+    val cap = 4
+    val program = for {
+      events     <- Ref.of[IO, Vector[Event]](Vector.empty)
+      began      <- Ref.of[IO, Int](0)
+      firstBegun <- Deferred[IO, Unit]
+      release    <- Deferred[IO, Unit]
+      gateFirstBegin =
+        began.getAndUpdate(_ + 1).flatMap(n => if (n == 0) firstBegun.complete(()) *> release.get else IO.unit)
+      tx <- buildTransactional(
+        recordingProducer(events, onBeginTransaction = gateFirstBegin),
+        ConsumerGroupMetadata.Empty.some,
+        maxWritesPerTransaction = cap,
+      )
+      f0  <- tx.writeDatabase.persist(kafkaKey("w0"), "s0").start // opens and holds the first transaction
+      _   <- firstBegun.get
+      fm  <- tx.scheduleCommit.schedule(Offset.unsafe(9)).start // marker queued first, behind the held lock
+      fw  <- (1 to cap).toList.parTraverse(i => tx.writeDatabase.persist(kafkaKey(s"w$i"), s"s$i").start)
+      _   <- IO.sleep(1.second) // virtual: lets the marker + writes enqueue and block on the lock before release
+      _   <- release.complete(())
+      _   <- (f0 :: fm :: fw).traverse_(_.joinWithNever)
+      log <- events.get
+    } yield {
+      assertEquals(sentKeys(log).size, cap + 1) // w0..w{cap} each sent once
+      assertEquals(log.count(_ == Event.Abort), 0)
+      // the marker did not displace a write: a single transaction still carries all `cap` writes
+      assert(sentPerTransaction(log).contains(cap), s"a transaction holds all $cap writes: ${sentPerTransaction(log)}")
+    }
+    TestControl.executeEmbed(program).unsafeRunSync()
   }
 
   test("the first write commits the seeded assigned offset") {
@@ -216,11 +253,15 @@ object GroupCommitSpec {
   /** A `Producer` that records the transactional calls into `events` and delegates everything else to a no-op producer
     * (which also fabricates the `RecordMetadata` for `send`). `failCommit` makes `commitTransaction` raise.
     */
-  def recordingProducer(events: Ref[IO, Vector[Event]], failCommit: Boolean = false): Producer[IO] = {
+  def recordingProducer(
+    events: Ref[IO, Vector[Event]],
+    failCommit: Boolean          = false,
+    onBeginTransaction: IO[Unit] = IO.unit,
+  ): Producer[IO] = {
     val base = Producer.empty[IO]
     new Producer[IO] {
       def initTransactions: IO[Unit]  = base.initTransactions
-      def beginTransaction: IO[Unit]  = events.update(_ :+ Event.Begin)
+      def beginTransaction: IO[Unit]  = events.update(_ :+ Event.Begin) *> onBeginTransaction
       def commitTransaction: IO[Unit] = if (failCommit) IO.raiseError(CommitBoom) else events.update(_ :+ Event.Commit)
       def abortTransaction: IO[Unit]  = events.update(_ :+ Event.Abort)
 

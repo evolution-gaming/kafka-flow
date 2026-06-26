@@ -105,19 +105,21 @@ last-stable-offset.
 A producer allows one transaction at a time, while kafka-flow flushes a partition's keys in
 parallel — and after a restart most of the active key population flushes in one wave per
 `persistEvery`. Writes are therefore **group committed**: a write is queued, and the first writer to
-take the per-partition transaction lock drains what is queued at that moment — up to the cap below —
-into a single transaction and delivers the outcome to each waiter. No batching delay — a lone write commits
-immediately; a batch is whatever accumulated during the previous transaction's flight.
+take the per-partition transaction lock drains the queued writes at that moment — up to the cap below —
+into a single transaction (offset commits ride along without consuming the cap) and delivers the outcome
+to each waiter. No batching delay — a lone write commits immediately; a batch is whatever accumulated
+during the previous transaction's flight.
 
-`maxWritesPerTransaction` (default 256) bounds a transaction's duration below
-`transaction.timeout.ms` (default 1 min), past which the coordinator aborts it. It is not a throughput
-knob: uncapped measured ~7% faster (below), so estimated no need to raise it for speed. Transaction bytes
-≈ cap × snapshot size.
+`maxWritesPerTransaction` (default 256) caps the batch. Transactions are serial — the next cannot
+begin until the current commits — so a partition's sustained write rate ≈ cap / transaction time.
+Raising the cap past the default gains little (uncapped measured ~7% faster, below): transaction time
+grows with the batch. The cap's job is to bound transaction duration (commit within
+`transaction.timeout.ms`, default 1 min) and bytes (≈ cap × snapshot size).
 
 A snapshot write does not complete until its transaction commits, and the flush awaits each write, so
 the source is back-pressured: the in-flight queue holds at most the keys flushing in one wave, bounding
-memory rather than letting it grow without limit. A partition that sustains writes faster than
-`cap / transaction-time` drains shows up as rising flush latency and lag.
+memory rather than letting it grow without limit. Sustaining writes above that rate surfaces as rising
+flush latency and lag.
 
 ## Implementation
 
