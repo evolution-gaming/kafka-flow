@@ -162,8 +162,8 @@ object KafkaPersistenceModule {
     * commit the input offset. A stale consumer generation is rejected by the broker (KIP-447), aborting the
     * transaction, so a stale owner can neither advance offsets nor overwrite a newer snapshot. Recovery reads with
     * `read_committed`, and unlike [[caching]] the identity partition mapping is always used; output stays
-    * at-least-once. See the "Protecting against stale snapshot writes" persistence docs and
-    * `docs/kafka-single-writer-design.md` for limitations, costs and rollout.
+    * at-least-once. See the "Protecting against stale snapshot writes" persistence docs for guarantees,
+    * limitations, costs and rollout, and `docs/kafka-single-writer-design.md` for the mechanism.
     */
   def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],

@@ -5,9 +5,7 @@ sidebar_label: Kafka single-writer design
 ---
 
 Design notes for the transactional snapshot mode of `kafka-flow-persistence-kafka`
-(`KafkaPersistenceModuleOf.cachingTransactional`). User-facing guarantees, costs and rollout
-guidance are in [Persistence](persistence.md#protecting-against-stale-snapshot-writes); this page
-records the mechanism and the measurements behind it.
+(`KafkaPersistenceModuleOf.cachingTransactional`) — the mechanism and the measurements behind it.
 
 ## Problem
 
@@ -22,26 +20,25 @@ of seconds have been observed in production.
 ```mermaid
 sequenceDiagram
     participant A as Owner A<br/>(previous)
-    participant ST as Snapshot topic<br/>(compacted: last-write-wins)
+    participant ST as Snapshot topic<br/>(compacted)
     participant B as Owner B<br/>(new)
 
-    Note over A: folds input up to offset 100,<br/>state buffered, not yet flushed
-    Note over A,B: rebalance — partition revoked from A and assigned to B,<br/>but A has not observed it yet
-    B->>ST: recover: read to end (no newer snapshot)
-    B->>B: fold input up to offset 150
+    Note over A: folds input to offset 100,<br/>state buffered, not flushed
+    Note over A,B: rebalance: partition revoked from A<br/>and assigned to B — but A<br/>has not observed it yet
+    B->>ST: recover: read to end<br/>(no newer snapshot)
+    B->>B: fold input to offset 150
     B->>ST: write snapshot @150 ✓
     Note over B: commit input offset 150
-    A-->>ST: flush buffered snapshot @100<br/>(stale: A no longer owns the partition)
-    Note over ST: last write wins — @100 overwrites @150
-    Note over ST,B: next recovery resumes from committed offset 150<br/>but loads snapshot @100 — events 101 to 150 never replayed (lost)
+    A-->>ST: flush buffered snapshot @100<br/>(stale: A no longer owns it)
+    Note over ST: last write wins:<br/>@100 overwrites @150
+    Note over ST,B: next recovery resumes at offset 150<br/>but loads snapshot @100 —<br/>events 101 to 150 never replayed (lost)
 ```
 
 ## Mechanism: generation fencing
 
-Normally kafka-flow commits input offsets through the **consumer**: `TopicFlow` collects the
-per-partition offsets the flow scheduled and issues a `consumer.commit`. In this mode that commit is
-performed by the snapshot producer instead: the consumer commit path is left a no-op, and the offset
-moves **into the producer's transaction** via
+Normally the input offsets are committed through the **Kafka consumer** (the ordinary consumer-group
+offset commit). In this mode they are committed through the snapshot **producer** instead, with the
+consumer-side commit disabled — the offset moves **into the producer's transaction** via
 `sendOffsetsToTransaction(offsets, consumerGroupMetadata)`
 ([KIP-447](https://cwiki.apache.org/confluence/display/KAFKA/KIP-447%3A+Producer+scalability+for+exactly+once+semantics)):
 the group coordinator validates the consumer **generation** and rejects a commit from a stale one
@@ -68,23 +65,26 @@ This is corruption prevention, not exactly-once. Output produces go through the 
 producer, and the transaction wraps only the snapshot write and the offset commit, so they stay outside
 it — enrolling them would be full transactional output, an explicit non-goal (see Rejected alternatives).
 Output is therefore at-least-once: a replayed batch re-emits it, so the consuming side must tolerate
-duplicates (see [Persistence](persistence.md#protecting-against-stale-snapshot-writes) non-goals). The
-committed offset is the minimum held offset, always behind durable state, so it can never outrun the
-snapshots on disk even though offset and writes may land in different transactions.
+duplicates. The committed offset is the minimum held offset, always behind durable state, so it can
+never outrun the snapshots on disk even though offset and writes may land in different transactions.
 
 Key points:
 
 - **Every** transaction carries the partition's committable offset, so every write is gated. When the
   committed offset needs to advance but no snapshot writes are pending — a periodic commit tick, or a
-  revoke — `ScheduleCommit` forces an *offset-only* transaction so the offset still moves.
+  revoke — an *offset-only* transaction is forced so the offset still moves.
 - The offset-to-commit is **seeded with the assigned offset**, so even the first flush (before the
-  first commit tick) is gated. Committing `assignedAt` is a no-op.
+  first commit tick) is gated. Committing the assigned offset is a no-op.
 - Recovery is forced to `read_committed` so a fenced writer's aborted records are invisible.
 - The partition is never `consumer.commit`-ed in this mode; offsets only commit through the producer.
+- Both the write and the offset-only commit are **synchronous** — there is no background committer, so
+  the call itself drives the transaction and blocks on its outcome. That blocking is what lets a fence
+  (`CommitFailedException`) propagate into the flow and crash a stale owner, rather than being lost on a
+  fire-and-forget commit thread.
 
 Wiring needs the input topic and a reader of the driving consumer's group metadata
 (`Consumer.groupMetadata`, captured on each rebalance on the poll thread). A fence surfaces as
-`CommitFailedException` on the failing `persist` / `scheduleCommit`.
+`CommitFailedException` on the failing snapshot write (or offset-only commit).
 
 ### No epoch fencing
 
@@ -110,14 +110,24 @@ into a single transaction and delivers the outcome to each waiter. No batching d
 immediately; a batch is whatever accumulated during the previous transaction's flight.
 
 `maxWritesPerTransaction` (default 256) bounds a transaction's duration below
-`transaction.timeout.ms` (default 1 min), past which the coordinator aborts it. It is not a
-throughput knob: uncapped is ~7% faster (below), so never raise it for speed. Transaction bytes ≈
-cap × snapshot size; lower it for large snapshots.
+`transaction.timeout.ms` (default 1 min), past which the coordinator aborts it. It is not a throughput
+knob: uncapped measured ~7% faster (below), so estimated no need to raise it for speed. Transaction bytes
+≈ cap × snapshot size.
 
-`persist` does not complete until its transaction commits, and the flush awaits each `persist`, so
-the source is back-pressured: the `pending` queue holds at most the keys flushing in one wave. If a
-partition produces writes faster than `cap / transaction-time` drains, the symptom is rising flush
-latency and lag, not unbounded memory — the remedy is more partitions.
+A snapshot write does not complete until its transaction commits, and the flush awaits each write, so
+the source is back-pressured: the in-flight queue holds at most the keys flushing in one wave, bounding
+memory rather than letting it grow without limit. A partition that sustains writes faster than
+`cap / transaction-time` drains shows up as rising flush latency and lag.
+
+## Implementation
+
+Entry point: `KafkaPersistenceModuleOf.cachingTransactional`. In the current code:
+
+- **Group-committed transactional writes** — `KafkaSnapshotWriteDatabase.transactional` (the
+  `GroupCommit` machinery); the per-partition transactional producer is built in `KafkaPersistenceModule`.
+- **Offset-only commit** (the forced offset advance when no writes are pending) — `ScheduleCommit`.
+- **Generation capture** on each rebalance — the `Consumer` wrapper, holding `groupMetadata` in a `Ref`
+  read off the poll thread.
 
 ## Measurements
 
@@ -158,14 +168,13 @@ Reproduce: `KAFKA_FLOW_PERF=1 sbt "persistence-kafka-it-tests/testOnly *Transact
 
 ## Testing
 
-Integration tests (persistence-kafka-it-tests) run through the real PartitionFlow / eager-recovery /
-flush-on-revoke machinery: the reproduction asserts corruption with the plain shared producer; the
+Integration tests (`TransactionalKafkaPersistenceSpec`, in persistence-kafka-it-tests) run through the
+real eager-recovery / flush-on-revoke machinery. The reproduction shows corruption with the plain shared producer (no offset binding); the
 prevention drives a stale owner with an *older consumer generation* and asserts the newer snapshot
-survives. The paired non-transactional reproduction (the plain shared producer, no offset binding)
-shows the corruption, isolating the binding as the cause rather than incidental fencing. Other pins:
-first-flush gating (the seed), fenced writer fails its next flush, an open transaction neither blocks
-nor leaks into recovery, concurrent-write safety. The group-commit machinery is also exercised in
-isolation by a unit test with a recording in-memory producer (no broker).
+survives — isolating the offset binding as the cause, not incidental fencing. Other pins: first-flush
+gating (the seed), a fenced writer fails its next flush, an open transaction neither blocks nor leaks
+into recovery, concurrent-write safety. The group commit is exercised in isolation by `GroupCommitSpec`, a unit test with a
+recording in-memory producer (no broker).
 
 ## Rejected alternatives
 

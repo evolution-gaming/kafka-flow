@@ -83,18 +83,24 @@ consumer.use { consumer =>
 }
 ```
 
+`idempotence` and the per-partition `transactional.id` are set for you — don't configure them in
+`producerConfig` — and the snapshot `consumerConfig`'s isolation level is forced to `read_committed`.
+
 Snapshot writes and the input-offset commit run in one Kafka transaction per assigned partition; a
 write from a stale consumer generation is fenced by the broker (KIP-447) and surfaces as
 `CommitFailedException`. Recovery reads `read_committed`, so a fenced writer's aborted records are
 never recovered. See the [design doc](kafka-single-writer-design.md) for the mechanism (and why epoch
 fencing is avoided).
 
-- **Cost** — every snapshot write goes through a Kafka transaction (a few ms against real brokers);
-  cost tracks the *number* of transactions, not byte volume. A partition's concurrent key flushes are
-  group-committed, so a burst of N dirty keys costs about N / `maxWritesPerTransaction` (default 256,
-  configurable via `TransactionalConfig`) round-trips on the poll path. On a realistic burst at the
-  default cap the measured overhead was within ~6% of the non-transactional producer (design doc).
-  Each partition also holds its own producer and transaction-coordinator state on the brokers.
+- **Cost** — snapshot writes commit in Kafka transactions (a few ms each on real brokers), and cost
+  tracks the *number* of transactions more than their size. Concurrent key flushes are group-committed,
+  so a burst of N dirty keys is ≈ N / `maxWritesPerTransaction` transactions (default 256) — at the
+  default cap the overhead is small (see the design doc's Measurements). Each partition also holds its
+  own producer and transaction-coordinator state on the brokers.
+- **Tuning for large snapshots** — a transaction must commit within `transaction.timeout.ms` (a producer
+  config, default 1 min, kept ≤ the broker's `transaction.max.timeout.ms`). If snapshots are large or
+  brokers slow, lower `maxWritesPerTransaction` or raise the timeout — a higher timeout lengthens the
+  post-crash stall (below).
 - **Output is at-least-once** — output produces stay outside the snapshot transaction, so a replayed
   batch re-emits them; the consuming side must tolerate duplicates. Only the snapshot store and the
   input-offset commit are kept consistent (corruption prevention, not exactly-once).
@@ -107,6 +113,9 @@ Limitations:
 - A batch shares its transaction's outcome: if the transaction fails, every write in it fails.
 - An old owner can be fenced while flushing on revoke; its last state delta is then neither persisted
   nor committed, so the new owner replays those events — noise, not loss.
+- After a hard crash, the broker reclaims the failed owner's in-flight transaction only after
+  `transaction.timeout.ms`; until then a `read_committed` reader — recovery of that partition, or a
+  downstream consumer of your output — can stall behind its last-stable-offset.
 - The mode always uses the identity `KafkaPersistencePartitionMapper` (fencing is per input partition);
   a non-identity mapper is not supported here.
 
