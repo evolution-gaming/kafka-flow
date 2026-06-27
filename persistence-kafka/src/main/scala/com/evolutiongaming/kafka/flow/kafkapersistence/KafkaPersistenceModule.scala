@@ -333,8 +333,8 @@ object KafkaPersistenceModule {
         KafkaSnapshotReadDatabase.of[F, S](snapshotTopicPartition.topic, getState = key => cache.remove(key).flatten)
 
       val snapshotDatabase = SnapshotDatabase(
-        read  = read,
-        write = writeDatabase
+        readDatabase  = read,
+        writeDatabase = writeDatabase
       ).withMetricsK(metrics.snapshotDatabaseMetrics)
 
       PersistenceOf.snapshotsOnly[F, KafkaKey, S, ConsumerRecord[String, ByteVector]](

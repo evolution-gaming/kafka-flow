@@ -1,13 +1,12 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
-import cats.{Functor, Monad}
+import cats.Monad
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.metrics.MetricsK
 import com.evolutiongaming.kafka.flow.metrics.MetricsKOf
 import com.evolutiongaming.kafka.flow.metrics.syntax.*
-import com.evolutiongaming.skafka.Offset
 import com.evolutiongaming.smetrics.LabelNames
 import com.evolutiongaming.smetrics.MetricsHelper.*
 import com.evolutiongaming.smetrics.Quantile
@@ -41,28 +40,18 @@ object SnapshotDatabaseMetrics {
       )
     } yield new MetricsK[SnapshotDatabase[F, KafkaKey, *]] {
       def withMetrics[S](database: SnapshotDatabase[F, KafkaKey, S]) = new SnapshotDatabase[F, KafkaKey, S] {
-        def persist(key: KafkaKey, snapshot: S) =
-          database.persist(key, snapshot) measureDuration { duration =>
-            persistSummary
+        // a present value is a persist, an absent value is a delete (tombstone) - keep the two summaries distinct
+        def write(key: KafkaKey, stored: Stored[S]) = {
+          val summary = if (stored.value.isDefined) persistSummary else deleteSummary
+          database.write(key, stored) measureDuration { duration =>
+            summary
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)
               .observe(duration.toNanos.nanosToSeconds)
           }
-        def get(key: KafkaKey) =
-          database.get(key) measureDuration { duration =>
+        }
+        def read(key: KafkaKey) =
+          database.read(key) measureDuration { duration =>
             getSummary
-              .labels(key.topicPartition.topic, key.topicPartition.partition.show)
-              .observe(duration.toNanos.nanosToSeconds)
-          }
-        // delegate to the underlying recover so an offset-carrying tombstone is not downgraded to Absent through `get`
-        override def recover(key: KafkaKey)(implicit functor: Functor[F]) =
-          database.recover(key) measureDuration { duration =>
-            getSummary
-              .labels(key.topicPartition.topic, key.topicPartition.partition.show)
-              .observe(duration.toNanos.nanosToSeconds)
-          }
-        def delete(key: KafkaKey, offset: Offset) =
-          database.delete(key, offset) measureDuration { duration =>
-            deleteSummary
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)
               .observe(duration.toNanos.nanosToSeconds)
           }

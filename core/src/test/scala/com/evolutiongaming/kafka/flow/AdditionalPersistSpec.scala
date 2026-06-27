@@ -3,13 +3,14 @@ package com.evolutiongaming.kafka.flow
 import cats.effect.testkit.TestControl
 import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
-import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
+import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf, Stored}
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
@@ -148,12 +149,15 @@ class AdditionalPersistSpec extends FunSuite {
 
       override def snapshotDatabase: SnapshotDatabase[IO, KafkaKey, String] =
         new SnapshotDatabase[IO, KafkaKey, String] {
-          override def delete(key: KafkaKey, offset: Offset): IO[Unit] = snapshots.update(_ - key)
-          override def get(key: KafkaKey): IO[Option[String]]          = snapshots.get.map(_.get(key))
-          override def persist(key: KafkaKey, snapshot: String): IO[Unit] =
-            if (key.key == "key1" && snapshot == "value10") {
-              IO.raiseError(new Exception("Persist error"))
-            } else snapshots.update(_ + (key -> snapshot))
+          override def read(key: KafkaKey): IO[Option[Stored[String]]] =
+            snapshots.get.map(_.get(key).map(value => Stored.Live(value, none)))
+          override def write(key: KafkaKey, stored: Stored[String]): IO[Unit] =
+            stored.value match {
+              case Some(snapshot) =>
+                if (key.key == "key1" && snapshot == "value10") IO.raiseError(new Exception("Persist error"))
+                else snapshots.update(_ + (key -> snapshot))
+              case None => snapshots.update(_ - key)
+            }
         }
     }
 

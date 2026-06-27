@@ -34,7 +34,7 @@ class SnapshotsOfSpec extends FunSuite {
       _           <- snapshots.append(snap(offset = 5, value = 50))
       _           <- snapshots.append(snap(offset = 3, value = 30)) // replayed, lower offset: must be dropped
       _           <- snapshots.flush
-      stored      <- db.get(key)
+      stored      <- db.read(key).map(_.flatMap(_.value))
     } yield stored).unsafeRunSync()
 
     assertEquals(stored, snap(offset = 5, value = 50).some)
@@ -47,7 +47,7 @@ class SnapshotsOfSpec extends FunSuite {
       _         <- snapshots.append(snap(offset = 5, value = 50))
       _         <- snapshots.append(snap(offset = 3, value = 30)) // later append wins regardless of offset
       _         <- snapshots.flush
-      stored    <- db.get(key)
+      stored    <- db.read(key).map(_.flatMap(_.value))
     } yield stored).unsafeRunSync()
 
     assertEquals(stored, snap(offset = 3, value = 30).some)
@@ -61,7 +61,7 @@ class SnapshotsOfSpec extends FunSuite {
       _         <- snapshots.append((Offset.unsafe(5), 50))
       _         <- snapshots.append((Offset.unsafe(3), 30)) // lower offset: must be dropped
       _         <- snapshots.flush
-      stored    <- db.get(key)
+      stored    <- db.read(key).map(_.flatMap(_.value))
     } yield stored).unsafeRunSync()
 
     assertEquals(stored, (Offset.unsafe(5), 50).some)

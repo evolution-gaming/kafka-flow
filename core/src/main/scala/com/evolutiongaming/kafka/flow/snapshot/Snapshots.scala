@@ -52,99 +52,100 @@ trait SnapshotWriter[F[_], S] {
 }
 object Snapshots {
 
-  /** The per-key buffer cell: a live snapshot value (with whether it is already persisted), a value-less high-water
-    * floor recovered from or left by a delete, or nothing yet. Folding the live snapshot and the tombstone floor into
-    * one monotonic cell lets `read`/`append`/`delete` reason about a single high-water (see `highWater`), so a deleted
-    * key's offset is held even though it carries no value. Parallels [[Recovered]], but `Live` also carries the
-    * `persisted` flag `flush` needs.
-    */
-  private[flow] sealed trait Buffered[+S]
-  private[flow] object Buffered {
-    final case class Live[S](value: S, persisted: Boolean) extends Buffered[S]
-    final case class Deleted(offset: Offset) extends Buffered[Nothing]
-    case object Empty extends Buffered[Nothing]
-  }
-
   /** Per-key snapshot buffer over `database`.
     *
+    * The buffer holds one [[Stored]] cell - a live snapshot, an offset-carrying tombstone, or nothing yet - plus
+    * whether it is already persisted. Every write (`append`, `delete`) and recovery (`read`) flows through that one
+    * cell, kept monotonic in offset, so a persist and a delete share the same offset discipline: the cell never
+    * regresses below the key's high-water offset. See `docs/cassandra-single-writer-design.md`.
+    *
     * @param offsetOf
-    *   how to read the offset a snapshot sits at, when this store fences stale writers. `Some(f)` keeps the buffer
-    *   monotonic and gates a delete on the key's high-water offset (see [[apply]]'s `append`/`delete`); `None` is
-    *   unfenced (last-write-wins). A `KafkaSnapshot`-backed store passes `Some(_.offset)` (see
-    *   [[SnapshotDatabase.snapshotsOf]]).
+    *   how to read the offset a snapshot sits at, when this store fences stale writers. `Some(f)` makes the cell
+    *   offset-carrying: the buffer is kept monotonic and a delete is stamped at the key's high-water offset (see the
+    *   `put` below); `None` is unfenced (last-write-wins, the offset is never tracked). A `KafkaSnapshot`-backed store
+    *   passes `Some(_.offset)` (see [[SnapshotDatabase.snapshotsOf]]).
     */
   private[flow] def of[F[_]: Ref.Make: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
     offsetOf: Option[S => Offset],
   )(implicit log: Log[F]): F[Snapshots[F, S]] =
-    Ref.of[F, Buffered[S]](Buffered.Empty).map(state => Snapshots(key, database, state.stateInstance, offsetOf))
+    Ref.of[F, Option[Cell[S]]](none).map(state => Snapshots(key, database, state.stateInstance, offsetOf))
+
+  /** The per-key buffer cell: a [[Stored]] unit (live snapshot or offset-carrying tombstone floor) plus the `persisted`
+    * flag `flush` needs. An empty buffer is `None`.
+    */
+  private[snapshot] final case class Cell[S](stored: Stored[S], persisted: Boolean)
 
   private[snapshot] def apply[F[_]: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
-    state: Stateful[F, Buffered[S]],
+    state: Stateful[F, Option[Cell[S]]],
     offsetOf: Option[S => Offset],
   )(implicit log: Log[F]): Snapshots[F, S] = new Snapshots[F, S] {
     private val prefixLog: Log[F] = log.prefixed(LogPrefix[K].extract(key))
 
-    // the replay-window high-water: a live snapshot's offset (when fenced), or the recovered/left tombstone floor.
-    private def highWater(current: Buffered[S]): Option[Offset] = current match {
-      case Buffered.Live(value, _) => offsetOf.map(_(value))
-      case Buffered.Deleted(o)     => o.some
-      case Buffered.Empty          => none
-    }
-
     def read =
-      database.recover(key).flatMap {
-        case Recovered.Present(snapshot) => snapshot.some.pure[F] // `initPersistedState` seeds `Live` right after
-        // a tombstone reads back absent, but its offset is the replay-window floor: hold it so a re-derived snapshot
-        // (or delete) below it is dropped rather than persisted as a stale, self-fencing write. See
-        // docs/cassandra-single-writer-design.md.
-        case Recovered.Deleted(offset) => state.set(Buffered.Deleted(offset)).as(none[S])
-        case Recovered.Absent          => none[S].pure[F]
+      // only a recovered tombstone needs seeding here: its offset is the replay-window high-water (kept even with no
+      // value), so a re-derived snapshot or delete below it is dropped rather than persisted as a stale, self-fencing
+      // write. A live snapshot's cell is seeded by `initPersistedState` right after (see `Persistence.read`), so we
+      // just return its value. See docs/cassandra-single-writer-design.md.
+      database.read(key).flatMap {
+        case Some(Stored.Tombstone(offset)) =>
+          state.set(Cell(Stored.Tombstone(offset), persisted = true).some).as(none[S])
+        case Some(Stored.Live(snapshot, _)) => snapshot.some.pure[F]
+        case None                           => none[S].pure[F]
       }
 
     def append(snapshot: S) =
-      // keep the buffer monotonic in offset: a lower-offset append is replay onto a recovered snapshot (a no-op under
-      // deterministic folds), so dropping it holds the high-water offset that fences `delete` and drops a re-derived
-      // snapshot below a recovered tombstone floor. See docs/cassandra-single-writer-design.md.
-      state.modify { current =>
-        val below = (offsetOf.map(_(snapshot)), highWater(current)).mapN(_ < _).getOrElse(false)
-        if (below) current
-        else
-          current match {
-            // an unchanged value keeps the existing cell (and its `persisted` flag); anything else becomes a fresh,
-            // not-yet-persisted live snapshot
-            case Buffered.Live(existing, _) if existing == snapshot => current
-            case _                                                  => Buffered.Live(snapshot, persisted = false)
-          }
+      put(Stored.Live(snapshot, offsetOf.map(_(snapshot))))
+
+    // a delete routes the processing offset through the same monotonic `put`, which lifts the tombstone to the key's
+    // high-water when the buffer leads it (a fenced store then gates the tombstone on the high-water, not the trailing
+    // processing offset). An unfenced cell has no high-water, so the processing offset passes through unchanged - and
+    // an unfenced store ignores `stored.offset` on write anyway, so the tombstone's carried offset is inert there.
+    def delete(persist: Boolean, offset: Offset) =
+      put(Stored.Tombstone(offset)) *> {
+        // persist the (lifted) tombstone, or for a buffer-only delete just mark it persisted so a later flush does not
+        // write an unnecessary tombstone (`flushCell` writes any dirty cell, tombstone included)
+        if (persist) flushCell(_ => prefixLog.info("deleted snapshot"))
+        else markPersisted
       }
 
     def initPersisted(snapshot: S) =
-      state.set(Buffered.Live(snapshot, persisted = true))
+      state.set(Cell(Stored.Live(snapshot, offsetOf.map(_(snapshot))), persisted = true).some)
 
-    def flush =
+    def flush = flushCell(_ => ().pure[F])
+
+    // the single monotonic write site. A live append below the high-water is replay onto a recovered cell (a no-op
+    // under deterministic folds), so it is dropped; a tombstone is lifted to the high-water so the legitimate owner's
+    // delete still applies rather than self-fencing. See docs/cassandra-single-writer-design.md.
+    private def put(next: Stored[S]): F[Unit] =
+      state.modify { current =>
+        val highWater = current.flatMap(_.stored.offset)
+        next match {
+          case Stored.Live(snapshot, offset) =>
+            val below = (offset, highWater).mapN(_ < _).getOrElse(false)
+            current match {
+              case Some(cur) if below => cur.some
+              // an unchanged live value keeps the existing cell (and its `persisted` flag)
+              case Some(cur @ Cell(Stored.Live(existing, _), _)) if existing == snapshot => cur.some
+              case _ => Cell(next, persisted = false).some
+            }
+          case Stored.Tombstone(at) =>
+            Cell(Stored.Tombstone(highWater.fold(at)(_ max at)), persisted = false).some
+        }
+      }
+
+    // writes any dirty cell - live snapshot OR tombstone - then marks it persisted. A tombstone only reaches here from
+    // a `delete(persist = true)`; a buffer-only delete marks the cell persisted itself so it is never written.
+    private def flushCell(onWrite: Stored[S] => F[Unit]): F[Unit] =
       state.get.flatMap {
-        case Buffered.Live(value, false) =>
-          database.persist(key, value) *> state.set(Buffered.Live(value, persisted = true))
-        case _ => ().pure[F]
+        case Some(Cell(stored, false)) => database.write(key, stored) *> onWrite(stored) *> markPersisted
+        case _                         => ().pure[F]
       }
 
-    def delete(persist: Boolean, offset: Offset) =
-      state.get.flatMap { current =>
-        // fence on the key's high-water offset (the live snapshot's, or the recovered/left tombstone floor), not
-        // `offset`: after recovery a key's snapshot can lead the partition's processing offset, and a compare-and-set
-        // backend would reject a delete gated below it as stale though the owner is legitimate. A genuinely stale
-        // writer only reached its own lower offset.
-        val fenceOffset = highWater(current).fold(offset)(offset max _)
-        val delete =
-          if (persist) database.delete(key, fenceOffset) *> prefixLog.info("deleted snapshot")
-          else ().pure[F]
-        // leave the tombstone offset as the floor so a later replayed re-persist below it is still dropped (the cell no
-        // longer carries a live snapshot's high-water).
-        state.set(Buffered.Deleted(fenceOffset)) *> delete
-      }
+    private val markPersisted: F[Unit] = state.modify(_.map(_.copy(persisted = true)))
 
   }
 

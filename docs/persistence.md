@@ -183,16 +183,18 @@ Limitations:
 
 ### Custom snapshot storage
 
-You can plug in your own snapshot store: implement `SnapshotDatabase` and wire it through
+You can plug in your own snapshot store: implement `SnapshotDatabase` — `read` returns the stored unit
+(a `Stored.Live`, an offset-carrying `Stored.Tombstone`, or `None` for an absent key) and `write`
+upserts a `Stored.Live` or tombstones with a `Stored.Tombstone` — and wire it through
 `SnapshotsOf.backedBy` into `PersistenceOf.snapshotsOnly`/`restoreEvents`. A custom store is
 **last-write-wins**, so it is exposed to the same stale-writer overwrite as last-write-wins Cassandra
 ([#732](https://github.com/evolution-gaming/kafka-flow/issues/732)).
 
-To protect it, its own `persist`/`delete` must reject a write when the store already holds a newer
-offset — that conditional write is the fence (the buffer wiring does not provide it). Once writes are
-conditional, give the buffer an `offsetOf` so it does not fence the owner against itself during
-recovery: `SnapshotsOf.backedBy(db, offsetOf)` for an offset-carrying type, or a `KafkaSnapshot[S]`
-via `SnapshotDatabase.snapshotsOf`. See "The replay window" in the
+To protect it, its `write` must reject the write when the store already holds a newer offset (gate on
+`stored.offset`) — that conditional write is the fence (the buffer wiring does not provide it). Once
+writes are conditional, give the buffer an `offsetOf` so it does not fence the owner against itself
+during recovery: `SnapshotsOf.backedBy(db, offsetOf)` for an offset-carrying type, or a
+`KafkaSnapshot[S]` via `SnapshotDatabase.snapshotsOf`. See "The replay window" in the
 [Cassandra design doc](cassandra-single-writer-design.md) for why.
 
 ## Compression

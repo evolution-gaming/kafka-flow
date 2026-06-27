@@ -11,54 +11,62 @@ import com.evolutiongaming.skafka.Offset
 
 trait SnapshotDatabase[F[_], K, S] extends SnapshotReadDatabase[F, K, S] with SnapshotWriteDatabase[F, K, S]
 
-/** Outcome of recovering a key from the snapshot store.
+/** What the snapshot store holds for a key: a live snapshot, or an offset-carrying tombstone (the absence of a row is
+  * an outer `None`, so a never-written key is not a `Stored`).
   *
-  * A compare-and-set store (see [[CassandraSnapshots]]) keeps a deleted key as an offset-carrying logical tombstone: it
-  * reads back as absent, but its stored offset still fences a later write. Recovery must surface that offset as the
-  * replay-window floor (`Deleted`) rather than collapse it to "nothing there" (`Absent`) - otherwise the buffer starts
-  * with no high-water and a legitimate owner re-persisting (or deleting) below it self-fences with a write conflict, a
-  * livelock. See `docs/cassandra-single-writer-design.md`.
+  * One type carries both the live snapshot and the tombstone across the read, the write and the per-key buffer - so a
+  * delete is just a write of a [[Stored.Tombstone]], and recovery of a tombstone is just a read of one whose value is
+  * absent but whose offset survives. This replaces the previous `persist`/`delete` write pair and the `get`/`recover`
+  * (`Recovered`) read pair, and lets [[Snapshots]] reason about one monotonic cell. As an ADT it admits no nonsensical
+  * "no value and no offset" state. See `docs/cassandra-single-writer-design.md`.
   */
-sealed trait Recovered[+S]
-object Recovered {
+sealed trait Stored[+S] {
 
-  /** A live snapshot was recovered. */
-  final case class Present[S](snapshot: S) extends Recovered[S]
+  /** The offset the unit sits at, for an offset-carrying (compare-and-set) store; `None` for an unfenced
+    * last-write-wins store, which does not track one (the buffer is then non-monotonic and never consults it). A
+    * tombstone always carries one - only a fencing store deletes via a tombstone.
+    */
+  def offset: Option[Offset]
 
-  /** The key was deleted; the store kept an offset-carrying tombstone at `offset` (reads back as absent). */
-  final case class Deleted(offset: Offset) extends Recovered[Nothing]
+  /** The live snapshot, or `None` for a tombstone. */
+  def value: Option[S]
+}
+object Stored {
 
-  /** No row for the key at all (never written, or the tombstone was reaped). */
-  case object Absent extends Recovered[Nothing]
+  /** A live snapshot; `offset` is set iff the store fences on it. */
+  final case class Live[S](snapshot: S, offset: Option[Offset]) extends Stored[S] {
+    def value: Option[S] = snapshot.some
+  }
+
+  /** An offset-carrying tombstone: a deleted key whose offset still fences a later write. */
+  final case class Tombstone(at: Offset) extends Stored[Nothing] {
+    def offset: Option[Offset] = at.some
+    def value: Option[Nothing] = none
+  }
 }
 
 trait SnapshotReadDatabase[F[_], K, S] {
 
-  /** Restores snapshot for the key, if any */
-  def get(key: K): F[Option[S]]
-
-  /** Recovers the key, distinguishing an offset-carrying tombstone ([[Recovered.Deleted]]) from a truly absent key
-    * ([[Recovered.Absent]]). The default derives from [[get]] and never reports `Deleted` - a store that keeps deleted
-    * keys as offset-carrying tombstones (compare-and-set [[CassandraSnapshots]]) overrides it so recovery can
-    * re-establish the replay-window floor for a deleted key. A wrapper (e.g. metrics) must delegate to the underlying
-    * `recover`, or it silently downgrades a tombstone to `Absent` through its own `get`.
+  /** Recovers the stored unit for the key, distinguishing a live snapshot, an offset-carrying tombstone and an absent
+    * key:
+    *   - `None` - no row (never written, or a tombstone reaped by TTL);
+    *   - `Some(Stored.Tombstone(offset))` - a deleted key (a compare-and-set store keeps the offset as the
+    *     replay-window floor even though the value reads back as absent);
+    *   - `Some(Stored.Live(snapshot, offset))` - a live snapshot.
     */
-  def recover(key: K)(implicit F: Functor[F]): F[Recovered[S]] =
-    get(key).map(_.fold(Recovered.Absent: Recovered[S])(Recovered.Present(_)))
+  def read(key: K): F[Option[Stored[S]]]
+
 }
 
-trait SnapshotWriteDatabase[F[_], K, S] { self =>
+trait SnapshotWriteDatabase[F[_], K, S] {
 
-  /** Adds or replaces the snapshot in a database */
-  def persist(key: K, snapshot: S): F[Unit]
-
-  /** Deletes snapshot for the key, if any.
+  /** Adds, replaces or tombstones the snapshot for the key.
     *
-    * `offset` is the offset of the state being deleted; a database protecting against stale writers (see
-    * [[com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots]] compare-and-set mode) gates the delete on it, so a
-    * stale writer cannot erase a newer owner's snapshot.
+    * A [[Stored.Live]] persists a snapshot; a [[Stored.Tombstone]] writes a tombstone (a delete). A database protecting
+    * against stale writers (see [[com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots]] compare-and-set mode)
+    * gates the write on `stored.offset`, so a stale writer cannot erase or overwrite a newer owner's snapshot.
     */
-  def delete(key: K, offset: Offset): F[Unit]
+  def write(key: K, stored: Stored[S]): F[Unit]
 
 }
 
@@ -75,40 +83,36 @@ object SnapshotDatabase {
   /** Creates in-memory database implementation.
     *
     * The data will survive destruction of specific `Snapshots` instance, but will not survive destruction of specific
-    * `SnapshotDatabase` instance.
+    * `SnapshotDatabase` instance. Last-write-wins: a tombstone write removes the row (the offset is not tracked), so
+    * `read` never reports a tombstone.
     */
   def memory[F[_]: Functor, K, S](storage: Stateful[F, Map[K, S]]): SnapshotDatabase[F, K, S] =
     new SnapshotDatabase[F, K, S] {
 
-      def persist(key: K, snapshot: S) =
-        storage modify (_ + (key -> snapshot))
+      def write(key: K, stored: Stored[S]) =
+        stored match {
+          case Stored.Live(value, _) => storage modify (_ + (key -> value))
+          case Stored.Tombstone(_)   => storage modify (_ - key)
+        }
 
-      def get(key: K) =
-        storage.get map (_ get key)
-
-      def delete(key: K, offset: Offset) =
-        storage modify (_ - key)
+      def read(key: K) =
+        storage.get map (_.get(key).map(value => Stored.Live(value, none)))
 
     }
 
-  // TODO: clean up this code (coming from `kafka-flow-persistence-kafka`?)
   def apply[F[_], K, S](
-    read: SnapshotReadDatabase[F, K, S],
-    write: SnapshotWriteDatabase[F, K, S]
+    readDatabase: SnapshotReadDatabase[F, K, S],
+    writeDatabase: SnapshotWriteDatabase[F, K, S]
   ): SnapshotDatabase[F, K, S] =
     new SnapshotDatabase[F, K, S] {
-      override def persist(key: K, snapshot: S): F[Unit] = write.persist(key, snapshot)
-
-      override def delete(key: K, offset: Offset): F[Unit] = write.delete(key, offset)
-
-      override def get(key: K): F[Option[S]] = read.get(key)
+      override def read(key: K): F[Option[Stored[S]]]        = readDatabase.read(key)
+      override def write(key: K, stored: Stored[S]): F[Unit] = writeDatabase.write(key, stored)
     }
 
   def empty[F[_]: Applicative, K, S]: SnapshotDatabase[F, K, S] =
     new SnapshotDatabase[F, K, S] {
-      def get(key: K)                    = none[S].pure
-      def persist(key: K, snapshot: S)   = ().pure
-      def delete(key: K, offset: Offset) = ().pure
+      def read(key: K)                     = none[Stored[S]].pure
+      def write(key: K, stored: Stored[S]) = ().pure
     }
 
   implicit class SnapshotDatabaseKafkaSnapshotOps[F[_], K, S](

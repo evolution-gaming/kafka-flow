@@ -56,7 +56,7 @@ UPDATE snapshots_v2 SET value = null, offset = :offset WHERE <key> IF offset <= 
 
 keeping the row (and its `offset`). A stale lower-offset writer is then rejected, not resurrected; a
 replayed delete is a no-op (equal offset) or a conflict (a newer write exists), never a resurrection;
-`get` reads a null `value` back as `None`. The tombstone is reaped by the TTL, if configured. Keeping
+a read surfaces the null `value` as a `Stored.Tombstone` (no live value). The tombstone is reaped by the TTL, if configured. Keeping
 the row also routes the delete through Paxos, avoiding the well-known hazard of mixing lightweight
 transactions and regular mutations on the same row.
 
@@ -126,24 +126,25 @@ for a delete makes the tombstone it writes *more* protective against a lower-off
 ### Recovering a deleted key
 
 Both protections above are keyed on the high-water `X`, which a recovery establishes from the *recovered
-snapshot's* offset. But a deleted key's row is a tombstone — `get` reads its null `value` back as `None`
-(absent) — so a recovery that only knew `get` would establish no floor: the buffer would start empty and
+snapshot's* offset. But a deleted key's row is a tombstone — its `value` is null, read back as absent — so
+a read that surfaced only the value would establish no floor: the buffer would start empty and
 `Snapshots.append` would climb from the replayed offsets (all `< X`), re-persisting below `X`. The
 offset-`X` tombstone then rejects that write, fencing the *legitimate* owner; the flow tears down,
 re-recovers the same tombstone (again no floor), and loops — a livelock. (`SnapshotFold`'s filter is keyed
 on the same recovered offset, so it too has no floor for a tombstone; the monotonic buffer is what carries
-the deleted-key case. The tick-**delete** path does not arise here: after a `None` recovery nothing is yet
+the deleted-key case. The tick-**delete** path does not arise here: after an absent recovery nothing is yet
 persisted, so a replay-window tick-delete is dispatched `persist = false` — buffer-only, never reaching the
 store.)
 
 So recovery must surface the tombstone's offset as the floor, not collapse it to "nothing there".
-`SnapshotDatabase.recover` returns `Recovered.Deleted(X)` for a tombstone (distinct from `Recovered.Absent`
-for a reaped or never-written key); `Snapshots` holds `X` as the buffer high-water even with no buffered
-value, so a re-derived snapshot below `X` is dropped exactly as for a live snapshot and the owner makes
-progress. The deleted-key recovery is thus symmetric with the live one — same floor, only the value is
-absent — and the floor is re-established on every recovery, so the livelock cannot form. (`recover`
-defaults to `get` for stores without tombstones; a wrapper such as the metrics one must delegate to the
-underlying `recover`, or it silently downgrades a tombstone back to `Absent`.)
+`SnapshotDatabase.read` returns `Some(Stored(None, X))` for a tombstone — value-less but carrying the
+offset — distinct from `None` for a reaped or never-written key (and from `Some(Stored(Some(v), X))` for a
+live snapshot); `Snapshots` holds `X` as the buffer high-water even with no buffered value, so a re-derived
+snapshot below `X` is dropped exactly as for a live snapshot and the owner makes progress. The deleted-key
+recovery is thus symmetric with the live one — same floor, only the value is absent — and the floor is
+re-established on every recovery, so the livelock cannot form. (Because `read` returns one `Stored`, a
+wrapper such as the metrics one has a single read to delegate — there is no separate value-only path that
+could silently drop the tombstone's offset.)
 
 The same hazard reaches the **events-recovery** mode (`restoreEvents`), where state is restored by folding
 the journal rather than reading the snapshot. A delete clears the key's journal, so the fold yields `None`
@@ -216,12 +217,16 @@ conditional one. Negligible with NTP-synced clocks, and gone once every instance
 Entry point: `CassandraSnapshots.withSchema(compareAndSet = true)` (or
 `CassandraPersistence.withSchema(snapshotCompareAndSet = true)`). In the current code:
 
-- **Conditional write / delete** — `CassandraSnapshots.persistCompareAndSet` and `deleteCompareAndSet`
-  issue the offset-gated `UPDATE`/`INSERT`; `resolveConditional` classifies the result
-  (`applied` / newer-stored-offset / row-absent), shared by both.
-- **Monotonic buffer** — `Snapshots.append` drops a lower-offset append; recovery establishes the
-  high-water floor through `SnapshotDatabase.recover`, which returns `Recovered.Deleted` for a
-  tombstone and `Recovered.Absent` for a reaped or never-written key.
+- **Unified write / read** — `CassandraSnapshots.write` routes a `Stored`: a present value to
+  `persistCompareAndSet`, an absent value (a delete) to `deleteCompareAndSet`, both issuing the offset-gated
+  `UPDATE`/`INSERT`; `resolveConditional` classifies the result (`applied` / newer-stored-offset /
+  row-absent), shared by both. `read` returns the stored unit — `Some(Stored(value, offset))`, with an
+  absent value for a tombstone — or `None` for no row.
+- **Monotonic buffer** — `Snapshots` holds one `Stored` cell (a live snapshot or an offset-carrying
+  tombstone floor); `append` and `delete` both flow through one monotonic `put` that drops a lower-offset
+  re-persist and lifts a lower-offset delete to the high-water. Recovery seeds the cell (and thus the floor)
+  from `SnapshotDatabase.read`: `Some(Stored(None, X))` is a tombstone at `X`, `None` is a reaped or
+  never-written key.
 - **Replay filter** — `SnapshotFold` drops replayed events above the recovered offset; a timer-driven
   `TickToState` delete bypasses that filter, which is why the monotonic buffer is what carries the
   tick-delete case.
@@ -283,13 +288,8 @@ This design takes three things as given:
 
 ## Forward-looking
 
-- **Offset-gated deletes** — a future mode could close the delete-resurrection gap by gating deletes on
-  an offset-carrying tombstone exactly as persists are; deferred here for the breaking API and
-  replay-window machinery it brings (see *Scope* above).
-- **Per-partition ownership** — the equal-offset gap and per-key (rather than per-partition) granularity
-  could be closed by a composite `(offset, generation)` token (see Rejected alternatives) or, further out, by
-  [KIP-939 (participation in 2PC)](https://cwiki.apache.org/confluence/display/KAFKA/KIP-939:+Support+Participation+in+2PC):
-  a transactional producer in an externally-coordinated two-phase commit could bind the Cassandra
-  snapshot write to a generation-fenced Kafka input-offset commit, giving Cassandra per-partition
-  ownership without the per-key compare-and-set. Not actionable now; see the Kafka design doc's
-  forward-looking note.
+[KIP-939 (participation in 2PC)](https://cwiki.apache.org/confluence/display/KAFKA/KIP-939:+Support+Participation+in+2PC)
+could extend a Kafka generation fence to this Cassandra store: a transactional producer in an
+externally-coordinated two-phase commit could bind the Cassandra snapshot write to a generation-fenced
+Kafka input-offset commit, giving Cassandra per-partition ownership without the per-key compare-and-set.
+Not actionable now; see the Kafka design doc's forward-looking note.

@@ -140,11 +140,11 @@ class FlowSpec extends CassandraSpec {
       (flowB_, releaseB) = flowB
       _                 <- flowB_(staleFlowRecords(eventsB, key, tp))
       _                 <- releaseB
-      newOwnerWrote     <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
+      newOwnerWrote     <- storage.snapshots.read(KafkaKey(appId, groupId, tp, key)).map(_.flatMap(_.value))
       _                  = assertEquals(clue(newOwnerWrote.map(_.value)), Some(eventsB.mkString(",")))
       // the previous owner flushes its stale state on revoke
       staleFlush <- releaseA.attempt
-      stored     <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
+      stored     <- storage.snapshots.read(KafkaKey(appId, groupId, tp, key)).map(_.flatMap(_.value))
     } yield (staleFlush, stored)
   }
 
@@ -214,7 +214,7 @@ class FlowSpec extends CassandraSpec {
       (flowA_, releaseA) = flowA
       _                 <- flowA_(staleFlowRecords(events, key, tp))
       _                 <- releaseA
-      stored            <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
+      stored            <- storage.snapshots.read(KafkaKey(appId, groupId, tp, key)).map(_.flatMap(_.value))
       _                  = assertEquals(clue(stored.map(_.offset)), Some(recoveredAt))
       // a new flow recovers the key (snapshot offset 5) at assignedAt = 0; the replayed "DELETE" makes the fold
       // return None -> delete at the replayed offset, which must be fenced on the high-water (recoveredAt)
@@ -222,7 +222,7 @@ class FlowSpec extends CassandraSpec {
       (flowB_, releaseB) = flowB
       deleteResult <- flowB_(staleFlowRecords(List("DELETE"), key, tp).map(_.copy(offset = replayedDeleteAt))).attempt
       _            <- releaseB.attempt
-      afterDelete  <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
+      afterDelete  <- storage.snapshots.read(KafkaKey(appId, groupId, tp, key)).map(_.flatMap(_.value))
     } yield (deleteResult, afterDelete)
 
     val (deleteResult, afterDelete) = test.unsafeRunSync()

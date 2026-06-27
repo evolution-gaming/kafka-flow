@@ -47,28 +47,33 @@ class SnapshotReplayFencingSpec extends FunSuite {
     storage: Ref[IO, Map[KafkaKey, KafkaSnapshot[String]]]
   ): SnapshotDatabase[IO, KafkaKey, KafkaSnapshot[String]] =
     new SnapshotDatabase[IO, KafkaKey, KafkaSnapshot[String]] {
-      def get(key: KafkaKey): IO[Option[KafkaSnapshot[String]]] = storage.get.map(_.get(key))
+      def read(key: KafkaKey): IO[Option[Stored[KafkaSnapshot[String]]]] =
+        storage.get.map(_.get(key).map(s => Stored.Live(s, s.offset.some)))
 
-      def persist(key: KafkaKey, snapshot: KafkaSnapshot[String]): IO[Unit] =
-        storage.modify { snapshots =>
-          snapshots.get(key) match {
-            case Some(stored) if stored.offset > snapshot.offset =>
-              (snapshots, StaleWrite(stored.offset, snapshot.offset).raiseError[IO, Unit])
-            case _ => (snapshots.updated(key, snapshot), ().pure[IO])
-          }
-        }.flatten
-
-      def delete(key: KafkaKey, offset: Offset): IO[Unit] =
-        storage.modify { snapshots =>
-          snapshots.get(key) match {
-            case Some(stored) if stored.offset > offset =>
-              (snapshots, StaleWrite(stored.offset, offset).raiseError[IO, Unit])
-            case _ => (snapshots.removed(key), ().pure[IO])
-          }
-        }.flatten
+      // a present value persists (gated on the snapshot's offset), an absent value deletes (gated on stored.offset)
+      def write(key: KafkaKey, stored: Stored[KafkaSnapshot[String]]): IO[Unit] =
+        stored.value match {
+          case Some(snapshot) =>
+            storage.modify { snapshots =>
+              snapshots.get(key) match {
+                case Some(existing) if existing.offset > snapshot.offset =>
+                  (snapshots, StaleWrite(existing.offset, snapshot.offset).raiseError[IO, Unit])
+                case _ => (snapshots.updated(key, snapshot), ().pure[IO])
+              }
+            }.flatten
+          case None =>
+            val offset = stored.offset.getOrElse(Offset.min)
+            storage.modify { snapshots =>
+              snapshots.get(key) match {
+                case Some(existing) if existing.offset > offset =>
+                  (snapshots, StaleWrite(existing.offset, offset).raiseError[IO, Unit])
+                case _ => (snapshots.removed(key), ().pure[IO])
+              }
+            }.flatten
+        }
     }
 
-  import SnapshotReplayFencingSpec.Stored
+  import SnapshotReplayFencingSpec.Row
 
   /** Like [[offsetGatedDb]], but faithful to the Cassandra compare-and-set *delete*: a delete does not remove the row,
     * it leaves an offset-carrying logical tombstone (mirrors `CassandraSnapshots.deleteCompareAndSet`'s `SET value =
@@ -78,42 +83,41 @@ class SnapshotReplayFencingSpec extends FunSuite {
     * offset and the tombstone has not been TTL-reaped).
     */
   private def tombstoneGatedDb(
-    storage: Ref[IO, Map[KafkaKey, Stored]]
+    storage: Ref[IO, Map[KafkaKey, Row]]
   ): SnapshotDatabase[IO, KafkaKey, KafkaSnapshot[String]] =
     new SnapshotDatabase[IO, KafkaKey, KafkaSnapshot[String]] {
-      // a tombstone reads back as absent, exactly like Cassandra's null `value`
-      def get(key: KafkaKey): IO[Option[KafkaSnapshot[String]]] =
-        storage.get.map(_.get(key).collect { case Stored.Live(snapshot) => snapshot })
-
-      // recovery surfaces the tombstone's offset as the replay-window floor (mirrors CassandraSnapshots.recover); a
-      // present row recovers as Present, a tombstone as Deleted(offset), no row as Absent
-      override def recover(key: KafkaKey)(implicit F: cats.Functor[IO]): IO[Recovered[KafkaSnapshot[String]]] =
+      // recovery surfaces the row as a Stored: a present row carries its value, a tombstone reads back value-less but
+      // keeps its offset as the replay-window floor (mirrors CassandraSnapshots.read), no row is None
+      def read(key: KafkaKey): IO[Option[Stored[KafkaSnapshot[String]]]] =
         storage
           .get
-          .map(_.get(key) match {
-            case Some(Stored.Live(snapshot)) => Recovered.Present(snapshot)
-            case Some(Stored.Tombstone(o))   => Recovered.Deleted(o)
-            case None                        => Recovered.Absent
+          .map(_.get(key).map {
+            case Row.Live(snapshot) => Stored.Live(snapshot, snapshot.offset.some)
+            case Row.Tombstone(o)   => Stored.Tombstone(o)
           })
 
-      def persist(key: KafkaKey, snapshot: KafkaSnapshot[String]): IO[Unit] =
-        storage.modify { snapshots =>
-          snapshots.get(key) match {
-            case Some(stored) if stored.offset > snapshot.offset =>
-              (snapshots, StaleWrite(stored.offset, snapshot.offset).raiseError[IO, Unit])
-            case _ => (snapshots.updated(key, Stored.Live(snapshot)), ().pure[IO])
-          }
-        }.flatten
-
-      def delete(key: KafkaKey, offset: Offset): IO[Unit] =
-        storage.modify { snapshots =>
-          snapshots.get(key) match {
-            case Some(stored) if stored.offset > offset =>
-              (snapshots, StaleWrite(stored.offset, offset).raiseError[IO, Unit])
-            // keep the row as an offset-carrying tombstone (do not remove it): the offset guard survives the delete
-            case _ => (snapshots.updated(key, Stored.Tombstone(offset)), ().pure[IO])
-          }
-        }.flatten
+      // a present value persists (gated on the snapshot's offset); an absent value leaves an offset-carrying tombstone
+      // (gated on stored.offset) rather than removing the row, so the offset guard survives the delete
+      def write(key: KafkaKey, stored: Stored[KafkaSnapshot[String]]): IO[Unit] =
+        stored.value match {
+          case Some(snapshot) =>
+            storage.modify { snapshots =>
+              snapshots.get(key) match {
+                case Some(existing) if existing.offset > snapshot.offset =>
+                  (snapshots, StaleWrite(existing.offset, snapshot.offset).raiseError[IO, Unit])
+                case _ => (snapshots.updated(key, Row.Live(snapshot)), ().pure[IO])
+              }
+            }.flatten
+          case None =>
+            val offset = stored.offset.getOrElse(Offset.min)
+            storage.modify { snapshots =>
+              snapshots.get(key) match {
+                case Some(existing) if existing.offset > offset =>
+                  (snapshots, StaleWrite(existing.offset, offset).raiseError[IO, Unit])
+                case _ => (snapshots.updated(key, Row.Tombstone(offset)), ().pure[IO])
+              }
+            }.flatten
+        }
     }
 
   private val fold: FoldOption[IO, KafkaSnapshot[String], ConsumerRecord[String, ByteVector]] =
@@ -192,12 +196,12 @@ class SnapshotReplayFencingSpec extends FunSuite {
     tick: TickOption[IO, KafkaSnapshot[String]],
     timerFlowOf: TimerFlowOf[IO],
     records: List[ConsumerRecord[String, ByteVector]],
-    initial: Option[Stored] = Stored.Tombstone(recoveredAt).some,
-  ): (Either[Throwable, Unit], Option[Stored]) = {
+    initial: Option[Row] = Row.Tombstone(recoveredAt).some,
+  ): (Either[Throwable, Unit], Option[Row]) = {
     val program = for {
       keyStorage <- Ref.of[IO, Set[KafkaKey]](Set(key))
-      snapshotStorage <- Ref.of[IO, Map[KafkaKey, Stored]](
-        initial.fold(Map.empty[KafkaKey, Stored])(s => Map(key -> s))
+      snapshotStorage <- Ref.of[IO, Map[KafkaKey, Row]](
+        initial.fold(Map.empty[KafkaKey, Row])(s => Map(key -> s))
       )
       keysOf       = KeysOf.of[IO, KafkaKey](KeyDatabase.memory[IO, KafkaKey](keyStorage.stateInstance))
       snapshotsOf <- tombstoneGatedDb(snapshotStorage).snapshotsOf
@@ -242,10 +246,10 @@ class SnapshotReplayFencingSpec extends FunSuite {
   private def runRecoveredFromTombstoneViaEvents(
     timerFlowOf: TimerFlowOf[IO],
     records: List[ConsumerRecord[String, ByteVector]],
-  ): (Either[Throwable, Unit], Option[Stored]) = {
+  ): (Either[Throwable, Unit], Option[Row]) = {
     val program = for {
       keyStorage      <- Ref.of[IO, Set[KafkaKey]](Set(key))
-      snapshotStorage <- Ref.of[IO, Map[KafkaKey, Stored]](Map(key -> Stored.Tombstone(recoveredAt)))
+      snapshotStorage <- Ref.of[IO, Map[KafkaKey, Row]](Map(key -> Row.Tombstone(recoveredAt)))
       keysOf           = KeysOf.of[IO, KafkaKey](KeyDatabase.memory[IO, KafkaKey](keyStorage.stateInstance))
       snapshotsOf     <- tombstoneGatedDb(snapshotStorage).snapshotsOf
       journalsOf      <- JournalsOf.memory[IO, KafkaKey, ConsumerRecord[String, ByteVector]]
@@ -334,7 +338,7 @@ class SnapshotReplayFencingSpec extends FunSuite {
       runRecoveredFromTombstone(TickOption.id[IO, KafkaSnapshot[String]], flushOnTimer, List(replayedRecord(2, "e3")))
     assert(clue(outcome).isRight, s"expected the legitimate owner to make progress, got ${clue(outcome)}")
     // the floor held: nothing was persisted below the tombstone's offset, so the row is unchanged
-    assertEquals(stored, Stored.Tombstone(recoveredAt).some)
+    assertEquals(stored, Row.Tombstone(recoveredAt).some)
   }
 
   test("CONTROL: once the tombstone is reaped (no offset guard), the same replay makes progress") {
@@ -348,7 +352,7 @@ class SnapshotReplayFencingSpec extends FunSuite {
       initial = none,
     )
     assert(clue(outcome).isRight, "expected the owner to make progress once the offset guard is gone")
-    assertEquals(stored, Stored.Live(KafkaSnapshot(offset = Offset.unsafe(2), value = "e3")).some)
+    assertEquals(stored, Row.Live(KafkaSnapshot(offset = Offset.unsafe(2), value = "e3")).some)
   }
 
   test("REGRESSION (delete path): a tick-delete during replay on a tombstone stays a buffer-only no-op") {
@@ -360,7 +364,7 @@ class SnapshotReplayFencingSpec extends FunSuite {
     val (outcome, stored) =
       runRecoveredFromTombstone(deletingTick, deleteOnTimer, records = List(replayedRecord(2, "e3")))
     assert(clue(outcome).isRight, "a buffer-only delete must not reach the store")
-    assertEquals(stored, Stored.Tombstone(recoveredAt).some)
+    assertEquals(stored, Row.Tombstone(recoveredAt).some)
   }
 
   test("FIXED (events recovery): a deleted key replayed below its tombstone offset no longer fences the owner") {
@@ -371,7 +375,7 @@ class SnapshotReplayFencingSpec extends FunSuite {
     // reject the legitimate owner (the deleted-key journal-recovery replay window).
     val (outcome, stored) = runRecoveredFromTombstoneViaEvents(flushOnTimer, List(replayedRecord(2, "e3")))
     assert(clue(outcome).isRight, s"expected the legitimate owner to make progress, got ${clue(outcome)}")
-    assertEquals(stored, Stored.Tombstone(recoveredAt).some)
+    assertEquals(stored, Row.Tombstone(recoveredAt).some)
   }
 
 }
@@ -384,9 +388,9 @@ object SnapshotReplayFencingSpec {
   /** A row in [[SnapshotReplayFencingSpec.tombstoneGatedDb]]: either a live snapshot or an offset-carrying logical
     * tombstone (a deleted key whose `offset` guard is kept). Both expose the `offset` the compare-and-set guard checks.
     */
-  sealed trait Stored { def offset: Offset }
-  object Stored {
-    final case class Live(snapshot: KafkaSnapshot[String]) extends Stored { def offset: Offset = snapshot.offset }
-    final case class Tombstone(offset: Offset) extends Stored
+  sealed trait Row { def offset: Offset }
+  object Row {
+    final case class Live(snapshot: KafkaSnapshot[String]) extends Row { def offset: Offset = snapshot.offset }
+    final case class Tombstone(offset: Offset) extends Row
   }
 }

@@ -11,6 +11,17 @@ import scala.jdk.CollectionConverters.*
 
 class SnapshotSpec extends CassandraSpec {
 
+  // The store now exposes the unified read/write over Stored; these adapters keep the store-level cases speaking the
+  // persist/delete/get vocabulary, so they still pin the exact compare-and-set / tombstone semantics unchanged.
+  private implicit class SnapshotStoreOps(val db: SnapshotDatabase[IO, KafkaKey, KafkaSnapshot[String]]) {
+    def persist(key: KafkaKey, snapshot: KafkaSnapshot[String]): IO[Unit] =
+      db.write(key, Stored.Live(snapshot, snapshot.offset.some))
+    def delete(key: KafkaKey, offset: Offset): IO[Unit] =
+      db.write(key, Stored.Tombstone(offset))
+    def get(key: KafkaKey): IO[Option[KafkaSnapshot[String]]] =
+      db.read(key).map(_.flatMap(_.value))
+  }
+
   test("queries") {
     val key      = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "queries")
     val snapshot = KafkaSnapshot(offset = Offset.min, value = "snapshot-contents")
