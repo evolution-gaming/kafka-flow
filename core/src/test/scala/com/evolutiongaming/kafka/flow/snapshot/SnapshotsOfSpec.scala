@@ -8,7 +8,7 @@ import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.skafka.{Offset, Partition, TopicPartition}
 import munit.FunSuite
 
-/** The offset fence lives in the `KafkaSnapshot` path ([[SnapshotDatabase.snapshotsOf]]), not the generic `backedBy`:
+/** The offset fence lives in the `KafkaSnapshot` path (`SnapshotDatabase.snapshotsOf`), not the generic `backedBy`:
   *
   *   - `snapshotsOf` fences on `KafkaSnapshot.offset` - a lower-offset (replayed) append is dropped, the high-water
   *     snapshot survives;

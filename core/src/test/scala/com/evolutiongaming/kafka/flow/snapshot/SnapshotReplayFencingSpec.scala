@@ -325,8 +325,8 @@ class SnapshotReplayFencingSpec extends FunSuite {
   // climbed from the re-folded replayed offsets (all < X); a flush mid-replay then persisted below X, which the
   // offset-X tombstone rejected, fencing the *legitimate* owner (a livelock; safety was never at risk).
   //
-  // The fix: recovery surfaces the tombstone's offset as the buffer floor (`SnapshotDatabase.recover` ->
-  // `Recovered.Deleted`, held by `Snapshots`), so a re-derived snapshot below X is dropped and the owner makes
+  // The fix: recovery surfaces the tombstone's offset as the buffer floor (`SnapshotDatabase.read` ->
+  // `Stored.Tombstone`, held by `Snapshots`), so a re-derived snapshot below X is dropped and the owner makes
   // progress. Each test below is the tombstone counterpart of a passing live test above; the only changed variable is
   // live-snapshot vs tombstone.
 
@@ -376,6 +376,17 @@ class SnapshotReplayFencingSpec extends FunSuite {
     val (outcome, stored) = runRecoveredFromTombstoneViaEvents(flushOnTimer, List(replayedRecord(2, "e3")))
     assert(clue(outcome).isRight, s"expected the legitimate owner to make progress, got ${clue(outcome)}")
     assertEquals(stored, Row.Tombstone(recoveredAt).some)
+  }
+
+  test(
+    "events recovery: a replayed event at/above the recovered tombstone offset is persisted (floor does not over-fence)"
+  ) {
+    // counterpart of the below-floor events-recovery test: an event at offset 7 (>= the tombstone floor 5) is a
+    // legitimate post-deletion re-creation; the floor must not drop it. It is folded, buffered and flushed, replacing
+    // the tombstone with a live snapshot at offset 7 - confirming the floor fences only below-floor replays.
+    val (outcome, stored) = runRecoveredFromTombstoneViaEvents(flushOnTimer, List(replayedRecord(7, "e7")))
+    assert(clue(outcome).isRight, s"expected the >= floor event to be persisted, got ${clue(outcome)}")
+    assertEquals(stored, Row.Live(KafkaSnapshot(offset = Offset.unsafe(7), value = "e7")).some)
   }
 
 }

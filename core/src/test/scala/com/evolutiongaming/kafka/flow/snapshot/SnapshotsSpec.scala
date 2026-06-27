@@ -158,6 +158,46 @@ class SnapshotsSpec extends FunSuite {
     assertEquals(result.database.get("key1"), Some(10))
   }
 
+  test("Snapshots does not re-persist a same-offset, unchanged-value append onto a persisted snapshot") {
+    val f = new ConstFixture
+
+    val database  = countingSnapshotDb(f.database)
+    val snapshots = Snapshots("key1", database, f.state, intOffset)
+    // recovered/persisted at offset 10
+    val context = Context(
+      database = Map("key1" -> 10),
+      state    = live(10, persisted = true, offset = Offset.unsafe(10).some)
+    )
+
+    // re-deriving the same snapshot at the same offset (an idempotent replay) must not re-persist
+    val program = snapshots.append(10) *> snapshots.flush
+    val result  = program.runS(context).value
+
+    assert(database.persistsCounted == 0)
+    assertEquals(result.database.get("key1"), Some(10))
+  }
+
+  test("Snapshots re-persists a same-offset append whose value changed (e.g. a timer-driven state change)") {
+    val f = new ConstFixture
+
+    // offset fixed at 10 regardless of value, so a changed value can share the stored offset (a timer tick that
+    // changes state without consuming a record); the compare-and-set guard admits an equal offset
+    val fixedAt10: Option[S => Offset] = Some(_ => Offset.unsafe(10))
+    val database                       = countingSnapshotDb(f.database)
+    val snapshots                      = Snapshots("key1", database, f.state, fixedAt10)
+    val context = Context(
+      database = Map("key1" -> 100),
+      state    = live(100, persisted = true, offset = Offset.unsafe(10).some)
+    )
+
+    // the timer changes the state (100 -> 101) without advancing the offset; the same-offset write must persist
+    val program = snapshots.append(101) *> snapshots.flush
+    val result  = program.runS(context).value
+
+    assert(database.persistsCounted == 1)
+    assertEquals(result.database.get("key1"), Some(101))
+  }
+
   test("Snapshots fences a delete on the buffered snapshot's offset when it leads the requested offset") {
     val f = new ConstFixture
 

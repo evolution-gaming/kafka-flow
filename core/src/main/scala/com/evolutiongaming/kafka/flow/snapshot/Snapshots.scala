@@ -9,7 +9,17 @@ import com.evolutiongaming.kafka.flow.LogPrefix
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.skafka.Offset
 
-trait Snapshots[F[_], S] extends SnapshotReader[F, S] with SnapshotWriter[F, S]
+trait Snapshots[F[_], S] extends SnapshotReader[F, S] with SnapshotWriter[F, S] {
+
+  /** Whether this buffer fences stale writers (its store gates writes on the snapshot offset).
+    *
+    * Only a fencing buffer keeps an offset high-water and can recover an offset-carrying tombstone, so only a fencing
+    * buffer needs its replay-window floor seeded from the snapshot store on events-recovery. An unfenced
+    * (last-write-wins) buffer never reads back a tombstone, so that read can be skipped. See
+    * `docs/cassandra-single-writer-design.md`.
+    */
+  def fenced: Boolean
+}
 
 /** Allows to read a previously saved snapshot */
 trait SnapshotReader[F[_], S] {
@@ -54,16 +64,16 @@ object Snapshots {
 
   /** Per-key snapshot buffer over `database`.
     *
-    * The buffer holds one [[Stored]] cell - a live snapshot, an offset-carrying tombstone, or nothing yet - plus
-    * whether it is already persisted. Every write (`append`, `delete`) and recovery (`read`) flows through that one
-    * cell, kept monotonic in offset, so a persist and a delete share the same offset discipline: the cell never
-    * regresses below the key's high-water offset. See `docs/cassandra-single-writer-design.md`.
+    * The buffer holds one `Stored` cell - a live snapshot, an offset-carrying tombstone, or nothing yet - plus whether
+    * it is already persisted. Every write (`append`, `delete`) and recovery (`read`) flows through that one cell, kept
+    * monotonic in offset, so a persist and a delete share the same offset discipline: the cell never regresses below
+    * the key's high-water offset. See `docs/cassandra-single-writer-design.md`.
     *
     * @param offsetOf
     *   how to read the offset a snapshot sits at, when this store fences stale writers. `Some(f)` makes the cell
     *   offset-carrying: the buffer is kept monotonic and a delete is stamped at the key's high-water offset (see the
     *   `put` below); `None` is unfenced (last-write-wins, the offset is never tracked). A `KafkaSnapshot`-backed store
-    *   passes `Some(_.offset)` (see [[SnapshotDatabase.snapshotsOf]]).
+    *   passes `Some(_.offset)` (see `SnapshotDatabase.snapshotsOf`).
     */
   private[flow] def of[F[_]: Ref.Make: Monad, K: LogPrefix, S](
     key: K,
@@ -72,7 +82,7 @@ object Snapshots {
   )(implicit log: Log[F]): F[Snapshots[F, S]] =
     Ref.of[F, Option[Cell[S]]](none).map(state => Snapshots(key, database, state.stateInstance, offsetOf))
 
-  /** The per-key buffer cell: a [[Stored]] unit (live snapshot or offset-carrying tombstone floor) plus the `persisted`
+  /** The per-key buffer cell: a `Stored` unit (live snapshot or offset-carrying tombstone floor) plus the `persisted`
     * flag `flush` needs. An empty buffer is `None`.
     */
   private[snapshot] final case class Cell[S](stored: Stored[S], persisted: Boolean)
@@ -84,6 +94,10 @@ object Snapshots {
     offsetOf: Option[S => Offset],
   )(implicit log: Log[F]): Snapshots[F, S] = new Snapshots[F, S] {
     private val prefixLog: Log[F] = log.prefixed(LogPrefix[K].extract(key))
+
+    // fenced iff the store gates writes on an offset (`offsetOf` is set); this is what keeps the buffer monotonic and
+    // makes a recovered tombstone carry a floor (see `put` and `read`)
+    val fenced: Boolean = offsetOf.isDefined
 
     def read =
       // only a recovered tombstone needs seeding here: its offset is the replay-window high-water (kept even with no
@@ -150,6 +164,7 @@ object Snapshots {
   }
 
   def empty[F[_]: Applicative, S]: Snapshots[F, S] = new Snapshots[F, S] {
+    val fenced                                   = false
     def read                                     = none[S].pure[F]
     def append(event: S)                         = ().pure[F]
     def initPersisted(event: S)                  = ().pure[F]

@@ -105,12 +105,6 @@ tombstone reaped by the `ttl`; a stale write is rejected with `CassandraSnapshot
   (design doc), negligible with NTP-synced clocks.
 
 Limitations:
-- **Deletes are not fenced.** A delete is a plain last-write-wins remove, issued when your fold returns
-  `None` for a key. During a rebalance overlap a stale writer can then erase a newer owner's snapshot, or
-  resurrect a just-deleted key by writing at a lower offset — #732 for that key. If a deleted key can be
-  concurrently re-written, **fold to an empty/"tombstone" state (`Some(empty)`) instead of `None`**: the
-  deletion then goes through the offset-gated persist path and is protected like any other write, at the
-  cost of the row living until its TTL. Returning `None` stays fine for keys never concurrently re-persisted.
 - Offsets must be monotonic per key: after a consumer-group offset reset, writes at lower offsets are
   rejected until the stored snapshots are passed or truncated.
 - Writes at an *equal* offset are allowed (e.g. a timer-driven state change at the same offset), so a

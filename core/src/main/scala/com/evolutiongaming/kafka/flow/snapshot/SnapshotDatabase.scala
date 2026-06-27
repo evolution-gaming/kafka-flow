@@ -17,7 +17,7 @@ trait SnapshotDatabase[F[_], K, S] extends SnapshotReadDatabase[F, K, S] with Sn
   * One type carries both the live snapshot and the tombstone across the read, the write and the per-key buffer - so a
   * delete is just a write of a [[Stored.Tombstone]], and recovery of a tombstone is just a read of one whose value is
   * absent but whose offset survives. This replaces the previous `persist`/`delete` write pair and the `get`/`recover`
-  * (`Recovered`) read pair, and lets [[Snapshots]] reason about one monotonic cell. As an ADT it admits no nonsensical
+  * (`Recovered`) read pair, and lets `Snapshots` reason about one monotonic cell. As an ADT it admits no nonsensical
   * "no value and no offset" state. See `docs/cassandra-single-writer-design.md`.
   */
 sealed trait Stored[+S] {
@@ -63,8 +63,8 @@ trait SnapshotWriteDatabase[F[_], K, S] {
   /** Adds, replaces or tombstones the snapshot for the key.
     *
     * A [[Stored.Live]] persists a snapshot; a [[Stored.Tombstone]] writes a tombstone (a delete). A database protecting
-    * against stale writers (see [[com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots]] compare-and-set mode)
-    * gates the write on `stored.offset`, so a stale writer cannot erase or overwrite a newer owner's snapshot.
+    * against stale writers (see `CassandraSnapshots` compare-and-set mode) gates the write on `stored.offset`, so a
+    * stale writer cannot erase or overwrite a newer owner's snapshot.
     */
   def write(key: K, stored: Stored[S]): F[Unit]
 

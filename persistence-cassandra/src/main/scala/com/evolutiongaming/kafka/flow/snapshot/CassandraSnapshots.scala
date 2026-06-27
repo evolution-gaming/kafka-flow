@@ -13,7 +13,7 @@ import com.evolutiongaming.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolutiongaming.scassandra.CassandraSession
 import com.evolutiongaming.scassandra.StreamingCassandraSession.*
 import com.evolutiongaming.scassandra.syntax.*
-import com.evolutiongaming.skafka.{Bytes, FromBytes, Offset, ToBytes}
+import com.evolutiongaming.skafka.{Bytes, FromBytes, Offset, ToBytes, Topic}
 import scodec.bits.ByteVector
 import CassandraSnapshots.*
 
@@ -36,8 +36,8 @@ class CassandraSnapshots[F[_]: Async, T](
 )(implicit fromBytes: FromBytes[F, T], toBytes: ToBytes[F, T])
     extends SnapshotDatabase[F, KafkaKey, KafkaSnapshot[T]] {
 
-  /** Routes a [[Stored]] write: a present value persists a snapshot, an absent value writes a tombstone (delete). A
-    * compare-and-set store gates both on `stored.offset` (always set on the fenced buffer path); see [[Snapshots]].
+  /** Routes a `Stored` write: a present value persists a snapshot, an absent value writes a tombstone (delete). A
+    * compare-and-set store gates both on `stored.offset` (always set on the fenced buffer path); see `Snapshots`.
     */
   def write(key: KafkaKey, stored: Stored[KafkaSnapshot[T]]): F[Unit] =
     stored match {
@@ -82,8 +82,10 @@ class CassandraSnapshots[F[_]: Async, T](
           else
             // lost the insert race to a concurrent writer: retry the conditional update once
             executeWrite(bind(persistStatement)).flatMap { retryRow =>
-              // a row deleted between the insert and the retry surfaces as a (spurious) conflict; the flow
-              // recovers from it on the next flush
+              // a row deleted between the insert and the retry surfaces as a (spurious) conflict that fails this
+              // flow; the partition's next owner re-recovers and the write succeeds once the row is observed again.
+              // Effectively unreachable in pure compare-and-set mode, where a delete keeps the row as a tombstone -
+              // only a whole-row TTL reap in this narrow window removes it.
               resolveConditional(key, retryRow, snapshot.offset)(
                 SnapshotWriteConflict(key, snapshot.offset, none).raiseError[F, Unit]
               )
@@ -114,10 +116,10 @@ class CassandraSnapshots[F[_]: Async, T](
     else none
 
   /** Recovers the stored unit, surfacing a tombstone's offset as the replay-window floor. A present row reads back as
-    * `Some(Stored(Some(snapshot), _))`; a tombstone (null `value`, kept by [[deleteCompareAndSet]]) as
-    * `Some(Stored(None, offset))` carrying the stored offset even though the value is absent; no row as `None`. Without
-    * the tombstone's offset a deleted key recovers with no floor and a legitimate owner re-persisting below it
-    * self-fences (a livelock); see `docs/cassandra-single-writer-design.md`.
+    * `Some(Stored(Some(snapshot), _))`; a tombstone (null `value`, kept by `deleteCompareAndSet`) as `Some(Stored(None,
+    * offset))` carrying the stored offset even though the value is absent; no row as `None`. Without the tombstone's
+    * offset a deleted key recovers with no floor and a legitimate owner re-persisting below it self-fences (a
+    * livelock); see `docs/cassandra-single-writer-design.md`.
     */
   def read(key: KafkaKey): F[Option[Stored[KafkaSnapshot[T]]]] = {
     val boundStatement =
@@ -126,7 +128,7 @@ class CassandraSnapshots[F[_]: Async, T](
     session.executeStream(boundStatement).first.flatMap {
       case None => none[Stored[KafkaSnapshot[T]]].pure[F]
       case Some(row) =>
-        decode(row).map {
+        decode(row, key.topicPartition.topic).map {
           case Some(snapshot) => Stored.Live(snapshot, snapshot.offset.some).some
           case None           => Stored.Tombstone(row.decode[Offset]("offset")).some
         }
@@ -287,11 +289,14 @@ object CassandraSnapshots {
   // we cannot use DecodeRow here because Code[T].decode is effectful.
   // A null `value` is a logical tombstone (a compare-and-set delete, see Statements.prepareDelete): the row is kept so
   // its `offset` keeps guarding against a stale lower-offset writer, but the key reads back as absent.
-  protected def decode[F[_]: Monad, T](row: Row)(implicit fromBytes: FromBytes[F, T]): F[Option[KafkaSnapshot[T]]] =
+  protected def decode[F[_]: Monad, T](row: Row, topic: Topic)(
+    implicit fromBytes: FromBytes[F, T]
+  ): F[Option[KafkaSnapshot[T]]] =
     row.decode[Option[ByteVector]]("value") match {
-      case None => none[KafkaSnapshot[T]].pure[F]
+      case None        => none[KafkaSnapshot[T]].pure[F]
       case Some(value) =>
-        fromBytes.apply(value.toArray, "").map { value =>
+        // deserialize with the snapshot's topic, symmetric with `persist`/`bindPersist` which serialize with it
+        fromBytes.apply(value.toArray, topic).map { value =>
           KafkaSnapshot[T](
             offset   = row.decode[Offset]("offset"),
             metadata = row.decode[String]("metadata"),

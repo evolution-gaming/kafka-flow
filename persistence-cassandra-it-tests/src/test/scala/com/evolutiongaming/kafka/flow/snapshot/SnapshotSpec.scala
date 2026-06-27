@@ -98,8 +98,9 @@ class SnapshotSpec extends CassandraSpec {
     // UPDATE-absent then `INSERT ... IF NOT EXISTS` for the same new key; one INSERT wins and the losers
     // take the retry-`UPDATE` path (the branch single-threaded tests never reach). The offset guard keeps
     // it safe -- the durable snapshot ends at the highest offset, never clobbered by a lower one, and any
-    // rejected writer fails cleanly with SnapshotWriteConflict. (Exhaustive interleaving coverage, plus
-    // the TTL-reap spurious-conflict edge this test can't force, is the CasFirstWrite model.)
+    // rejected writer fails cleanly with SnapshotWriteConflict. The compound is intrinsically coupled to real
+    // Cassandra lightweight-transaction results, so it has no in-memory unit double; the one path not forced here
+    // is the (effectively unreachable) TTL-reap spurious conflict on the retry-`UPDATE` (see persistCompareAndSet).
     val key     = KafkaKey("SnapshotSpec", "integration-tests-1", TopicPartition.empty, "cas-first-write-race")
     val offsets = (1 to 8).toList
     val test: IO[Unit] = for {

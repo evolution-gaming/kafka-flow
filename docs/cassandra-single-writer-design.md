@@ -39,7 +39,7 @@ and treats its absence (or a null) as "row absent".
 The guard is per **key**, the right granularity: #732 corruption is per key and keys are independent,
 so per-key monotonic durability is exactly what prevents it.
 
-## Scope: persist-only — and fencing a deletion without gating delete
+## Scope: persist-only — and what the full fence would cost
 
 ## Delete: offset-carrying tombstone
 
@@ -60,12 +60,12 @@ a read surfaces the null `value` as a `Stored.Tombstone` (no live value). The to
 the row also routes the delete through Paxos, avoiding the well-known hazard of mixing lightweight
 transactions and regular mutations on the same row.
 
-```sql
--- gating delete (the rejected route): a value-less logical tombstone
-UPDATE snapshots_v2 SET value = null,   offset = :offset WHERE <key> IF offset <= :offset
--- the equivalent that already works: persist an empty state
-UPDATE snapshots_v2 SET value = :empty, offset = :offset WHERE <key> IF offset <= :offset
-```
+**A breaking API.** Gating deletes means a delete must carry an offset: an offset-carrying logical
+*tombstone* (`SET value = null`, keeping the row and its `offset`) instead of a row removal, so a
+lower-offset writer is rejected rather than allowed to resurrect. But that offset has to reach the store
+through `SnapshotWriteDatabase.delete`, forcing a source/binary-breaking `delete(key, offset)` signature
+and offset plumbing through every delete path. Persist-only makes **no public API change** and needs no
+major-version bump.
 
 A delete and a re-persist are fenced on an offset that, just after recovery, can legitimately trail
 the key's own stored snapshot. The partition resumes from the committed offset `C` (the minimum offset
@@ -279,12 +279,6 @@ This design takes three things as given:
   not a default.
 - **Recovery-side reconciliation** (store the offset, recover from the lowest): does not prevent the
   stale overwrite (last-write-wins still corrupts), so strictly weaker than fencing the write.
-- **Offset-gated deletes (logical tombstone)**: gate `delete` like `persist` by keeping a value-less
-  tombstone (`SET value = null`) that carries the offset, closing the resurrection gap. Rejected as
-  redundant — a tombstone is a persisted null, so the same fencing comes from persisting an
-  offset-carrying *empty* snapshot through the already-fenced persist path, without a breaking
-  `delete(key, offset)` API and without the replay-window livelock a value-less tombstone reintroduces
-  (see *Scope*).
 
 ## Forward-looking
 
