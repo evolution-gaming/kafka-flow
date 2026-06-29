@@ -1,0 +1,27 @@
+/**
+ * Global styles for the Kafka Flow site.
+ * Infima CSS variables: https://docusaurus.io/docs/styling-layout
+ */
+
+:root {
+  --ifm-color-primary: #7e3279;
+  --ifm-color-primary-dark: #722d6d;
+  --ifm-color-primary-darker: #6b2a67;
+  --ifm-color-primary-darkest: #582354;
+  --ifm-color-primary-light: #8a3784;
+  --ifm-color-primary-lighter: #913a8a;
+  --ifm-color-primary-lightest: #a8459f;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #d18bcb;
+  --ifm-color-primary-dark: #c66fbe;
+  --ifm-color-primary-darker: #c061b8;
+  --ifm-color-primary-darkest: #a8419f;
+  --ifm-color-primary-light: #dca7d8;
+  --ifm-color-primary-lighter: #e2b5de;
+  --ifm-color-primary-lightest: #f0d9ee;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}

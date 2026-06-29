@@ -1,0 +1,108 @@
+// @ts-check
+// See https://docusaurus.io/docs/api/docusaurus-config for all options.
+
+const {themes: prismThemes} = require('prism-react-renderer');
+
+/** @type {import('@docusaurus/types').Config} */
+const config = {
+  title: 'Kafka Flow',
+  tagline: 'Reliable processing of Kafka Journal events',
+  favicon: 'img/favicon.ico',
+
+  // Production URL and base path. Served at
+  // https://evolution-gaming.github.io/kafka-flow/
+  url: 'https://evolution-gaming.github.io',
+  baseUrl: '/kafka-flow/',
+
+  // GitHub pages deployment config.
+  organizationName: 'evolution-gaming',
+  projectName: 'kafka-flow',
+
+  onBrokenLinks: 'throw',
+
+  // Enable Mermaid diagrams in fenced ```mermaid code blocks.
+  markdown: {
+    mermaid: true,
+    hooks: {
+      onBrokenMarkdownLinks: 'warn',
+    },
+  },
+  themes: ['@docusaurus/theme-mermaid'],
+
+  presets: [
+    [
+      'classic',
+      /** @type {import('@docusaurus/preset-classic').Options} */
+      ({
+        docs: {
+          // Consume the markdown produced by `sbt docs/mdoc`.
+          path: '../kafka-flow-docs/target/mdoc',
+          routeBasePath: 'docs',
+          sidebarPath: require.resolve('./sidebars.js'),
+          editUrl:
+            'https://github.com/evolution-gaming/kafka-flow/edit/master/docs/',
+        },
+        // The blog was unused template boilerplate; disabled.
+        blog: false,
+        theme: {
+          customCss: require.resolve('./src/css/custom.css'),
+        },
+      }),
+    ],
+  ],
+
+  themeConfig:
+    /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
+    ({
+      navbar: {
+        title: 'Kafka Flow',
+        logo: {
+          alt: 'Kafka Flow',
+          src: 'img/favicon.ico',
+        },
+        items: [
+          {type: 'doc', docId: 'overview', position: 'left', label: 'Overview'},
+          {type: 'doc', docId: 'setup', position: 'left', label: 'Setup'},
+          {
+            href: 'https://github.com/evolution-gaming/kafka-flow',
+            label: 'GitHub',
+            position: 'right',
+          },
+        ],
+      },
+      footer: {
+        style: 'dark',
+        links: [
+          {
+            title: 'Docs',
+            items: [
+              {label: 'Overview', to: '/docs/overview'},
+              {label: 'Setup', to: '/docs/setup'},
+            ],
+          },
+          {
+            title: 'More',
+            items: [
+              {
+                label: 'GitHub',
+                href: 'https://github.com/evolution-gaming/kafka-flow',
+              },
+              {
+                label: 'Kafka Journal',
+                href: 'https://github.com/evolution-gaming/kafka-journal',
+              },
+            ],
+          },
+        ],
+        copyright: `Copyright © ${new Date().getFullYear()} Evolution Gaming. Built with Docusaurus.`,
+      },
+      prism: {
+        theme: prismThemes.github,
+        darkTheme: prismThemes.dracula,
+        // `java` must precede `scala`: the Scala grammar extends Java.
+        additionalLanguages: ['java', 'scala'],
+      },
+    }),
+};
+
+module.exports = config;
