@@ -1,5 +1,6 @@
 import React from 'react';
 import clsx from 'clsx';
+import Head from '@docusaurus/Head';
 import Link from '@docusaurus/Link';
 import useBaseUrl from '@docusaurus/useBaseUrl';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
@@ -66,7 +67,11 @@ function Feature({title, image, content}) {
 export default function Home() {
   const {siteConfig} = useDocusaurusContext();
   return (
-    <Layout title={siteConfig.title} description={siteConfig.tagline}>
+    <Layout description={siteConfig.tagline}>
+      {/* Match the old site's homepage tab title: "Kafka Flow · <tagline>". */}
+      <Head>
+        <title>{`${siteConfig.title} · ${siteConfig.tagline}`}</title>
+      </Head>
       <HomeSplash />
       <main>
         <section className={styles.features}>

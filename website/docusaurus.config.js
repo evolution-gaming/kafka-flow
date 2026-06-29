@@ -8,6 +8,8 @@ const config = {
   title: 'Kafka Flow',
   tagline: 'Reliable processing of Kafka Journal events',
   favicon: 'img/favicon.ico',
+  // Old site used a middle dot in <title> ("Overview · Kafka Flow").
+  titleDelimiter: '·',
 
   // Production URL and base path. Served at
   // https://evolution-gaming.github.io/kafka-flow/
