@@ -63,6 +63,7 @@ const config = {
         items: [
           {type: 'doc', docId: 'overview', position: 'left', label: 'Overview'},
           {type: 'doc', docId: 'setup', position: 'left', label: 'Setup'},
+          {to: '/help', label: 'Help', position: 'left'},
           {
             href: 'https://github.com/evolution-gaming/kafka-flow',
             label: 'GitHub',
