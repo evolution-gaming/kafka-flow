@@ -57,6 +57,8 @@ const config = {
       // Social-card image (matches the old site's ogImage).
       image: 'img/undraw_online.svg',
       navbar: {
+        // Brand-purple navbar, matching the old Docusaurus 1 site.
+        style: 'primary',
         title: 'Kafka Flow',
         logo: {
           alt: 'Kafka Flow',
@@ -70,6 +72,12 @@ const config = {
       },
       footer: {
         style: 'dark',
+        logo: {
+          alt: 'Kafka Flow',
+          src: 'img/favicon.ico',
+          width: 60,
+          height: 52,
+        },
         links: [
           {
             title: 'Docs',
@@ -94,6 +102,10 @@ const config = {
               {
                 label: 'GitHub',
                 href: 'https://github.com/evolution-gaming/kafka-flow',
+              },
+              {
+                label: 'Star',
+                href: 'https://github.com/evolution-gaming/kafka-flow/stargazers',
               },
             ],
           },
