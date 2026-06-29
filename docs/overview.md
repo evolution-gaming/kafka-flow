@@ -28,22 +28,13 @@ requires it as dependency. There is a plan to separate the integration with
 Kafka Journal to a distinct module to allow reusing reliable Kafka message
 processing without having Kafka Journal dependency.
 
-## KafkaFlow library
+# KafkaFlow library
 
 The library consists of the following main building blocks nested into each other:
 - `ConsumerFlow` - handles everything coming to a specific consumer,
 - `TopicFlow` - processes the messages coming to the specific topic,
 - `PartitionFlow` - processes messages coming to the specific partition,
 - `KeyFlow` - process the message coming for specific key in the partition.
-
-```mermaid
-flowchart TD
-    Consumer["ConsumerFlow<br/><small>per Consumer</small>"]
-    Topic["TopicFlow<br/><small>per topic</small>"]
-    Partition["PartitionFlow<br/><small>per partition</small>"]
-    Key["KeyFlow<br/><small>per key</small>"]
-    Consumer --> Topic --> Partition --> Key
-```
 
 It is possible and allowed to implement these traits manually, but,
 for most of the uses cases the convenient builders are provided.

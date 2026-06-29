@@ -54,6 +54,8 @@ const config = {
   themeConfig:
     /** @type {import('@docusaurus/preset-classic').ThemeConfig} */
     ({
+      // Social-card image (matches the old site's ogImage).
+      image: 'img/undraw_online.svg',
       navbar: {
         title: 'Kafka Flow',
         logo: {
@@ -64,11 +66,6 @@ const config = {
           {type: 'doc', docId: 'overview', position: 'left', label: 'Overview'},
           {type: 'doc', docId: 'setup', position: 'left', label: 'Setup'},
           {to: '/help', label: 'Help', position: 'left'},
-          {
-            href: 'https://github.com/evolution-gaming/kafka-flow',
-            label: 'GitHub',
-            position: 'right',
-          },
         ],
       },
       footer: {
@@ -79,6 +76,16 @@ const config = {
             items: [
               {label: 'Overview', to: '/docs/overview'},
               {label: 'Setup', to: '/docs/setup'},
+              {
+                label: 'Sources',
+                href: 'https://github.com/evolution-gaming/kafka-flow',
+              },
+            ],
+          },
+          {
+            title: 'Community',
+            items: [
+              {label: 'Twitter', href: 'https://twitter.com/evoneering'},
             ],
           },
           {
@@ -88,14 +95,10 @@ const config = {
                 label: 'GitHub',
                 href: 'https://github.com/evolution-gaming/kafka-flow',
               },
-              {
-                label: 'Kafka Journal',
-                href: 'https://github.com/evolution-gaming/kafka-journal',
-              },
             ],
           },
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Evolution Gaming. Built with Docusaurus.`,
+        copyright: `Copyright © ${new Date().getFullYear()} Evolution Gaming`,
       },
       prism: {
         theme: prismThemes.github,

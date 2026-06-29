@@ -15,10 +15,17 @@
   }
 }
 
+.projectLogo {
+  max-width: 200px;
+  margin-bottom: 1.5rem;
+}
+
 .buttons {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .features {
@@ -26,4 +33,14 @@
   align-items: center;
   padding: 2rem 0;
   width: 100%;
+}
+
+.feature {
+  text-align: center;
+}
+
+.featureImage {
+  height: 120px;
+  width: 120px;
+  margin-bottom: 1rem;
 }

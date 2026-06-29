@@ -4,7 +4,7 @@ title: FAQ
 sidebar_label: FAQ
 ---
 
-## Why the library eats a bit of CPU despite lack of incoming messages?
+# Why the library eats a bit of CPU despite lack of incoming messages?
 
 Kafka Flow is validating if any of the timers need to be triggered from time to time
 during Kafka poll. If there are a lot of timers registered, the CPU usage could be
