@@ -30,26 +30,21 @@ const features = [
 
 function HomeSplash() {
   const {siteConfig} = useDocusaurusContext();
+  const btn = clsx('button button--outline button--primary button--lg', styles.heroButton);
   return (
-    <header className={clsx('hero hero--primary', styles.heroBanner)}>
+    <header className={styles.homeContainer}>
       <div className="container">
         <img
           className={styles.projectLogo}
           src={useBaseUrl('img/undraw_fishing_hoxa.svg')}
           alt="Project Logo"
         />
-        <h1 className="hero__title">{siteConfig.title}</h1>
-        <p className="hero__subtitle">{siteConfig.tagline}</p>
+        <h1 className={styles.projectTitle}>{siteConfig.title}</h1>
+        <p className={styles.projectTagline}>{siteConfig.tagline}</p>
         <div className={styles.buttons}>
-          <Link className="button button--secondary button--lg" to="/docs/overview">
-            Overview
-          </Link>
-          <Link className="button button--secondary button--lg" to="/docs/setup">
-            Setup
-          </Link>
-          <Link
-            className="button button--secondary button--lg"
-            href="https://github.com/evolution-gaming/kafka-flow">
+          <Link className={btn} to="/docs/overview">Overview</Link>
+          <Link className={btn} to="/docs/setup">Setup</Link>
+          <Link className={btn} href="https://github.com/evolution-gaming/kafka-flow">
             Sources
           </Link>
         </div>
