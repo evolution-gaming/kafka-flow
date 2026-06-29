@@ -25,3 +25,9 @@
   --ifm-color-primary-lightest: #f0d9ee;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
 }
+
+/* Match the old Docusaurus 1 footer background (#20232a, darker than the
+   D3 dark-footer default of #303846). */
+.footer--dark {
+  --ifm-footer-background-color: #20232a;
+}
