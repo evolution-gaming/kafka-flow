@@ -58,6 +58,14 @@ const config = {
     ({
       // Social-card image (matches the old site's ogImage).
       image: 'img/undraw_online.svg',
+      // Dark mode is disabled for now: the old site was light-only, and the
+      // dark theme still needs tuning (e.g. the primary-on-navbar color).
+      // Re-enable by removing disableSwitch once the dark palette is tweaked.
+      colorMode: {
+        defaultMode: 'light',
+        disableSwitch: true,
+        respectPrefersColorScheme: false,
+      },
       navbar: {
         // Brand-purple navbar, matching the old Docusaurus 1 site.
         style: 'primary',
