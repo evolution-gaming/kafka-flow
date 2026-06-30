@@ -6,16 +6,16 @@
  * (Upstream renders `{links}` then a centered `.footer__bottom` with the
  * logo + copyright; here the logo moves into a flex row beside the links.)
  */
-import React from 'react';
-import clsx from 'clsx';
-import {ThemeClassNames} from '@docusaurus/theme-common';
-import styles from './styles.module.css';
+import React from "react";
+import clsx from "clsx";
+import {ThemeClassNames} from "@docusaurus/theme-common";
+import styles from "./styles.module.css";
 
 export default function FooterLayout({style, links, logo, copyright}) {
   return (
     <footer
-      className={clsx(ThemeClassNames.layout.footer.container, 'footer', {
-        'footer--dark': style === 'dark',
+      className={clsx(ThemeClassNames.layout.footer.container, "footer", {
+        "footer--dark": style === "dark",
       })}>
       <div className="container container-fluid">
         <div className={styles.footerTop}>

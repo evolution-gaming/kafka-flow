@@ -4,16 +4,16 @@
 const sidebars = {
   docs: [
     {
-      type: 'category',
-      label: 'Kafka-Flow',
+      type: "category",
+      label: "Kafka-Flow",
       collapsed: false,
-      items: ['overview', 'setup', 'faq', 'styleguide', 'persistence'],
+      items: ["overview", "setup", "faq", "styleguide", "persistence"],
     },
     {
-      type: 'category',
-      label: 'Design notes',
+      type: "category",
+      label: "Design notes",
       collapsed: false,
-      items: ['kafka-single-writer-design'],
+      items: ["kafka-single-writer-design"],
     },
   ],
 };

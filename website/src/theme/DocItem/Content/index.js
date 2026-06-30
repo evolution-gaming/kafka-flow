@@ -11,12 +11,12 @@
  * Note: on docs that already begin with an `#` heading (overview, faq) this
  * produces two h1s, matching how the old D1 site rendered those pages.
  */
-import React from 'react';
-import clsx from 'clsx';
-import {ThemeClassNames} from '@docusaurus/theme-common';
-import {useDoc} from '@docusaurus/plugin-content-docs/client';
-import Heading from '@theme/Heading';
-import MDXContent from '@theme/MDXContent';
+import React from "react";
+import clsx from "clsx";
+import {ThemeClassNames} from "@docusaurus/theme-common";
+import {useDoc} from "@docusaurus/plugin-content-docs/client";
+import Heading from "@theme/Heading";
+import MDXContent from "@theme/MDXContent";
 
 function useSyntheticTitle() {
   const {metadata, frontMatter} = useDoc();
@@ -30,7 +30,7 @@ function useSyntheticTitle() {
 export default function DocItemContent({children}) {
   const syntheticTitle = useSyntheticTitle();
   return (
-    <div className={clsx(ThemeClassNames.docs.docMarkdown, 'markdown')}>
+    <div className={clsx(ThemeClassNames.docs.docMarkdown, "markdown")}>
       {syntheticTitle && (
         <header>
           <Heading as="h1">{syntheticTitle}</Heading>

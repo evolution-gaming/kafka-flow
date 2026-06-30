@@ -1,43 +1,43 @@
-import React from 'react';
-import clsx from 'clsx';
-import Head from '@docusaurus/Head';
-import Link from '@docusaurus/Link';
-import useBaseUrl from '@docusaurus/useBaseUrl';
-import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import Layout from '@theme/Layout';
+import React from "react";
+import clsx from "clsx";
+import Head from "@docusaurus/Head";
+import Link from "@docusaurus/Link";
+import useBaseUrl from "@docusaurus/useBaseUrl";
+import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
+import Layout from "@theme/Layout";
 
-import styles from './index.module.css';
+import styles from "./index.module.css";
 
 // Mirrors the original Docusaurus 1 homepage: a splash (logo, title, tagline,
 // Overview / Setup / Sources buttons) followed by the Ligthweight / Fast /
 // Scalable feature columns.
 const features = [
   {
-    title: 'Ligthweight',
-    image: 'img/undraw_floating_61u6.svg',
-    content: 'Implementation consists of several classes',
+    title: "Ligthweight",
+    image: "img/undraw_floating_61u6.svg",
+    content: "Implementation consists of several classes",
   },
   {
-    title: 'Fast',
-    image: 'img/undraw_fast_loading_0lbh.svg',
-    content: 'Process your events with minimal latency',
+    title: "Fast",
+    image: "img/undraw_fast_loading_0lbh.svg",
+    content: "Process your events with minimal latency",
   },
   {
-    title: 'Scalable',
-    image: 'img/undraw_server_cluster_jwwq.svg',
-    content: 'Uses Kafka consumer groups for infinite scaling',
+    title: "Scalable",
+    image: "img/undraw_server_cluster_jwwq.svg",
+    content: "Uses Kafka consumer groups for infinite scaling",
   },
 ];
 
 function HomeSplash() {
   const {siteConfig} = useDocusaurusContext();
-  const btn = clsx('button button--outline button--primary button--lg', styles.heroButton);
+  const btn = clsx("button button--outline button--primary button--lg", styles.heroButton);
   return (
     <header className={styles.homeContainer}>
       <div className="container">
         <img
           className={styles.projectLogo}
-          src={useBaseUrl('img/undraw_fishing_hoxa.svg')}
+          src={useBaseUrl("img/undraw_fishing_hoxa.svg")}
           alt="Project Logo"
         />
         <h1 className={styles.projectTitle}>{siteConfig.title}</h1>
@@ -56,7 +56,7 @@ function HomeSplash() {
 
 function Feature({title, image, content}) {
   return (
-    <div className={clsx('col col--4', styles.feature)}>
+    <div className={clsx("col col--4", styles.feature)}>
       <img className={styles.featureImage} src={useBaseUrl(image)} alt={title} />
       <h2>{title}</h2>
       <p>{content}</p>
@@ -66,9 +66,9 @@ function Feature({title, image, content}) {
 
 export default function Home() {
   const {siteConfig} = useDocusaurusContext();
+  // Match the old site's homepage tab title: "Kafka Flow · <tagline>".
   return (
     <Layout description={siteConfig.tagline}>
-      {/* Match the old site's homepage tab title: "Kafka Flow · <tagline>". */}
       <Head>
         <title>{`${siteConfig.title} · ${siteConfig.tagline}`}</title>
       </Head>
