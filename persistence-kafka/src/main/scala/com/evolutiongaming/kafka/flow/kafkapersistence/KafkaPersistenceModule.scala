@@ -28,7 +28,7 @@ trait KafkaPersistenceModule[F[_], S] {
 
   /** A `ScheduleCommit` that overrides the default way input offsets are committed (by the consumer), binding them to
     * the snapshot writes for single-writer offset safety. `None` means the module does not override it and offsets are
-    * committed the default way. See [[cachingTransactional]].
+    * committed the default way. See `KafkaPersistenceModule.cachingTransactional`.
     */
   def scheduleCommit: Option[ScheduleCommit[F]]
 }
@@ -44,7 +44,7 @@ object KafkaPersistenceModule {
     *   `clientId` is suffixed with it
     * @param transactionalIdPrefix
     *   prefix for `transactional.id` (partition number and a unique per-producer suffix are appended). Fencing is by
-    *   consumer generation, not this id, so it is just a readable label; `s"$groupId-$inputTopic"` is fine.
+    *   consumer generation, not this id, so it is just a readable label (e.g. a `"<groupId>-<inputTopic>"` string).
     * @param snapshotTopic
     *   snapshot topic name (should be configured as a 'compacted' topic) to read/write snapshots
     * @param inputTopic
@@ -156,12 +156,12 @@ object KafkaPersistenceModule {
     }
   }
 
-  /** Variant of [[caching]] protecting the snapshot topic from stale writers by binding the input-offset commit into
+  /** Variant of `caching` protecting the snapshot topic from stale writers by binding the input-offset commit into
     * the snapshot transaction. Each assigned partition gets a transactional producer with a unique `transactional.id`;
     * snapshot writes run in group-committed transactions (see [[KafkaSnapshotWriteDatabase.transactional]]) that also
     * commit the input offset. A stale consumer generation is rejected by the broker (KIP-447), aborting the
     * transaction, so a stale owner can neither advance offsets nor overwrite a newer snapshot. Recovery reads with
-    * `read_committed`, and unlike [[caching]] the identity partition mapping is always used; output stays
+    * `read_committed`, and unlike `caching` the identity partition mapping is always used; output stays
     * at-least-once. See the "Protecting against stale snapshot writes" persistence docs for guarantees, limitations,
     * costs and rollout, and `docs/kafka-single-writer-design.md` for the mechanism.
     */
