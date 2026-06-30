@@ -83,7 +83,7 @@ function HomepageFeatures() {
 export default function Home() {
   const {siteConfig} = useDocusaurusContext();
   // Match the old site's homepage tab title: "Kafka Flow · <tagline>".
-  const tabTitle = `${siteConfig.title} · ${siteConfig.tagline}`;
+  const tabTitle = siteConfig.title + " · " + siteConfig.tagline;
   return (
     <Layout description={siteConfig.tagline}>
       <Head>
