@@ -1,0 +1,79 @@
+# Docs site: Docusaurus 1 → 3 migration notes
+
+This site was migrated from **Docusaurus 1.14.6** to **Docusaurus 3**. The work
+splits into two layers:
+
+- **A. Essential port** — the minimum to get a working Docusaurus 3 site that
+  builds the same `/docs` content and deploys to the same URL.
+- **B. D1-fidelity layer** — extra work done so the new site *looks and behaves
+  like the old D1 site* (purple navbar, white hero, footer details, title
+  formatting, auto-title headers, etc.).
+
+**Layer B is entirely optional.** If you want a lower-effort migration, do
+Layer A and skip Layer B — you get a fully functional D3 site with D3's default
+theme. This document lists every Layer-B change with the D3 default it
+overrides and how to drop it.
+
+---
+
+## A. Essential port (required)
+
+| Area | Change | Notes |
+|------|--------|-------|
+| Dependencies | `website/package.json` → `@docusaurus/core`, `@docusaurus/preset-classic`, `@docusaurus/theme-mermaid`, `react`/`react-dom` 18; regenerate `yarn.lock` | D1 and D3 share no deps |
+| Node | `.nvmrc` = 22; CI `setup-node@v4` with `node-version: '22'` | D1 ran on Node 12 |
+| Config | `siteConfig.js` → `docusaurus.config.js` (`url`, `baseUrl: '/kafka-flow/'`, `organizationName`, `projectName`, classic preset) | URL/baseUrl unchanged, so the served path is identical |
+| Sidebar | `sidebars.json` → `sidebars.js` | same items |
+| Docs source | `docs.path` points at the existing `sbt docs/mdoc` output (`../kafka-flow-docs/target/mdoc`) | **no `build.sbt` change** — mdoc still generates the markdown |
+| Mermaid | `markdown: { mermaid: true }` + `themes: ['@docusaurus/theme-mermaid']` | the requested capability; ` ```mermaid ` blocks render |
+| Homepage | a `src/pages/index.js` is required (D1's `pages/en/index.js` doesn't port) | even the default scaffold works |
+| Cleanup | delete D1-only files: `siteConfig.js`, `core/Footer.js`, `pages/en/*`, `i18n/`, `sidebars.json`, the demo `blog/` | template boilerplate |
+| CI | `publish_dir: ./website/build` (D3 outputs flat, not `build/<projectName>/`); `yarn install --frozen-lockfile` + `yarn build` | deploy step otherwise unchanged |
+
+Accept-either-way D3 behaviors (not "fixable" without more work, and fine to
+keep): Prism syntax highlighting (vs highlight.js), clean URLs only (old
+`/docs/*.html` 404), a breadcrumb above each doc.
+
+---
+
+## B. D1-fidelity layer (optional — skip for less work)
+
+Each row is a change made *only* to mimic D1. "Skip it" = the D3 default you'd
+get instead.
+
+| # | Mimics (D1 look/behavior) | File / setting | D3 default if skipped |
+|---|---------------------------|----------------|-----------------------|
+| 1 | Purple navbar | `docusaurus.config.js` → `navbar.style: 'primary'` | white navbar |
+| 2 | Brand purple `#7e3279` | `src/css/custom.css` → `--ifm-color-primary` palette | generic green |
+| 3 | White hero, purple title/tagline, outlined uppercase buttons, fishing logo | `src/pages/index.js` + `index.module.css` (custom hero) | the scaffold's full-purple hero banner |
+| 4 | Homepage feature blocks (Ligthweight / Fast / Scalable) + their images | `src/pages/index.js`, restored `static/img/undraw_*.svg` | generic/empty feature area |
+| 5 | Footer background `#20232a` | `src/css/custom.css` → `.footer--dark { --ifm-footer-background-color }` | `#303846` (lighter) |
+| 6 | Footer logo on the **left**, faded | swizzle `src/theme/Footer/Layout/` | logo centered below the columns |
+| 7 | Footer columns/links (Docs/Community/More, Twitter, Sources, Star, logo) | `docusaurus.config.js` → `footer` | empty/default footer |
+| 8 | Title separator `·` ("Overview · Kafka Flow") | `docusaurus.config.js` → `titleDelimiter: '·'` | `|` |
+| 9 | Home tab title "Kafka Flow · `<tagline>`" | `src/pages/index.js` → `<Head><title>` | "Kafka Flow" |
+| 10 | **Auto-title header**: front-matter title rendered as the page `<h1>` on every doc | swizzle `src/theme/DocItem/Content/` | title shown in breadcrumb only when the doc starts with its own `#` (affects overview/faq; the other docs auto-header either way) |
+| 11 | Light-only site (no dark mode) | `docusaurus.config.js` → `colorMode.disableSwitch` | dark-mode toggle enabled (D3 dark palette needs tuning) |
+| 12 | `/help` page + navbar item | `src/pages/help.js`, navbar item | no `/help` route |
+| 13 | No "Edit this page" link | omit `docs.editUrl` | edit links shown (and, with the mdoc output path, they'd point at generated files) |
+| 14 | Social-card image | `docusaurus.config.js` → `themeConfig.image` | none |
+
+### The three swizzles (maintenance note)
+
+Items 6 and 10 use theme swizzles under `src/theme/`:
+
+- `DocItem/Content/index.js` — always render the front-matter title as `<h1>`.
+- `Footer/Layout/index.js` (+ `styles.module.css`) — logo to the left.
+
+Swizzles are pinned to the current theme's component structure, so a **major
+Docusaurus upgrade may require re-syncing them** against the new upstream
+component. Deleting these files reverts to the D3 defaults (rows 6 and 10).
+
+---
+
+## The less-work alternative, in one line
+
+Do **Layer A** and skip **Layer B**: you get a working, deployable Docusaurus 3
+site with the same content and URLs, on D3's default theme — no swizzles, no
+custom hero, no footer/title tweaks to maintain. Layer B is purely about
+matching the old site's appearance.
