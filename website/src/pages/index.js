@@ -64,26 +64,33 @@ function Feature({title, image, content}) {
   );
 }
 
+function HomepageFeatures() {
+  return (
+    <main>
+      <section className={styles.features}>
+        <div className="container">
+          <div className="row">
+            {features.map((props, idx) => (
+              <Feature key={idx} {...props} />
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 export default function Home() {
   const {siteConfig} = useDocusaurusContext();
   // Match the old site's homepage tab title: "Kafka Flow · <tagline>".
+  const tabTitle = `${siteConfig.title} · ${siteConfig.tagline}`;
   return (
     <Layout description={siteConfig.tagline}>
       <Head>
-        <title>{`${siteConfig.title} · ${siteConfig.tagline}`}</title>
+        <title>{tabTitle}</title>
       </Head>
       <HomeSplash />
-      <main>
-        <section className={styles.features}>
-          <div className="container">
-            <div className="row">
-              {features.map((props, idx) => (
-                <Feature key={idx} {...props} />
-              ))}
-            </div>
-          </div>
-        </section>
-      </main>
+      <HomepageFeatures />
     </Layout>
   );
 }
