@@ -23,8 +23,8 @@ object KafkaSnapshotWriteDatabase {
   ): SnapshotWriteDatabase[F, KafkaKey, S] =
     apply(snapshotTopicPartition, partitionMapper, record => producer.send(record).flatten.void)
 
-  /** Result of [[transactional]]: the snapshot write database plus a `ScheduleCommit` that routes input offset
-    * commits through the same per-partition transactions as the snapshot writes.
+  /** Result of [[transactional]]: the snapshot write database plus a `ScheduleCommit` that routes input offset commits
+    * through the same per-partition transactions as the snapshot writes.
     */
   final case class Transactional[F[_], S](
     writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],

@@ -156,14 +156,14 @@ object KafkaPersistenceModule {
     }
   }
 
-  /** Variant of `caching` protecting the snapshot topic from stale writers by binding the input-offset commit into
-    * the snapshot transaction. Each assigned partition gets a transactional producer with a unique `transactional.id`;
+  /** Variant of `caching` protecting the snapshot topic from stale writers by binding the input-offset commit into the
+    * snapshot transaction. Each assigned partition gets a transactional producer with a unique `transactional.id`;
     * snapshot writes run in group-committed transactions (see [[KafkaSnapshotWriteDatabase.transactional]]) that also
     * commit the input offset. A stale consumer generation is rejected by the broker (KIP-447), aborting the
     * transaction, so a stale owner can neither advance offsets nor overwrite a newer snapshot. Recovery reads with
-    * `read_committed`, and unlike `caching` the identity partition mapping is always used; output stays
-    * at-least-once. See the "Protecting against stale snapshot writes" persistence docs for guarantees, limitations,
-    * costs and rollout, and `docs/kafka-single-writer-design.md` for the mechanism.
+    * `read_committed`, and unlike `caching` the identity partition mapping is always used; output stays at-least-once.
+    * See the "Protecting against stale snapshot writes" persistence docs for guarantees, limitations, costs and
+    * rollout, and `docs/kafka-single-writer-design.md` for the mechanism.
     */
   def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
