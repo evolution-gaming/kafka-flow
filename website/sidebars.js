@@ -9,6 +9,12 @@ const sidebars = {
       collapsed: false,
       items: ['overview', 'setup', 'faq', 'styleguide', 'persistence'],
     },
+    {
+      type: 'category',
+      label: 'Design notes',
+      collapsed: false,
+      items: ['kafka-single-writer-design'],
+    },
   ],
 };
 
