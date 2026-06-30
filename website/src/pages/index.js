@@ -81,7 +81,9 @@ function HomepageFeatures() {
 }
 
 export default function Home() {
-  const {siteConfig} = useDocusaurusContext();
+  // Property access instead of `const {siteConfig} = ...` destructuring: a
+  // Codacy parser mis-reads the `{siteConfig}` pattern here as a lone block.
+  const siteConfig = useDocusaurusContext().siteConfig;
   // Match the old site's homepage tab title: "Kafka Flow · <tagline>".
   const tabTitle = siteConfig.title + " · " + siteConfig.tagline;
   return (
