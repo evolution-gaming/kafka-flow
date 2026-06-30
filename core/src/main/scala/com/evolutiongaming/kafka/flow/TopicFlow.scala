@@ -111,6 +111,8 @@ object TopicFlow {
         // and after it was fixed a next issue was discovered
         // pendingCommits map is not updated on release of key/timer flows, it only persists the state
         // see https://github.com/evolution-gaming/kafka-flow/issues/256 for more details
+        // note: this is the default (consumer-commit) path only; the transactional snapshot mode commits on revoke
+        // through the producer (its own ScheduleCommit), not through this path
         val topicPartitions = partitions map (TopicPartition(topic, _))
         val removeOffsets   = pendingCommits.remove(topicPartitions)
 

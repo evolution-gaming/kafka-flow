@@ -280,6 +280,8 @@ object PartitionFlow {
 
         _ <- log.debug(s"offset to commit: ${offsetToCommit.show}")
 
+        // not error-handled like the revoke path below: in transactional mode a fenced periodic commit
+        // (CommitFailedException) must crash the stale instance - that is the fencing
         _ <- offsetToCommit.traverse_(offset => scheduleCommit.schedule(offset))
 
         _ <- log.debug("done with commits")
@@ -326,7 +328,12 @@ object PartitionFlow {
       offsetsHeldByCurrentKeys.flatMap { getMinOffsets =>
         cache.clear.flatten *> offsetToCommit(getMinOffsets).flatMap { offset =>
           offset.traverse_ { offset =>
-            log.info(s"committing on revoke: $offset") *> scheduleCommit.schedule(offset)
+            log.info(s"committing on revoke: $offset") *>
+              // best-effort: a transactional ScheduleCommit can fail here (e.g. fenced), but the partition is being
+              // given away anyway (the new owner replays) and the error must not escape into the rebalance callback
+              scheduleCommit
+                .schedule(offset)
+                .handleErrorWith(e => log.warn(s"committing on revoke failed for offset $offset, ignoring: $e"))
           }
         }
       }

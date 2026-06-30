@@ -61,7 +61,7 @@ object KafkaPartitionPersistence {
     consumerOf: ConsumerOf[F],
     consumerConfig: ConsumerConfig,
     snapshotTopic: Topic,
-    partition: Partition
+    partition: Partition,
   )(implicit fromBytes: FromBytes[F, String]): F[BytesByKey] = {
     consumerOf
       .apply[String, ByteVector](

@@ -323,7 +323,7 @@ class PartitionFlowSpec extends FunSuite {
   }
 
   test(
-    "PartitionFlow commits latest consumed offset on release when commitOnRevoke=true, " +
+    "PartitionFlow schedules a commit of the latest consumed offset on release when commitOnRevoke=true, " +
       "a TimerFlow with flushOnRevoke=true is used, and all keys successfully persisted their state on release"
   ) {
 
@@ -347,7 +347,7 @@ class PartitionFlowSpec extends FunSuite {
   }
 
   test(
-    "PartitionFlow commits an offset corresponding to the oldest successfully persisted key on release" +
+    "PartitionFlow schedules a commit of the offset corresponding to the oldest successfully persisted key on release" +
       "when commitOnRevoke=true, a TimerFlow with flushOnRevoke=true is used," +
       "and some keys failed to persist their state on release"
   ) {
@@ -390,6 +390,34 @@ class PartitionFlowSpec extends FunSuite {
       f.pendingOffset.get.map(offset => assertEquals(offset, Some(Offset.unsafe(102))))
     flow.unsafeRunSync()
 
+  }
+
+  test(
+    "PartitionFlow swallows a failing scheduleCommit on release (commitOnRevoke=true), " +
+      "so a fenced offset commit cannot escape the revoke finalizer"
+  ) {
+    // the transactional ScheduleCommit runs a Kafka transaction that can be fenced on revoke; that failure must be
+    // logged and swallowed (the partition is being given away anyway), never escape into the rebalance callback
+    class LocalFixture extends ConstFixture(waitForN = 100) {
+      val scheduleAttempted: Ref[IO, Boolean] = Ref.unsafe(false)
+      override val scheduleCommit: ScheduleCommit[IO] = new ScheduleCommit[IO] {
+        def schedule(offset: Offset): IO[Unit] =
+          scheduleAttempted.set(true) *> IO.raiseError(new RuntimeException("fenced offset commit on revoke"))
+      }
+    }
+
+    val f = new LocalFixture
+
+    // all keys flush successfully on revoke, so an offset commit is scheduled on release - and it fails
+    val test = for {
+      released  <- f.flow.use(flow => flow(f.records("key1", 100, List("event1", "event2"))).void).attempt
+      attempted <- f.scheduleAttempted.get
+    } yield {
+      assert(clue(attempted), "expected scheduleCommit to be attempted on release")
+      assertEquals(clue(released), Right(()), "a failing scheduleCommit on release must be swallowed")
+    }
+
+    test.unsafeRunSync()
   }
 
   def setupRemapKeyTest(remapKey: RemapKey[IO], initialData: Map[KafkaKey, String]) = {
