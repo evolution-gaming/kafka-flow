@@ -1,7 +1,7 @@
 ---
 id: cassandra-single-writer-design
-title: Cassandra single-writer design
-sidebar_label: Cassandra single-writer design
+title: "Cassandra single-writer design: persist only"
+sidebar_label: "Cassandra single-writer design: persist only"
 ---
 
 Design notes for the compare-and-set snapshot mode of `kafka-flow-persistence-cassandra`
