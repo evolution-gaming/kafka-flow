@@ -1,0 +1,65 @@
+/**
+ * Styles for the homepage. Scoped via CSS modules.
+ * The hero mirrors the old Docusaurus 1 splash: white background, purple
+ * title/tagline, and outlined purple buttons.
+ */
+
+.homeContainer {
+  text-align: center;
+  padding: 3rem 0 4rem;
+}
+
+@media screen and (max-width: 996px) {
+  .homeContainer {
+    padding: 2rem 1rem 3rem;
+  }
+}
+
+.projectLogo {
+  height: 200px;
+  max-width: 100%;
+  margin-bottom: 1rem;
+}
+
+.projectTitle {
+  color: var(--ifm-color-primary);
+  font-size: 3rem;
+  line-height: 1.1;
+  margin: 0.3em 0 0;
+}
+
+.projectTagline {
+  color: var(--ifm-color-primary);
+  font-size: 1.5rem;
+  font-weight: 400;
+  margin: 0.6em 0 1.4em;
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.heroButton {
+  text-transform: uppercase;
+}
+
+.features {
+  display: flex;
+  align-items: center;
+  padding: 2rem 0;
+  width: 100%;
+}
+
+.feature {
+  text-align: center;
+}
+
+.featureImage {
+  height: 120px;
+  width: 120px;
+  margin-bottom: 1rem;
+}

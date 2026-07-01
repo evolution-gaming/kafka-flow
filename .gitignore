@@ -31,11 +31,9 @@ settings.json
 metals.sbt
 
 # Docusaurus
-website/translated_docs
 website/build/
 website/node_modules
-website/i18n/*
-!website/i18n/en.json
+website/.docusaurus
 
 # Mac
 .DS_Store
