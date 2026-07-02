@@ -126,7 +126,7 @@ object TopicFlow {
           case (partition, offset) =>
             val scheduleCommit = pendingCommits.newScheduleCommit(topic, partition)
             cache.getOrUpdateResource(partition) {
-              partitionFlowOf(TopicPartition(topic, partition), offset, scheduleCommit)
+              partitionFlowOf(TopicPartition(topic, partition), offset, scheduleCommit, consumer.groupMetadata)
             }
         }
       }
