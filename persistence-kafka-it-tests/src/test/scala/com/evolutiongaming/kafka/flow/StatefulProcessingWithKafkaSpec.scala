@@ -8,7 +8,7 @@ import cats.syntax.all.*
 import com.evolution.playjson.jsoniter.PlayJsonJsoniter
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.StatefulProcessingWithKafkaSpec.*
-import com.evolutiongaming.kafka.flow.kafka.{Consumer, KafkaModule}
+import com.evolutiongaming.kafka.flow.kafka.KafkaModule
 import com.evolutiongaming.kafka.flow.kafkapersistence.{
   KafkaPersistenceModule,
   KafkaPersistenceModuleOf,
@@ -20,9 +20,15 @@ import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.retry.Retry
-import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf, ConsumerRecord}
+import com.evolutiongaming.skafka.consumer.{
+  AutoOffsetReset,
+  ConsumerConfig,
+  ConsumerGroupMetadata,
+  ConsumerOf,
+  ConsumerRecord
+}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf, ProducerRecord, RecordMetadata}
-import com.evolutiongaming.skafka.{Bytes, CommonConfig, Offset, Partition}
+import com.evolutiongaming.skafka.{Bytes, CommonConfig, Offset, Partition, TopicPartition}
 import play.api.libs.json.{JsResultException, Json, OFormat}
 import scodec.bits.ByteVector
 
@@ -73,7 +79,11 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
 
   private val inMemoryPersistenceModuleOf: KafkaPersistenceModuleOf[IO, State] =
     new KafkaPersistenceModuleOf[IO, State] {
-      override def make(partition: Partition, assignedAt: Offset): Resource[IO, KafkaPersistenceModule[IO, State]] =
+      override def make(
+        topicPartition: TopicPartition,
+        assignedAt: Offset,
+        groupMetadata: IO[Option[ConsumerGroupMetadata]]
+      ): Resource[IO, KafkaPersistenceModule[IO, State]] =
         Resource.pure(inMemoryPersistenceModule)
     }
 
@@ -121,14 +131,14 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
   test("stateful processing using in-memory persistence") {
     // unique input topic per test to isolate tests (munit suites run in parallel)
     val inputTopic = "in-memory-persistence-test"
-    comboTestCase(kafkaModule(), _ => inMemoryPersistenceModuleOf, inputTopic).unsafeRunSync()
+    comboTestCase(kafkaModule(), inMemoryPersistenceModuleOf, inputTopic).unsafeRunSync()
   }
 
   test("stateful processing using kafka persistence") {
     // unique input topic per test to isolate tests (munit suites run in parallel)
     val inputTopic = "kafka-persistence-test"
     kafkaPersistenceModuleOf
-      .use(module => comboTestCase(kafkaModule(), _ => module, inputTopic))
+      .use(module => comboTestCase(kafkaModule(), module, inputTopic))
       .unsafeRunSync()
   }
 
@@ -137,9 +147,9 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
     val inputTopic = "kafka-transactional-persistence-test"
     val stateTopic = "state-topic-tx-StatefulProcessingWithKafkaSpec"
 
-    // the module reads the driving consumer's group metadata so offsets are committed transactionally with the
-    // snapshot writes; the recovery assertions below would fail if those offset commits did not land
-    def makeModuleOf(consumer: Consumer[IO]): KafkaPersistenceModuleOf[IO, State] =
+    // the framework supplies the driving consumer's group metadata to the module, so offsets are committed
+    // transactionally with the snapshot writes; the recovery assertions below would fail if those commits did not land
+    val moduleOf: KafkaPersistenceModuleOf[IO, State] =
       KafkaPersistenceModuleOf.cachingTransactional[IO, State](
         consumerOf = ConsumerOf.apply1[IO](),
         producerOf = ProducerOf.apply1[IO](),
@@ -150,33 +160,29 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
             autoOffsetReset = AutoOffsetReset.Earliest
           ),
           producerConfig        = producerConfig,
-          transactionalIdPrefix = s"$testGroupId-$inputTopic",
+          transactionalIdPrefix = appId,
           snapshotTopic         = stateTopic,
-          inputTopic            = inputTopic,
         ),
-        groupMetadata = consumer.groupMetadata,
       )
 
-    (createTopic(stateTopic, 2) *> comboTestCase(kafkaModule(), makeModuleOf, inputTopic)).unsafeRunSync()
+    (createTopic(stateTopic, 2) *> comboTestCase(kafkaModule(), moduleOf, inputTopic)).unsafeRunSync()
   }
 
-  // the module factory is built from the consumer that drives the flow so that, in transactional mode, the snapshot
-  // writer can read that consumer's group metadata (generation) for offset binding; non-transactional cases ignore it
   private def comboTestCase(
     kafka: KafkaModule[IO],
-    makeModuleOf: Consumer[IO] => KafkaPersistenceModuleOf[IO, State],
+    moduleOf: KafkaPersistenceModuleOf[IO, State],
     inputTopic: String
   ): IO[Unit] = {
     for {
       _ <- createTopic(inputTopic, 2)
-      _ <- testCase(kafka, makeModuleOf, inputTopic, Partition.unsafe(0), "key0")
-      _ <- testCase(kafka, makeModuleOf, inputTopic, Partition.unsafe(1), "key1")
+      _ <- testCase(kafka, moduleOf, inputTopic, Partition.unsafe(0), "key0")
+      _ <- testCase(kafka, moduleOf, inputTopic, Partition.unsafe(1), "key1")
     } yield ()
   }
 
   private def testCase(
     kafka: KafkaModule[IO],
-    makeModuleOf: Consumer[IO] => KafkaPersistenceModuleOf[IO, State],
+    moduleOf: KafkaPersistenceModuleOf[IO, State],
     inputTopic: String,
     partition: Partition,
     key: String
@@ -193,26 +199,22 @@ class StatefulProcessingWithKafkaSpec extends ForAllKafkaSuite {
       }
     }
 
-    // allocate the consumer first, then build the module from it (so transactional offset binding reads this
-    // consumer's generation) and drive the flow with the same consumer instance
     def program: IO[List[Output]] =
-      kafka.consumerOf("groupId-StatefulProcessingWithKafkaSpec").use { consumer =>
-        for {
-          output   <- Ref.of[IO, List[Output]](List.empty)
-          finished <- Deferred[IO, Unit]
-          flowOf   <- topicFlowOf(makeModuleOf(consumer), output, finished)
-          run = KafkaFlow.resource(
-            consumer = Resource.pure[IO, Consumer[IO]](consumer),
-            flowOf = ConsumerFlowOf[IO](
-              topic  = inputTopic,
-              flowOf = flowOf
-            )
+      for {
+        output   <- Ref.of[IO, List[Output]](List.empty)
+        finished <- Deferred[IO, Unit]
+        flowOf   <- topicFlowOf(moduleOf, output, finished)
+        run = KafkaFlow.resource(
+          consumer = kafka.consumerOf("groupId-StatefulProcessingWithKafkaSpec"),
+          flowOf = ConsumerFlowOf[IO](
+            topic  = inputTopic,
+            flowOf = flowOf
           )
-          // wait for records to be processed
-          _      <- run.use(_ => finished.get.timeout(5.seconds))
-          output <- output.get
-        } yield output
-      }
+        )
+        // wait for records to be processed
+        _      <- run.use(_ => finished.get.timeout(5.seconds))
+        output <- output.get
+      } yield output
 
     for {
       _      <- produceInput(1)
