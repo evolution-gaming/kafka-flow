@@ -144,7 +144,9 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     */
   private def staleFlushScenario(
     moduleOfA: KafkaPersistenceModuleOf[IO, String],
+    groupMetadataA: IO[Option[ConsumerGroupMetadata]],
     moduleOfB: KafkaPersistenceModuleOf[IO, String],
+    groupMetadataB: IO[Option[ConsumerGroupMetadata]],
     stateTopic: String,
     key: String,
   ): IO[(Either[Throwable, Unit], BytesByKey)] = {
@@ -153,17 +155,23 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     val eventsA    = (1 to 5).toList.map(i => s"e$i")
     val eventsB    = (1 to 10).toList.map(i => s"e$i")
 
-    def allocateFlow(moduleOf: KafkaPersistenceModuleOf[IO, String]): IO[(PartitionFlow[IO], IO[Unit])] =
-      flowOf(moduleOf, flushOnRevokeOnly).flatMap(_.apply(tp, Offset.min, ScheduleCommit.empty[IO]).allocated)
+    // each flow gets its own generation: flow A (the previous owner) a stale one, flow B (the new owner) the current one
+    def allocateFlow(
+      moduleOf: KafkaPersistenceModuleOf[IO, String],
+      groupMetadata: IO[Option[ConsumerGroupMetadata]],
+    ): IO[(PartitionFlow[IO], IO[Unit])] =
+      flowOf(moduleOf, flushOnRevokeOnly).flatMap(
+        _.apply(tp, Offset.min, ScheduleCommit.empty[IO], groupMetadata).allocated
+      )
 
     for {
       _ <- createTopic(stateTopic, 1)
       // the previous owner: folds events, snapshots stay buffered in memory
-      flowA             <- allocateFlow(moduleOfA)
+      flowA             <- allocateFlow(moduleOfA, groupMetadataA)
       (flowA_, releaseA) = flowA
       _                 <- flowA_(inputRecords(inputTopic, key, eventsA))
       // the new owner: eagerly recovers (finds nothing), folds all events, flushes on release
-      flowB             <- allocateFlow(moduleOfB)
+      flowB             <- allocateFlow(moduleOfB, groupMetadataB)
       (flowB_, releaseB) = flowB
       _                 <- flowB_(inputRecords(inputTopic, key, eventsB))
       _                 <- releaseB
@@ -191,7 +199,9 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
         consumerConfig = consumerConfig,
         snapshotTopic  = stateTopic,
       )
-      staleFlushScenario(moduleOf, moduleOf, stateTopic, key).map {
+      // caching (non-transactional) ignores group metadata
+      val noGm = IO.pure(none[ConsumerGroupMetadata])
+      staleFlushScenario(moduleOf, noGm, moduleOf, noGm, stateTopic, key).map {
         case (staleFlush, stored) =>
           assertEquals(clue(staleFlush), Right(()))
           // recovery now returns the STALE snapshot (events 6..10 are lost although the new owner persisted them):
@@ -209,24 +219,22 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     val group      = s"$groupId-flush-on-revoke"
     val key        = "key1"
 
-    def moduleOf(gm: ConsumerGroupMetadata): KafkaPersistenceModuleOf[IO, String] =
+    val moduleOf: KafkaPersistenceModuleOf[IO, String] =
       KafkaPersistenceModuleOf.cachingTransactional[IO, String](
         consumerOf = consumerOf,
         producerOf = producerOf,
         config = KafkaPersistenceModule.TransactionalConfig(
           consumerConfig        = consumerConfig,
           producerConfig        = producerConfig,
-          transactionalIdPrefix = s"$group-$inputTopic",
+          transactionalIdPrefix = appId,
           snapshotTopic         = stateTopic,
-          inputTopic            = inputTopic,
         ),
-        groupMetadata = IO.pure(gm.some),
       )
 
     // the previous owner (flow A) carries a stale generation; the new owner (flow B) carries the current one
     val test = createTopic(inputTopic, 1) *> withJoinedConsumer(group, inputTopic) { current =>
       val stale = staleGeneration(current)
-      staleFlushScenario(moduleOf(stale), moduleOf(current), stateTopic, key).map {
+      staleFlushScenario(moduleOf, IO.pure(stale.some), moduleOf, IO.pure(current.some), stateTopic, key).map {
         case (staleFlush, stored) =>
           // the release itself succeeds: the rejected write surfaces as a logged-and-swallowed cache entry release
           // error ("scache: failed to release cache entry: ... CommitFailedException"), which is the desired
@@ -259,18 +267,17 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
             config = KafkaPersistenceModule.TransactionalConfig(
               consumerConfig        = consumerConfig,
               producerConfig        = producerConfig,
-              transactionalIdPrefix = s"$group-$inputTopic",
+              transactionalIdPrefix = appId,
               snapshotTopic         = stateTopic,
-              inputTopic            = inputTopic,
             ),
-            groupMetadata = gmRef.get.map(_.some),
           )
-          // flush on every records application, so the writer hits the conflict on its next poll cycle
+          // flush on every records application, so the writer hits the conflict on its next poll cycle; the generation
+          // is read live from gmRef at flush time, so flipping it to stale below takes effect on the next flush
           flow <- flowOf(
             moduleOf,
             TimerFlowOf.persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds),
             PartitionFlowConfig(triggerTimersInterval     = 0.seconds),
-          ).flatMap(_.apply(tp, Offset.min, ScheduleCommit.empty[IO]).allocated)
+          ).flatMap(_.apply(tp, Offset.min, ScheduleCommit.empty[IO], gmRef.get.map(_.some)).allocated)
           (flow_, release) = flow
           // persists fine while the generation is current
           _ <- flow_(inputRecords(inputTopic, key, List("e1", "e2", "e3")))
