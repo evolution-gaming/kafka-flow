@@ -59,9 +59,10 @@ object Consumer {
               this.consumer.groupMetadata.flatMap(meta => publish(meta).lift)
             def onPartitionsAssigned(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
               capture *> listener.onPartitionsAssigned(partitions)
-            // revoke/lost just delegate: a revoke-triggered flush must stay gated by the generation under which the
-            // member held the partitions - never a newer one - and a capture failure here could suppress the wrapped
-            // listener's flush/commit-on-revoke
+            // revoke/lost just delegate: the release-triggered flush stays gated by the generation the partitions
+            // were held under, never a newer one - guaranteed by ordering: the client invokes revoked/lost before
+            // assigned, so `capture` has not run this cycle, and `refresh` runs only after the poll. Capturing here
+            // instead could suppress the wrapped listener's flush/commit-on-revoke on failure
             def onPartitionsRevoked(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
               listener.onPartitionsRevoked(partitions)
             def onPartitionsLost(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =

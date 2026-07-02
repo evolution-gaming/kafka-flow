@@ -158,9 +158,10 @@ Entry point: `KafkaPersistenceModuleOf.cachingTransactional`. In the current cod
   flushes it triggers are gated by the generation that assigned them), and refreshed after every poll:
   listeners see only partitions that changed hands, so a rebalance that assigns a member nothing new —
   possible with a cooperative assignor — would otherwise leave the captured generation behind and
-  spuriously fence the next flush of a retained partition. Publishing after the poll is safe: revoked
-  partitions were flushed inside it under the pre-rebalance generation, so every flow still alive is
-  owned in the refreshed one.
+  spuriously fence the next flush of a retained partition. Publishing after the poll is safe: the client
+  invokes revoked/lost before assigned and the refresh runs only after the poll, so a revoke-time flush can
+  never observe a newer token than its partitions were held under, and every flow that survives the poll is
+  owned in the refreshed generation.
 
 ## Measurements
 
