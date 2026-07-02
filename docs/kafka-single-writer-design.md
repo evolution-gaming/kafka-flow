@@ -99,10 +99,10 @@ Key points:
   fire-and-forget commit thread.
 
 The mechanism needs the input topic-partition and a reader of the driving consumer's group metadata
-(`Consumer.groupMetadata`, captured on each partition assignment on the poll thread). Both are supplied by
-the flow from the partition assignment — not configured by hand — so they always match the consumer that
-drives the flow. A fence surfaces as `CommitFailedException` on the failing snapshot write (or offset-only
-commit).
+(`Consumer.groupMetadata`, captured on each partition assignment and refreshed after every poll, on the
+poll thread). Both are supplied by the flow from the partition assignment — not configured by hand — so
+they always match the consumer that drives the flow. A fence surfaces as `CommitFailedException` on the
+failing snapshot write (or offset-only commit).
 
 ### No epoch fencing
 
@@ -153,8 +153,14 @@ Entry point: `KafkaPersistenceModuleOf.cachingTransactional`. In the current cod
   persistence-kafka `package` object). That bypasses the default path, where offsets are normally staged
   through `PendingCommits` and committed by `TopicFlow.commitPending` via `consumer.commit`; with nothing
   staged, it commits nothing (a no-op).
-- **Generation capture** on each partition assignment — the `Consumer` wrapper, holding `groupMetadata`
-  in a `Ref` read off the poll thread.
+- **Generation capture** — the `Consumer` wrapper, holding `groupMetadata` in a `Ref` read off the poll
+  thread. Captured on each partition assignment *before* the wrapped listener runs (the recovery and
+  flushes it triggers are gated by the generation that assigned them), and refreshed after every poll:
+  listeners see only partitions that changed hands, so a rebalance that assigns a member nothing new —
+  possible with a cooperative assignor — would otherwise leave the captured generation behind and
+  spuriously fence the next flush of a retained partition. Publishing after the poll is safe: revoked
+  partitions were flushed inside it under the pre-rebalance generation, so every flow still alive is
+  owned in the refreshed one.
 
 ## Measurements
 
@@ -222,12 +228,26 @@ with a recording in-memory producer (no broker).
   ([KIP-345](https://cwiki.apache.org/confluence/display/KAFKA/KIP-345%3A+Introduce+static+membership+protocol+to+reduce+consumer+rebalances))
   is not a substitute: it suppresses rebalances only for graceful restarts within `session.timeout.ms`,
   and does not fence a stuck owner whose session expired.)
+- **Live `groupMetadata` reads (no capture)**: would never lag, but flush-on-revoke runs inside the
+  rebalance callback, where the serialized consumer cannot be called (skafka exposes `RebalanceConsumer`
+  there for exactly this reason); the client reports an unknown generation mid-rejoin and after falling
+  out of the group, surfacing as wiring errors instead of a clean broker fence; and for a fencing token
+  lagging is safe (the member fences itself and replays) while leading could let a stale write land —
+  capture plus refresh keeps the safe side of that asymmetry by construction, not by scheduling luck.
 - **Transaction per write**: correct but O(keys) round-trips on the poll path (cap = 1 above).
 - **Unbounded batches**: ~7% faster, but transaction duration scales unbounded against the coordinator
   timeout.
 - **Transactional output produces (full exactly-once)**: out of scope; output stays at-least-once.
 
 ## Forward-looking
+
+This design is analyzed under the **classic** consumer rebalance protocol. Under
+[KIP-848](https://cwiki.apache.org/confluence/display/KAFKA/KIP-848%3A+The+Next+Generation+of+the+Consumer+Rebalance+Protocol)
+— GA since Kafka 4.0, supported by the kafka-clients on the classpath behind `group.protocol=consumer`
+(`classic` is the default) — the reported "generation" becomes a *member epoch* that can advance on the
+background heartbeat thread rather than only inside `poll`, validated as `STALE_MEMBER_EPOCH`. The
+fail-safe direction appears preserved (a lagging token self-fences), but the capture/refresh timing
+arguments here need re-auditing before the mode is used with it.
 
 [KIP-939 (participation in 2PC)](https://cwiki.apache.org/confluence/display/KAFKA/KIP-939:+Support+Participation+in+2PC)
 is the route to extend this fence to non-Kafka snapshot stores: a transactional producer in an

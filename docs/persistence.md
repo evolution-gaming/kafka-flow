@@ -127,6 +127,9 @@ Limitations:
   downstream consumer of your output — can stall behind its last-stable-offset.
 - The mode always uses the identity `KafkaPersistencePartitionMapper` (fencing is per input partition);
   a non-identity mapper is not supported here.
+- Only the **classic** consumer rebalance protocol is supported — do not use the mode with KIP-848's
+  `group.protocol=consumer`. Today that protocol is not selectable through skafka's `ConsumerConfig`,
+  so this only concerns hand-wired consumers.
 
 ### Custom snapshot storage
 

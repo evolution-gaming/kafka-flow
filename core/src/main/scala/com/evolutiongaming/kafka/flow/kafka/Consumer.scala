@@ -37,21 +37,31 @@ object Consumer {
   def of[F[_]: Sync](
     consumer: KafkaConsumer[F, String, ByteVector]
   ): F[Consumer[F]] =
-    // capture the group metadata on assignment (on the poll thread, where it is safe to read) into a Ref so the
-    // transactional snapshot writer can read the current generation off-thread; None until the first assignment
+    // the group metadata is held in a Ref so the transactional snapshot writer can read the current generation
+    // off-thread; written on assignment (`capture`) and after every poll (`refresh`) - each says why it is needed
     Ref[F].of(none[ConsumerGroupMetadata]).map { groupMetadataRef =>
       new Consumer[F] {
+        // the single write path to the Ref: it only ever holds a real, joined generation. The client reports an
+        // unknown generation (-1) before the first join and after falling out of the group; publishing it would be
+        // worse than stale - -1 with an empty member id is the coordinator's pre-KIP-447 compatibility input, for
+        // which generation validation is SKIPPED, so a commit carrying it would land unfenced. Keeping the last
+        // captured value is safe: a fallen-out owner stays gated by the generation it actually held
+        private def publish(meta: ConsumerGroupMetadata): F[Unit] =
+          groupMetadataRef.set(meta.some).whenA(meta.generationId >= 0)
+
         def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener1[F]): F[Unit] = {
           val capturing = new RebalanceListener1WithConsumer[F] {
             import com.evolutiongaming.skafka.consumer.RebalanceCallback.syntax.*
-            // capture before the listener: assignment establishes the generation the listener (recovery, then every
-            // later flush) is gated by, and on a freshly assigned consumer groupMetadata cannot fail
+            // capture before the listener: the recovery and flushes it triggers must already be gated by the
+            // generation that assigned them - `refresh` runs only after the poll. On a freshly assigned consumer
+            // groupMetadata cannot fail and the generation is real, so `publish`'s guard is unreachable here
             private def capture: RebalanceCallback[F, Unit] =
-              this.consumer.groupMetadata.flatMap(meta => groupMetadataRef.set(meta.some).lift)
+              this.consumer.groupMetadata.flatMap(meta => publish(meta).lift)
             def onPartitionsAssigned(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
               capture *> listener.onPartitionsAssigned(partitions)
-            // revoke/lost just delegate: the generation is unchanged until the next assignment (which re-captures), and
-            // a capture failure here could suppress the wrapped listener's flush/commit-on-revoke
+            // revoke/lost just delegate: a revoke-triggered flush must stay gated by the generation under which the
+            // member held the partitions - never a newer one - and a capture failure here could suppress the wrapped
+            // listener's flush/commit-on-revoke
             def onPartitionsRevoked(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
               listener.onPartitionsRevoked(partitions)
             def onPartitionsLost(partitions: NonEmptySet[TopicPartition]): RebalanceCallback[F, Unit] =
@@ -61,7 +71,15 @@ object Consumer {
         }
 
         def poll(timeout: FiniteDuration): F[ConsumerRecords[String, ByteVector]] =
-          consumer.poll(timeout)
+          consumer.poll(timeout) <* refresh
+
+        // `capture` misses rebalances that assign this member nothing new (listeners see only partitions that
+        // changed hands - possible with a cooperative assignor): the generation bumps, the Ref lags, and the next
+        // flush of a retained partition is spuriously fenced. Rebalances complete within a poll, so refreshing after
+        // each poll closes the gap - safely, because revoked partitions were flushed inside the poll under the
+        // pre-rebalance value, so every flow still alive is owned in the refreshed generation
+        private def refresh: F[Unit] =
+          consumer.groupMetadata.flatMap(publish)
 
         def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): F[Unit] =
           consumer.commit(offsets)
