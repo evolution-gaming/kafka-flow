@@ -156,12 +156,15 @@ Entry point: `KafkaPersistenceModuleOf.cachingTransactional`. In the current cod
 - **Generation capture** — the `Consumer` wrapper, holding `groupMetadata` in a `Ref` read off the poll
   thread. Captured on each partition assignment *before* the wrapped listener runs (the recovery and
   flushes it triggers are gated by the generation that assigned them), and refreshed after every poll:
-  listeners see only partitions that changed hands, so a rebalance that assigns a member nothing new —
-  possible with a cooperative assignor — would otherwise leave the captured generation behind and
-  spuriously fence the next flush of a retained partition. Publishing after the poll is safe: the client
-  invokes revoked/lost before assigned and the refresh runs only after the poll, so a revoke-time flush can
-  never observe a newer token than its partitions were held under, and every flow that survives the poll is
-  owned in the refreshed generation.
+  a rebalance that assigns a member nothing new — possible with a cooperative assignor — would otherwise
+  leave the captured generation behind and spuriously fence the next flush of a retained partition
+  (kafka-clients invokes the assigned callback with an *empty* delta then, but the typed listener layer
+  cannot forward an empty set, so no observable callback fires). Publishing after the poll is safe: the
+  client invokes revoked/lost before assigned and the refresh runs only after the poll, so a revoke-time
+  flush can never observe a newer token than its partitions were held under, and every flow that survives
+  the poll is owned in the refreshed generation. One nuance: a join round can span polls (KIP-266 —
+  `poll(Duration)` does not block on it), so the refresh publishes the last *completed* join and converges
+  on the poll after the round finishes; the interim lag only self-fences, never un-fences.
 
 ## Measurements
 
@@ -231,8 +234,9 @@ with a recording in-memory producer (no broker).
   and does not fence a stuck owner whose session expired.)
 - **Live `groupMetadata` reads (no capture)**: would never lag, but flush-on-revoke runs inside the
   rebalance callback, where the serialized consumer cannot be called (skafka exposes `RebalanceConsumer`
-  there for exactly this reason); the client reports an unknown generation mid-rejoin and after falling
-  out of the group, surfacing as wiring errors instead of a clean broker fence; and for a fencing token
+  there for exactly this reason); the public `groupMetadata` deliberately keeps
+  the last *joined* token mid-rejoin and after falling out of the group (only the pre-first-join state
+  reports the unknown sentinel), so a live read buys no freshness there anyway; and for a fencing token
   lagging is safe (the member fences itself and replays) while leading could let a stale write land —
   capture plus refresh keeps the safe side of that asymmetry by construction, not by scheduling luck.
 - **Transaction per write**: correct but O(keys) round-trips on the poll path (cap = 1 above).

@@ -74,11 +74,15 @@ object Consumer {
         def poll(timeout: FiniteDuration): F[ConsumerRecords[String, ByteVector]] =
           consumer.poll(timeout) <* refresh
 
-        // `capture` misses rebalances that assign this member nothing new (listeners see only partitions that
-        // changed hands - possible with a cooperative assignor): the generation bumps, the Ref lags, and the next
-        // flush of a retained partition is spuriously fenced. Rebalances complete within a poll, so refreshing after
-        // each poll closes the gap - safely, because revoked partitions were flushed inside the poll under the
-        // pre-rebalance value, so every flow still alive is owned in the refreshed generation
+        // `capture` misses rebalances that assign this member nothing new (kafka-clients invokes the assigned
+        // callback with an EMPTY delta then - javadoc-guaranteed - but the typed listener layer cannot forward an
+        // empty set, so nothing observable fires): the generation bumps, the Ref lags, and the next flush of a
+        // retained partition is spuriously fenced. A rebalance's callbacks and metadata update run on the poll
+        // thread, so refreshing after each poll closes the gap - the join round itself may span polls (KIP-266:
+        // poll(Duration) does not block on it), in which case the refresh publishes the last COMPLETED join and
+        // converges on the poll after the round finishes; the interim lag is the safe direction. Safe also because
+        // revoked partitions were flushed inside the poll under the pre-rebalance value, so every flow still alive
+        // is owned in the refreshed generation
         private def refresh: F[Unit] =
           consumer.groupMetadata.flatMap(publish)
 
