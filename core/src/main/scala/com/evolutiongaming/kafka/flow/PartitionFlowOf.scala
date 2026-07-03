@@ -5,25 +5,13 @@ import cats.effect.kernel.Async
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
-import com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata
-import com.evolutiongaming.skafka.{Offset, TopicPartition}
 
 trait PartitionFlowOf[F[_]] {
 
-  /** Creates partition record handler for assigned partition.
-    *
-    * @param groupMetadata
-    *   a live reader of the group metadata (generation) of the consumer that drives this flow; `None` until the
-    *   consumer has joined. It is re-evaluated on each use, so pass it along unevaluated - a memoized (evaluate-once)
-    *   value would go stale on the next rebalance. Used by the transactional Kafka snapshot persistence to fence stale
-    *   writers (KIP-447); flows that do not need it can ignore it.
+  /** Creates partition record handler for the partition described by `assignment`, committing offsets through
+    * `scheduleCommit`.
     */
-  def apply(
-    topicPartition: TopicPartition,
-    assignedAt: Offset,
-    scheduleCommit: ScheduleCommit[F],
-    groupMetadata: F[Option[ConsumerGroupMetadata]]
-  ): Resource[F, PartitionFlow[F]]
+  def apply(assignment: PartitionAssignment[F], scheduleCommit: ScheduleCommit[F]): Resource[F, PartitionFlow[F]]
 
 }
 object PartitionFlowOf {
@@ -45,10 +33,17 @@ object PartitionFlowOf {
     config: PartitionFlowConfig     = PartitionFlowConfig(),
     filter: Option[FilterRecord[F]] = None,
     remapKey: Option[RemapKey[F]]   = None,
-  ): PartitionFlowOf[F] = {
-    // groupMetadata is ignored: only the transactional Kafka persistence fences by generation (see
+  ): PartitionFlowOf[F] = { (assignment, scheduleCommit) =>
+    // assignment.groupMetadata is ignored: only the transactional Kafka persistence fences by generation (see
     // kafkapersistence.package)
-    (topicPartition, assignedAt, scheduleCommit, _) =>
-      PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config, filter, remapKey, scheduleCommit)
+    PartitionFlow.resource(
+      assignment.topicPartition,
+      assignment.assignedAt,
+      keyStateOf,
+      config,
+      filter,
+      remapKey,
+      scheduleCommit,
+    )
   }
 }

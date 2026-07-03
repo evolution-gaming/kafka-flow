@@ -10,10 +10,10 @@ import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.metrics.syntax.*
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
 import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotWriteDatabase, SnapshotsOf}
-import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey}
-import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerGroupMetadata, ConsumerOf, IsolationLevel}
+import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey, PartitionAssignment}
+import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf, IsolationLevel}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf}
-import com.evolutiongaming.skafka.{FromBytes, Offset, ToBytes, Topic, TopicPartition}
+import com.evolutiongaming.skafka.{FromBytes, ToBytes, Topic, TopicPartition}
 import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
@@ -60,23 +60,6 @@ object KafkaPersistenceModule {
     transactionalIdPrefix: String,
     snapshotTopic: Topic,
     maxWritesPerTransaction: Int = KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction,
-  )
-
-  /** The per-assignment context [[cachingTransactional]] needs to fence stale writers.
-    *
-    * @param inputTopicPartition
-    *   the assigned input topic-partition; its offsets are committed into the snapshot transaction, and its partition
-    *   number is reused for the snapshot topic-partition (the mode forces the identity mapping)
-    * @param assignedAt
-    *   the offset the partition was assigned at; seeds the offset-to-commit so even the first write is generation-gated
-    * @param groupMetadata
-    *   group metadata of the SAME consumer that drives this flow (use `Consumer.groupMetadata`); its generation is what
-    *   fences a stale owner (KIP-447). `None` means the consumer is not joined.
-    */
-  final case class PartitionAssignment[F[_]](
-    inputTopicPartition: TopicPartition,
-    assignedAt: Offset,
-    groupMetadata: F[Option[ConsumerGroupMetadata]],
   )
 
   def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
@@ -164,6 +147,10 @@ object KafkaPersistenceModule {
     * `read_committed`, and unlike `caching` the identity partition mapping is always used; output stays at-least-once.
     * See the "Protecting against stale snapshot writes" persistence docs for guarantees, limitations, costs and
     * rollout, and `docs/kafka-single-writer-design.md` for the mechanism.
+    *
+    * The `assignment` must describe the input partition of the SAME consumer that drives this flow (its `groupMetadata`
+    * generation is what fences a stale owner); `assignedAt` seeds the offset-to-commit so even the first write is
+    * generation-gated, and the input partition number is reused for the snapshot topic-partition.
     */
   def cachingTransactional[F[_]: LogOf: Async: Parallel: Runtime, S](
     consumerOf: ConsumerOf[F],
@@ -176,7 +163,7 @@ object KafkaPersistenceModule {
     fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
-    val snapshotTopicPartition = TopicPartition(config.snapshotTopic, assignment.inputTopicPartition.partition)
+    val snapshotTopicPartition = TopicPartition(config.snapshotTopic, assignment.topicPartition.partition)
     for {
       transactional <- transactionalWriteDatabase[F, S](producerOf, config, assignment, snapshotTopicPartition)
       // records of aborted transactions (e.g. of a fenced previous owner) must not be recovered as snapshots
@@ -208,7 +195,7 @@ object KafkaPersistenceModule {
   ): Resource[F, KafkaSnapshotWriteDatabase.Transactional[F, S]] = {
     implicit val fromTry: FromTry[F] = FromTry.lift
     import config.{maxWritesPerTransaction, producerConfig, transactionalIdPrefix}
-    import assignment.{assignedAt, groupMetadata, inputTopicPartition}
+    import assignment.{assignedAt, groupMetadata, topicPartition as inputTopicPartition}
 
     val partition = inputTopicPartition.partition
 

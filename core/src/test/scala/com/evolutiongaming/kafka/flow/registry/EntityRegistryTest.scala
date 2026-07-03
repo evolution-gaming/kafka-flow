@@ -60,10 +60,12 @@ class EntityRegistryTest extends FunSuite {
       config = PartitionFlowConfig()
     )
     partitionFlow <- partitionFlowOf.apply(
-      topicPartition = TopicPartition.empty,
-      assignedAt     = Offset.min,
-      scheduleCommit = ScheduleCommit.empty,
-      groupMetadata  = IO.pure(None)
+      PartitionAssignment[IO](
+        topicPartition = TopicPartition.empty,
+        assignedAt     = Offset.min,
+        groupMetadata  = IO.none
+      ),
+      ScheduleCommit.empty
     )
   } yield (partitionFlow, registry)
 

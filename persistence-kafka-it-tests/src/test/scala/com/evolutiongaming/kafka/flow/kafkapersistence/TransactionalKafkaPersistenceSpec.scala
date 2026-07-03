@@ -13,6 +13,7 @@ import com.evolutiongaming.kafka.flow.{
   FoldOption,
   ForAllKafkaSuite,
   KafkaKey,
+  PartitionAssignment,
   PartitionFlow,
   PartitionFlowConfig,
   PartitionFlowOf,
@@ -161,7 +162,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
       groupMetadata: IO[Option[ConsumerGroupMetadata]],
     ): IO[(PartitionFlow[IO], IO[Unit])] =
       flowOf(moduleOf, flushOnRevokeOnly).flatMap(
-        _.apply(tp, Offset.min, ScheduleCommit.empty[IO], groupMetadata).allocated
+        _.apply(PartitionAssignment(tp, Offset.min, groupMetadata), ScheduleCommit.empty[IO]).allocated
       )
 
     for {
@@ -277,7 +278,12 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
             moduleOf,
             TimerFlowOf.persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds),
             PartitionFlowConfig(triggerTimersInterval     = 0.seconds),
-          ).flatMap(_.apply(tp, Offset.min, ScheduleCommit.empty[IO], gmRef.get.map(_.some)).allocated)
+          ).flatMap(
+            _.apply(
+              PartitionAssignment(tp, Offset.min, gmRef.get.map(_.some)),
+              ScheduleCommit.empty[IO]
+            ).allocated
+          )
           (flow_, release) = flow
           // persists fine while the generation is current
           _ <- flow_(inputRecords(inputTopic, key, List("e1", "e2", "e3")))

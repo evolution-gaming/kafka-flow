@@ -37,13 +37,11 @@ class TopicFlowSpec extends FunSuite {
       captured <- Ref.of[IO, Option[ConsumerGroupMetadata]](none)
       partitionFlowOf = new PartitionFlowOf[IO] {
         def apply(
-          topicPartition: TopicPartition,
-          assignedAt: Offset,
-          scheduleCommit: ScheduleCommit[IO],
-          groupMetadata: IO[Option[ConsumerGroupMetadata]]
+          assignment: PartitionAssignment[IO],
+          scheduleCommit: ScheduleCommit[IO]
         ): Resource[IO, PartitionFlow[IO]] =
           Resource
-            .eval(groupMetadata.flatMap(captured.set))
+            .eval(assignment.groupMetadata.flatMap(captured.set))
             .as(
               new PartitionFlow[IO] {
                 def apply(records: List[ConsumerRecord[String, ByteVector]]): IO[Unit] = IO.unit

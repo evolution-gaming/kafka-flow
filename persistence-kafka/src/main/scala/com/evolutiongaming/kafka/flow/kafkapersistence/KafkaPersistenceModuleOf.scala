@@ -3,22 +3,18 @@ package com.evolutiongaming.kafka.flow.kafkapersistence
 import cats.Parallel
 import cats.effect.{Async, Concurrent, Resource}
 import com.evolutiongaming.catshelper.{LogOf, Runtime}
-import com.evolutiongaming.kafka.flow.FlowMetrics
-import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerGroupMetadata, ConsumerOf}
+import com.evolutiongaming.kafka.flow.{FlowMetrics, PartitionAssignment}
+import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerOf}
 import com.evolutiongaming.skafka.*
 
-/** Convenience factory trait to create an instance of [[KafkaPersistenceModule]] for an assigned partition.
-  * `assignedAt` and `groupMetadata` are supplied by the flow and used only by the transactional module - to seed the
-  * initial offset-to-commit and to fence stale writers (KIP-447) respectively; the non-transactional caching module
-  * ignores both.
+/** Convenience factory trait to create an instance of [[KafkaPersistenceModule]] for an assigned partition. The
+  * `PartitionAssignment` is supplied by the flow; its `assignedAt` and `groupMetadata` are used only by the
+  * transactional module - to seed the initial offset-to-commit and to fence stale writers (KIP-447) respectively; the
+  * non-transactional caching module ignores both.
   */
 trait KafkaPersistenceModuleOf[F[_], S] {
-  def make(
-    topicPartition: TopicPartition,
-    assignedAt: Offset,
-    groupMetadata: F[Option[ConsumerGroupMetadata]]
-  ): Resource[F, KafkaPersistenceModule[F, S]]
+  def make(assignment: PartitionAssignment[F]): Resource[F, KafkaPersistenceModule[F, S]]
 }
 
 object KafkaPersistenceModuleOf {
@@ -53,15 +49,13 @@ object KafkaPersistenceModuleOf {
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     // caching ignores assignedAt/groupMetadata - it doesn't commit offsets through a producer
     override def make(
-      topicPartition: TopicPartition,
-      assignedAt: Offset,
-      groupMetadata: F[Option[ConsumerGroupMetadata]]
+      assignment: PartitionAssignment[F]
     ): Resource[F, KafkaPersistenceModule[F, S]] =
       KafkaPersistenceModule.caching(
         consumerOf             = consumerOf,
         producer               = producer,
         consumerConfig         = consumerConfig,
-        snapshotTopicPartition = TopicPartition(snapshotTopic, topicPartition.partition),
+        snapshotTopicPartition = TopicPartition(snapshotTopic, assignment.topicPartition.partition),
         metrics                = metrics,
         partitionMapper        = partitionMapper,
       )
@@ -94,15 +88,13 @@ object KafkaPersistenceModuleOf {
     toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     override def make(
-      topicPartition: TopicPartition,
-      assignedAt: Offset,
-      groupMetadata: F[Option[ConsumerGroupMetadata]]
+      assignment: PartitionAssignment[F]
     ): Resource[F, KafkaPersistenceModule[F, S]] =
       KafkaPersistenceModule.cachingTransactional(
         consumerOf = consumerOf,
         producerOf = producerOf,
         config     = config,
-        assignment = KafkaPersistenceModule.PartitionAssignment(topicPartition, assignedAt, groupMetadata),
+        assignment = assignment,
         metrics    = metrics,
       )
   }
