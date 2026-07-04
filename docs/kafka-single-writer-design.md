@@ -249,6 +249,11 @@ with a recording in-memory producer (no broker).
   reports the unknown sentinel), so a live read buys no freshness there anyway; and for a fencing token
   lagging is safe (the member fences itself and replays) while leading could let a stale write land —
   capture plus refresh keeps the safe side of that asymmetry by construction, not by scheduling luck.
+  The unknown sentinel is a sharper hazard than a merely lagging token: it does not just fail to fence,
+  it *disables* the fence — the broker skips generation validation for the pre-KIP-447 `-1`/empty-`memberId`
+  shape, so an offset commit carrying it lands **unfenced**. That is why `Consumer.publish` refuses to
+  publish any `generationId < 0` at all (keeping the sentinel off the wire), a guard the lag/lead
+  asymmetry above does not cover.
 - **Transaction per write**: correct but O(keys) round-trips on the poll path (cap = 1 above).
 - **Unbounded batches**: ~7% faster, but transaction duration scales unbounded against the coordinator
   timeout.
