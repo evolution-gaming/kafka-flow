@@ -45,8 +45,9 @@ transaction** via
 the group coordinator validates the consumer **generation** and rejects a commit from a stale one
 (`ILLEGAL_GENERATION`, surfaced to the client as `CommitFailedException`).
 Since that commit and the snapshot writes share a transaction, the rejection aborts the writes too.
-The generation — authoritative for partition ownership — gates both, so a stale owner can neither
-advance offsets nor overwrite a newer snapshot.
+The generation — the group's ownership authority, validated at commit time as member + generation
+(not per partition) — gates both, so a stale owner can neither advance offsets nor overwrite a newer
+snapshot.
 
 Seen as a whole, the mechanism combines two ideas — a distributed lock, and a transactional snapshot
 write + offset commit. Kafka's consumer group is the lock, and it already provides both an ownership
