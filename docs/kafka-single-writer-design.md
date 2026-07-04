@@ -162,7 +162,16 @@ Entry point: `KafkaPersistenceModuleOf.cachingTransactional`. In the current cod
   cannot forward an empty set, so no observable callback fires). Publishing after the poll is safe: the
   client invokes revoked/lost before assigned and the refresh runs only after the poll, so a revoke-time
   flush can never observe a newer token than its partitions were held under, and every flow that survives
-  the poll is owned in the refreshed generation. One nuance: a join round can span polls (KIP-266 —
+  the poll is owned in the refreshed generation. That last step holds by Kafka's documented rebalance
+  contract — `onPartitionsRevoked`/`onPartitionsLost` run synchronously on the poll thread, before
+  `onPartitionsAssigned` and before `poll` returns (`ConsumerRebalanceListener` javadoc) — together with
+  `TopicFlow.remove` **awaiting** the teardown inside that callback (`cache.remove(_).flatten` under
+  `parTraverse_`, on both the revoked and lost paths). It is the *only* net for a lingering
+  foreign-partition flow (`TxnOffsetCommit` fences member + generation, not per-partition ownership), so
+  it hinges on that teardown staying synchronous and awaited — a property no test or model pins, so a
+  future refactor to fire-and-forget teardown would break it silently (future work: a post-poll
+  assertion that live flows ⊆ current assignment, or a teardown-race model). One nuance: a join round
+  can span polls (KIP-266 —
   `poll(Duration)` does not block on it), so the refresh publishes the last *completed* join and converges
   on the poll after the round finishes; the interim lag only self-fences, never un-fences.
 
