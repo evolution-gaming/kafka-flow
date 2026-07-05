@@ -116,23 +116,15 @@ object TopicFlow {
         val topicPartitions = partitions map (TopicPartition(topic, _))
         val removeOffsets   = pendingCommits.remove(topicPartitions)
 
-        // flows-alive guard. `remove` runs inside the (synchronous, pre-assign) revoke callback and must
-        // AWAIT teardown -- `cache.remove(_).flatten` blocks on each flow's release -- so that by the time
-        // the poll continues into the refreshed generation, no flow survives for a partition this consumer
-        // no longer owns. That coupling is the sole cross-partition fence support: the offset commit is
-        // fenced by consumer generation but not by per-partition ownership, so a flow left alive for a
-        // revoked partition could still commit under a fresh generation token (see the flows-alive
-        // invariant in docs/kafka-single-writer-design.md). This debug-level check pins the postcondition:
-        // a future fire-and-forget refactor of the teardown would leave a revoked partition live here and
-        // log the breach instead of failing silently. In correct (awaited) code it never fires.
-        val verifyTornDown = cache.keys flatMap { live =>
-          val stillLive = partitions.toSortedSet filter live.contains
-          Log[F]
-            .warn(s"flows-alive breach: flows still live after revoke teardown for $stillLive on topic $topic")
-            .whenA(stillLive.nonEmpty)
-        }
-
-        removePartitions *> removeOffsets *> verifyTornDown *> {
+        // `removePartitions` AWAITS each flow's teardown (`cache.remove(_).flatten` blocks on the
+        // release), which is load-bearing: this runs inside the synchronous, pre-assign revoke callback,
+        // so awaiting it means no flow survives for a partition this consumer no longer owns once the poll
+        // continues into the refreshed generation. That coupling is the sole cross-partition fence support
+        // (the offset commit is fenced by consumer generation, not per-partition ownership; see the
+        // flows-alive invariant in docs/kafka-single-writer-design.md). Keep the await: dropping it to a
+        // fire-and-forget teardown reintroduces the race. Pinned by TopicFlowSpec's
+        // "remove awaits the flow teardown" test.
+        removePartitions *> removeOffsets *> {
           Log[F].info(s"removed offsets without commit for: $topicPartitions")
         }
       }

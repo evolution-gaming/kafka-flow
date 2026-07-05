@@ -169,10 +169,10 @@ Entry point: `KafkaPersistenceModuleOf.cachingTransactional`. In the current cod
   `TopicFlow.remove` **awaiting** the teardown inside that callback (`cache.remove(_).flatten` under
   `parTraverse_`, on both the revoked and lost paths). It is the *only* net for a lingering
   foreign-partition flow (`TxnOffsetCommit` fences member + generation, not per-partition ownership), so
-  it hinges on that teardown staying synchronous and awaited. `TopicFlow.remove` pins that postcondition
-  with a debug-level guard: after the awaited teardown it verifies no revoked partition is still live in
-  the cache and logs a breach otherwise, so a future fire-and-forget refactor trips a warning rather than
-  failing silently. One nuance: a join round
+  it hinges on that teardown staying synchronous and awaited. That postcondition is pinned by a unit test
+  (`TopicFlowSpec`, "remove awaits the flow teardown"): a partition flow whose release completes a
+  `Deferred`, asserted already completed by the time `remove` returns — so a future fire-and-forget
+  refactor fails the build. One nuance: a join round
   can span polls (KIP-266 —
   `poll(Duration)` does not block on it), so the refresh publishes the last *completed* join and converges
   on the poll after the round finishes; the interim lag only self-fences, never un-fences.

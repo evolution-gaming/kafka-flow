@@ -2,7 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.data.{NonEmptyMap, NonEmptySet}
 import cats.effect.unsafe.implicits.global
-import cats.effect.{IO, Ref, Resource}
+import cats.effect.{Deferred, IO, Ref, Resource}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.kafka.{Consumer, ScheduleCommit}
@@ -52,6 +52,54 @@ class TopicFlowSpec extends FunSuite {
         topicFlow.add(NonEmptySet.of(partition -> offset)) *> captured.get
       }
     } yield assertEquals(result, generation.some)
+
+    test.unsafeRunSync()
+  }
+
+  test("remove awaits the flow teardown (flows-alive: no flow survives a revoke)") {
+    // The cross-partition fence has a single support: `TopicFlow.remove` must AWAIT each partition flow's
+    // teardown (its Resource release) before returning. It runs inside the synchronous, pre-assign revoke
+    // callback, so awaiting the teardown is what guarantees no flow is still alive for a revoked partition
+    // once the poll continues into the refreshed generation (the offset commit is fenced by consumer
+    // generation, not per-partition ownership). Modelled abstractly as INV_FlowsAlive in
+    // models/FlowsAlive.tla; pinned here. A fire-and-forget teardown would leave `released` uncompleted
+    // when `remove` returns and fail this test.
+    val topic     = "topic"
+    val partition = Partition.min
+    val offset    = Offset.min
+
+    val consumer = new Consumer[IO] {
+      def subscribe(topics: NonEmptySet[Topic], listener: RebalanceListener1[IO]): IO[Unit] = IO.unit
+      def poll(timeout: FiniteDuration): IO[ConsumerRecords[String, ByteVector]]    = ConsumerRecords.empty.pure[IO]
+      def commit(offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata]): IO[Unit] = IO.unit
+      def groupMetadata: IO[Option[ConsumerGroupMetadata]] = none[ConsumerGroupMetadata].pure[IO]
+    }
+
+    val test = for {
+      released <- Deferred[IO, Unit]
+      partitionFlowOf = new PartitionFlowOf[IO] {
+        def apply(
+          assignment: PartitionAssignment[IO],
+          scheduleCommit: ScheduleCommit[IO]
+        ): Resource[IO, PartitionFlow[IO]] =
+          Resource
+            .onFinalize(released.complete(()).void)
+            .as(new PartitionFlow[IO] {
+              def apply(records: List[ConsumerRecord[String, ByteVector]]): IO[Unit] = IO.unit
+            })
+      }
+      result <- TopicFlow.of(consumer, topic, partitionFlowOf).use { topicFlow =>
+        for {
+          _            <- topicFlow.add(NonEmptySet.of(partition -> offset))
+          liveAfterAdd <- released.tryGet // flow is alive: its teardown has not run yet
+          _            <- topicFlow.remove(NonEmptySet.of(partition))
+          downAfterRm  <- released.tryGet // remove awaited teardown, so it has run by the time remove returned
+        } yield (liveAfterAdd, downAfterRm)
+      }
+    } yield {
+      assertEquals(result._1, none[Unit], "the flow must still be alive after add (teardown not yet run)")
+      assertEquals(result._2, ().some, "remove must await the flow teardown before returning")
+    }
 
     test.unsafeRunSync()
   }
