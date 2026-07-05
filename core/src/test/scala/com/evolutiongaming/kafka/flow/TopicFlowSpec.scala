@@ -61,9 +61,8 @@ class TopicFlowSpec extends FunSuite {
     // returning: it runs inside the synchronous, pre-assign revoke callback, so awaiting guarantees
     // no flow is still alive for a revoked partition once the poll continues into the refreshed
     // generation (the offset commit is fenced by consumer generation, not per-partition ownership).
-    // This is the sole cross-partition fence support, modelled abstractly as INV_FlowsAlive in
-    // models/FlowsAlive.tla. A fire-and-forget teardown would leave `released` uncompleted when
-    // `remove` returns and fail this test.
+    // This is the sole cross-partition fence support. A fire-and-forget teardown would leave
+    // `released` uncompleted when `remove` returns and fail this test.
     val topic     = "topic"
     val partition = Partition.min
     val offset    = Offset.min
