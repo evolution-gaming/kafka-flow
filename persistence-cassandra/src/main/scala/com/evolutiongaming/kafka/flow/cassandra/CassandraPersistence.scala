@@ -1,13 +1,16 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
 import cats.arrow.FunctionK
-import cats.effect.Async
+import cats.effect.{Async, Sync}
 import cats.syntax.all.*
 import cats.{Monad, MonadThrow}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.kafka.flow.journal.CassandraJournals
 import com.evolutiongaming.kafka.flow.key.{CassandraKeys, KeySegments}
+import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
+import com.evolutiongaming.kafka.flow.snapshot.{KafkaSnapshot, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots
 import com.evolutiongaming.skafka.{FromBytes, ToBytes}
 import com.evolutiongaming.{scassandra, skafka}
@@ -47,6 +50,16 @@ object CassandraPersistence {
     def keys      = _keys
     def journals  = _journals
     def snapshots = _snapshots
+
+    // the offset fence belongs to the compare-and-set mode only: a last-write-wins store never gates a
+    // write on the offset and never returns a tombstone floor, so it keeps the unfenced buffer (and
+    // events-recovery skips the per-key floor read) - exactly the pre-compare-and-set behaviour
+    override def snapshotsOf(
+      implicit F: Sync[F],
+      logOf: LogOf[F]
+    ): F[SnapshotsOf[F, KafkaKey, KafkaSnapshot[S]]] =
+      if (snapshotCompareAndSet) super.snapshotsOf
+      else logOf(CassandraPersistence.getClass).map(implicit log => SnapshotsOf.backedBy(_snapshots))
   }
 
   /** Creates schema in Cassandra if not there yet. Uses default names for all Cassandra tables:
