@@ -7,7 +7,6 @@ import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
 import com.evolutiongaming.kafka.flow.metrics.syntax.*
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
-import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.smetrics.MetricsHelper.*
 import com.evolutiongaming.smetrics.{LabelNames, Quantile, Quantiles}
 import scodec.bits.ByteVector
@@ -54,8 +53,8 @@ object PartitionFlowMetrics {
   implicit def partitionFlowOfMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, PartitionFlowOf[F]] =
     partitionFlowMetricsOf[F] transform { implicit metrics => partitionFlowOf =>
       new PartitionFlowOf[F] {
-        def apply(topicPartition: TopicPartition, assignedAt: Offset, scheduleCommit: ScheduleCommit[F]) =
-          partitionFlowOf(topicPartition, assignedAt, scheduleCommit) map (_.withMetrics)
+        def apply(assignment: PartitionAssignment[F], scheduleCommit: ScheduleCommit[F]) =
+          partitionFlowOf(assignment, scheduleCommit) map (_.withMetrics)
       }
     }
 

@@ -10,7 +10,6 @@ import com.evolutiongaming.kafka.flow.metrics.syntax.*
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
-import com.evolutiongaming.skafka.{Offset, TopicPartition}
 import com.evolutiongaming.sstream.{FoldWhile, Stream}
 import scodec.bits.ByteVector
 
@@ -141,14 +140,13 @@ package object kafkapersistence {
   ): PartitionFlowOf[F] =
     new PartitionFlowOf[F] {
       override def apply(
-        topicPartition: TopicPartition,
-        assignedAt: Offset,
+        assignment: PartitionAssignment[F],
         scheduleCommit: ScheduleCommit[F]
       ): Resource[F, PartitionFlow[F]] = {
         for {
           // TODO: per-partition persistence module with 'String -> ByteVector' cache or global persistence module with 'KafkaKey -> ByteVector' cache?
           // Latter would require initialization of PartitionFlowOf as a Resource
-          kafkaPersistenceModule <- kafkaPersistenceModuleOf.make(topicPartition.partition, assignedAt)
+          kafkaPersistenceModule <- kafkaPersistenceModuleOf.make(assignment)
           // transactional mode commits offsets through its own producer transaction; otherwise fall back to consumer commit
           effectiveScheduleCommit = kafkaPersistenceModule.scheduleCommit.getOrElse(scheduleCommit)
           partitionFlowOf = PartitionFlowOf.apply[F](
@@ -170,7 +168,7 @@ package object kafkapersistence {
             filter   = filter,
             remapKey = remapKey,
           )
-          partitionFlow <- partitionFlowOf(topicPartition, assignedAt, effectiveScheduleCommit)
+          partitionFlow <- partitionFlowOf(assignment, effectiveScheduleCommit)
         } yield partitionFlow
       }
     }

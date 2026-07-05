@@ -61,31 +61,38 @@ replays the affected events.
 
 ### Transactional snapshot writes (Kafka)
 
-Enable with `KafkaPersistenceModuleOf.cachingTransactional`, built from the consumer that drives the
-flow (it reads that consumer's group metadata to fence by generation):
+Enable with `KafkaPersistenceModuleOf.cachingTransactional`. The flow supplies the driving consumer's
+group metadata (generation) to the module, which uses it to fence stale writers — so you build the
+module like any other and wire it into the flow as usual:
 
 ```scala
-// allocate the driving consumer first so the module can read its group metadata (generation)
-consumer.use { consumer =>
-  val moduleOf = KafkaPersistenceModuleOf.cachingTransactional[F, State](
-    consumerOf = consumerOf,
-    producerOf = producerOf,
-    config = KafkaPersistenceModule.TransactionalConfig(
-      consumerConfig        = snapshotConsumerConfig,
-      producerConfig        = snapshotProducerConfig,
-      transactionalIdPrefix = s"$groupId-$inputTopic",
-      snapshotTopic         = stateTopic,
-      inputTopic            = inputTopic,
-    ),
-    groupMetadata = consumer.groupMetadata, // the SAME consumer that drives the flow
-  )
-  // ... wire moduleOf into the flow, driven by `consumer`
-}
+val moduleOf = KafkaPersistenceModuleOf.cachingTransactional[F, State](
+  consumerOf = consumerOf,
+  producerOf = producerOf,
+  config = KafkaPersistenceModule.TransactionalConfig(
+    consumerConfig        = snapshotConsumerConfig,
+    producerConfig        = snapshotProducerConfig,
+    transactionalIdPrefix = applicationId,
+    snapshotTopic         = stateTopic,
+  ),
+)
+// wire it into the flow as usual:
+// KafkaFlow.resource(consumerResource, ConsumerFlowOf(inputTopic, TopicFlowOf(kafkaEagerRecovery(moduleOf, /* ... */))))
 ```
 
 `idempotence` and the per-partition `transactional.id` are set for you — don't configure them in
 `producerConfig` — and the snapshot `consumerConfig`'s isolation level is forced to `read_committed`.
-The id is regenerated per assignment, not stable per partition.
+The id is regenerated per assignment, not stable per partition. The input topic whose offsets are
+committed transactionally, and the consumer generation used to fence stale writers, are both supplied
+by the flow (from the assigned partition and the driving consumer), so neither is part of
+`TransactionalConfig`. One module serves one flow: snapshots are keyed by partition *number* alone, so
+each input topic needs its own module with its own `snapshotTopic` — sharing a snapshot topic between
+flows would mix their state on recovery.
+
+`transactionalIdPrefix` does not affect fencing (that is by consumer generation) — it is a readable
+label and, on an ACL-secured cluster, the `transactional.id` prefix your producer principal must be
+authorized for. Use your `applicationId`; an application running several flows can append any per-flow
+discriminator (e.g. the input topic) — an `"<applicationId>*"` prefixed ACL still covers it.
 
 Snapshot writes and the input-offset commit run in one Kafka transaction per assigned partition; a
 write from a stale consumer generation is fenced by the broker
