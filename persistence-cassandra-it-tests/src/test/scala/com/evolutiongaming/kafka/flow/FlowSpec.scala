@@ -10,7 +10,7 @@ import com.evolutiongaming.kafka.flow.kafka.{Consumer, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.key.CassandraKeys
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
-import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
+import com.evolutiongaming.kafka.flow.snapshot.{CassandraSnapshots, KafkaSnapshot}
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata
@@ -141,11 +141,11 @@ class FlowSpec extends CassandraSpec {
       (flowB_, releaseB) = flowB
       _                 <- flowB_(staleFlowRecords(eventsB, key, tp))
       _                 <- releaseB
-      newOwnerWrote     <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
+      newOwnerWrote     <- storage.snapshots.read(KafkaKey(appId, groupId, tp, key)).map(_.flatMap(_.value))
       _                  = assertEquals(clue(newOwnerWrote.map(_.value)), Some(eventsB.mkString(",")))
       // the previous owner flushes its stale state on revoke
       staleFlush <- releaseA.attempt
-      stored     <- storage.snapshots.get(KafkaKey(appId, groupId, tp, key))
+      stored     <- storage.snapshots.read(KafkaKey(appId, groupId, tp, key)).map(_.flatMap(_.value))
     } yield (staleFlush, stored)
   }
 
@@ -174,6 +174,179 @@ class FlowSpec extends CassandraSpec {
           value            = Some(WithSize(ByteVector.encodeUtf8(event).toOption.get)),
         )
     }
+
+  // a fold that deletes the key (returns None) on a "DELETE" event, otherwise behaves like staleFlowFold
+  private val deleteOnMarkerFold: FoldOption[IO, KafkaSnapshot[String], ConsumerRecord[String, ByteVector]] =
+    FoldOption.of { (state, record) =>
+      IO {
+        val event = record.value.flatMap(_.value.decodeUtf8.toOption).getOrElse(sys.error("event payload missing"))
+        if (event == "DELETE") none[KafkaSnapshot[String]]
+        else KafkaSnapshot(offset = record.offset, value = state.fold(event)(s => s"${s.value},$event")).some
+      }
+    }
+
+  // Real-Cassandra counterpart of the (timer-driven) core SnapshotReplayFencingSpec: it covers the flow -> real
+  // CassandraSnapshots delete seam for the replay-window fix. TestControl cannot drive the real driver's async I/O, so
+  // the delete is triggered deterministically (no sleep) by a fold returning None on a replayed-offset record - the
+  // same Snapshots.delete fence path the tick would hit. A delete whose processing offset (2) trails the key's
+  // recovered snapshot offset (5) must be fenced on the high-water (5) and apply against real Cassandra, not be
+  // rejected as stale.
+  test(
+    "compare-and-set: a delete during replay below the recovered snapshot offset applies (fenced on the high-water)"
+  ) {
+    val appId            = "FlowSpec-cas-replay-delete"
+    val groupId          = "integration-tests-1"
+    val tp               = TopicPartition.empty
+    val key              = "key-replay-delete"
+    val events           = (1 to 6).toList.map(i => s"e$i") // land at offsets 0..5
+    val recoveredAt      = Offset.unsafe(5) // the recovered snapshot's high-water offset (the last event)
+    val replayedDeleteAt = Offset.unsafe(2) // a replayed DELETE that trails the recovered offset (2 < 5)
+
+    val test: IO[(Either[Throwable, Unit], Option[KafkaSnapshot[String]])] = for {
+      storage <- CassandraPersistence.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        ConsistencyOverrides.none,
+        CassandraKeys.DefaultSegments,
+        snapshotCompareAndSet = true,
+      )
+      // an owner persists the key's snapshot at offset 5 and registers the key
+      flowA             <- allocateStaleFlow(storage, appId, groupId, tp)
+      (flowA_, releaseA) = flowA
+      _                 <- flowA_(staleFlowRecords(events, key, tp))
+      _                 <- releaseA
+      stored            <- storage.snapshots.read(KafkaKey(appId, groupId, tp, key)).map(_.flatMap(_.value))
+      _                  = assertEquals(clue(stored.map(_.offset)), Some(recoveredAt))
+      // a new flow recovers the key (snapshot offset 5) at assignedAt = 0; the replayed "DELETE" makes the fold
+      // return None -> delete at the replayed offset, which must be fenced on the high-water (recoveredAt)
+      flowB             <- allocateStaleFlow(storage, appId, groupId, tp, deleteOnMarkerFold)
+      (flowB_, releaseB) = flowB
+      deleteResult <- flowB_(staleFlowRecords(List("DELETE"), key, tp).map(_.copy(offset = replayedDeleteAt))).attempt
+      _            <- releaseB.attempt
+      afterDelete  <- storage.snapshots.read(KafkaKey(appId, groupId, tp, key)).map(_.flatMap(_.value))
+    } yield (deleteResult, afterDelete)
+
+    val (deleteResult, afterDelete) = test.unsafeRunSync()
+    deleteResult match {
+      case Left(conflict: CassandraSnapshots.SnapshotWriteConflict) =>
+        fail(s"the replay-window delete was rejected by CAS instead of being fenced on the high-water: $conflict")
+      case Left(e)  => fail(s"unexpected error: $e")
+      case Right(_) => assert(clue(afterDelete.isEmpty)) // deleted; the tombstone reads back as None
+    }
+  }
+
+  // The journal revive, end to end: under events-recovery the journal is UNFENCED - a stale
+  // owner's replayed appends land as plain inserts even after a delete cleared it. The polluted journal must never
+  // fold pre-delete state back to life, and - the re-entry - must STAY dead across later recoveries, after
+  // legitimate post-delete events have advanced the journal and the snapshot together (a fold-result comparison
+  // would pass the polluted fold through at that point; only filtering rows below the fenced store's offset holds
+  // at every recovery). All through the real machinery: PartitionFlow, eager events-recovery (restoreEvents), the
+  // real Cassandra journal and CAS snapshot store, flush-on-revoke.
+  test("compare-and-set + events-recovery: deleted-key journal residue is never folded back to life (journal revive)") {
+    val appId   = "FlowSpec-cas-revive"
+    val groupId = "integration-tests-1"
+    val tp      = TopicPartition.empty
+    val key     = "key-revive"
+
+    def records(eventsWithOffsets: List[(String, Long)]): List[ConsumerRecord[String, ByteVector]] =
+      eventsWithOffsets.map {
+        case (event, offset) =>
+          ConsumerRecord[String, ByteVector](
+            topicPartition   = tp,
+            offset           = Offset.unsafe(offset),
+            timestampAndType = None,
+            key              = Some(WithSize(key)),
+            value            = Some(WithSize(ByteVector.encodeUtf8(event).toOption.get)),
+          )
+      }
+
+    val test: IO[(Option[String], Option[String])] = for {
+      storage <- CassandraPersistence.withSchema[IO, String](
+        cassandra().session,
+        cassandra().sync,
+        ConsistencyOverrides.none,
+        CassandraKeys.DefaultSegments,
+        snapshotCompareAndSet = true,
+      )
+      kafkaKey = KafkaKey(appId, groupId, tp, key)
+      // the owner folds e1..e3 (journal rows 0..2) and persists on release: snapshot Live("e1,e2,e3"@2), journal
+      // rows 0..2. This first persist is what arms the delete below - a fold-None delete is buffer-only (persist =
+      // false) until something has been persisted, so without this the delete would write no tombstone at all.
+      flowA0              <- allocateEventsFlow(storage, appId, groupId, tp, deleteOnMarkerFold)
+      (flowA0_, releaseA0) = flowA0
+      _                   <- flowA0_(records(List("e1" -> 0L, "e2" -> 1L, "e3" -> 2L)))
+      _                   <- releaseA0
+      // a second acquisition recovers the persisted state (so persistedAt is set), then the DELETE@3 dispatches
+      // persist = true: a real Tombstone(3) is written to the CAS store and journals.delete(true) clears rows 0..2
+      flowA             <- allocateEventsFlow(storage, appId, groupId, tp, deleteOnMarkerFold)
+      (flowA_, releaseA) = flowA
+      _                 <- flowA_(records(List("DELETE" -> 3L)))
+      _                 <- releaseA
+      afterDelete       <- storage.snapshots.read(kafkaKey).map(_.flatMap(_.value))
+      _                  = assertEquals(clue(afterDelete), None) // durable tombstone(3): reads back as deleted
+      // a stale owner replays e1..e2 (at-least-once redelivery below the committed offset): its folded state is
+      // dropped by the monotonic buffer, but its journal appends are UNFENCED and re-pollute the cleared journal
+      flowZ             <- allocateEventsFlow(storage, appId, groupId, tp, deleteOnMarkerFold)
+      (flowZ_, releaseZ) = flowZ
+      _                 <- flowZ_(records(List("e1" -> 0L, "e2" -> 1L)))
+      _                 <- releaseZ.attempt
+      afterZombie       <- storage.snapshots.read(kafkaKey).map(_.flatMap(_.value))
+      // recovery #1 discards the residue (tombstone leads it); the flow processes legitimate post-delete events,
+      // advancing journal and snapshot past the tombstone - the state a fold-result comparison cannot tell apart
+      flowB             <- allocateEventsFlow(storage, appId, groupId, tp, deleteOnMarkerFold)
+      (flowB_, releaseB) = flowB
+      _                 <- flowB_(records(List("n1" -> 4L, "n2" -> 5L)))
+      _                 <- releaseB
+      // recovery #2 (the re-entry): the journal now holds {residue 0..1, post-delete 4..5}; folding it from
+      // scratch would resurrect e1,e2 into the base at a correct-looking offset and persist it forward durably
+      flowC             <- allocateEventsFlow(storage, appId, groupId, tp, deleteOnMarkerFold)
+      (flowC_, releaseC) = flowC
+      _                 <- flowC_(records(List("n3" -> 6L)))
+      _                 <- releaseC
+      stored            <- storage.snapshots.read(kafkaKey).map(_.flatMap(_.value))
+    } yield (afterZombie.map(_.value), stored.map(_.value))
+
+    val (afterZombie, stored) = test.unsafeRunSync()
+    // the zombie's replay landed nothing durable: the key is still deleted after its release
+    assertEquals(clue(afterZombie), None)
+    // no pre-delete event survived any recovery; the durable state is exactly the post-delete fold
+    assertEquals(clue(stored), Some("n1,n2,n3"))
+  }
+
+  private def allocateEventsFlow(
+    storage: PersistenceModule[IO, String],
+    appId: String,
+    groupId: String,
+    tp: TopicPartition,
+    fold: FoldOption[IO, KafkaSnapshot[String], ConsumerRecord[String, ByteVector]],
+  ): IO[(PartitionFlow[IO], IO[Unit])] = {
+    val flow = for {
+      timersOf      <- Resource.eval(TimersOf.memory[IO, KafkaKey])
+      keysOf        <- Resource.eval(storage.keys.toKeysOf)
+      persistenceOf <- storage.restoreEvents
+      keyStateOf = KeyStateOf.eagerRecovery[IO, KafkaSnapshot[String]](
+        applicationId = appId,
+        groupId       = groupId,
+        keysOf        = keysOf,
+        timersOf      = timersOf,
+        persistenceOf = persistenceOf,
+        timerFlowOf = TimerFlowOf.persistPeriodically[IO](
+          fireEvery     = 1.hour,
+          persistEvery  = 1.hour,
+          flushOnRevoke = true,
+        ),
+        fold     = fold,
+        tick     = TickOption.id[IO, KafkaSnapshot[String]],
+        registry = EntityRegistry.empty[IO, KafkaKey, KafkaSnapshot[String]],
+      )
+      partitionFlowOf = PartitionFlowOf(keyStateOf, PartitionFlowConfig(commitOnRevoke = true))
+      flow <- partitionFlowOf(
+        PartitionAssignment(tp, Offset.min, IO.pure(none[ConsumerGroupMetadata])),
+        ScheduleCommit.empty[IO],
+      )
+    } yield flow
+    flow.allocated
+  }
 
   private def allocateStaleFlow(
     storage: PersistenceModule[IO, String],
