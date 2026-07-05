@@ -167,12 +167,11 @@ Entry point: `KafkaPersistenceModuleOf.cachingTransactional`. In the current cod
   contract — `onPartitionsRevoked`/`onPartitionsLost` run synchronously on the poll thread, before
   `onPartitionsAssigned` and before `poll` returns (`ConsumerRebalanceListener` javadoc) — together with
   `TopicFlow.remove` **awaiting** the teardown inside that callback (`cache.remove(_).flatten` under
-  `parTraverse_`, on both the revoked and lost paths). It is the *only* net for a lingering
-  foreign-partition flow (`TxnOffsetCommit` fences member + generation, not per-partition ownership), so
-  it hinges on that teardown staying synchronous and awaited. That postcondition is pinned by a unit test
-  (`TopicFlowSpec`, "remove awaits the flow teardown"): a partition flow whose release completes a
-  `Deferred`, asserted already completed by the time `remove` returns — so a future fire-and-forget
-  refactor fails the build. One nuance: a join round
+  `parTraverse_`, on both the revoked and lost paths). That await is the *only* thing keeping a lingering
+  foreign-partition flow off the wire — `TxnOffsetCommit` fences member + generation, not per-partition
+  ownership — so a fire-and-forget teardown would let a revoked flow commit under the next generation's
+  token. `TopicFlowSpec` ("remove awaits the flow teardown") fails the build if the await is dropped.
+  One nuance: a join round
   can span polls (KIP-266 —
   `poll(Duration)` does not block on it), so the refresh publishes the last *completed* join and converges
   on the poll after the round finishes; the interim lag only self-fences, never un-fences.
