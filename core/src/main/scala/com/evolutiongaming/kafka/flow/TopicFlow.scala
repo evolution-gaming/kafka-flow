@@ -117,13 +117,12 @@ object TopicFlow {
         val removeOffsets   = pendingCommits.remove(topicPartitions)
 
         // `removePartitions` AWAITS each flow's teardown (`cache.remove(_).flatten` blocks on the
-        // release), which is load-bearing: this runs inside the synchronous, pre-assign revoke callback,
-        // so awaiting it means no flow survives for a partition this consumer no longer owns once the poll
-        // continues into the refreshed generation. That coupling is the sole cross-partition fence support
-        // (the offset commit is fenced by consumer generation, not per-partition ownership; see the
-        // flows-alive invariant in docs/kafka-single-writer-design.md). Keep the await: dropping it to a
-        // fire-and-forget teardown reintroduces the race. Pinned by TopicFlowSpec's
-        // "remove awaits the flow teardown" test.
+        // release), load-bearing because this runs inside the synchronous, pre-assign revoke callback:
+        // awaiting it means no flow survives for a partition this consumer no longer owns once the poll
+        // continues into the refreshed generation. It is the sole cross-partition fence support (the
+        // offset commit is fenced by consumer generation, not per-partition ownership; see the flows-alive
+        // invariant in docs/kafka-single-writer-design.md). A fire-and-forget teardown reintroduces the
+        // race. Pinned by TopicFlowSpec's "remove awaits the flow teardown" test.
         removePartitions *> removeOffsets *> {
           Log[F].info(s"removed offsets without commit for: $topicPartitions")
         }
