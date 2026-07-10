@@ -50,8 +50,8 @@ object KafkaPartitionPersistence {
     *
     * Two bounds motivate the value, but neither is derivable from a single config here, so it is a plain default to
     * override rather than a computed one:
-    *   - it must fire before the broker evicts the member around the stuck poll thread - i.e. below `max.poll.interval.ms`
-    *     (5m default), with room to raise, unwind the consumer resource and rejoin;
+    *   - it must fire before the broker evicts the member around the stuck poll thread - i.e. below
+    *     `max.poll.interval.ms` (5m default), with room to raise, unwind the consumer resource and rejoin;
     *   - it should sit above any self-healing stall - a hung transaction aborts within the *producer's*
     *     `transaction.timeout.ms` (60s default) plus the broker's abort scan.
     *

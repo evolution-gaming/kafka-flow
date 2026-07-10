@@ -67,7 +67,7 @@ object KafkaPersistenceModule {
     transactionalIdPrefix: String,
     snapshotTopic: Topic,
     inputTopic: Topic,
-    maxWritesPerTransaction: Int = KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction,
+    maxWritesPerTransaction: Int         = KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction,
     recoveryStallTimeout: FiniteDuration = KafkaPartitionPersistence.defaultStallTimeout,
   )
 
@@ -160,7 +160,7 @@ object KafkaPersistenceModule {
       writeDatabase          = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition, producer, partitionMapper),
       // non-transactional recovery keeps its original behaviour: no stall deadline (the deadline is a transactional
       // concern - see KafkaPartitionPersistence.defaultStallTimeout / TransactionalConfig.recoveryStallTimeout)
-      stallTimeout           = none,
+      stallTimeout = none,
     ).map {
       // non-transactional: offsets are committed the default way (by the consumer), see package.scala
       case (keysOf, persistenceOf) => module(keysOf, persistenceOf, commit = None)
@@ -282,7 +282,14 @@ object KafkaPersistenceModule {
     for {
       partitionDataCache <- Cache.loading[F, String, ByteVector]
       keysOf <- Resource.eval(
-        makeKeysOf(partitionDataCache, consumerOf, consumerConfig, snapshotTopicPartition, partitionMapper, stallTimeout)
+        makeKeysOf(
+          partitionDataCache,
+          consumerOf,
+          consumerConfig,
+          snapshotTopicPartition,
+          partitionMapper,
+          stallTimeout
+        )
       )
       persistenceOf <- Resource.eval(
         makeSnapshotPersistenceOf(keysOf, partitionDataCache, snapshotTopicPartition, metrics, writeDatabase)

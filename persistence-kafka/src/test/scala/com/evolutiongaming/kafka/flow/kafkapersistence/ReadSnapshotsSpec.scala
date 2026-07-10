@@ -67,10 +67,10 @@ class ReadSnapshotsSpec extends FunSuite {
       positionRef <- Ref.of[IO, Long](0L)
       result <- KafkaPartitionPersistence
         .readPartition[IO](
-          consumer     = consumer(endOffset = 3L, positionRef = positionRef, records = List(record(0, "k0"))),
+          consumer          = consumer(endOffset = 3L, positionRef = positionRef, records = List(record(0, "k0"))),
           snapshotPartition = tp,
-          targetOffset = Offset.unsafe(3),
-          stallTimeout = 200.millis.some,
+          targetOffset      = Offset.unsafe(3),
+          stallTimeout      = 200.millis.some,
         )
         .attempt
     } yield result match {
@@ -130,15 +130,17 @@ class ReadSnapshotsSpec extends FunSuite {
       override def position(partition: TopicPartition) = positionRef.get.map(Offset.unsafe(_))
 
       override def poll(timeout: FiniteDuration) =
-        positionRef.modify { pos =>
-          records.find(_.offset.value == pos) match {
-            case Some(record) => (pos + 1, record.some)
-            case None         => (pos, none[ConsumerRecord[String, ByteVector]])
+        positionRef
+          .modify { pos =>
+            records.find(_.offset.value == pos) match {
+              case Some(record) => (pos + 1, record.some)
+              case None         => (pos, none[ConsumerRecord[String, ByteVector]])
+            }
           }
-        }.flatMap {
-          case Some(record) => ConsumerRecords(Map(tp -> NonEmptyList.one(record))).pure[IO]
-          case None         => IO.sleep(timeout).as(ConsumerRecords.empty[String, ByteVector])
-        }
+          .flatMap {
+            case Some(record) => ConsumerRecords(Map(tp -> NonEmptyList.one(record))).pure[IO]
+            case None         => IO.sleep(timeout).as(ConsumerRecords.empty[String, ByteVector])
+          }
 
       def assign(partitions: NonEmptySet[TopicPartition])                         = delegate.assign(partitions)
       def assignment                                                              = delegate.assignment
