@@ -5,6 +5,7 @@ import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
+import com.evolutiongaming.kafka.flow.kafka.Codecs.*
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
@@ -441,26 +442,67 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     }
   }
 
-  test("an open transaction of a fenced writer neither blocks nor leaks into recovery") {
+  test("recovery waits out an open transaction and reads committed snapshots beyond it") {
+    // A hard-crashed writer leaves its transaction open for up to transaction.timeout.ms, pinning the
+    // snapshot topic's last-stable-offset below anything committed after it. Recovery must not complete
+    // bounded by that pin (it would silently miss the newer owner's committed snapshots and recover stale
+    // state); it must wait the open transaction out, then include the committed records and exclude the
+    // timed-out (aborted) ones. The open transaction here is genuinely open during the read: a unique
+    // second transactional.id is used, so nothing aborts it early - only the broker's timeout does. (The
+    // previous version of this test reused the crashed producer's id, so the second initTransactions
+    // aborted the transaction before the read ran - it never exercised the open case.)
     val stateTopic = "tx-open-state-topic"
 
-    val record = new ProducerRecord(
+    def record(key: String, value: String) = new ProducerRecord(
       topic     = stateTopic,
       partition = Partition.min.some,
-      key       = "key-uncommitted".some,
-      value     = "uncommitted".some,
+      key       = key.some,
+      value     = value.some,
     )
 
+    def endOffset(isolation: IsolationLevel): IO[Offset] = {
+      val tp = TopicPartition(stateTopic, Partition.min)
+      consumerOf
+        .apply[String, ByteVector](consumerConfig.copy(isolationLevel = isolation))
+        .use(_.endOffsets(cats.data.NonEmptySet.of(tp)).map(_.getOrElse(tp, Offset.min)))
+    }
+
+    // short transaction.timeout.ms so the broker aborts the "crashed" writer quickly (abort scan runs
+    // every transaction.abort.timed.out.transaction.cleanup.interval.ms, default 10s)
+    val crashedProducer =
+      producerOf(
+        producerConfig.copy(
+          transactionalId    = "tx-open-crashed".some,
+          idempotence        = true,
+          transactionTimeout = 5.seconds,
+        )
+      )
+
     val test = createTopic(stateTopic, 1) *>
-      transactionalProducer("tx-open").use { producerA =>
+      crashedProducer.use { producerA =>
         for {
           _ <- producerA.initTransactions
           _ <- producerA.beginTransaction
-          _ <- producerA.send(record).flatten
-          // producerA's transaction is left open: initTransactions of the new producer aborts it
-          _      <- transactionalProducer("tx-open").use(_.initTransactions)
-          stored <- readSnapshots(stateTopic).timeout(30.seconds)
-        } yield assertEquals(clue(stored.get("key-uncommitted")), none[ByteVector])
+          _ <- producerA.send(record("key-uncommitted", "uncommitted")).flatten
+          // the next owner commits a NEWER snapshot above A's still-open transaction
+          _ <- transactionalProducer("tx-open-next").use { producerB =>
+            producerB.initTransactions *>
+              producerB.beginTransaction *>
+              producerB.send(record("key-committed", "committed")).flatten *>
+              producerB.commitTransaction
+          }
+          // the pin must be active when the read starts: without this check, a slow runner where the
+          // broker has already timed A out degrades the test to the aborted case, silently not
+          // exercising the wait
+          lso <- endOffset(IsolationLevel.ReadCommitted)
+          hw  <- endOffset(IsolationLevel.ReadUncommitted)
+          _    = assert(clue(lso.value) < clue(hw.value), "expected an open-transaction pin at read start")
+          // A's transaction is still open here; the read must wait for the broker to time it out
+          stored <- readSnapshots(stateTopic).timeout(60.seconds)
+        } yield {
+          assertEquals(clue(stored.get("key-committed")), utf8("committed"))
+          assertEquals(clue(stored.get("key-uncommitted")), none[ByteVector])
+        }
       }
 
     test.unsafeRunSync()
