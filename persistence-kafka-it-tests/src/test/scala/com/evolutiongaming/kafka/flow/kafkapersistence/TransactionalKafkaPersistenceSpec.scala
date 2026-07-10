@@ -76,6 +76,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
       consumerConfig = consumerConfig.copy(isolationLevel = IsolationLevel.ReadCommitted),
       snapshotTopic  = stateTopic,
       partition      = Partition.min,
+      stallTimeout   = KafkaPartitionPersistence.defaultStallTimeout,
     )
 
   private def utf8(value: String): Option[ByteVector] = ByteVector.encodeUtf8(value).toOption

@@ -19,6 +19,7 @@ import scodec.bits.ByteVector
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
 
 import java.util.UUID
+import scala.concurrent.duration.FiniteDuration
 
 /** A module, necessary to create a Kafka snapshot persistence.
   */
@@ -53,6 +54,12 @@ object KafkaPersistenceModule {
     * @param maxWritesPerTransaction
     *   upper bound of snapshot writes group committed in one per-partition, serialized transaction, see
     *   [[KafkaSnapshotWriteDatabase.transactional]]
+    * @param recoveryStallTimeout
+    *   how long a snapshot recovery read may make no progress before it fails with
+    *   [[KafkaPartitionPersistence.RecoveryReadStalledError]] instead of hanging (a hang on the poll thread is silently
+    *   evicted at `consumerConfig.maxPollInterval`). Keep it comfortably below `maxPollInterval` and above any
+    *   self-healing stall (a hung transaction aborts within the producer's `transaction.timeout.ms`). Defaults to
+    *   [[KafkaPartitionPersistence.defaultStallTimeout]].
     */
   final case class TransactionalConfig(
     consumerConfig: ConsumerConfig,
@@ -61,6 +68,7 @@ object KafkaPersistenceModule {
     snapshotTopic: Topic,
     inputTopic: Topic,
     maxWritesPerTransaction: Int = KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction,
+    recoveryStallTimeout: FiniteDuration = KafkaPartitionPersistence.defaultStallTimeout,
   )
 
   /** The per-assignment context [[cachingTransactional]] needs to fence stale writers.
@@ -137,6 +145,7 @@ object KafkaPersistenceModule {
     snapshotTopicPartition: TopicPartition,
     metrics: FlowMetrics[F],
     partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
+    stallTimeout: FiniteDuration = KafkaPartitionPersistence.defaultStallTimeout,
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
@@ -150,6 +159,7 @@ object KafkaPersistenceModule {
       metrics                = metrics,
       partitionMapper        = partitionMapper,
       writeDatabase          = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition, producer, partitionMapper),
+      stallTimeout           = stallTimeout,
     ).map {
       // non-transactional: offsets are committed the default way (by the consumer), see package.scala
       case (keysOf, persistenceOf) => module(keysOf, persistenceOf, commit = None)
@@ -187,6 +197,7 @@ object KafkaPersistenceModule {
         metrics                = metrics,
         partitionMapper        = KafkaPersistencePartitionMapper.identity,
         writeDatabase          = transactional.writeDatabase,
+        stallTimeout           = config.recoveryStallTimeout,
       )
     } yield {
       val (keysOf, persistenceOf) = parts
@@ -251,6 +262,7 @@ object KafkaPersistenceModule {
     metrics: FlowMetrics[F],
     partitionMapper: KafkaPersistencePartitionMapper,
     writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
+    stallTimeout: FiniteDuration,
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
@@ -258,7 +270,7 @@ object KafkaPersistenceModule {
     for {
       partitionDataCache <- Cache.loading[F, String, ByteVector]
       keysOf <- Resource.eval(
-        makeKeysOf(partitionDataCache, consumerOf, consumerConfig, snapshotTopicPartition, partitionMapper)
+        makeKeysOf(partitionDataCache, consumerOf, consumerConfig, snapshotTopicPartition, partitionMapper, stallTimeout)
       )
       persistenceOf <- Resource.eval(
         makeSnapshotPersistenceOf(keysOf, partitionDataCache, snapshotTopicPartition, metrics, writeDatabase)
@@ -285,6 +297,7 @@ object KafkaPersistenceModule {
     consumerConfig: ConsumerConfig,
     snapshotTopicPartition: TopicPartition,
     partitionMapper: KafkaPersistencePartitionMapper,
+    stallTimeout: FiniteDuration,
   )(implicit fromBytesKey: FromBytes[F, String]): F[KeysOf[F, KafkaKey]] =
     LogOf[F].apply(classOf[KeysOf[F, KafkaKey]]).map { implicit log =>
       def readPartitionData: F[BytesByKey] = {
@@ -295,6 +308,7 @@ object KafkaPersistenceModule {
             consumerConfig = consumerConfig,
             snapshotTopic  = snapshotTopicPartition.topic,
             partition      = targetPartition,
+            stallTimeout   = stallTimeout,
           )
           .map { snapshots =>
             snapshots

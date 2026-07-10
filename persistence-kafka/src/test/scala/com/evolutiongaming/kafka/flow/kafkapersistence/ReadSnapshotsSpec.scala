@@ -40,18 +40,6 @@ class ReadSnapshotsSpec extends FunSuite {
       value            = ByteVector.encodeUtf8(key).toOption.map(WithSize(_)),
     )
 
-  test("stallTimeoutFor derives the deadline from max.poll.interval.ms, floored, kept below eviction") {
-    // default (5m max.poll.interval.ms): the ~2m floor wins, comfortably below eviction
-    assertEquals(
-      KafkaPartitionPersistence.stallTimeoutFor(ConsumerConfig()),
-      KafkaPartitionPersistence.minStallTimeout,
-    )
-    // tight window: safety wins - the deadline drops below the floor so it still fires before eviction
-    val tight = KafkaPartitionPersistence.stallTimeoutFor(ConsumerConfig(maxPollInterval = 90.seconds))
-    assert(tight < 90.seconds, s"expected below max.poll.interval.ms, got $tight")
-    assert(tight < KafkaPartitionPersistence.minStallTimeout, s"expected below the floor when tight, got $tight")
-  }
-
   test("the read drains to the consumer's end offset and returns every record below it") {
     // the read target is captured once from the consumer's own endOffsets, then drained to
     val records = List(record(0, "k0"), record(1, "k1"), record(2, "k2"))
@@ -63,6 +51,7 @@ class ReadSnapshotsSpec extends FunSuite {
         consumerConfig = ConsumerConfig(isolationLevel = IsolationLevel.ReadCommitted),
         snapshotTopic  = topic,
         partition      = partition,
+        stallTimeout   = KafkaPartitionPersistence.defaultStallTimeout,
       )
     } yield assertEquals(stored.keys.toList.sorted, List("k0", "k1", "k2"))
 

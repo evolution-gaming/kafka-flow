@@ -8,6 +8,8 @@ import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerGroupMetadat
 import com.evolutiongaming.skafka.producer.{Producer, ProducerOf}
 import com.evolutiongaming.skafka.*
 
+import scala.concurrent.duration.FiniteDuration
+
 /** Convenience factory trait to create an instance of [[KafkaPersistenceModule]] for an assigned partition.
   * `assignedAt` is the offset the partition was assigned at; the transactional module seeds it as the initial
   * offset-to-commit (ignored by the non-transactional caching module).
@@ -41,6 +43,7 @@ object KafkaPersistenceModuleOf {
     snapshotTopic: Topic,
     metrics: FlowMetrics[F],
     partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
+    stallTimeout: FiniteDuration = KafkaPartitionPersistence.defaultStallTimeout,
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
@@ -55,6 +58,7 @@ object KafkaPersistenceModuleOf {
         snapshotTopicPartition = TopicPartition(snapshotTopic, partition),
         metrics                = metrics,
         partitionMapper        = partitionMapper,
+        stallTimeout           = stallTimeout,
       )
   }
 

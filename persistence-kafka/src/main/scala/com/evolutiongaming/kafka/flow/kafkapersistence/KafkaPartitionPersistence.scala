@@ -43,33 +43,24 @@ object KafkaPartitionPersistence {
       )
       with NoStackTrace
 
-  // Floor for the no-progress deadline: comfortably above any self-healing stall. The longest of those is a hung
-  // transaction, which the broker aborts within the *producer's* `transaction.timeout.ms` (60s default) plus its abort
-  // scan - a producer setting not visible on this consumer's config, hence a fixed floor rather than a derived one.
-  private[kafkapersistence] val minStallTimeout: FiniteDuration = 2.minutes
+  /** Default no-progress deadline for a snapshot recovery read, used when a caller does not set one explicitly.
+    *
+    * Two bounds motivate the value, but neither is derivable from a single config here, so it is a plain default to
+    * override rather than a computed one:
+    *   - it must fire before the broker evicts the member around the stuck poll thread (recovery runs inside the
+    *     rebalance callback, so the eviction is silent) - i.e. below `max.poll.interval.ms` (5m default), with room to
+    *     raise, unwind the consumer resource and rejoin;
+    *   - it should sit above any self-healing stall - a hung transaction aborts within the *producer's*
+    *     `transaction.timeout.ms` (60s default) plus the broker's abort scan.
+    *
+    * 2 minutes sits between those defaults. Override it (see `TransactionalConfig.recoveryStallTimeout`) whenever
+    * `max.poll.interval.ms` is retuned - it must stay comfortably below it. A slow-but-progressing read never nears the
+    * deadline: it is measured from the last advance and reset on every advance.
+    */
+  val defaultStallTimeout: FiniteDuration = 2.minutes
 
   // ~5s between "no progress" log lines while stalled, so a stuck recovery is visible long before the deadline trips
   private val logStallEvery: FiniteDuration = 5.seconds
-
-  /** No-progress deadline derived from the consumer's own `max.poll.interval.ms`. Two bounds pin it:
-    *   - it MUST fire before the broker evicts the member around the stuck poll thread (recovery runs inside the
-    *     rebalance callback, so the eviction is silent). We reserve `evictionMargin` below `max.poll.interval.ms` to
-    *     raise, unwind the consumer resource and rejoin cleanly. This is a safety bound and wins when the window is
-    *     tight (a low `max.poll.interval.ms`);
-    *   - it SHOULD sit above any self-healing stall, so we floor it at [[minStallTimeout]].
-    *
-    * At the default `max.poll.interval.ms` (5m) this yields the intended ~2m. A slow-but-progressing read never nears
-    * it: the deadline is measured from the last advance and reset on every advance.
-    */
-  private[kafkapersistence] def stallTimeoutFor(consumerConfig: ConsumerConfig): FiniteDuration = {
-    val maxPollIntervalMs = consumerConfig.maxPollInterval.toMillis
-    // room to fail + rejoin before eviction: a fifth of the window, but at least 30s
-    val evictionMarginMs = math.max(maxPollIntervalMs / 5, 30.seconds.toMillis)
-    val ceilingMs        = maxPollIntervalMs - evictionMarginMs
-    // prefer the floor, but never cross the ceiling (safety over liveness); keep it strictly positive
-    val stallMs = math.max(math.min(minStallTimeout.toMillis, ceilingMs), 1.second.toMillis)
-    FiniteDuration(stallMs, MILLISECONDS)
-  }
 
   // loop state of `readPartition`: accumulated snapshot, last observed position, and the monotonic timestamps of the
   // last advance and the last "no progress" log line - both used to detect a stall by elapsed wall time, not poll count
@@ -143,6 +134,7 @@ object KafkaPartitionPersistence {
     consumerConfig: ConsumerConfig,
     snapshotTopic: Topic,
     partition: Partition,
+    stallTimeout: FiniteDuration,
   )(implicit fromBytes: FromBytes[F, String]): F[BytesByKey] = {
     consumerOf
       .apply[String, ByteVector](
@@ -169,7 +161,7 @@ object KafkaPartitionPersistence {
             consumer,
             snapshotsPartition,
             targetOffset,
-            stallTimeoutFor(consumerConfig),
+            stallTimeout,
           )
           _ <- Log[F].info(
             s"Snapshot topic $snapshotTopic partition $partition read complete at offset $targetOffset, ${bytesByKey.size} keys read"

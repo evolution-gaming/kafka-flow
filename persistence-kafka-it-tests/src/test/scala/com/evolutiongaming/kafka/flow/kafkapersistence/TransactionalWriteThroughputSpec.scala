@@ -63,6 +63,7 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
       ),
       snapshotTopic = stateTopic,
       partition     = Partition.min,
+      stallTimeout  = KafkaPartitionPersistence.defaultStallTimeout,
     )
 
   private def timed(io: IO[Unit]): IO[FiniteDuration] =
