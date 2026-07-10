@@ -145,7 +145,6 @@ object KafkaPersistenceModule {
     snapshotTopicPartition: TopicPartition,
     metrics: FlowMetrics[F],
     partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
-    stallTimeout: FiniteDuration = KafkaPartitionPersistence.defaultStallTimeout,
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
@@ -159,7 +158,8 @@ object KafkaPersistenceModule {
       metrics                = metrics,
       partitionMapper        = partitionMapper,
       writeDatabase          = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition, producer, partitionMapper),
-      stallTimeout           = stallTimeout,
+      // the non-transactional path is not configurable for this; transactional exposes TransactionalConfig.recoveryStallTimeout
+      stallTimeout           = KafkaPartitionPersistence.defaultStallTimeout,
     ).map {
       // non-transactional: offsets are committed the default way (by the consumer), see package.scala
       case (keysOf, persistenceOf) => module(keysOf, persistenceOf, commit = None)
