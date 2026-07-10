@@ -189,6 +189,17 @@ object KafkaPersistenceModule {
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     val snapshotTopicPartition = TopicPartition(config.snapshotTopic, assignment.partition)
     for {
+      // a deadline at or above max.poll.interval.ms is silently defeated: the broker evicts the stuck member first
+      _ <- Resource.eval {
+        LogOf[F].apply(KafkaPersistenceModule.getClass).flatMap { log =>
+          log
+            .warn(
+              s"recoveryStallTimeout ${config.recoveryStallTimeout} is not below max.poll.interval.ms " +
+                s"${config.consumerConfig.maxPollInterval}: a stalled recovery would be evicted before it fails"
+            )
+            .whenA(config.recoveryStallTimeout >= config.consumerConfig.maxPollInterval)
+        }
+      }
       transactional <- transactionalWriteDatabase[F, S](producerOf, config, assignment, snapshotTopicPartition)
       // records of aborted transactions (e.g. of a fenced previous owner) must not be recovered as snapshots
       parts <- of(
