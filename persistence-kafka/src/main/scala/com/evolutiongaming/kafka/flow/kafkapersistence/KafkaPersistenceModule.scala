@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
 import cats.Parallel
-import cats.effect.{Async, Concurrent, Resource}
+import cats.effect.{Async, Clock, Concurrent, Resource}
 import cats.syntax.all.*
 import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.{FromTry, LogOf, Runtime}
@@ -79,7 +79,7 @@ object KafkaPersistenceModule {
     groupMetadata: F[Option[ConsumerGroupMetadata]],
   )
 
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime: Clock, S](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
@@ -130,7 +130,7 @@ object KafkaPersistenceModule {
     * @see
     *   com.evolutiongaming.kafka.flow.KeyFlow.of for implementation details of state recovery for a specific key
     */
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime: Clock, S](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
@@ -244,7 +244,7 @@ object KafkaPersistenceModule {
   /** Builds the cached `keysOf` + `persistenceOf` for a partition; the module's `scheduleCommit` is attached by the
     * caller via [[module]] (transactional binds the offset, caching defers to the consumer).
     */
-  private def of[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  private def of[F[_]: LogOf: Concurrent: Parallel: Runtime: Clock, S](
     consumerOf: ConsumerOf[F],
     consumerConfig: ConsumerConfig,
     snapshotTopicPartition: TopicPartition,
@@ -279,7 +279,7 @@ object KafkaPersistenceModule {
       override def scheduleCommit: Option[ScheduleCommit[F]] = commit
     }
 
-  private def makeKeysOf[F[_]: LogOf: Concurrent](
+  private def makeKeysOf[F[_]: LogOf: Concurrent: Clock](
     cache: Cache[F, String, ByteVector],
     consumerOf: ConsumerOf[F],
     consumerConfig: ConsumerConfig,

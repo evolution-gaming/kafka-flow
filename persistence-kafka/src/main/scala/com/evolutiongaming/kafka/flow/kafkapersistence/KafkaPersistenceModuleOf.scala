@@ -1,7 +1,7 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
 import cats.Parallel
-import cats.effect.{Async, Concurrent, Resource}
+import cats.effect.{Async, Clock, Concurrent, Resource}
 import com.evolutiongaming.catshelper.{LogOf, Runtime}
 import com.evolutiongaming.kafka.flow.FlowMetrics
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerGroupMetadata, ConsumerOf}
@@ -34,7 +34,7 @@ object KafkaPersistenceModuleOf {
     * @param metrics
     *   instance of `FlowMetrics` for [[KafkaPersistenceModule]]
     */
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime: Clock, S](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
@@ -58,7 +58,7 @@ object KafkaPersistenceModuleOf {
       )
   }
 
-  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime, S](
+  def caching[F[_]: LogOf: Concurrent: Parallel: Runtime: Clock, S](
     consumerOf: ConsumerOf[F],
     producer: Producer[F],
     consumerConfig: ConsumerConfig,
