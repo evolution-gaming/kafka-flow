@@ -158,8 +158,9 @@ object KafkaPersistenceModule {
       metrics                = metrics,
       partitionMapper        = partitionMapper,
       writeDatabase          = KafkaSnapshotWriteDatabase.of[F, S](snapshotTopicPartition, producer, partitionMapper),
-      // the non-transactional path is not configurable for this; transactional exposes TransactionalConfig.recoveryStallTimeout
-      stallTimeout           = KafkaPartitionPersistence.defaultStallTimeout,
+      // non-transactional recovery keeps its original behaviour: no stall deadline (the deadline is a transactional
+      // concern - see KafkaPartitionPersistence.defaultStallTimeout / TransactionalConfig.recoveryStallTimeout)
+      stallTimeout           = none,
     ).map {
       // non-transactional: offsets are committed the default way (by the consumer), see package.scala
       case (keysOf, persistenceOf) => module(keysOf, persistenceOf, commit = None)
@@ -197,7 +198,7 @@ object KafkaPersistenceModule {
         metrics                = metrics,
         partitionMapper        = KafkaPersistencePartitionMapper.identity,
         writeDatabase          = transactional.writeDatabase,
-        stallTimeout           = config.recoveryStallTimeout,
+        stallTimeout           = config.recoveryStallTimeout.some,
       )
     } yield {
       val (keysOf, persistenceOf) = parts
@@ -262,7 +263,7 @@ object KafkaPersistenceModule {
     metrics: FlowMetrics[F],
     partitionMapper: KafkaPersistencePartitionMapper,
     writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
-    stallTimeout: FiniteDuration,
+    stallTimeout: Option[FiniteDuration],
   )(
     implicit fromBytesKey: FromBytes[F, String],
     fromBytesState: FromBytes[F, S],
@@ -297,7 +298,7 @@ object KafkaPersistenceModule {
     consumerConfig: ConsumerConfig,
     snapshotTopicPartition: TopicPartition,
     partitionMapper: KafkaPersistencePartitionMapper,
-    stallTimeout: FiniteDuration,
+    stallTimeout: Option[FiniteDuration],
   )(implicit fromBytesKey: FromBytes[F, String]): F[KeysOf[F, KafkaKey]] =
     LogOf[F].apply(classOf[KeysOf[F, KafkaKey]]).map { implicit log =>
       def readPartitionData: F[BytesByKey] = {

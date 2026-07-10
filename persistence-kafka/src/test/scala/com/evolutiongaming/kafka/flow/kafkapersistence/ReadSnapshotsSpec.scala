@@ -51,7 +51,7 @@ class ReadSnapshotsSpec extends FunSuite {
         consumerConfig = ConsumerConfig(isolationLevel = IsolationLevel.ReadCommitted),
         snapshotTopic  = topic,
         partition      = partition,
-        stallTimeout   = KafkaPartitionPersistence.defaultStallTimeout,
+        stallTimeout   = KafkaPartitionPersistence.defaultStallTimeout.some,
       )
     } yield assertEquals(stored.keys.toList.sorted, List("k0", "k1", "k2"))
 
@@ -70,7 +70,7 @@ class ReadSnapshotsSpec extends FunSuite {
           consumer     = consumer(endOffset = 3L, positionRef = positionRef, records = List(record(0, "k0"))),
           snapshotPartition = tp,
           targetOffset = Offset.unsafe(3),
-          stallTimeout = 200.millis,
+          stallTimeout = 200.millis.some,
         )
         .attempt
     } yield result match {
@@ -78,6 +78,29 @@ class ReadSnapshotsSpec extends FunSuite {
         assertEquals(e.position, Offset.unsafe(1))
         assertEquals(e.targetOffset, Offset.unsafe(3))
       case other => fail(s"expected RecoveryReadStalledError, got $other")
+    }
+
+    test.unsafeRunSync()
+  }
+
+  test("with no deadline the read keeps its original behaviour and does not fail on a stall") {
+    // the non-transactional path passes no deadline; a stalled read must keep waiting, as before, not fail
+    val test = for {
+      positionRef <- Ref.of[IO, Long](0L)
+      result <- KafkaPartitionPersistence
+        .readPartition[IO](
+          consumer          = consumer(endOffset = 3L, positionRef = positionRef, records = List(record(0, "k0"))),
+          snapshotPartition = tp,
+          targetOffset      = Offset.unsafe(3),
+          stallTimeout      = none,
+        )
+        .timeout(500.millis)
+        .attempt
+    } yield result match {
+      case Left(_: KafkaPartitionPersistence.RecoveryReadStalledError) =>
+        fail("expected no stall failure when no deadline is set")
+      case Left(_)  => () // timed out from the outside while still polling - i.e. it kept waiting, as before
+      case Right(_) => fail("expected the read to keep waiting, not to complete")
     }
 
     test.unsafeRunSync()

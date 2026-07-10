@@ -43,13 +43,15 @@ object KafkaPartitionPersistence {
       )
       with NoStackTrace
 
-  /** Default no-progress deadline for a snapshot recovery read, used when a caller does not set one explicitly.
+  /** Default no-progress deadline for a snapshot recovery read in the transactional mode. Only that mode arms a
+    * deadline: it captures a `read_committed` end offset that an unclean-leader-election truncation can strand the read
+    * below, and it hangs the poll thread inside the rebalance callback where a hang is silently evicted. The
+    * non-transactional caching mode keeps its original behaviour and passes no deadline (`None`).
     *
     * Two bounds motivate the value, but neither is derivable from a single config here, so it is a plain default to
     * override rather than a computed one:
-    *   - it must fire before the broker evicts the member around the stuck poll thread (recovery runs inside the
-    *     rebalance callback, so the eviction is silent) - i.e. below `max.poll.interval.ms` (5m default), with room to
-    *     raise, unwind the consumer resource and rejoin;
+    *   - it must fire before the broker evicts the member around the stuck poll thread - i.e. below `max.poll.interval.ms`
+    *     (5m default), with room to raise, unwind the consumer resource and rejoin;
     *   - it should sit above any self-healing stall - a hung transaction aborts within the *producer's*
     *     `transaction.timeout.ms` (60s default) plus the broker's abort scan.
     *
@@ -75,7 +77,7 @@ object KafkaPartitionPersistence {
     consumer: SkafkaConsumer[F, String, ByteVector],
     snapshotPartition: TopicPartition,
     targetOffset: Offset,
-    stallTimeout: FiniteDuration,
+    stallTimeout: Option[FiniteDuration],
   ): F[BytesByKey] =
     Log[F].info(s"Snapshot topic read started up to offset $targetOffset") *>
       Clock[F].monotonic.flatMap { start =>
@@ -103,10 +105,11 @@ object KafkaPartitionPersistence {
                             s"stalled for ${stalledFor.toSeconds}s"
                         )
                         .whenA(shouldLog)
-                      // waiting cannot fix a stall this long - fail loudly (see the error's scaladoc)
+                      // waiting cannot fix a stall this long - fail loudly (see the error's scaladoc). With no deadline
+                      // (non-transactional mode) the read keeps its original behaviour and never fails here.
                       val failStalled = RecoveryReadStalledError(snapshotPartition, offset, targetOffset)
                         .raiseError[F, Unit]
-                        .whenA(stalledFor >= stallTimeout)
+                        .whenA(stallTimeout.exists(stalledFor >= _))
 
                       failStalled *> logStalled *>
                         consumer
@@ -134,7 +137,7 @@ object KafkaPartitionPersistence {
     consumerConfig: ConsumerConfig,
     snapshotTopic: Topic,
     partition: Partition,
-    stallTimeout: FiniteDuration,
+    stallTimeout: Option[FiniteDuration],
   )(implicit fromBytes: FromBytes[F, String]): F[BytesByKey] = {
     consumerOf
       .apply[String, ByteVector](
