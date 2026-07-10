@@ -5,6 +5,7 @@ import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
+import com.evolutiongaming.kafka.flow.kafka.Codecs.*
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
@@ -439,6 +440,95 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
 
       test.unsafeRunSync()
     }
+  }
+
+  test("a takeover aborts the crashed owner's dangling transaction (stable transactional.id)") {
+    // Every writer of a partition shares the stable transactional.id, and its mandatory initTransactions
+    // aborts the predecessor's open transaction before it may write - so a hard-crashed owner's dangling
+    // transaction does not outlive the handover, and no committed snapshot can sit above an open
+    // transaction on the topic. This test pins that at the handover: acquiring the module runs
+    // initTransactions on the partition's own id, fencing the crashed producer and aborting its dangling
+    // transaction; the abort markers are written and replicated before initTransactions returns, so the
+    // last-stable-offset is back at the high watermark before recovery reads. The crashed producer's
+    // transaction.timeout.ms is deliberately long: the pin-resolved assertion right after module
+    // acquisition can only pass through the takeover-abort, never the broker's timeout. This also pins
+    // the "<prefix>-<partition>" id shape - under a per-assignment unique id the crashed transaction
+    // would stay open and the assertion would fail.
+    val stateTopic = "tx-takeover-abort-state-topic"
+    val inputTopic = s"input-$stateTopic"
+
+    def record(key: String, value: String) = new ProducerRecord(
+      topic     = stateTopic,
+      partition = Partition.min.some,
+      key       = key.some,
+      value     = value.some,
+    )
+
+    def endOffset(isolation: IsolationLevel): IO[Offset] = {
+      val tp = TopicPartition(stateTopic, Partition.min)
+      consumerOf
+        .apply[String, ByteVector](consumerConfig.copy(isolationLevel = isolation))
+        .use(_.endOffsets(cats.data.NonEmptySet.of(tp)).map(_.getOrElse(tp, Offset.min)))
+    }
+
+    // the id the module derives for this partition: the crashed owner is what a previous incarnation of
+    // the module's own producer would have been
+    val crashedProducer =
+      producerOf(
+        producerConfig.copy(
+          transactionalId = s"$appId-${Partition.min.value}".some,
+          idempotence     = true,
+        )
+      )
+
+    val module = KafkaPersistenceModule.cachingTransactional[IO, String](
+      consumerOf = consumerOf,
+      producerOf = producerOf,
+      config = KafkaPersistenceModule.TransactionalConfig(
+        consumerConfig        = consumerConfig,
+        producerConfig        = producerConfig,
+        transactionalIdPrefix = appId,
+        snapshotTopic         = stateTopic,
+        inputTopic            = inputTopic,
+      ),
+      assignment = KafkaPersistenceModule.PartitionAssignment[IO](
+        partition     = Partition.min,
+        assignedAt    = Offset.min,
+        groupMetadata = IO.pure(none[ConsumerGroupMetadata]),
+      ),
+    )
+
+    val test = createTopic(stateTopic, 1) *>
+      crashedProducer.use { crashed =>
+        for {
+          _ <- crashed.initTransactions
+          // a committed snapshot, so recovery has something real to return
+          _ <- crashed.beginTransaction
+          _ <- crashed.send(record("key-committed", "committed")).flatten
+          _ <- crashed.commitTransaction
+          // the crash: a transaction left open - never committed, aborted or closed
+          _    <- crashed.beginTransaction
+          _    <- crashed.send(record("key-dangling", "dangling")).flatten
+          lso0 <- endOffset(IsolationLevel.ReadCommitted)
+          hw0  <- endOffset(IsolationLevel.ReadUncommitted)
+          _     = assert(clue(lso0.value) < clue(hw0.value), "expected the dangling transaction to pin the LSO")
+          // the takeover: acquiring the module runs initTransactions on the partition's stable id
+          stored <- module.use { _ =>
+            for {
+              lso1 <- endOffset(IsolationLevel.ReadCommitted)
+              hw1  <- endOffset(IsolationLevel.ReadUncommitted)
+              // the pin is resolved by the init itself - recovery starts unpinned, nothing to wait out
+              _ = assertEquals(clue(lso1), clue(hw1), "expected the takeover's init to abort the dangling transaction")
+              stored <- readSnapshots(stateTopic)
+            } yield stored
+          }
+        } yield {
+          assertEquals(clue(stored.get("key-committed")), utf8("committed"))
+          assertEquals(clue(stored.get("key-dangling")), none[ByteVector])
+        }
+      }
+
+    test.unsafeRunSync()
   }
 
   test("an open transaction of a fenced writer neither blocks nor leaks into recovery") {

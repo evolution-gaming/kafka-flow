@@ -18,8 +18,6 @@ import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
 
-import java.util.UUID
-
 /** A module, necessary to create a Kafka snapshot persistence.
   */
 trait KafkaPersistenceModule[F[_], S] {
@@ -43,8 +41,11 @@ object KafkaPersistenceModule {
     *   base config for the snapshot producer; `transactionalId` and `idempotence` are overridden per producer and
     *   `clientId` is suffixed with it
     * @param transactionalIdPrefix
-    *   prefix for `transactional.id` (partition number and a unique per-producer suffix are appended). Fencing is by
-    *   consumer generation, not this id, so it is just a readable label (e.g. a `"<groupId>-<inputTopic>"` string).
+    *   prefix for `transactional.id` (the partition number is appended - the id is stable per partition, so a
+    *   takeover's `initTransactions` fences the previous owner's producer and aborts any transaction it left open).
+    *   Fencing of stale writers stays with the consumer generation, but the takeover-abort makes a crashed owner's
+    *   leftovers not outlive the handover - so treat the prefix like a group id: unique per application on the cluster
+    *   (e.g. a `"<groupId>-<inputTopic>"` string), or applications fence each other's producers.
     * @param snapshotTopic
     *   snapshot topic name (should be configured as a 'compacted' topic) to read/write snapshots
     * @param inputTopic
@@ -215,9 +216,13 @@ object KafkaPersistenceModule {
     val inputTopicPartition = TopicPartition(inputTopic, partition)
 
     for {
-      // unique per producer: fencing is by consumer generation, not this id, so a fresh id per assignment is fine
-      shortId        <- Resource.eval(Async[F].delay(UUID.randomUUID().toString.take(8)))
-      transactionalId = s"$transactionalIdPrefix-${partition.value}-$shortId"
+      // stable per partition (the eos-v1 Kafka Streams model): this producer's initTransactions fences the
+      // previous owner's producer and aborts any transaction a hard-crashed owner left open, so its leftovers
+      // (an open transaction pinning the topic's last-stable-offset; pending transactional offsets blocking
+      // requireStable offset fetches) do not outlive the handover. Fencing of stale writers stays with the
+      // consumer generation bound into every commit, never with producer-epoch order (a late-initing stale
+      // owner can win the epoch; that inversion costs availability, not safety)
+      transactionalId <- Resource.pure[F, String](s"$transactionalIdPrefix-${partition.value}")
       transactionalProducerConfig = producerConfig.copy(
         transactionalId = transactionalId.some,
         idempotence     = true,
