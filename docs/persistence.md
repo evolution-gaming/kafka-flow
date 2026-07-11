@@ -61,6 +61,10 @@ replays the affected events.
 
 ### Transactional snapshot writes (Kafka)
 
+**EXPERIMENTAL** — use at your own risk: the mechanism is design-verified but not yet proven in
+production operation, and unknown defects may remain. No compatibility guarantee: configuration, API,
+and behavior may change in any release, without deprecation.
+
 Enable with `KafkaPersistenceModuleOf.cachingTransactional`. The flow supplies the driving consumer's
 group metadata (generation) to the module, which uses it to fence stale writers — so you build the
 module like any other and wire it into the flow as usual:

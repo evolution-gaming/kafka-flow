@@ -139,7 +139,11 @@ object KafkaPersistenceModule {
     }
   }
 
-  /** Variant of `caching` protecting the snapshot topic from stale writers by binding the input-offset commit into the
+  /** EXPERIMENTAL - use at your own risk: design-verified but not yet proven in production operation, and unknown
+    * defects may remain. No compatibility guarantee: configuration, API, and behavior may change in any release,
+    * without deprecation.
+    *
+    * Variant of `caching` protecting the snapshot topic from stale writers by binding the input-offset commit into the
     * snapshot transaction. Each assigned partition gets a transactional producer with a unique `transactional.id`;
     * snapshot writes run in group-committed transactions (see [[KafkaSnapshotWriteDatabase.transactional]]) that also
     * commit the input offset. A stale consumer generation is rejected by the broker (KIP-447), aborting the

@@ -73,7 +73,11 @@ object KafkaPersistenceModuleOf {
   ): KafkaPersistenceModuleOf[F, S] =
     caching(consumerOf, producer, consumerConfig, snapshotTopic, FlowMetrics.empty[F])
 
-  /** A transactional [[KafkaPersistenceModule]] factory that protects the snapshot topic from stale writers - see
+  /** EXPERIMENTAL - use at your own risk: design-verified but not yet proven in production operation, and unknown
+    * defects may remain. No compatibility guarantee: configuration, API, and behavior may change in any release,
+    * without deprecation.
+    *
+    * A transactional [[KafkaPersistenceModule]] factory that protects the snapshot topic from stale writers - see
     * `KafkaPersistenceModule.cachingTransactional` for semantics and trade-offs. The input topic and consumer
     * generation are supplied by the flow, so they are not part of `config`.
     */
