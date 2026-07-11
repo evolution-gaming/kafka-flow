@@ -42,8 +42,7 @@ object KafkaPersistenceModuleOf {
     metrics: FlowMetrics[F],
     partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
   )(
-    implicit fromBytesKey: FromBytes[F, String],
-    fromBytesState: FromBytes[F, S],
+    implicit fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     // assignedAt is unused: the non-transactional caching module does not commit offsets through a producer
@@ -64,8 +63,7 @@ object KafkaPersistenceModuleOf {
     consumerConfig: ConsumerConfig,
     snapshotTopic: Topic
   )(
-    implicit fromBytesKey: FromBytes[F, String],
-    fromBytesState: FromBytes[F, S],
+    implicit fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] =
     caching(consumerOf, producer, consumerConfig, snapshotTopic, FlowMetrics.empty[F])
@@ -85,8 +83,7 @@ object KafkaPersistenceModuleOf {
     groupMetadata: F[Option[ConsumerGroupMetadata]],
     metrics: FlowMetrics[F] = FlowMetrics.empty[F],
   )(
-    implicit fromBytesKey: FromBytes[F, String],
-    fromBytesState: FromBytes[F, S],
+    implicit fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): KafkaPersistenceModuleOf[F, S] = new KafkaPersistenceModuleOf[F, S] {
     override def make(partition: Partition, assignedAt: Offset): Resource[F, KafkaPersistenceModule[F, S]] =

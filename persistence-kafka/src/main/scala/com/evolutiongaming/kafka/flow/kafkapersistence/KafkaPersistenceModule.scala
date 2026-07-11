@@ -93,8 +93,7 @@ object KafkaPersistenceModule {
     consumerConfig: ConsumerConfig,
     snapshotTopicPartition: TopicPartition
   )(
-    implicit fromBytesKey: FromBytes[F, String],
-    fromBytesState: FromBytes[F, S],
+    implicit fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] =
     caching(consumerOf, producer, consumerConfig, snapshotTopicPartition, FlowMetrics.empty[F])
@@ -146,8 +145,7 @@ object KafkaPersistenceModule {
     metrics: FlowMetrics[F],
     partitionMapper: KafkaPersistencePartitionMapper = KafkaPersistencePartitionMapper.identity,
   )(
-    implicit fromBytesKey: FromBytes[F, String],
-    fromBytesState: FromBytes[F, S],
+    implicit fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     implicit val fromTry: FromTry[F] = FromTry.lift
@@ -183,8 +181,7 @@ object KafkaPersistenceModule {
     assignment: PartitionAssignment[F],
     metrics: FlowMetrics[F] = FlowMetrics.empty[F],
   )(
-    implicit fromBytesKey: FromBytes[F, String],
-    fromBytesState: FromBytes[F, S],
+    implicit fromBytesState: FromBytes[F, S],
     toBytesState: ToBytes[F, S]
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     val snapshotTopicPartition = TopicPartition(config.snapshotTopic, assignment.partition)
@@ -276,8 +273,7 @@ object KafkaPersistenceModule {
     writeDatabase: SnapshotWriteDatabase[F, KafkaKey, S],
     stallTimeout: Option[FiniteDuration],
   )(
-    implicit fromBytesKey: FromBytes[F, String],
-    fromBytesState: FromBytes[F, S],
+    implicit fromBytesState: FromBytes[F, S],
   ): Resource[F, (KeysOf[F, KafkaKey], SnapshotPersistenceOf[F, KafkaKey, S, ConsumerRecord[String, ByteVector]])] =
     for {
       partitionDataCache <- Cache.loading[F, String, ByteVector]
@@ -317,7 +313,9 @@ object KafkaPersistenceModule {
     snapshotTopicPartition: TopicPartition,
     partitionMapper: KafkaPersistencePartitionMapper,
     stallTimeout: Option[FiniteDuration],
-  )(implicit fromBytesKey: FromBytes[F, String]): F[KeysOf[F, KafkaKey]] =
+  ): F[KeysOf[F, KafkaKey]] = {
+    // the snapshot key is always String; derive its codec here instead of demanding a FromBytes[F, String] from callers
+    implicit val fromTry: FromTry[F] = FromTry.lift
     LogOf[F].apply(classOf[KeysOf[F, KafkaKey]]).map { implicit log =>
       def readPartitionData: F[BytesByKey] = {
         val targetPartition = partitionMapper.getStatePartition(snapshotTopicPartition.partition)
@@ -351,6 +349,7 @@ object KafkaPersistenceModule {
         }
       }
     }
+  }
 
   private def makeSnapshotPersistenceOf[F[_]: LogOf: Concurrent, S](
     keysOf: KeysOf[F, KafkaKey],
