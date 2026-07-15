@@ -98,9 +98,11 @@ Key points:
   (`CommitFailedException`) propagate into the flow and crash a stale owner, rather than being lost on a
   fire-and-forget commit thread.
 
-Wiring needs the input topic and a reader of the driving consumer's group metadata
-(`Consumer.groupMetadata`, captured on each partition assignment on the poll thread). A fence surfaces as
-`CommitFailedException` on the failing snapshot write (or offset-only commit).
+The mechanism needs the input topic-partition and a reader of the driving consumer's group metadata
+(`Consumer.groupMetadata`, captured on each partition assignment on the poll thread). Both are supplied by
+the flow from the partition assignment — not configured by hand — so they always match the consumer that
+drives the flow. A fence surfaces as `CommitFailedException` on the failing snapshot write (or offset-only
+commit).
 
 ### No epoch fencing
 

@@ -5,16 +5,13 @@ import cats.effect.kernel.Async
 import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
-import com.evolutiongaming.skafka.{Offset, TopicPartition}
 
 trait PartitionFlowOf[F[_]] {
 
-  /** Creates partition record handler for assigned partition */
-  def apply(
-    topicPartition: TopicPartition,
-    assignedAt: Offset,
-    scheduleCommit: ScheduleCommit[F]
-  ): Resource[F, PartitionFlow[F]]
+  /** Creates partition record handler for the partition described by `assignment`, committing offsets through
+    * `scheduleCommit`.
+    */
+  def apply(assignment: PartitionAssignment[F], scheduleCommit: ScheduleCommit[F]): Resource[F, PartitionFlow[F]]
 
 }
 object PartitionFlowOf {
@@ -36,7 +33,17 @@ object PartitionFlowOf {
     config: PartitionFlowConfig     = PartitionFlowConfig(),
     filter: Option[FilterRecord[F]] = None,
     remapKey: Option[RemapKey[F]]   = None,
-  ): PartitionFlowOf[F] = { (topicPartition, assignedAt, scheduleCommit) =>
-    PartitionFlow.resource(topicPartition, assignedAt, keyStateOf, config, filter, remapKey, scheduleCommit)
+  ): PartitionFlowOf[F] = { (assignment, scheduleCommit) =>
+    // assignment.groupMetadata is ignored: only the transactional Kafka persistence fences by generation (see
+    // kafkapersistence.package)
+    PartitionFlow.resource(
+      assignment.topicPartition,
+      assignment.assignedAt,
+      keyStateOf,
+      config,
+      filter,
+      remapKey,
+      scheduleCommit,
+    )
   }
 }
