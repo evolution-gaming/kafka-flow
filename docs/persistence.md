@@ -100,8 +100,8 @@ discriminator (e.g. the input topic) — an `"<applicationId>*"` prefixed ACL st
 
 Snapshot writes and the input-offset commit run in one Kafka transaction per assigned partition; a
 write from a stale consumer generation is fenced by the broker
-([KIP-447](https://cwiki.apache.org/confluence/display/KAFKA/KIP-447%3A+Producer+scalability+for+exactly+once+semantics))
-and surfaces as
+([KIP-447](https://cwiki.apache.org/confluence/display/KAFKA/KIP-447%3A+Producer+scalability+for+exactly+once+semantics),
+brokers 2.5+) and surfaces as
 `CommitFailedException`. Recovery reads `read_committed`, so a fenced writer's aborted records are
 never recovered.
 
@@ -113,7 +113,7 @@ never recovered.
 - **Tuning for transaction time** — a transaction must commit within `transaction.timeout.ms` (a
   producer config, default 1 min, ≤ the broker's `transaction.max.timeout.ms`). Large snapshots lengthen
   it with the batch — lower `maxWritesPerTransaction` (at a throughput cost) or raise the timeout. A
-  higher timeout lengthens the post-crash stall (below).
+  higher timeout widens the post-crash window (below).
 - **Output is at-least-once** — output produces stay outside the snapshot transaction, so a replayed
   batch re-emits them; the consuming side must tolerate duplicates. Only the snapshot store and the
   input-offset commit are kept consistent (corruption prevention, not exactly-once).
@@ -125,12 +125,21 @@ never recovered.
 Limitations:
 - A batch shares its transaction's outcome: if the transaction fails, every write in it fails.
 - An old owner can be fenced while flushing on revoke; its last state delta is then neither persisted
-  nor committed, so the new owner replays those events — noise, not loss.
+  nor committed, so the new owner replays those events — noise, not loss. Under the classic
+  **cooperative** assignor this is every revocation: the revoke-time flush is always fenced, so
+  `flushOnRevoke` does not shrink the replay window there.
 - After a hard crash, the broker reclaims the failed owner's in-flight transaction only after
-  `transaction.timeout.ms`; until then a `read_committed` reader — recovery of that partition, or a
-  downstream consumer of your output — can stall behind its last-stable-offset.
+  `transaction.timeout.ms`; until then that open transaction pins the snapshot topic's
+  last-stable-offset, and a recovery in that window silently misses records beyond it — even committed
+  ones — while input offsets are not held back the same way, so a second handover inside the window
+  can recover stale state
+  ([kafka-flow#850](https://github.com/evolution-gaming/kafka-flow/issues/850)).
 - The mode always uses the identity `KafkaPersistencePartitionMapper` (fencing is per input partition);
   a non-identity mapper is not supported here.
+- The fence works under both the **classic** and the **consumer** group protocols
+  (`group.protocol=classic|consumer`). With `consumer`, use **brokers 4.3.0+** — below that a still-valid
+  owner can be spuriously fenced during a rebalance and crash; the restart converges, but any later
+  rebalance can fence again (safe, never corruption, but not stable).
 
 ### Custom snapshot storage
 

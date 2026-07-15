@@ -38,7 +38,8 @@ object KafkaSnapshotWriteDatabase {
     *
     * @param groupMetadata
     *   current consumer group metadata (generation); see `Consumer.groupMetadata`. `None` (consumer not yet joined) is
-    *   unreachable on the flow path and fails loudly rather than committing ungated.
+    *   reachable only by a teardown flush racing the join poll's refresh; it fails loudly rather than committing
+    *   ungated.
     * @param assignedOffset
     *   seeds the offset-to-commit so even the first write is gated; committing it is a no-op.
     * @param maxWritesPerTransaction
@@ -168,8 +169,8 @@ object KafkaSnapshotWriteDatabase {
           case Some(meta) =>
             producer.sendOffsetsToTransaction(NonEmptyMap.of(inputTopicPartition -> OffsetAndMetadata(offset)), meta)
           case None =>
-            // invariant: the consumer joins (capturing metadata) before any flush, so None is unreachable; fail loud
-            // rather than commit ungated
+            // the join poll's refresh publishes before any normal flush; None is reachable only by a teardown
+            // flush racing that refresh (its failure or cancellation) - fail loud rather than commit ungated
             new IllegalStateException(
               s"cannot bind input offset $offset: the driving consumer has not joined a group " +
                 "(group metadata is None); transactional snapshot mode requires the flow's own consumer"
