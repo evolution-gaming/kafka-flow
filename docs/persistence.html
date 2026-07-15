@@ -101,28 +101,37 @@ swallows (<code>scache: failed to release cache entry: ...</code>), so the parti
 <p>Either way the rejected write does not land and no offset is committed for it, so the new owner
 replays the affected events.</p>
 <h3><a class="anchor" aria-hidden="true" id="transactional-snapshot-writes-kafka"></a><a href="#transactional-snapshot-writes-kafka" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Transactional snapshot writes (Kafka)</h3>
-<p>Enable with <code>KafkaPersistenceModuleOf.cachingTransactional</code>, built from the consumer that drives the
-flow (it reads that consumer's group metadata to fence by generation):</p>
-<pre><code class="hljs css language-scala"><span class="hljs-comment">// allocate the driving consumer first so the module can read its group metadata (generation)</span>
-consumer.use { consumer =&gt;
-  <span class="hljs-keyword">val</span> moduleOf = <span class="hljs-type">KafkaPersistenceModuleOf</span>.cachingTransactional[<span class="hljs-type">F</span>, <span class="hljs-type">State</span>](
-    consumerOf = consumerOf,
-    producerOf = producerOf,
-    config = <span class="hljs-type">KafkaPersistenceModule</span>.<span class="hljs-type">TransactionalConfig</span>(
-      consumerConfig        = snapshotConsumerConfig,
-      producerConfig        = snapshotProducerConfig,
-      transactionalIdPrefix = <span class="hljs-string">s"<span class="hljs-subst">$groupId</span>-<span class="hljs-subst">$inputTopic</span>"</span>,
-      snapshotTopic         = stateTopic,
-      inputTopic            = inputTopic,
-    ),
-    groupMetadata = consumer.groupMetadata, <span class="hljs-comment">// the SAME consumer that drives the flow</span>
-  )
-  <span class="hljs-comment">// ... wire moduleOf into the flow, driven by `consumer`</span>
-}
+<p><strong>EXPERIMENTAL</strong> — use at your own risk: the mechanism is design-verified but not yet proven in
+production operation, and unknown defects may remain. No compatibility guarantee: configuration, API,
+and behavior may change in any release, without deprecation.</p>
+<p>Enable with <code>KafkaPersistenceModuleOf.cachingTransactional</code>. The flow supplies the driving consumer's
+group metadata (generation) to the module, which uses it to fence stale writers — so you build the
+module like any other and wire it into the flow as usual:</p>
+<pre><code class="hljs css language-scala"><span class="hljs-keyword">val</span> moduleOf = <span class="hljs-type">KafkaPersistenceModuleOf</span>.cachingTransactional[<span class="hljs-type">F</span>, <span class="hljs-type">State</span>](
+  consumerOf = consumerOf,
+  producerOf = producerOf,
+  config = <span class="hljs-type">KafkaPersistenceModule</span>.<span class="hljs-type">TransactionalConfig</span>(
+    consumerConfig        = snapshotConsumerConfig,
+    producerConfig        = snapshotProducerConfig,
+    transactionalIdPrefix = applicationId,
+    snapshotTopic         = stateTopic,
+  ),
+)
+<span class="hljs-comment">// wire it into the flow as usual:</span>
+<span class="hljs-comment">// KafkaFlow.resource(consumerResource, ConsumerFlowOf(inputTopic, TopicFlowOf(kafkaEagerRecovery(moduleOf, /* ... */))))</span>
 </code></pre>
 <p><code>idempotence</code> and the per-partition <code>transactional.id</code> are set for you — don't configure them in
 <code>producerConfig</code> — and the snapshot <code>consumerConfig</code>'s isolation level is forced to <code>read_committed</code>.
-The id is regenerated per assignment, not stable per partition.</p>
+The id is regenerated per assignment, not stable per partition. The input topic whose offsets are
+committed transactionally, and the consumer generation used to fence stale writers, are both supplied
+by the flow (from the assigned partition and the driving consumer), so neither is part of
+<code>TransactionalConfig</code>. One module serves one flow: snapshots are keyed by partition <em>number</em> alone, so
+each input topic needs its own module with its own <code>snapshotTopic</code> — sharing a snapshot topic between
+flows would mix their state on recovery.</p>
+<p><code>transactionalIdPrefix</code> does not affect fencing (that is by consumer generation) — it is a readable
+label and, on an ACL-secured cluster, the <code>transactional.id</code> prefix your producer principal must be
+authorized for. Use your <code>applicationId</code>; an application running several flows can append any per-flow
+discriminator (e.g. the input topic) — an <code>&quot;&lt;applicationId&gt;*&quot;</code> prefixed ACL still covers it.</p>
 <p>Snapshot writes and the input-offset commit run in one Kafka transaction per assigned partition; a
 write from a stale consumer generation is fenced by the broker
 (<a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-447%3A+Producer+scalability+for+exactly+once+semantics">KIP-447</a>)
