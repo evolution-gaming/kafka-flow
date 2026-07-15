@@ -134,8 +134,8 @@ authorized for. Use your <code>applicationId</code>; an application running seve
 discriminator (e.g. the input topic) — an <code>&quot;&lt;applicationId&gt;*&quot;</code> prefixed ACL still covers it.</p>
 <p>Snapshot writes and the input-offset commit run in one Kafka transaction per assigned partition; a
 write from a stale consumer generation is fenced by the broker
-(<a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-447%3A+Producer+scalability+for+exactly+once+semantics">KIP-447</a>)
-and surfaces as
+(<a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-447%3A+Producer+scalability+for+exactly+once+semantics">KIP-447</a>,
+brokers 2.5+) and surfaces as
 <code>CommitFailedException</code>. Recovery reads <code>read_committed</code>, so a fenced writer's aborted records are
 never recovered.</p>
 <ul>
@@ -147,7 +147,7 @@ own producer and transaction-coordinator state on the brokers.</li>
 <li><strong>Tuning for transaction time</strong> — a transaction must commit within <code>transaction.timeout.ms</code> (a
 producer config, default 1 min, ≤ the broker's <code>transaction.max.timeout.ms</code>). Large snapshots lengthen
 it with the batch — lower <code>maxWritesPerTransaction</code> (at a throughput cost) or raise the timeout. A
-higher timeout lengthens the post-crash stall (below).</li>
+higher timeout widens the post-crash window (below).</li>
 <li><strong>Output is at-least-once</strong> — output produces stay outside the snapshot transaction, so a replayed
 batch re-emits them; the consuming side must tolerate duplicates. Only the snapshot store and the
 input-offset commit are kept consistent (corruption prevention, not exactly-once).</li>
@@ -160,12 +160,21 @@ transactional.</li>
 <ul>
 <li>A batch shares its transaction's outcome: if the transaction fails, every write in it fails.</li>
 <li>An old owner can be fenced while flushing on revoke; its last state delta is then neither persisted
-nor committed, so the new owner replays those events — noise, not loss.</li>
+nor committed, so the new owner replays those events — noise, not loss. Under the classic
+<strong>cooperative</strong> assignor this is every revocation: the revoke-time flush is always fenced, so
+<code>flushOnRevoke</code> does not shrink the replay window there.</li>
 <li>After a hard crash, the broker reclaims the failed owner's in-flight transaction only after
-<code>transaction.timeout.ms</code>; until then a <code>read_committed</code> reader — recovery of that partition, or a
-downstream consumer of your output — can stall behind its last-stable-offset.</li>
+<code>transaction.timeout.ms</code>; until then that open transaction pins the snapshot topic's
+last-stable-offset, and a recovery in that window silently misses records beyond it — even committed
+ones — while input offsets are not held back the same way, so a second handover inside the window
+can recover stale state
+(<a href="https://github.com/evolution-gaming/kafka-flow/issues/850">kafka-flow#850</a>).</li>
 <li>The mode always uses the identity <code>KafkaPersistencePartitionMapper</code> (fencing is per input partition);
 a non-identity mapper is not supported here.</li>
+<li>The fence works under both the <strong>classic</strong> and the <strong>consumer</strong> group protocols
+(<code>group.protocol=classic|consumer</code>). With <code>consumer</code>, use <strong>brokers 4.3.0+</strong> — below that a still-valid
+owner can be spuriously fenced during a rebalance and crash; the restart converges, but any later
+rebalance can fence again (safe, never corruption, but not stable).</li>
 </ul>
 <h3><a class="anchor" aria-hidden="true" id="custom-snapshot-storage"></a><a href="#custom-snapshot-storage" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Custom snapshot storage</h3>
 <p>You can plug in your own snapshot store: implement <code>SnapshotDatabase</code> and wire it through

@@ -89,8 +89,7 @@ transaction</strong> via
 the group coordinator validates the consumer <strong>generation</strong> and rejects a commit from a stale one
 (<code>ILLEGAL_GENERATION</code>, surfaced to the client as <code>CommitFailedException</code>).
 Since that commit and the snapshot writes share a transaction, the rejection aborts the writes too.
-The generation — authoritative for partition ownership — gates both, so a stale owner can neither
-advance offsets nor overwrite a newer snapshot.</p>
+The generation gates both, so a stale owner can neither advance offsets nor overwrite a newer snapshot.</p>
 <p>Seen as a whole, the mechanism combines two ideas — a distributed lock, and a transactional snapshot
 write + offset commit. Kafka's consumer group is the lock, and it already provides both an ownership
 <em>lease</em> and a <a href="https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html">fencing token</a>:
@@ -136,25 +135,73 @@ partition is never committed through the consumer.</li>
 the call itself drives the transaction and blocks on its outcome. That blocking is what lets a fence
 (<code>CommitFailedException</code>) propagate into the flow and crash a stale owner, rather than being lost on a
 fire-and-forget commit thread.</li>
+<li>The fence is per <strong>member + generation</strong>, not per partition: the coordinator checks the committer's
+generation, not which partitions it still owns, so a member still on the current generation cannot be
+stopped from committing a partition it just lost. That is closed client-side: a revoked partition's
+flows are torn down inside the synchronous revoke callback, and the broker does not reassign the
+partition until that callback returns — so no new owner exists while a flow for the partition is
+still alive. The one way out is eviction (teardown stalling past the rebalance timeout), which only
+swaps the net: an evicted member's commits fail member validation (<code>UNKNOWN_MEMBER_ID</code>, the same
+abortable <code>CommitFailedException</code>).</li>
 </ul>
 <p>The mechanism needs the input topic-partition and a reader of the driving consumer's group metadata
-(<code>Consumer.groupMetadata</code>, captured on each partition assignment on the poll thread). Both are supplied by
-the flow from the partition assignment — not configured by hand — so they always match the consumer that
-drives the flow. A fence surfaces as <code>CommitFailedException</code> on the failing snapshot write (or offset-only
+(<code>Consumer.groupMetadata</code>, refreshed after every poll on the poll thread). Both are supplied by the flow
+from the partition assignment — not configured by hand — so they always match the consumer that drives
+the flow. A fence surfaces as <code>CommitFailedException</code> on the failing snapshot write (or offset-only
 commit).</p>
+<p>A generation captured once at assignment would miss a routine case: a rebalance can advance the
+generation while leaving this member's partitions unchanged. The capture would go stale, and the
+retained partition's next transactional commit would be spuriously fenced though the member still owns
+it — crashing a still-valid owner: safe (a fenced commit writes nothing), but not stable. Refreshing
+after every poll avoids it: a post-poll read follows the silent bump a rebalance callback does not.
+The unknown (negative) pre-join generation is never published — the coordinator <em>skips</em> generation
+validation for a commit carrying it, so it would land unfenced; a flush before the first join instead
+fails loudly rather than committing ungated.</p>
 <h3><a class="anchor" aria-hidden="true" id="no-epoch-fencing"></a><a href="#no-epoch-fencing" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>No epoch fencing</h3>
 <p>Generation fencing is the sole mechanism; there is deliberately no producer-epoch fencing. Each
 producer gets a unique <code>transactional.id</code> (<code>&quot;{prefix}-{partition}-{uuid8}&quot;</code>), so old and new owners
-never share one. A <em>stable</em> per-partition id would add cross-owner epoch fencing, which is both
-redundant and harmful: with a shared id each <code>initTransactions</code> bumps the epoch and fences the
-previous holder, so whichever owner inits <em>latest</em> wins — a race unrelated to who actually owns the
-partition. A slow stale owner that inits late therefore wins the epoch, its stale write lands (the
-fence fails), and the true owner is fenced instead.</p>
+never share one. A <em>stable</em> per-partition id would add cross-owner epoch fencing: with a shared id
+each <code>initTransactions</code> bumps the epoch and fences the previous holder. That is redundant here — a
+stale owner's write is already rejected by the generation fence — and the epoch order can diverge from
+ownership order (whichever owner inits <em>latest</em> wins), spuriously fencing the true owner: a crash of a
+valid owner, never a stale write landing.</p>
 <p>The cost of unique ids — transaction-coordinator state expiring via <code>transactional.id.expiration.ms</code> —
-is accepted. A hard-crashed owner's in-flight transaction is, for the same reason, not fenced on the
-spot (a stable id would abort it through the new owner's <code>initTransactions</code>); the coordinator reclaims
-it only after <code>transaction.timeout.ms</code>, which bounds how long a <code>read_committed</code> reader (recovery, or a
-downstream consumer) can stall behind its last-stable-offset.</p>
+is accepted. A hard-crashed owner's in-flight transaction is, for the same reason, not aborted at
+takeover (a stable id would abort it through the new owner's <code>initTransactions</code>); the coordinator
+reclaims it only after <code>transaction.timeout.ms</code>, which bounds how long it pins the snapshot topic's
+last-stable-offset — the offset <code>read_committed</code> readers of that topic (recovery included) cannot
+see past.</p>
+<h2><a class="anchor" aria-hidden="true" id="consumer-rebalance-protocols"></a><a href="#consumer-rebalance-protocols" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Consumer rebalance protocols</h2>
+<p>The per-member fencing token is the <strong>generation</strong> under the classic protocol and the <strong>member epoch</strong>
+under the consumer protocol
+(<a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-848%3A+The+Next+Generation+of+the+Consumer+Rebalance+Protocol">KIP-848</a>,
+GA in Kafka 4.0, selected by <code>group.protocol=consumer</code>); they play the same role, and <em>generation</em> below
+stands for both. The fence holds under both protocols and surfaces identically — a stale transactional
+commit is rejected as <code>ILLEGAL_GENERATION</code> under each (the coordinator maps the consumer protocol's
+internal stale-epoch error to the same wire error). The post-poll read (above) is what makes the
+tracking hold too: the bump that matters — one that changes nothing in this member's assignment — fires
+no callback at all under the consumer protocol (the epoch advances on the background heartbeat thread)
+and, under the classic <strong>cooperative</strong> assignor, only an empty-delta <code>onPartitionsAssigned</code> that the
+typed listener drops (<a href="https://github.com/evolution-gaming/skafka/issues/581">skafka#581</a>); only the
+classic <strong>eager</strong> assignor — which revokes and reassigns the full set on every rebalance — fires a
+callback that could be acted on.</p>
+<p>What the read cannot close is a residual window in which a still-valid owner is spuriously fenced — a
+liveness cost, never a safety one (a lagging token only fences). Under the classic protocol the window
+is the in-flight join round: a round can span polls
+(<a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-266%3A+Fix+consumer+indefinite+blocking+behavior">KIP-266</a>),
+and a flush of a retained partition
+between the broker-side bump and this member completing the round still carries the previous
+generation. Under the consumer protocol the epoch also advances <em>between</em> polls, so even a fresh
+post-poll read can be stale by the time the commit reaches the broker.
+<a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-1251%3A+Assignment+epochs+for+consumer+groups">KIP-1251</a>
+(brokers 4.3.0+) absorbs the consumer-protocol window — the coordinator accepts a lagging commit for a
+partition the member still owns, and a reassigned one stays fenced — hence the broker recommendation
+for <code>group.protocol=consumer</code>; no broker version absorbs the classic in-flight-round window.</p>
+<p>The revoke-time flush is the one place the combinations differ in outcome. Classic <strong>eager</strong> revokes
+before the member rejoins, and the consumer protocol keeps the member on its epoch until it
+acknowledges the revocation — under both, the flush commits. Classic <strong>cooperative</strong> has already moved
+the member to the new generation by revoke time, so its flush is always fenced (safe; the new owner
+replays). A member evicted before the flush is rejected under all three — the same safe direction.</p>
 <h2><a class="anchor" aria-hidden="true" id="write-path-group-committed-transactions"></a><a href="#write-path-group-committed-transactions" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Write path: group-committed transactions</h2>
 <p>A producer allows one transaction at a time, while kafka-flow flushes a partition's keys in
 parallel — and after a fresh assignment most of the active key population flushes in one wave per
@@ -183,8 +230,8 @@ overrides the default consumer-backed one (<code>kafkaPersistenceModule.schedule
 persistence-kafka <code>package</code> object). That bypasses the default path, where offsets are normally staged
 through <code>PendingCommits</code> and committed by <code>TopicFlow.commitPending</code> via <code>consumer.commit</code>; with nothing
 staged, it commits nothing (a no-op).</li>
-<li><strong>Generation capture</strong> on each partition assignment — the <code>Consumer</code> wrapper, holding <code>groupMetadata</code>
-in a <code>Ref</code> read off the poll thread.</li>
+<li><strong>Generation currency</strong> — the <code>Consumer</code> wrapper holds <code>groupMetadata</code> in a <code>Ref</code>, refreshed after every
+poll.</li>
 </ul>
 <h2><a class="anchor" aria-hidden="true" id="measurements"></a><a href="#measurements" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Measurements</h2>
 <p>From <code>TransactionalWriteThroughputSpec</code>: single-node testcontainers broker on localhost, replication
@@ -237,14 +284,16 @@ with an <em>older consumer generation</em> and asserts the newer snapshot surviv
 binding as the cause, not incidental fencing. Other cases covered: first-flush gating (the seed), a
 fenced writer fails its next flush, an open transaction neither blocks nor leaks into recovery,
 concurrent-write safety. The group commit is exercised in isolation by <code>GroupCommitSpec</code>, a unit test
-with a recording in-memory producer (no broker).</p>
+with a recording in-memory producer (no broker). Two unit suites pin the client-side pieces the fence
+depends on: <code>TopicFlowSpec</code> that removing a partition awaits its flows' teardown, and <code>ConsumerSpec</code>
+the post-poll generation tracking and the negative-generation guard.</p>
 <h2><a class="anchor" aria-hidden="true" id="rejected-alternatives"></a><a href="#rejected-alternatives" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Rejected alternatives</h2>
 <ul>
 <li><strong>Transactional snapshot read + snapshot write</strong>: fence a stale writer with a compare-and-set on the
 stored offset. Kafka has no conditional produce primitive, so it cannot be atomic.</li>
-<li><strong>Producer-epoch fencing (stable <code>transactional.id</code>)</strong>: epoch order can diverge from ownership
-order, so it does not fully close <a href="https://github.com/evolution-gaming/kafka-flow/issues/732">#732</a>
-and can false-positive-fence the true owner (above).</li>
+<li><strong>Producer-epoch fencing (stable <code>transactional.id</code>)</strong>: redundant with the generation fence, and
+the epoch order can diverge from ownership order, spuriously fencing the true owner (see No epoch
+fencing).</li>
 <li><strong>Static partition assignment</strong> (<code>assign()</code> instead of <code>subscribe()</code>): no consumer group, so no
 rebalance, no overlap window, no fence needed — but it gives up automatic failover and elastic
 reassignment, and safe <em>dynamic</em> assignment is the point of this design. (Static <em>membership</em>
@@ -255,6 +304,9 @@ and does not fence a stuck owner whose session expired.)</li>
 <li><strong>Unbounded batches</strong>: ~7% faster, but transaction duration scales unbounded against the coordinator
 timeout.</li>
 <li><strong>Transactional output produces (full exactly-once)</strong>: out of scope; output stays at-least-once.</li>
+<li><strong>Capturing the generation in a rebalance callback</strong> (instead of the post-poll read): the bump that
+matters fires no callback under two of the three protocol/assignor combinations (see Consumer
+rebalance protocols).</li>
 </ul>
 <h2><a class="anchor" aria-hidden="true" id="forward-looking"></a><a href="#forward-looking" aria-hidden="true" class="hash-link"><svg class="hash-link-icon" aria-hidden="true" height="16" version="1.1" viewBox="0 0 16 16" width="16"><path fill-rule="evenodd" d="M4 9h1v1H4c-1.5 0-3-1.69-3-3.5S2.55 3 4 3h4c1.45 0 3 1.69 3 3.5 0 1.41-.91 2.72-2 3.25V8.59c.58-.45 1-1.27 1-2.09C10 5.22 8.98 4 8 4H4c-.98 0-2 1.22-2 2.5S3 9 4 9zm9-3h-1v1h1c1 0 2 1.22 2 2.5S13.98 12 13 12H9c-.98 0-2-1.22-2-2.5 0-.83.42-1.64 1-2.09V6.25c-1.09.53-2 1.84-2 3.25C6 11.31 7.55 13 9 13h4c1.45 0 3-1.69 3-3.5S14.5 6 13 6z"></path></svg></a>Forward-looking</h2>
 <p><a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-939:+Support+Participation+in+2PC">KIP-939 (participation in 2PC)</a>
@@ -262,4 +314,4 @@ is the route to extend this fence to non-Kafka snapshot stores: a transactional 
 externally-coordinated two-phase commit could bind a snapshot write in another store (e.g. Cassandra or
 an RDBMS) to the same generation-fenced Kafka offset commit, giving that store the per-partition
 ownership guarantee this mode has. Not actionable now.</p>
-</span></div></article></div><div class="docs-prevnext"><a class="docs-prev button" href="/kafka-flow/docs/persistence"><span class="arrow-prev">← </span><span>Persistence</span></a></div></div></div><nav class="onPageNav"><ul class="toc-headings"><li><a href="#problem">Problem</a></li><li><a href="#mechanism-generation-fencing">Mechanism: generation fencing</a><ul class="toc-headings"><li><a href="#no-epoch-fencing">No epoch fencing</a></li></ul></li><li><a href="#write-path-group-committed-transactions">Write path: group-committed transactions</a></li><li><a href="#implementation">Implementation</a></li><li><a href="#measurements">Measurements</a></li><li><a href="#testing">Testing</a></li><li><a href="#rejected-alternatives">Rejected alternatives</a></li><li><a href="#forward-looking">Forward-looking</a></li></ul></nav></div><footer class="nav-footer" id="footer"><section class="sitemap"><a href="/kafka-flow/" class="nav-home"><img src="/kafka-flow/img/favicon.ico" alt="Kafka Flow" width="66" height="58"/></a><div><h5>Docs</h5><a href="/kafka-flow/docs/overview.html">Overview</a><a href="/kafka-flow/docs/setup.html">Setup</a><a href="https://github.com/evolution-gaming/kafka-flow">Sources</a></div><div><h5>Community</h5><a href="https://twitter.com/evoneering" target="_blank" rel="noreferrer noopener">Twitter</a></div><div><h5>More</h5><a href="https://github.com/evolution-gaming/kafka-flow">GitHub</a><a class="github-button" href="https://github.com/evolution-gaming/kafka-flow" data-icon="octicon-star" data-count-href="/facebook/docusaurus/stargazers" data-show-count="true" data-count-aria-label="# stargazers on GitHub" aria-label="Star this project on GitHub">Star</a></div></section><section class="copyright">Copyright © 2026 Evolution Gaming</section></footer></div></body></html>
+</span></div></article></div><div class="docs-prevnext"><a class="docs-prev button" href="/kafka-flow/docs/persistence"><span class="arrow-prev">← </span><span>Persistence</span></a></div></div></div><nav class="onPageNav"><ul class="toc-headings"><li><a href="#problem">Problem</a></li><li><a href="#mechanism-generation-fencing">Mechanism: generation fencing</a><ul class="toc-headings"><li><a href="#no-epoch-fencing">No epoch fencing</a></li></ul></li><li><a href="#consumer-rebalance-protocols">Consumer rebalance protocols</a></li><li><a href="#write-path-group-committed-transactions">Write path: group-committed transactions</a></li><li><a href="#implementation">Implementation</a></li><li><a href="#measurements">Measurements</a></li><li><a href="#testing">Testing</a></li><li><a href="#rejected-alternatives">Rejected alternatives</a></li><li><a href="#forward-looking">Forward-looking</a></li></ul></nav></div><footer class="nav-footer" id="footer"><section class="sitemap"><a href="/kafka-flow/" class="nav-home"><img src="/kafka-flow/img/favicon.ico" alt="Kafka Flow" width="66" height="58"/></a><div><h5>Docs</h5><a href="/kafka-flow/docs/overview.html">Overview</a><a href="/kafka-flow/docs/setup.html">Setup</a><a href="https://github.com/evolution-gaming/kafka-flow">Sources</a></div><div><h5>Community</h5><a href="https://twitter.com/evoneering" target="_blank" rel="noreferrer noopener">Twitter</a></div><div><h5>More</h5><a href="https://github.com/evolution-gaming/kafka-flow">GitHub</a><a class="github-button" href="https://github.com/evolution-gaming/kafka-flow" data-icon="octicon-star" data-count-href="/facebook/docusaurus/stargazers" data-show-count="true" data-count-aria-label="# stargazers on GitHub" aria-label="Star this project on GitHub">Star</a></div></section><section class="copyright">Copyright © 2026 Evolution Gaming</section></footer></div></body></html>
