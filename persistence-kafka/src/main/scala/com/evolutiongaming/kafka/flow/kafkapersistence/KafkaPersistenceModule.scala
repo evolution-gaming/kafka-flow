@@ -41,7 +41,7 @@ object KafkaPersistenceModule {
     *   config for the snapshot-reading consumer; recovery forces `read_committed` regardless of this value
     * @param producerConfig
     *   base config for the snapshot producer; `transactionalId` and `idempotence` are overridden per producer and
-    *   `clientId` is suffixed with it
+    *   `clientId` is suffixed with `-snapshot-<partition>`
     * @param transactionalIdPrefix
     *   prefix for `transactional.id` (partition number and a unique per-producer suffix are appended). It does not
     *   affect fencing (that is by consumer generation), so its only roles are a readable label and, on an ACL-secured

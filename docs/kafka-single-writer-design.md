@@ -45,8 +45,7 @@ transaction** via
 the group coordinator validates the consumer **generation** and rejects a commit from a stale one
 (`ILLEGAL_GENERATION`, surfaced to the client as `CommitFailedException`).
 Since that commit and the snapshot writes share a transaction, the rejection aborts the writes too.
-The generation — authoritative for partition ownership — gates both, so a stale owner can neither
-advance offsets nor overwrite a newer snapshot.
+The generation gates both, so a stale owner can neither advance offsets nor overwrite a newer snapshot.
 
 Seen as a whole, the mechanism combines two ideas — a distributed lock, and a transactional snapshot
 write + offset commit. Kafka's consumer group is the lock, and it already provides both an ownership
@@ -97,28 +96,81 @@ Key points:
   the call itself drives the transaction and blocks on its outcome. That blocking is what lets a fence
   (`CommitFailedException`) propagate into the flow and crash a stale owner, rather than being lost on a
   fire-and-forget commit thread.
+- The fence is per **member + generation**, not per partition: the coordinator checks the committer's
+  generation, not which partitions it still owns, so a member still on the current generation cannot be
+  stopped from committing a partition it just lost. That is closed client-side: a revoked partition's
+  flows are torn down inside the synchronous revoke callback, and the broker does not reassign the
+  partition until that callback returns — so no new owner exists while a flow for the partition is
+  still alive. The one way out is eviction (teardown stalling past the rebalance timeout), which only
+  swaps the net: an evicted member's commits fail member validation (`UNKNOWN_MEMBER_ID`, the same
+  abortable `CommitFailedException`).
 
 The mechanism needs the input topic-partition and a reader of the driving consumer's group metadata
-(`Consumer.groupMetadata`, captured on each partition assignment on the poll thread). Both are supplied by
-the flow from the partition assignment — not configured by hand — so they always match the consumer that
-drives the flow. A fence surfaces as `CommitFailedException` on the failing snapshot write (or offset-only
+(`Consumer.groupMetadata`, refreshed after every poll on the poll thread). Both are supplied by the flow
+from the partition assignment — not configured by hand — so they always match the consumer that drives
+the flow. A fence surfaces as `CommitFailedException` on the failing snapshot write (or offset-only
 commit).
+
+A generation captured once at assignment would miss a routine case: a rebalance can advance the
+generation while leaving this member's partitions unchanged. The capture would go stale, and the
+retained partition's next transactional commit would be spuriously fenced though the member still owns
+it — crashing a still-valid owner: safe (a fenced commit writes nothing), but not stable. Refreshing
+after every poll avoids it: a post-poll read follows the silent bump a rebalance callback does not.
+The unknown (negative) pre-join generation is never published — the coordinator *skips* generation
+validation for a commit carrying it, so it would land unfenced; a flush before the first join instead
+fails loudly rather than committing ungated.
 
 ### No epoch fencing
 
 Generation fencing is the sole mechanism; there is deliberately no producer-epoch fencing. Each
 producer gets a unique `transactional.id` (`"{prefix}-{partition}-{uuid8}"`), so old and new owners
-never share one. A *stable* per-partition id would add cross-owner epoch fencing, which is both
-redundant and harmful: with a shared id each `initTransactions` bumps the epoch and fences the
-previous holder, so whichever owner inits *latest* wins — a race unrelated to who actually owns the
-partition. A slow stale owner that inits late therefore wins the epoch, its stale write lands (the
-fence fails), and the true owner is fenced instead.
+never share one. A *stable* per-partition id would add cross-owner epoch fencing: with a shared id
+each `initTransactions` bumps the epoch and fences the previous holder. That is redundant here — a
+stale owner's write is already rejected by the generation fence — and the epoch order can diverge from
+ownership order (whichever owner inits *latest* wins), spuriously fencing the true owner: a crash of a
+valid owner, never a stale write landing.
 
 The cost of unique ids — transaction-coordinator state expiring via `transactional.id.expiration.ms` —
-is accepted. A hard-crashed owner's in-flight transaction is, for the same reason, not fenced on the
-spot (a stable id would abort it through the new owner's `initTransactions`); the coordinator reclaims
-it only after `transaction.timeout.ms`, which bounds how long a `read_committed` reader (recovery, or a
-downstream consumer) can stall behind its last-stable-offset.
+is accepted. A hard-crashed owner's in-flight transaction is, for the same reason, not aborted at
+takeover (a stable id would abort it through the new owner's `initTransactions`); the coordinator
+reclaims it only after `transaction.timeout.ms`, which bounds how long it pins the snapshot topic's
+last-stable-offset — the offset `read_committed` readers of that topic (recovery included) cannot
+see past.
+
+## Consumer rebalance protocols
+
+The per-member fencing token is the **generation** under the classic protocol and the **member epoch**
+under the consumer protocol
+([KIP-848](https://cwiki.apache.org/confluence/display/KAFKA/KIP-848%3A+The+Next+Generation+of+the+Consumer+Rebalance+Protocol),
+GA in Kafka 4.0, selected by `group.protocol=consumer`); they play the same role, and *generation* below
+stands for both. The fence holds under both protocols and surfaces identically — a stale transactional
+commit is rejected as `ILLEGAL_GENERATION` under each (the coordinator maps the consumer protocol's
+internal stale-epoch error to the same wire error). The post-poll read (above) is what makes the
+tracking hold too: the bump that matters — one that changes nothing in this member's assignment — fires
+no callback at all under the consumer protocol (the epoch advances on the background heartbeat thread)
+and, under the classic **cooperative** assignor, only an empty-delta `onPartitionsAssigned` that the
+typed listener drops ([skafka#581](https://github.com/evolution-gaming/skafka/issues/581)); only the
+classic **eager** assignor — which revokes and reassigns the full set on every rebalance — fires a
+callback that could be acted on.
+
+What the read cannot close is a residual window in which a still-valid owner is spuriously fenced — a
+liveness cost, never a safety one (a lagging token only fences). Under the classic protocol the window
+is the in-flight join round: a round can span polls
+([KIP-266](https://cwiki.apache.org/confluence/display/KAFKA/KIP-266%3A+Fix+consumer+indefinite+blocking+behavior)),
+and a flush of a retained partition
+between the broker-side bump and this member completing the round still carries the previous
+generation. Under the consumer protocol the epoch also advances *between* polls, so even a fresh
+post-poll read can be stale by the time the commit reaches the broker.
+[KIP-1251](https://cwiki.apache.org/confluence/display/KAFKA/KIP-1251%3A+Assignment+epochs+for+consumer+groups)
+(brokers 4.3.0+) absorbs the consumer-protocol window — the coordinator accepts a lagging commit for a
+partition the member still owns, and a reassigned one stays fenced — hence the broker recommendation
+for `group.protocol=consumer`; no broker version absorbs the classic in-flight-round window.
+
+The revoke-time flush is the one place the combinations differ in outcome. Classic **eager** revokes
+before the member rejoins, and the consumer protocol keeps the member on its epoch until it
+acknowledges the revocation — under both, the flush commits. Classic **cooperative** has already moved
+the member to the new generation by revoke time, so its flush is always fenced (safe; the new owner
+replays). A member evicted before the flush is rejected under all three — the same safe direction.
 
 ## Write path: group-committed transactions
 
@@ -153,8 +205,8 @@ Entry point: `KafkaPersistenceModuleOf.cachingTransactional`. In the current cod
   persistence-kafka `package` object). That bypasses the default path, where offsets are normally staged
   through `PendingCommits` and committed by `TopicFlow.commitPending` via `consumer.commit`; with nothing
   staged, it commits nothing (a no-op).
-- **Generation capture** on each partition assignment — the `Consumer` wrapper, holding `groupMetadata`
-  in a `Ref` read off the poll thread.
+- **Generation currency** — the `Consumer` wrapper holds `groupMetadata` in a `Ref`, refreshed after every
+  poll.
 
 ## Measurements
 
@@ -207,15 +259,17 @@ with an *older consumer generation* and asserts the newer snapshot survives — 
 binding as the cause, not incidental fencing. Other cases covered: first-flush gating (the seed), a
 fenced writer fails its next flush, an open transaction neither blocks nor leaks into recovery,
 concurrent-write safety. The group commit is exercised in isolation by `GroupCommitSpec`, a unit test
-with a recording in-memory producer (no broker).
+with a recording in-memory producer (no broker). Two unit suites pin the client-side pieces the fence
+depends on: `TopicFlowSpec` that removing a partition awaits its flows' teardown, and `ConsumerSpec`
+the post-poll generation tracking and the negative-generation guard.
 
 ## Rejected alternatives
 
 - **Transactional snapshot read + snapshot write**: fence a stale writer with a compare-and-set on the
   stored offset. Kafka has no conditional produce primitive, so it cannot be atomic.
-- **Producer-epoch fencing (stable `transactional.id`)**: epoch order can diverge from ownership
-  order, so it does not fully close [#732](https://github.com/evolution-gaming/kafka-flow/issues/732)
-  and can false-positive-fence the true owner (above).
+- **Producer-epoch fencing (stable `transactional.id`)**: redundant with the generation fence, and
+  the epoch order can diverge from ownership order, spuriously fencing the true owner (see No epoch
+  fencing).
 - **Static partition assignment** (`assign()` instead of `subscribe()`): no consumer group, so no
   rebalance, no overlap window, no fence needed — but it gives up automatic failover and elastic
   reassignment, and safe *dynamic* assignment is the point of this design. (Static *membership*
@@ -226,6 +280,9 @@ with a recording in-memory producer (no broker).
 - **Unbounded batches**: ~7% faster, but transaction duration scales unbounded against the coordinator
   timeout.
 - **Transactional output produces (full exactly-once)**: out of scope; output stays at-least-once.
+- **Capturing the generation in a rebalance callback** (instead of the post-poll read): the bump that
+  matters fires no callback under two of the three protocol/assignor combinations (see Consumer
+  rebalance protocols).
 
 ## Forward-looking
 
