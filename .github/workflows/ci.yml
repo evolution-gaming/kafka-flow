@@ -53,23 +53,11 @@ jobs:
 
     - name: Publish documentation / Setup Node
       if: success()
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
-        node-version: '12.x'
-
-    - name: Publish documentation / Get yarn cache
-      if: success()
-      id: yarn-cache
-      run: echo "::set-output name=dir::$(yarn cache dir)"
-
-    - name: Publish documentation / Cache dependencies
-      if: success()
-      uses: actions/cache@v3
-      with:
-        path: ${{ steps.yarn-cache.outputs.dir }}
-        key: ${{ runner.os }}-website-${{ hashFiles('**/yarn.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-website-
+        node-version: '22'
+        cache: 'yarn'
+        cache-dependency-path: website/yarn.lock
 
     - name: Publish documentation / Install dependencies
       if: success()
@@ -86,7 +74,7 @@ jobs:
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./website/build/kafka-flow
+        publish_dir: ./website/build
 
     - name: Slack Notification
       uses: homoluctus/slatify@master
