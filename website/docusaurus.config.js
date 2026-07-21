@@ -113,10 +113,6 @@ const config = {
                 label: "GitHub",
                 href: "https://github.com/evolution-gaming/kafka-flow",
               },
-              {
-                label: "Star",
-                href: "https://github.com/evolution-gaming/kafka-flow/stargazers",
-              },
             ],
           },
         ],
