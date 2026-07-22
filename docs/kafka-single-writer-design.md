@@ -392,7 +392,9 @@ Unit suites pin the client-side pieces the mechanism depends on:
   the writes it covers; offset-only commits ride free of the cap; a missing generation fails loudly
   instead of committing ungated; and the generation is read live per transaction, never cached.
 - **`KafkaPersistenceModuleSpec`** (persistence-kafka) — the module's wiring: the producer settings,
-  the `read_committed`-from-earliest read with the deadline enabled.
+  the `read_committed`-from-earliest read with the deadline enabled and the offset side cleared
+  (group-less, no auto-commit — a committed offset would override the earliest reset on the next
+  recovery and silently shorten it).
 - **`ReadSnapshotsSpec`** (persistence-kafka) — the read itself: the high-watermark target (a read
   bounded at the reader's own `endOffsets`, the LSO, would silently under-read), the deadline with
   its diagnosis (a failing re-read never masks the stall), a progressing read outliving the

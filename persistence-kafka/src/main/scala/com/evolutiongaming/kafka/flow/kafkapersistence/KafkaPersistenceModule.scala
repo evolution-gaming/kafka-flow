@@ -38,7 +38,8 @@ object KafkaPersistenceModule {
   /** Settings for [[cachingTransactional]].
     *
     * @param consumerConfig
-    *   config for the snapshot-reading consumer; recovery forces `read_committed` regardless of this value
+    *   config for the snapshot-reading consumers; recovery forces `read_committed` and clears `groupId` and
+    *   `autoCommit` (the ephemeral readers never join a group or commit offsets) regardless of this value
     * @param producerConfig
     *   base config for the snapshot producer; `transactionalId` and `idempotence` are overridden per producer and
     *   `clientId` is suffixed with `-snapshot-<partition>`
@@ -56,7 +57,8 @@ object KafkaPersistenceModule {
     *   [[KafkaSnapshotWriteDatabase.transactional]]
     * @param recoveryStallTimeout
     *   how long a snapshot recovery read may make no progress before it fails with `RecoveryReadStalledError` instead
-    *   of hanging. Keep it below the driving consumer's `max.poll.interval.ms` and above the open-transaction wait.
+    *   of hanging. Keep it below the driving consumer's `max.poll.interval.ms` - including one diagnostic re-read on
+    *   failure, bounded by the snapshot consumer's `default.api.timeout.ms` - and above the open-transaction wait.
     */
   final case class TransactionalConfig(
     consumerConfig: ConsumerConfig,

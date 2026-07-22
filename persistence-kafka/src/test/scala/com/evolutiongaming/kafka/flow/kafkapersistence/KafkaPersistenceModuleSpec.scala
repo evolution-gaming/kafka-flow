@@ -23,7 +23,8 @@ import scala.concurrent.duration.*
 /** The transactional module owns the producer settings its design depends on: the stable per-partition
   * `transactional.id` (a takeover must abort a crashed owner's unfinished transaction) and idempotence - applied over
   * whatever `producerConfig` carries. Its recovery read is wired `read_committed` from earliest with the configured
-  * deadline enabled.
+  * deadline enabled, and its ephemeral consumers are group-less and never commit offsets - a committed offset would
+  * override the earliest reset on the next recovery.
   */
 class KafkaPersistenceModuleSpec extends FunSuite {
 
@@ -70,7 +71,7 @@ class KafkaPersistenceModuleSpec extends FunSuite {
     test.unsafeRunSync()
   }
 
-  test("the module's recovery read is read_committed from earliest, suffixed, and deadline-enabled") {
+  test("the module's recovery read is read_committed from earliest, suffixed, offsets-neutral, and deadline-enabled") {
     // a parked recovery driven through keysOf.all: the captured configs and the stall error pin the wiring
     val tp    = TopicPartition("state-topic", Partition.min)
     val fakes = new FakeConsumers(tp)
@@ -94,7 +95,13 @@ class KafkaPersistenceModuleSpec extends FunSuite {
           consumerOf = capturingOf,
           producerOf = producerOf,
           config = KafkaPersistenceModule.TransactionalConfig(
-            consumerConfig        = ConsumerConfig(common = CommonConfig(clientId = "client".some)),
+            // the hazardous shape: a group plus auto-commit, which the module must clear on its ephemeral
+            // readers - a committed offset would override the earliest reset on the next recovery
+            consumerConfig = ConsumerConfig(
+              common     = CommonConfig(clientId = "client".some),
+              groupId    = "app-group".some,
+              autoCommit = true,
+            ),
             producerConfig        = ProducerConfig(),
             transactionalIdPrefix = "app",
             snapshotTopic         = "state-topic",
@@ -121,6 +128,10 @@ class KafkaPersistenceModuleSpec extends FunSuite {
       assertEquals(read.isolationLevel, IsolationLevel.ReadCommitted)
       assertEquals(read.autoOffsetReset, AutoOffsetReset.Earliest)
       assertEquals(hw.isolationLevel, IsolationLevel.ReadUncommitted)
+      List(read, hw).foreach { config =>
+        assertEquals(config.groupId, none[String])
+        assertEquals(config.autoCommit, false)
+      }
     }
     TestControl.executeEmbed(test).unsafeRunSync()
   }

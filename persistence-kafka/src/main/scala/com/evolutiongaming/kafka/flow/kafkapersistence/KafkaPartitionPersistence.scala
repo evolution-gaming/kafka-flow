@@ -131,9 +131,13 @@ object KafkaPartitionPersistence {
     val snapshotsPartition         = TopicPartition(topic = snapshotTopic, partition = partition)
     val snapshotPartitionSingleton = data.NonEmptySet.of(snapshotsPartition)
 
+    // ephemeral assign-based readers: never group members, never committing offsets - a committed offset
+    // would override the earliest reset on the next recovery and silently shorten the read
     def suffixed(suffix: String): ConsumerConfig =
       consumerConfig.copy(
-        common = consumerConfig.common.copy(clientId = consumerConfig.common.clientId.map(cid => s"$cid-$suffix"))
+        groupId    = none,
+        autoCommit = false,
+        common     = consumerConfig.common.copy(clientId = consumerConfig.common.clientId.map(cid => s"$cid-$suffix")),
       )
 
     def endOffset(consumer: SkafkaConsumer[F, String, ByteVector]): F[Offset] =

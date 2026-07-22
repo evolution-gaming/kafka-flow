@@ -56,8 +56,9 @@ You do not catch the rejection yourself; it is handled for you:
 - **Periodic flush** — the conflict fails the stale instance's flow. That is safe (it no longer owns
   the partition), unless you set `persistPeriodically(ignorePersistErrors = true)`, in which case it
   is logged and swallowed.
-- **Flush-on-revoke** — the conflict surfaces as a cache-entry release error that scache logs and
-  swallows (`scache: failed to release cache entry: ...`), so the partition hands off cleanly.
+- **Flush-on-revoke** — the conflict surfaces as a cache-entry release error that scache prints to
+  `System.err` — not via the logging framework — and swallows
+  (`scache: failed to release cache entry: ...`), so the partition hands off cleanly.
 
 Either way the rejected write does not land and no offset is committed for it, so the new owner
 replays the affected events.
@@ -89,7 +90,8 @@ val moduleOf = KafkaPersistenceModuleOf.cachingTransactional[F, State](
 ```
 
 `idempotence` and the per-partition `transactional.id` are set for you — don't configure them in
-`producerConfig` — and the snapshot `consumerConfig`'s isolation level is forced to `read_committed`.
+`producerConfig` — and the snapshot `consumerConfig` is forced to `read_committed`, with `groupId`
+cleared and `autoCommit` off: the recovery readers never join a group or commit offsets.
 The id is stable per partition (`"<prefix>-<partition>"`): every owner of a partition shares it, so a
 takeover's `initTransactions` fences the previous owner's producer and aborts any transaction it left
 open. The input topic whose offsets are committed transactionally, and the consumer generation used
