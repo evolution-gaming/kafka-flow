@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Persistence · Kafka Flow</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://evolution-gaming.github.io/kafka-flow/img/undraw_online.svg"><meta data-rh="true" name="twitter:image" content="https://evolution-gaming.github.io/kafka-flow/img/undraw_online.svg"><meta data-rh="true" property="og:url" content="https://evolution-gaming.github.io/kafka-flow/docs/persistence"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Persistence · Kafka Flow"><meta data-rh="true" name="description" content="Persistence modes"><meta data-rh="true" property="og:description" content="Persistence modes"><link data-rh="true" rel="icon" href="/kafka-flow/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://evolution-gaming.github.io/kafka-flow/docs/persistence"><link data-rh="true" rel="alternate" href="https://evolution-gaming.github.io/kafka-flow/docs/persistence" hreflang="en"><link data-rh="true" rel="alternate" href="https://evolution-gaming.github.io/kafka-flow/docs/persistence" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Persistence","item":"https://evolution-gaming.github.io/kafka-flow/docs/persistence"}]}</script><link rel="stylesheet" href="/kafka-flow/assets/css/styles.88f7f80e.css">
-<script src="/kafka-flow/assets/js/runtime~main.81a9300e.js" defer="defer"></script>
+<script src="/kafka-flow/assets/js/runtime~main.d369a4e8.js" defer="defer"></script>
 <script src="/kafka-flow/assets/js/main.b931c677.js" defer="defer"></script>
 </head>
 <body>
@@ -28,13 +28,16 @@ topic to the end on assignment. See <code>KafkaPersistenceModuleOf</code>.</li>
 <p>Both backends recover state per key during partition assignment, relying on Kafka&#x27;s guarantee that a
 partition is owned by a single consumer in the group. The <a href="#protecting-against-stale-snapshot-writes" class="">stale-writer
 protections</a> below cover the one case where that ownership
-guarantee is not enough.</p>
+guarantee is not enough for the <strong>Kafka</strong> backend. The Cassandra backend writes snapshots
+unconditionally (last write wins, no offset check), so it stays exposed to the stale-writer
+overwrite, like a custom store (see <a href="#custom-snapshot-storage" class="">Custom snapshot storage</a>).</p>
 <h2 class="anchor anchorTargetStickyNavbar_Vzrq" id="protecting-against-stale-snapshot-writes">Protecting against stale snapshot writes<a href="#protecting-against-stale-snapshot-writes" class="hash-link" aria-label="Direct link to Protecting against stale snapshot writes" title="Direct link to Protecting against stale snapshot writes" translate="no">​</a></h2>
 <p>Consumer-group ownership of the input topic does <strong>not</strong> extend to the snapshot store. During a
-rebalance a previous owner that has not yet observed the revocation (network issue, GC pause, slow
-poll loop) keeps folding events and flushing snapshots alongside the new owner; with the default
-last-write-wins persistence a stale snapshot overwrites a newer one, and the next recovery loads stale
-state — losing the events between the two snapshots even though their offsets were committed. See
+rebalance a previous owner that has not yet observed the revocation (a network issue, a GC pause, a
+slow poll loop — typical during broker maintenance or high-load restarts) keeps folding events and
+flushing snapshots alongside the new owner; with the default last-write-wins persistence a stale
+snapshot overwrites a newer one, and the next recovery loads stale state — losing the events
+between the two snapshots even though their offsets were committed. See
 <a href="https://github.com/evolution-gaming/kafka-flow/issues/732" target="_blank" rel="noopener noreferrer" class="">kafka-flow#732</a>; overlaps of tens of
 seconds have been seen in production.</p>
 <p>This page is about turning the protection on and running it; for <em>how</em> it fences a stale writer, see
@@ -52,8 +55,9 @@ can implement its own protection — see <a href="#custom-snapshot-storage" clas
 <li class=""><strong>Periodic flush</strong> — the conflict fails the stale instance&#x27;s flow. That is safe (it no longer owns
 the partition), unless you set <code>persistPeriodically(ignorePersistErrors = true)</code>, in which case it
 is logged and swallowed.</li>
-<li class=""><strong>Flush-on-revoke</strong> — the conflict surfaces as a cache-entry release error that scache logs and
-swallows (<code>scache: failed to release cache entry: ...</code>), so the partition hands off cleanly.</li>
+<li class=""><strong>Flush-on-revoke</strong> — the conflict surfaces as a cache-entry release error that scache prints to
+<code>System.err</code> — not via the logging framework — and swallows
+(<code>scache: failed to release cache entry: ...</code>), so the partition hands off cleanly.</li>
 </ul>
 <p>Either way the rejected write does not land and no offset is committed for it, so the new owner
 replays the affected events.</p>
@@ -64,25 +68,36 @@ and behavior may change in any release, without deprecation.</p>
 <p>Enable with <code>KafkaPersistenceModuleOf.cachingTransactional</code>. The flow supplies the driving consumer&#x27;s
 group metadata (generation) to the module, which uses it to fence stale writers — so you build the
 module like any other and wire it into the flow as usual:</p>
-<div class="language-scala codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-scala codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token keyword" style="color:#00009f">val</span><span class="token plain"> moduleOf </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> KafkaPersistenceModuleOf</span><span class="token punctuation" style="color:#393A34">.</span><span class="token plain">cachingTransactional</span><span class="token punctuation" style="color:#393A34">[</span><span class="token plain">F</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> State</span><span class="token punctuation" style="color:#393A34">]</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  consumerOf </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> consumerOf</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  producerOf </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> producerOf</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  config </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> KafkaPersistenceModule</span><span class="token punctuation" style="color:#393A34">.</span><span class="token plain">TransactionalConfig</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    consumerConfig        </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> snapshotConsumerConfig</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    producerConfig        </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> snapshotProducerConfig</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    transactionalIdPrefix </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> applicationId</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    snapshotTopic         </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> stateTopic</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">)</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token comment" style="color:#999988;font-style:italic">// wire it into the flow as usual:</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token comment" style="color:#999988;font-style:italic">// KafkaFlow.resource(consumerResource, ConsumerFlowOf(inputTopic, TopicFlowOf(kafkaEagerRecovery(moduleOf, /* ... */))))</span><br></div></code></pre></div></div>
+<div class="language-scala codeBlockContainer_Ckt0 theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_QJqH"><pre tabindex="0" class="prism-code language-scala codeBlock_bY9V thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_e6Vv"><div class="token-line" style="color:#393A34"><span class="token keyword" style="color:#00009f">val</span><span class="token plain"> moduleOf </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> KafkaPersistenceModuleOf</span><span class="token punctuation" style="color:#393A34">.</span><span class="token plain">cachingTransactional</span><span class="token punctuation" style="color:#393A34">[</span><span class="token plain">F</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"> State</span><span class="token punctuation" style="color:#393A34">]</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  consumerOf </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> consumerOf</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  producerOf </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> producerOf</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  config </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> KafkaPersistenceModule</span><span class="token punctuation" style="color:#393A34">.</span><span class="token plain">TransactionalConfig</span><span class="token punctuation" style="color:#393A34">(</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    consumerConfig        </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> snapshotConsumerConfig</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    producerConfig        </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> snapshotProducerConfig</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    transactionalIdPrefix </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> applicationId</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    snapshotTopic         </span><span class="token operator" style="color:#393A34">=</span><span class="token plain"> stateTopic</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    </span><span class="token comment" style="color:#999988;font-style:italic">// also tunable: maxWritesPerTransaction, recoveryStallTimeout (both below)</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  </span><span class="token punctuation" style="color:#393A34">)</span><span class="token punctuation" style="color:#393A34">,</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token punctuation" style="color:#393A34">)</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token comment" style="color:#999988;font-style:italic">// wire it into the flow as usual:</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token comment" style="color:#999988;font-style:italic">// KafkaFlow.resource(consumerResource, ConsumerFlowOf(inputTopic, TopicFlowOf(kafkaEagerRecovery(moduleOf, /* ... */))))</span><br></div></code></pre></div></div>
 <p><code>idempotence</code> and the per-partition <code>transactional.id</code> are set for you — don&#x27;t configure them in
-<code>producerConfig</code> — and the snapshot <code>consumerConfig</code>&#x27;s isolation level is forced to <code>read_committed</code>.
-The id is regenerated per assignment, not stable per partition. The input topic whose offsets are
-committed transactionally, and the consumer generation used to fence stale writers, are both supplied
+<code>producerConfig</code> — and the snapshot <code>consumerConfig</code> is forced to <code>read_committed</code>, with <code>groupId</code>
+cleared and <code>autoCommit</code> off: the recovery readers never join a group or commit offsets.
+The id is stable per partition (<code>&quot;&lt;prefix&gt;-&lt;partition&gt;&quot;</code>): every owner of a partition shares it, so a
+takeover&#x27;s <code>initTransactions</code> fences the previous owner&#x27;s producer and aborts any transaction it left
+open. The input topic whose offsets are committed transactionally, and the consumer generation used
+to fence stale writers, are both supplied
 by the flow (from the assigned partition and the driving consumer), so neither is part of
 <code>TransactionalConfig</code>. One module serves one flow: snapshots are keyed by partition <em>number</em> alone, so
 each input topic needs its own module with its own <code>snapshotTopic</code> — sharing a snapshot topic between
 flows would mix their state on recovery.</p>
-<p><code>transactionalIdPrefix</code> does not affect fencing (that is by consumer generation) — it is a readable
-label and, on an ACL-secured cluster, the <code>transactional.id</code> prefix your producer principal must be
-authorized for. Use your <code>applicationId</code>; an application running several flows can append any per-flow
-discriminator (e.g. the input topic) — an <code>&quot;&lt;applicationId&gt;*&quot;</code> prefixed ACL still covers it.</p>
+<p><code>transactionalIdPrefix</code> does not affect fencing of stale writers (that is by consumer generation) —
+it is a readable label and, on an ACL-secured cluster, the <code>transactional.id</code> prefix your producer
+principal must be authorized for. Because the id is stable per partition, the prefix must be unique
+per flow: use your <code>applicationId</code>, and an application running several flows must append a per-flow
+discriminator (e.g. the input topic) or the flows share ids and fence each other — an
+<code>&quot;&lt;applicationId&gt;*&quot;</code> prefixed ACL still covers it.</p>
 <p>Snapshot writes and the input-offset commit run in one Kafka transaction per assigned partition; a
 write from a stale consumer generation is fenced by the broker
 (<a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-447%3A+Producer+scalability+for+exactly+once+semantics" target="_blank" rel="noopener noreferrer" class="">KIP-447</a>,
 brokers 2.5+) and surfaces as
-<code>CommitFailedException</code>. Recovery reads <code>read_committed</code>, so a fenced writer&#x27;s aborted records are
-never recovered.</p>
+<code>CommitFailedException</code> — or as a producer-epoch error (<code>ProducerFencedException</code> or
+<code>InvalidProducerEpochException</code>, by transaction protocol version) when a new owner&#x27;s <code>initTransactions</code> has
+already fenced the stale producer; rejected either way. Recovery reads <code>read_committed</code>, so a
+fenced writer&#x27;s aborted records are
+never recovered. After a hard crash the new owner takes over immediately (aborting the crashed
+owner&#x27;s unfinished transaction) and recovers everything that was committed. If an unfinished
+transaction belongs to some other <code>transactional.id</code> (see the limitations for when that happens),
+recovery waits until the broker aborts it instead — slower, but nothing committed is ever missed.</p>
 <ul>
 <li class=""><strong>Cost</strong> — snapshot writes commit in Kafka transactions (a few ms each on real brokers), and cost
 tracks the <em>number</em> of transactions more than their size. Concurrent key flushes are group-committed,
@@ -91,8 +106,9 @@ default cap the overhead is small (see the design doc&#x27;s Measurements). Each
 own producer and transaction-coordinator state on the brokers.</li>
 <li class=""><strong>Tuning for transaction time</strong> — a transaction must commit within <code>transaction.timeout.ms</code> (a
 producer config, default 1 min, ≤ the broker&#x27;s <code>transaction.max.timeout.ms</code>). Large snapshots lengthen
-it with the batch — lower <code>maxWritesPerTransaction</code> (at a throughput cost) or raise the timeout. A
-higher timeout widens the post-crash window (below).</li>
+it with the batch — lower <code>maxWritesPerTransaction</code> (at a throughput cost) or raise the timeout.
+Raising it does not slow normal recovery (a takeover aborts this id&#x27;s unfinished transactions
+immediately); it only lengthens the prefix-change wait (below).</li>
 <li class=""><strong>Output is at-least-once</strong> — output produces stay outside the snapshot transaction, so a replayed
 batch re-emits them; the consuming side must tolerate duplicates. Only the snapshot store and the
 input-offset commit are kept consistent (corruption prevention, not exactly-once).</li>
@@ -100,6 +116,33 @@ input-offset commit are kept consistent (corruption prevention, not exactly-once
 records). A rolling deploy is safe; while the two modes coexist a non-transactional instance is not
 fenced — the same exposure you already have without this mode, gone once every instance is
 transactional.</li>
+<li class=""><strong>Recovery fails loudly rather than hangs</strong> — a recovery read that makes no progress for
+<code>recoveryStallTimeout</code> (default 3 min) fails with <code>RecoveryReadStalledError</code> instead of hanging the
+rebalance until the member is silently evicted at <code>max.poll.interval.ms</code>. The error names its
+diagnosed cause. Truncation: the snapshot log lost acknowledged records under the read (an
+unclean leader election or an equivalent disaster) — the records are gone, an offset-reset or
+restore decision. An outlived transaction: one whose producer&#x27;s <code>transaction.timeout.ms</code> merely
+exceeds the deadline heals on its own once the broker aborts it; a <em>hanging</em> transaction,
+whose last-stable-offset pin never clears, is detected and aborted with the <code>kafka-transactions.sh</code> tool
+(<a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-664%3A+Provide+tooling+to+detect+and+abort+hanging+transactions" target="_blank" rel="noopener noreferrer" class="">KIP-664</a>);
+brokers 3.6+ prevent it from arising by default
+(<a href="https://cwiki.apache.org/confluence/display/KAFKA/KIP-890%3A+Transactions+Server-Side+Defense" target="_blank" rel="noopener noreferrer" class="">KIP-890</a>).
+If the diagnosis comes back undetermined (the high-watermark re-read itself failed), fall back to
+the broker alerts that follow.
+Cluster-side, the matching broker alerts are <code>UncleanLeaderElectionsPerSec &gt; 0</code> (truncation risk)
+and <code>PartitionsWithLateTransactionsCount &gt; 0</code> (hanging transactions). Consumer lag metrics read
+zero during the wait or stall (lag is measured to the last-stable-offset, where the read parks),
+so alert on this mode&#x27;s log signals, not on lag. Keep the value well below <code>max.poll.interval.ms</code> and above
+the legitimate wait for an unfinished transaction (<code>transaction.timeout.ms</code> plus the broker&#x27;s
+abort scan).</li>
+<li class=""><strong>Reducing truncation risk</strong> — the deadline only <em>flags</em> lost records; it cannot recover them, and it
+catches truncation only while a recovery read is in flight. Reads run only at partition assignment,
+so a truncation usually lands between them and is adopted silently by the next recovery. So guard
+against it at the broker: keep the snapshot topic durable with
+<code>unclean.leader.election.enable=false</code> (the default), <code>min.insync.replicas</code> ≥ 2, and a replication
+factor ≥ 3 — the transactional producer already forces <code>acks=all</code>. An acknowledged snapshot then
+survives any single broker failure; truncation requires an opted-in unclean election or a disaster
+beyond the replication factor.</li>
 </ul>
 <p>Limitations:</p>
 <ul>
@@ -108,12 +151,17 @@ transactional.</li>
 nor committed, so the new owner replays those events — noise, not loss. Under the classic
 <strong>cooperative</strong> assignor this is every revocation: the revoke-time flush is always fenced, so
 <code>flushOnRevoke</code> does not shrink the replay window there.</li>
-<li class="">After a hard crash, the broker reclaims the failed owner&#x27;s in-flight transaction only after
-<code>transaction.timeout.ms</code>; until then that open transaction pins the snapshot topic&#x27;s
-last-stable-offset, and a recovery in that window silently misses records beyond it — even committed
-ones — while input offsets are not held back the same way, so a second handover inside the window
-can recover stale state
-(<a href="https://github.com/evolution-gaming/kafka-flow/issues/850" target="_blank" rel="noopener noreferrer" class="">kafka-flow#850</a>).</li>
+<li class="">A stale owner&#x27;s late <code>initTransactions</code> can fence the current owner&#x27;s producer: the current owner&#x27;s flow
+fails once and recovers (rebalance and replay); no wrong write can land. Rare, and a different
+fence — the producer epoch (its errors above), not the group generation (<code>CommitFailedException</code>).</li>
+<li class="">A <code>transactionalIdPrefix</code> change can cost recovery a wait: an old-prefix instance that dies
+mid-transaction during the rollout (any unclean death — a crash, an OOM kill, a forced pod
+delete) leaves that transaction under an id no new instance will ever init, so recovery waits
+until the broker times the transaction out — up to ~70 s at the defaults
+(<code>transaction.timeout.ms</code> plus the broker&#x27;s abort scan), never a wrong read. A transaction is
+open only during a synchronous flush or offset commit, so a graceful rollout leaves nothing open.
+(A foreign producer&#x27;s transaction on the snapshot topic is waited out the same way — but the
+topic must be exclusive to the flow regardless.)</li>
 <li class="">The mode always uses the identity <code>KafkaPersistencePartitionMapper</code> (fencing is per input partition);
 a non-identity mapper is not supported here.</li>
 <li class="">The fence works under both the <strong>classic</strong> and the <strong>consumer</strong> group protocols
