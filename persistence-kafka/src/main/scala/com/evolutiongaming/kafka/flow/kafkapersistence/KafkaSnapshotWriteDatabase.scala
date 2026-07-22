@@ -52,7 +52,7 @@ object KafkaSnapshotWriteDatabase {
     inputTopicPartition: TopicPartition,
     groupMetadata: F[Option[ConsumerGroupMetadata]],
     assignedOffset: Offset,
-    maxWritesPerTransaction: Int = DefaultMaxWritesPerTransaction,
+    maxWritesPerTransaction: Int,
   ): F[Transactional[F, S]] =
     for {
       _ <- new IllegalArgumentException(s"maxWritesPerTransaction must be positive, got $maxWritesPerTransaction")
@@ -178,9 +178,6 @@ object KafkaSnapshotWriteDatabase {
         }
       } yield ()
   }
-
-  /** Default upper bound of snapshot writes committed in one transaction, see [[transactional]]. */
-  val DefaultMaxWritesPerTransaction: Int = 256
 
   // a write carries its record; an offset-only marker carries None (see scheduleCommit)
   private final case class Pending[F[_], S](
