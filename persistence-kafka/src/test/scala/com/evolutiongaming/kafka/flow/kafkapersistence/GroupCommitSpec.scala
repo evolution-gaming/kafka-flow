@@ -64,7 +64,7 @@ class GroupCommitSpec extends FunSuite {
   private def sentKeys(events: Vector[Event]): List[String] =
     events.collect { case Event.Sent(k) => k }.flatten.toList
 
-  List(1, KafkaSnapshotWriteDatabase.DefaultMaxWritesPerTransaction).foreach { cap =>
+  List(1, KafkaPersistenceModule.TransactionalConfig.DefaultMaxWritesPerTransaction).foreach { cap =>
     test(s"every queued write commits exactly once with its input offset, respecting the cap (cap=$cap)") {
       val keys = (1 to 20).toList.map(i => s"key$i")
       val test = for {

@@ -22,6 +22,8 @@ import scala.jdk.CollectionConverters.*
 abstract class ForAllKafkaSuite extends FunSuite with TestContainersFixtures {
   import cats.effect.unsafe.implicits.global
 
+  // deliberately unpinned - tracking the testcontainers default lets CI surface broker changes that may
+  // warrant code or doc updates; the transactional tests tolerate protocol-version differences
   val kafka = ForAllContainerFixture(KafkaContainer())
 
   def createTopic(topic: String, partitions: Int): IO[Unit] = {

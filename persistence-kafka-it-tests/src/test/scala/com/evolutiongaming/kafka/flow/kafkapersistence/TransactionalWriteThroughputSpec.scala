@@ -63,6 +63,9 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
       ),
       snapshotTopic = stateTopic,
       partition     = Partition.min,
+      stall = KafkaPartitionPersistence
+        .Stall(KafkaPersistenceModule.TransactionalConfig.DefaultRecoveryStallTimeout, IO.monotonic)
+        .some,
     )
 
   private def timed(io: IO[Unit]): IO[FiniteDuration] =
@@ -254,11 +257,12 @@ class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
             _ <- producer.initTransactions
             database <- KafkaSnapshotWriteDatabase
               .transactional[IO, String](
-                snapshotTopicPartition = TopicPartition(stateTopic, Partition.min),
-                producer               = producer,
-                inputTopicPartition    = TopicPartition(sharedInput, Partition.min),
-                groupMetadata          = IO.pure(current.some),
-                assignedOffset         = Offset.min,
+                snapshotTopicPartition  = TopicPartition(stateTopic, Partition.min),
+                producer                = producer,
+                inputTopicPartition     = TopicPartition(sharedInput, Partition.min),
+                groupMetadata           = IO.pure(current.some),
+                assignedOffset          = Offset.min,
+                maxWritesPerTransaction = KafkaPersistenceModule.TransactionalConfig.DefaultMaxWritesPerTransaction,
               )
               .map(_.writeDatabase)
             _       <- database.persist(kafkaKey(stateTopic, "warm-up"), "warm-up")
