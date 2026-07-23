@@ -377,9 +377,11 @@ real broker:
   read, above): a foreign transaction held open through the read, its LSO pin asserted active, then
   waited out under a deadline set above the wait — the read completes, the deadline never fires.
 
-The suites drive flows with explicit consumer generations rather than live rebalances; the
-protocol/assignor matrix (Consumer rebalance protocols, above) rests on broker semantics, not on
-tests here.
+Most fence suites drive flows with explicit consumer generations, but two integration suites use
+**live** rebalances against a real broker: `RevokeTimeFlushSpec` (a second member joins, forcing a real
+revoke — cooperative-sticky fenced, eager-sticky control commits) and `Kip848ConsumerProtocolSpec` (the
+silent member-epoch bump and the zombie fence on a 4.3.0 broker). The remaining protocol/assignor-matrix
+cells (Consumer rebalance protocols, above) rest on broker semantics rather than a dedicated test.
 
 Unit suites pin the client-side pieces the mechanism depends on:
 
@@ -430,7 +432,8 @@ The mechanism is model-checked in `models/` (TLA+), as a refinement tower: one a
   (`recoveryread_truncate_tripwire`) is likewise merged, as the recovery stall deadline.
 
 The models verify behaviour *under* their assumptions (the KIP-447 broker fence, poll-thread
-serialization of rebalance callbacks, one open transaction per partition); they do not re-derive them.
+serialization of rebalance callbacks, one open transaction per id lineage — the `Foreign` knob
+deliberately checks a second, out-of-lineage open); they do not re-derive them.
 See `models/README.md` for the full config catalogue.
 
 ## Rejected alternatives
