@@ -4,7 +4,7 @@ import cats.effect.{IO, Resource}
 import cats.effect.kernel.Ref
 import cats.effect.unsafe.implicits.global
 import cats.syntax.all.*
-import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.KeyContext
 import com.evolutiongaming.kafka.flow.MonadStateHelper.*
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
@@ -571,7 +571,8 @@ class TimerFlowOfSpec extends FunSuite {
 
 }
 object TimerFlowSpec {
-  implicit val log: Log[IO] = Log.empty[IO]
+  implicit val log: Log[IO]     = Log.empty[IO]
+  implicit val logOf: LogOf[IO] = LogOf.empty
 
   case class Context(
     holding: Option[Offset] = None,
@@ -600,7 +601,8 @@ object TimerFlowSpec {
     implicit val keyContext: KeyContext[IO] =
       KeyContext(
         storage         = contextRef.stateInstance.focus(Context.lens(_.holding)),
-        removeFromCache = contextRef.update(ctx => ctx.copy(removed = ctx.removed + 1))
+        removeFromCache = contextRef.update(ctx => ctx.copy(removed = ctx.removed + 1)),
+        mdc             = Log.Mdc.Eager("key" -> "test-key")
       )
 
     implicit val timerContext: TimerContext[IO] = {
