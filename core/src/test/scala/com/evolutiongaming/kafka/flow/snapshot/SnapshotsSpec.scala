@@ -309,7 +309,7 @@ class SnapshotsSpec extends FunSuite {
     val (context, recovered) = snapshots.read.run(Context()).value
 
     assertEquals(recovered, Some(10))
-    // the cell now holds the store's view (persisted), so `reconcile` has something to compare a journal fold against
+    // the cell now holds the store's view (persisted); its offset is the floor the events-recovery filter uses
     assertEquals(context.state, live(10, persisted = true, offset = Offset.unsafe(10).some))
   }
 
