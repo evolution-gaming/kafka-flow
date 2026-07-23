@@ -1,0 +1,214 @@
+package com.evolutiongaming.skafka.consumer
+
+import java.lang.Long as LongJ
+import java.time.Instant
+import java.util.{Collection as CollectionJ, Map as MapJ}
+
+import cats.data.{NonEmptyList as Nel, NonEmptyMap as Nem, NonEmptySet as Nes}
+import cats.implicits.*
+import com.evolutiongaming.catshelper.DataHelper.*
+import com.evolutiongaming.catshelper.*
+import com.evolutiongaming.skafka.Converters.*
+import com.evolutiongaming.skafka.*
+import org.apache.kafka.clients.consumer.{
+  Consumer as ConsumerJ,
+  ConsumerGroupMetadata as ConsumerGroupMetadataJ,
+  ConsumerRebalanceListener as RebalanceListenerJ,
+  ConsumerRecord as ConsumerRecordJ,
+  ConsumerRecords as ConsumerRecordsJ,
+  OffsetAndMetadata as OffsetAndMetadataJ,
+  OffsetAndTimestamp as OffsetAndTimestampJ
+}
+import org.apache.kafka.common.header.internals.RecordHeaders
+import org.apache.kafka.common.record.TimestampType as TimestampTypeJ
+import org.apache.kafka.common.TopicPartition as TopicPartitionJ
+
+import scala.jdk.CollectionConverters.*
+import scala.util.Try
+
+object ConsumerConverters {
+
+  implicit class OffsetAndTimestampJOps(val self: OffsetAndTimestampJ) extends AnyVal {
+
+    def asScala[F[_]: ApplicativeThrowable]: F[OffsetAndTimestamp] = {
+      for {
+        offset <- Offset.of[F](self.offset())
+      } yield {
+        OffsetAndTimestamp(offset = offset, timestamp = Instant.ofEpochMilli(self.timestamp()))
+      }
+    }
+  }
+
+  implicit class OffsetAndTimestampOps(val self: OffsetAndTimestamp) extends AnyVal {
+
+    def asJava: OffsetAndTimestampJ = new OffsetAndTimestampJ(self.offset.value, self.timestamp.toEpochMilli)
+  }
+
+  implicit class RebalanceListener1Ops[F[_]](val self: RebalanceListener1[F]) extends AnyVal {
+
+    def asJava(consumer: ConsumerJ[?, ?])(implicit toTry: ToTry[F]): RebalanceListenerJ = {
+
+      val rebalanceConsumer = RebalanceConsumer(consumer)
+
+      def onPartitions(
+        partitions: CollectionJ[TopicPartitionJ],
+        call: Nes[TopicPartition] => RebalanceCallback[F, Unit]
+      ): Unit = {
+        // If you're thinking about deriving ToTry timeout based on ConsumerConfig.maxPollInterval
+        // please have a look on https://github.com/evolution-gaming/skafka/issues/125
+        partitions
+          .asScala
+          .toList
+          // Note: `traverse(_.asScala[F])` may cause StackOverflowError later, when executed
+          // synchronously with `.toTry`. Traversing into `Try` directly avoids this.
+          .traverse { _.asScala[Try] }
+          .flatMap { topicPartitions =>
+            topicPartitions
+              .toSortedSet
+              .toNes
+              .traverse_ { partitions => call(partitions).run(rebalanceConsumer) }
+          }
+          // If we fail to make a `call(..).run(..)`, fail right now on the consumer thread.
+          .get
+      }
+
+      new RebalanceListenerJ {
+
+        def onPartitionsAssigned(partitions: CollectionJ[TopicPartitionJ]): Unit = {
+          onPartitions(partitions, self.onPartitionsAssigned)
+        }
+
+        def onPartitionsRevoked(partitions: CollectionJ[TopicPartitionJ]): Unit = {
+          onPartitions(partitions, self.onPartitionsRevoked)
+        }
+
+        override def onPartitionsLost(partitions: CollectionJ[TopicPartitionJ]): Unit = {
+          onPartitions(partitions, self.onPartitionsLost)
+        }
+      }
+    }
+  }
+
+  implicit class ConsumerRecordJOps[K, V](val self: ConsumerRecordJ[K, V]) extends AnyVal {
+
+    def asScala[F[_]: MonadThrowable]: F[ConsumerRecord[K, V]] = {
+
+      val headers = self.headers().asScala.map(_.asScala).toList
+
+      val timestampAndType = {
+        def some(timestampType: TimestampType): Some[TimestampAndType] = {
+          Some(TimestampAndType(Instant.ofEpochMilli(self.timestamp()), timestampType))
+        }
+
+        self.timestampType() match {
+          case TimestampTypeJ.NO_TIMESTAMP_TYPE => None
+          case TimestampTypeJ.CREATE_TIME       => some(TimestampType.create)
+          case TimestampTypeJ.LOG_APPEND_TIME   => some(TimestampType.append)
+        }
+      }
+
+      def withSize[A](value: A, size: Int): Option[WithSize[A]] = {
+        for {
+          value <- Option(value)
+        } yield WithSize(value, size)
+      }
+
+      for {
+        partition <- Partition.of[F](self.partition())
+        offset    <- Offset.of[F](self.offset())
+      } yield {
+        ConsumerRecord(
+          topicPartition   = TopicPartition(self.topic(), partition),
+          offset           = offset,
+          timestampAndType = timestampAndType,
+          key              = withSize(self.key(), self.serializedKeySize),
+          value            = withSize(self.value(), self.serializedValueSize()),
+          headers          = headers
+        )
+      }
+    }
+  }
+
+  implicit class ConsumerRecordOps[K, V](val self: ConsumerRecord[K, V]) extends AnyVal {
+
+    def asJava: ConsumerRecordJ[K, V] = {
+
+      val headers = self.headers.map(_.asJava).asJava
+
+      val (timestampType, timestamp) = self.timestampAndType map { timestampAndType =>
+        timestampAndType.timestampType match {
+          case TimestampType.Create => (TimestampTypeJ.CREATE_TIME, timestampAndType.timestamp.toEpochMilli)
+          case TimestampType.Append => (TimestampTypeJ.LOG_APPEND_TIME, timestampAndType.timestamp.toEpochMilli)
+        }
+      } getOrElse {
+        (TimestampTypeJ.NO_TIMESTAMP_TYPE, -1L)
+      }
+
+      new ConsumerRecordJ[K, V](
+        self.topicPartition.topic,
+        self.topicPartition.partition.value,
+        self.offset.value,
+        timestamp,
+        timestampType,
+        self.key.map(_.serializedSize) getOrElse -1,
+        self.value.map(_.serializedSize) getOrElse -1,
+        self.key.map(_.value) getOrElse null.asInstanceOf[K],
+        self.value.map(_.value) getOrElse null.asInstanceOf[V],
+        new RecordHeaders(headers),
+        Option.empty[Integer].toOptional
+      )
+    }
+  }
+
+  implicit class ConsumerRecordsJOps[K, V](val self: ConsumerRecordsJ[K, V]) extends AnyVal {
+
+    def asScala[F[_]: MonadThrowable]: F[ConsumerRecords[K, V]] = {
+      self
+        .iterator()
+        .asScala
+        .toList
+        .traverse { _.asScala[F] }
+        .map { records =>
+          Nel
+            .fromList(records)
+            .map { records => ConsumerRecords(records.groupBy { _.topicPartition }) }
+            .getOrElse(ConsumerRecords.empty)
+        }
+    }
+  }
+
+  implicit class TopicPartitionToOffsetMetadataMapOps(val m: Map[TopicPartition, OffsetAndMetadata]) extends AnyVal {
+    def deepAsJava: MapJ[TopicPartitionJ, OffsetAndMetadataJ] = m.map {
+      case (tp, om) => (tp.asJava, om.asJava)
+    }.asJava
+  }
+
+  implicit class ConsumerGroupMetadataJOps(val self: ConsumerGroupMetadataJ) extends AnyVal {
+
+    def asScala: ConsumerGroupMetadata = {
+      ConsumerGroupMetadata(
+        groupId         = self.groupId(),
+        generationId    = self.generationId(),
+        memberId        = self.memberId(),
+        groupInstanceId = self.groupInstanceId().toOption
+      )
+    }
+  }
+
+  implicit class ConsumerGroupMetadataOps(val self: ConsumerGroupMetadata) extends AnyVal {
+
+    def asJava: ConsumerGroupMetadataJ = {
+      new ConsumerGroupMetadataJ(self.groupId, self.generationId, self.memberId, self.groupInstanceId.toOptional)
+    }
+  }
+
+  def offsetsAndTimestampsMapF[F[_]: MonadThrowable](
+    mapJ: MapJ[TopicPartitionJ, OffsetAndTimestampJ]
+  ): F[Map[TopicPartition, Option[OffsetAndTimestamp]]] = {
+    mapJ.asScalaMap(_.asScala[F], v => Option(v).traverse { _.asScala[F] }, keepNullValues = true)
+  }
+
+  def timestampsToSearchJ(nem: Nem[TopicPartition, Instant]): MapJ[TopicPartitionJ, LongJ] = {
+    nem.toSortedMap.asJavaMap(_.asJava, _.toEpochMilli)
+  }
+}

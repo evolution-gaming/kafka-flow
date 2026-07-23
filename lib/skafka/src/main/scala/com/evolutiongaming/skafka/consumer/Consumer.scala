@@ -1,0 +1,1091 @@
+package com.evolutiongaming.skafka
+package consumer
+
+import cats.data.NonEmptySetImpl.catsDataInstancesForNonEmptySet
+import cats.data.{NonEmptyMap as Nem, NonEmptySet as Nes}
+import cats.effect.*
+import cats.effect.implicits.*
+import cats.effect.std.Semaphore
+import cats.implicits.*
+import cats.{Applicative, Monad, MonadError, Monoid, ~>}
+import com.evolutiongaming.catshelper.CatsHelper.*
+import com.evolutiongaming.catshelper.*
+import com.evolutiongaming.skafka.Converters.*
+import com.evolutiongaming.skafka.consumer.ConsumerConverters.*
+import org.apache.kafka.clients.consumer.{
+  OffsetCommitCallback,
+  Consumer as ConsumerJ,
+  OffsetAndMetadata as OffsetAndMetadataJ,
+  OffsetAndTimestamp as OffsetAndTimestampJ
+}
+import org.apache.kafka.common.{Uuid, PartitionInfo as PartitionInfoJ, TopicPartition as TopicPartitionJ}
+
+import java.lang.Long as LongJ
+import java.util.regex.Pattern
+import java.util.{Collection as CollectionJ, List as ListJ, Map as MapJ, Set as SetJ}
+import scala.concurrent.duration.*
+import scala.jdk.CollectionConverters.*
+
+/** See [[org.apache.kafka.clients.consumer.Consumer]]
+  */
+trait Consumer[F[_], K, V] {
+
+  def assign(partitions: Nes[TopicPartition]): F[Unit]
+
+  def assignment: F[Set[TopicPartition]]
+
+  def subscribe(topics: Nes[Topic], listener: RebalanceListener1[F]): F[Unit]
+
+  def subscribe(topics: Nes[Topic]): F[Unit]
+
+  def subscribe(pattern: Pattern, listener: RebalanceListener1[F]): F[Unit]
+
+  def subscribe(pattern: Pattern): F[Unit]
+
+  def subscription: F[Set[Topic]]
+
+  def unsubscribe: F[Unit]
+
+  def poll(timeout: FiniteDuration): F[ConsumerRecords[K, V]]
+
+  def commit: F[Unit]
+
+  def commit(timeout: FiniteDuration): F[Unit]
+
+  def commit(offsets: Nem[TopicPartition, OffsetAndMetadata]): F[Unit]
+
+  def commit(offsets: Nem[TopicPartition, OffsetAndMetadata], timeout: FiniteDuration): F[Unit]
+
+  def commitLater: F[Map[TopicPartition, OffsetAndMetadata]]
+
+  def commitLater(offsets: Nem[TopicPartition, OffsetAndMetadata]): F[Unit]
+
+  def seek(partition: TopicPartition, offset: Offset): F[Unit]
+
+  def seek(partition: TopicPartition, offsetAndMetadata: OffsetAndMetadata): F[Unit]
+
+  def seekToBeginning(partitions: Nes[TopicPartition]): F[Unit]
+
+  def seekToEnd(partitions: Nes[TopicPartition]): F[Unit]
+
+  def position(partition: TopicPartition): F[Offset]
+
+  def position(partition: TopicPartition, timeout: FiniteDuration): F[Offset]
+
+  def committed(partitions: Nes[TopicPartition]): F[Map[TopicPartition, OffsetAndMetadata]]
+
+  def committed(partitions: Nes[TopicPartition], timeout: FiniteDuration): F[Map[TopicPartition, OffsetAndMetadata]]
+
+  def clientInstanceId(timeout: FiniteDuration): F[Uuid]
+
+  def clientMetrics: F[Seq[ClientMetric[F]]]
+
+  def partitions(topic: Topic): F[List[PartitionInfo]]
+
+  def partitions(topic: Topic, timeout: FiniteDuration): F[List[PartitionInfo]]
+
+  def topics: F[Map[Topic, List[PartitionInfo]]]
+
+  def topics(timeout: FiniteDuration): F[Map[Topic, List[PartitionInfo]]]
+
+  def paused: F[Set[TopicPartition]]
+
+  def pause(partitions: Nes[TopicPartition]): F[Unit]
+
+  def resume(partitions: Nes[TopicPartition]): F[Unit]
+
+  def offsetsForTimes(
+    timestampsToSearch: Map[TopicPartition, Offset]
+  ): F[Map[TopicPartition, Option[OffsetAndTimestamp]]]
+
+  def offsetsForTimes(
+    timestampsToSearch: Map[TopicPartition, Offset],
+    timeout: FiniteDuration
+  ): F[Map[TopicPartition, Option[OffsetAndTimestamp]]]
+
+  def beginningOffsets(partitions: Nes[TopicPartition]): F[Map[TopicPartition, Offset]]
+
+  def beginningOffsets(partitions: Nes[TopicPartition], timeout: FiniteDuration): F[Map[TopicPartition, Offset]]
+
+  def endOffsets(partitions: Nes[TopicPartition]): F[Map[TopicPartition, Offset]]
+
+  def endOffsets(partitions: Nes[TopicPartition], timeout: FiniteDuration): F[Map[TopicPartition, Offset]]
+
+  def currentLag(partition: TopicPartition): F[Option[Long]]
+
+  def groupMetadata: F[ConsumerGroupMetadata]
+
+  def enforceRebalance: F[Unit]
+
+  def wakeup: F[Unit]
+}
+
+object Consumer {
+
+  private sealed abstract class Empty
+
+  def empty[F[_]: Applicative, K, V]: Consumer[F, K, V] = {
+
+    val empty = ().pure[F]
+
+    new Empty with Consumer[F, K, V] {
+
+      def assign(partitions: Nes[TopicPartition]): F[Unit] = empty
+
+      def assignment: F[Set[TopicPartition]] = Set.empty[TopicPartition].pure[F]
+
+      def subscribe(topics: Nes[Topic], listener: RebalanceListener1[F]): F[Unit] = empty
+
+      def subscribe(topics: Nes[Topic]): F[Unit] = empty
+
+      def subscribe(pattern: Pattern, listener: RebalanceListener1[F]): F[Unit] = empty
+
+      def subscribe(pattern: Pattern): F[Unit] = empty
+
+      def subscription: F[Set[Topic]] = Set.empty[Topic].pure[F]
+
+      def unsubscribe: F[Unit] = empty
+
+      def poll(timeout: FiniteDuration): F[ConsumerRecords[K, V]] = ConsumerRecords.empty[K, V].pure[F]
+
+      def commit: F[Unit] = empty
+
+      def commit(timeout: FiniteDuration): F[Unit] = empty
+
+      def commit(offsets: Nem[TopicPartition, OffsetAndMetadata]): F[Unit] = empty
+
+      def commit(offsets: Nem[TopicPartition, OffsetAndMetadata], timeout: FiniteDuration): F[Unit] = empty
+
+      def commitLater: F[Map[TopicPartition, OffsetAndMetadata]] = Map.empty[TopicPartition, OffsetAndMetadata].pure[F]
+
+      def commitLater(offsets: Nem[TopicPartition, OffsetAndMetadata]): F[Unit] = empty
+
+      def seek(partition: TopicPartition, offset: Offset): F[Unit] = empty
+
+      def seek(partition: TopicPartition, offsetAndMetadata: OffsetAndMetadata): F[Unit] = empty
+
+      def seekToBeginning(partitions: Nes[TopicPartition]): F[Unit] = empty
+
+      def seekToEnd(partitions: Nes[TopicPartition]): F[Unit] = empty
+
+      def position(partition: TopicPartition): F[Offset] = Offset.min.pure[F]
+
+      def position(partition: TopicPartition, timeout: FiniteDuration): F[Offset] = Offset.min.pure[F]
+
+      def committed(partitions: Nes[TopicPartition]): F[Map[TopicPartition, OffsetAndMetadata]] = {
+        Map.empty[TopicPartition, OffsetAndMetadata].pure[F]
+      }
+
+      def committed(
+        partitions: Nes[TopicPartition],
+        timeout: FiniteDuration
+      ): F[Map[TopicPartition, OffsetAndMetadata]] = {
+        Map.empty[TopicPartition, OffsetAndMetadata].pure[F]
+      }
+
+      def clientInstanceId(timeout: FiniteDuration): F[Uuid] = Uuid.ZERO_UUID.pure[F]
+
+      def partitions(topic: Topic): F[List[PartitionInfo]] = List.empty[PartitionInfo].pure[F]
+
+      def partitions(topic: Topic, timeout: FiniteDuration): F[List[PartitionInfo]] = List.empty[PartitionInfo].pure[F]
+
+      def topics: F[Map[Topic, List[PartitionInfo]]] = Map.empty[Topic, List[PartitionInfo]].pure[F]
+
+      def topics(timeout: FiniteDuration): F[Map[Topic, List[PartitionInfo]]] =
+        Map.empty[Topic, List[PartitionInfo]].pure[F]
+
+      def pause(partitions: Nes[TopicPartition]): F[Unit] = empty
+
+      def paused: F[Set[TopicPartition]] = Set.empty[TopicPartition].pure[F]
+
+      def resume(partitions: Nes[TopicPartition]): F[Unit] = empty
+
+      def offsetsForTimes(
+        timestampsToSearch: Map[TopicPartition, Offset]
+      ): F[Map[TopicPartition, Option[OffsetAndTimestamp]]] = {
+        Map.empty[TopicPartition, Option[OffsetAndTimestamp]].pure[F]
+      }
+
+      def offsetsForTimes(
+        timestampsToSearch: Map[TopicPartition, Offset],
+        timeout: FiniteDuration
+      ): F[Map[TopicPartition, Option[OffsetAndTimestamp]]] = {
+        Map.empty[TopicPartition, Option[OffsetAndTimestamp]].pure[F]
+      }
+
+      def beginningOffsets(partitions: Nes[TopicPartition]): F[Map[TopicPartition, Offset]] = {
+        Map.empty[TopicPartition, Offset].pure[F]
+      }
+
+      def beginningOffsets(partitions: Nes[TopicPartition], timeout: FiniteDuration): F[Map[TopicPartition, Offset]] = {
+        Map.empty[TopicPartition, Offset].pure[F]
+      }
+
+      def endOffsets(partitions: Nes[TopicPartition]): F[Map[TopicPartition, Offset]] = {
+        Map.empty[TopicPartition, Offset].pure[F]
+      }
+
+      def endOffsets(partitions: Nes[TopicPartition], timeout: FiniteDuration): F[Map[TopicPartition, Offset]] = {
+        Map.empty[TopicPartition, Offset].pure[F]
+      }
+
+      def currentLag(partition: TopicPartition): F[Option[Long]] = Option.empty[Long].pure[F]
+
+      def groupMetadata: F[ConsumerGroupMetadata] = ConsumerGroupMetadata.Empty.pure[F]
+
+      def wakeup: F[Unit] = empty
+
+      def enforceRebalance: F[Unit] = empty
+
+      def clientMetrics: F[Seq[ClientMetric[F]]] = Seq.empty[ClientMetric[F]].pure[F]
+    }
+  }
+
+  private sealed abstract class Main
+
+  def of[F[_]: ToTry: Async, K, V](
+    config: ConsumerConfig
+  )(implicit fromBytesK: FromBytes[F, K], fromBytesV: FromBytes[F, V]): Resource[F, Consumer[F, K, V]] = {
+    fromConsumerJ1(CreateConsumerJ(config, fromBytesK, fromBytesV))
+  }
+
+  def fromConsumerJ1[F[_]: ToTry: Async, K, V](
+    consumer: F[ConsumerJ[K, V]]
+  ): Resource[F, Consumer[F, K, V]] = {
+
+    def blocking[A](f: => A): F[A] = Sync[F].blocking { f }
+
+    for {
+      semaphore            <- Semaphore(1).toResource
+      consumer             <- consumer.toResource
+      clientMetricsProvider = ClientMetricsProvider[F](consumer)
+
+      close = semaphore.permit.use(_ => blocking { consumer.close() }).uncancelable
+      _    <- Resource.release { close }
+    } yield {
+
+      def serial[A](fa: F[A]): F[A] = semaphore.permit.use(_ => fa).uncancelable
+
+      def serialNonBlocking[A](f: => A): F[A] = serial { Sync[F].delay { f } }
+
+      def serialBlocking[A](f: => A): F[A] = serial { blocking { f } }
+
+      def commitLater1(f: OffsetCommitCallback => Unit): F[MapJ[TopicPartitionJ, OffsetAndMetadataJ]] = {
+        Async[F]
+          .async[MapJ[TopicPartitionJ, OffsetAndMetadataJ]] { callback =>
+            val offsetCommitCallback = new OffsetCommitCallback {
+
+              def onComplete(offsets: MapJ[TopicPartitionJ, OffsetAndMetadataJ], exception: Exception): Unit = {
+                if (exception != null) {
+                  callback(exception.asLeft)
+                } else if (offsets != null) {
+                  callback(offsets.asRight)
+                } else {
+                  val failure = SkafkaError("both offsets & exception are nulls")
+                  callback(failure.asLeft)
+                }
+              }
+            }
+            serialNonBlocking(f(offsetCommitCallback)).as(Applicative[F].unit.some)
+          }
+      }
+
+      def position1(partition: TopicPartition)(f: TopicPartitionJ => Long): F[Offset] = {
+        val partitionJ = partition.asJava
+        for {
+          offset <- serialBlocking { f(partitionJ) }
+          offset <- Offset.of[F](offset)
+        } yield offset
+      }
+
+      def committed1(partitions: Nes[TopicPartition])(
+        f: (SetJ[TopicPartitionJ]) => MapJ[TopicPartitionJ, OffsetAndMetadataJ]
+      ): F[Map[TopicPartition, OffsetAndMetadata]] = {
+        val partitionsJ = partitions.asJava
+        for {
+          result <- serialBlocking { f(partitionsJ) }
+          result <- committedOffsetsF[F](result)
+        } yield result
+      }
+
+      def partitions1(f: => Option[ListJ[PartitionInfoJ]]): F[List[PartitionInfo]] = {
+        for {
+          result <- serialBlocking { f }
+          result <- result.traverse(partitionsInfoListF[F])
+        } yield result.getOrElse(List.empty)
+      }
+
+      def topics1(f: => MapJ[Topic, ListJ[PartitionInfoJ]]): F[Map[Topic, List[PartitionInfo]]] = {
+        for {
+          result <- serialBlocking { f }
+          result <- partitionsInfoMapF[F](result)
+        } yield result
+      }
+
+      def offsetsForTimes1(timestamps: Map[TopicPartition, Offset])(
+        f: MapJ[TopicPartitionJ, LongJ] => MapJ[TopicPartitionJ, OffsetAndTimestampJ]
+      ): F[Map[TopicPartition, Option[OffsetAndTimestamp]]] = {
+        val timestampsJ = timestamps.asJavaMap(_.asJava, a => LongJ.valueOf(a.value))
+        for {
+          result <- serialBlocking { f(timestampsJ) }
+          result <- offsetsAndTimestampsMapF[F](result)
+        } yield result
+      }
+
+      def offsetsOf(partitions: Nes[TopicPartition])(
+        f: CollectionJ[TopicPartitionJ] => MapJ[TopicPartitionJ, LongJ]
+      ): F[Map[TopicPartition, Offset]] = {
+        val partitionsJ = partitions.asJava
+        for {
+          result <- serialBlocking { f(partitionsJ) }
+          result <- offsetsMapF[F](result)
+        } yield result
+      }
+
+      new Main with Consumer[F, K, V] {
+
+        def assign(partitions: Nes[TopicPartition]): F[Unit] = {
+          val partitionsJ = partitions.toList.map { _.asJava }.asJavaCollection
+          serialNonBlocking { consumer.assign(partitionsJ) }
+        }
+
+        def assignment: F[Set[TopicPartition]] = {
+          for {
+            result <- serialNonBlocking { consumer.assignment() }
+            result <- topicPartitionsSetF[F](result)
+          } yield result
+        }
+
+        def subscribe(topics: Nes[Topic], listener: RebalanceListener1[F]): F[Unit] = {
+          val topicsJ   = topics.toSortedSet.asJava
+          val listenerJ = listener.asJava(consumer)
+          serialNonBlocking { consumer.subscribe(topicsJ, listenerJ) }
+        }
+
+        def subscribe(topics: Nes[Topic]): F[Unit] = {
+          val topicsJ = topics.toSortedSet.asJava
+          serialNonBlocking { consumer.subscribe(topicsJ, new NoOpConsumerRebalanceListener) }
+        }
+
+        def subscribe(pattern: Pattern, listener: RebalanceListener1[F]): F[Unit] = {
+          val listenerJ = listener.asJava(consumer)
+          serialNonBlocking { consumer.subscribe(pattern, listenerJ) }
+        }
+
+        def subscribe(pattern: Pattern): F[Unit] = {
+          serialNonBlocking { consumer.subscribe(pattern, new NoOpConsumerRebalanceListener) }
+        }
+
+        def subscription: F[Set[Topic]] = {
+          for {
+            result <- serialNonBlocking { consumer.subscription() }
+          } yield {
+            result.asScala.toSet
+          }
+        }
+
+        def unsubscribe: F[Unit] = {
+          serialBlocking { consumer.unsubscribe() }
+        }
+
+        def poll(timeout: FiniteDuration): F[ConsumerRecords[K, V]] = {
+          val timeoutJ = timeout.asJava
+          serialBlocking { consumer.poll(timeoutJ) }.flatMap { _.asScala[F] }
+        }
+
+        def commit: F[Unit] = {
+          serialBlocking { consumer.commitSync() }
+        }
+
+        def commit(timeout: FiniteDuration): F[Unit] = {
+          val timeoutJ = timeout.asJava
+          serialBlocking { consumer.commitSync(timeoutJ) }
+        }
+
+        def commit(offsets: Nem[TopicPartition, OffsetAndMetadata]): F[Unit] = {
+          val offsetsJ = asOffsetsAndMetadataJ(offsets)
+          serialBlocking { consumer.commitSync(offsetsJ) }
+        }
+
+        def commit(offsets: Nem[TopicPartition, OffsetAndMetadata], timeout: FiniteDuration): F[Unit] = {
+          val offsetsJ = asOffsetsAndMetadataJ(offsets)
+          val timeoutJ = timeout.asJava
+          serialBlocking { consumer.commitSync(offsetsJ, timeoutJ) }
+        }
+
+        def commitLater: F[Map[TopicPartition, OffsetAndMetadata]] = {
+          for {
+            result <- commitLater1 { callback => consumer.commitAsync(callback) }
+            result <- result.asScalaMap(_.asScala[F], _.asScala[F])
+          } yield result
+        }
+
+        def commitLater(offsets: Nem[TopicPartition, OffsetAndMetadata]): F[Unit] = {
+          val offsetsJ = offsets.toSortedMap.deepAsJava
+          commitLater1 { callback => consumer.commitAsync(offsetsJ, callback) }.void
+        }
+
+        def seek(partition: TopicPartition, offset: Offset): F[Unit] = {
+          val partitionsJ = partition.asJava
+          serialNonBlocking { consumer.seek(partitionsJ, offset.value) }
+        }
+
+        def seek(partition: TopicPartition, offsetAndMetadata: OffsetAndMetadata): F[Unit] = {
+          val partitionsJ        = partition.asJava
+          val offsetAndMetadataJ = offsetAndMetadata.asJava
+          serialNonBlocking { consumer.seek(partitionsJ, offsetAndMetadataJ) }
+        }
+
+        def seekToBeginning(partitions: Nes[TopicPartition]): F[Unit] = {
+          val partitionsJ = partitions.asJava
+          serialNonBlocking { consumer.seekToBeginning(partitionsJ) }
+        }
+
+        def seekToEnd(partitions: Nes[TopicPartition]): F[Unit] = {
+          val partitionsJ = partitions.asJava
+          serialNonBlocking { consumer.seekToEnd(partitionsJ) }
+        }
+
+        def position(partition: TopicPartition): F[Offset] = {
+          position1(partition) { consumer.position }
+        }
+
+        def position(partition: TopicPartition, timeout: FiniteDuration): F[Offset] = {
+          position1(partition) { consumer.position(_, timeout.asJava) }
+        }
+
+        def committed(partitions: Nes[TopicPartition]): F[Map[TopicPartition, OffsetAndMetadata]] = {
+          committed1(partitions) { consumer.committed }
+        }
+
+        def committed(
+          partitions: Nes[TopicPartition],
+          timeout: FiniteDuration
+        ): F[Map[TopicPartition, OffsetAndMetadata]] = {
+          committed1(partitions) { consumer.committed(_, timeout.asJava) }
+        }
+
+        def clientInstanceId(timeout: FiniteDuration): F[Uuid] = {
+          serialBlocking { consumer.clientInstanceId(timeout.asJava) }
+        }
+
+        def partitions(topic: Topic): F[List[PartitionInfo]] = {
+          partitions1 { Option(consumer.partitionsFor(topic)) }
+        }
+
+        def partitions(topic: Topic, timeout: FiniteDuration): F[List[PartitionInfo]] = {
+          partitions1 { Option(consumer.partitionsFor(topic, timeout.asJava)) }
+        }
+
+        val topics: F[Map[Topic, List[PartitionInfo]]] = topics1 { consumer.listTopics() }
+
+        def topics(timeout: FiniteDuration): F[Map[Topic, List[PartitionInfo]]] = {
+          topics1 { consumer.listTopics(timeout.asJava) }
+        }
+
+        def pause(partitions: Nes[TopicPartition]): F[Unit] = {
+          val partitionsJ = partitions.asJava
+          serialNonBlocking { consumer.pause(partitionsJ) }
+        }
+
+        def paused: F[Set[TopicPartition]] = {
+          for {
+            result <- serialNonBlocking { consumer.paused() }
+            result <- topicPartitionsSetF[F](result)
+          } yield result
+        }
+
+        def resume(partitions: Nes[TopicPartition]): F[Unit] = {
+          val partitionsJ = partitions.asJava
+          serialNonBlocking { consumer.resume(partitionsJ) }
+        }
+
+        def offsetsForTimes(
+          timestampsToSearch: Map[TopicPartition, Offset]
+        ): F[Map[TopicPartition, Option[OffsetAndTimestamp]]] = {
+          offsetsForTimes1(timestampsToSearch) { consumer.offsetsForTimes }
+        }
+
+        def offsetsForTimes(
+          timestampsToSearch: Map[TopicPartition, Offset],
+          timeout: FiniteDuration
+        ): F[Map[TopicPartition, Option[OffsetAndTimestamp]]] = {
+          val timeoutJ = timeout.asJava
+          offsetsForTimes1(timestampsToSearch) { consumer.offsetsForTimes(_, timeoutJ) }
+        }
+
+        def beginningOffsets(partitions: Nes[TopicPartition]): F[Map[TopicPartition, Offset]] = {
+          offsetsOf(partitions) { consumer.beginningOffsets }
+        }
+
+        def beginningOffsets(
+          partitions: Nes[TopicPartition],
+          timeout: FiniteDuration
+        ): F[Map[TopicPartition, Offset]] = {
+          val timeoutJ = timeout.asJava
+          offsetsOf(partitions) { consumer.beginningOffsets(_, timeoutJ) }
+        }
+
+        def endOffsets(partitions: Nes[TopicPartition]): F[Map[TopicPartition, Offset]] = {
+          offsetsOf(partitions) { consumer.endOffsets }
+        }
+
+        def endOffsets(partitions: Nes[TopicPartition], timeout: FiniteDuration): F[Map[TopicPartition, Offset]] = {
+          val timeoutJ = timeout.asJava
+          offsetsOf(partitions) { consumer.endOffsets(_, timeoutJ) }
+        }
+
+        def currentLag(partition: TopicPartition): F[Option[Long]] = {
+          serialNonBlocking {
+            val lag = consumer.currentLag(partition.asJava)
+            if (lag.isEmpty) None
+            else lag.getAsLong.some
+          }
+        }
+
+        def groupMetadata: F[ConsumerGroupMetadata] = {
+          serialNonBlocking { consumer.groupMetadata() }.map { _.asScala }
+        }
+
+        def wakeup: F[Unit] = {
+          serialBlocking { consumer.wakeup() }
+        }
+
+        def enforceRebalance: F[Unit] = serialBlocking { consumer.enforceRebalance() }
+
+        def clientMetrics: F[Seq[ClientMetric[F]]] = clientMetricsProvider.get
+      }
+    }
+  }
+
+  private sealed abstract class WithMetrics
+
+  private sealed abstract class MapK
+
+  implicit class ConsumerOps[F[_], K, V](val self: Consumer[F, K, V]) extends AnyVal {
+
+    def withMetrics1[E](
+      metrics: ConsumerMetrics[F]
+    )(implicit F: MonadError[F, E], measureDuration: MeasureDuration[F], clock: Clock[F]): Consumer[F, K, V] = {
+
+      implicit val monoidUnit: Monoid[F[Unit]] = Applicative.monoid[F, Unit]
+
+      val topics = for {
+        topicPartitions <- self.assignment
+      } yield
+        for {
+          topicPartition <- topicPartitions
+        } yield {
+          topicPartition.topic
+        }
+
+      def call[A](name: String, topics: Iterable[Topic])(fa: F[A]): F[A] = {
+        for {
+          d <- MeasureDuration[F].start
+          r <- fa.attempt
+          d <- d
+          _ <- topics.toList.foldMap { topic => metrics.call(name, topic, d, r.isRight) }
+          r <- r.liftTo[F]
+        } yield r
+      }
+
+      def call1[A](name: String)(f: F[A]): F[A] = {
+        for {
+          topics <- topics
+          result <- call(name, topics)(f)
+        } yield result
+      }
+
+      def count(name: String, topics: Iterable[Topic]): F[Unit] = {
+        topics.toList.foldMapM { topic => metrics.count(name, topic) }
+      }
+
+      def count1(name: String): F[Unit] = {
+        for {
+          topics <- topics
+          r      <- count(name, topics)
+        } yield r
+      }
+
+      // TODO RebalanceListener1 add metrics - https://github.com/evolution-gaming/skafka/issues/124
+//      def rebalanceListener(listener: RebalanceListener1[F]) = {
+//
+//        def measure(name: String, partitions: Nes[TopicPartition]) = {
+//          partitions.foldMapM { metrics.rebalance(name, _) }
+//        }
+//
+//        new WithMetrics with RebalanceListener[F] {
+//
+//          def onPartitionsAssigned(partitions: Nes[TopicPartition]) = {
+//            for {
+//              _ <- measure("assigned", partitions)
+//              a <- listener.onPartitionsAssigned(partitions)
+//            } yield a
+//          }
+//
+//          def onPartitionsRevoked(partitions: Nes[TopicPartition]) = {
+//            for {
+//              _ <- measure("revoked", partitions)
+//              a <- listener.onPartitionsRevoked(partitions)
+//            } yield a
+//          }
+//
+//          def onPartitionsLost(partitions: Nes[TopicPartition]) = {
+//            for {
+//              _ <- measure("lost", partitions)
+//              a <- listener.onPartitionsLost(partitions)
+//            } yield a
+//          }
+//        }
+//      }
+
+      new WithMetrics with Consumer[F, K, V] {
+
+        def assign(partitions: Nes[TopicPartition]): F[Unit] = {
+          val topics = partitions.map(_.topic).toList.toSet
+          for {
+            _ <- count("assign", topics)
+            r <- self.assign(partitions)
+          } yield r
+        }
+
+        def assignment: F[Set[TopicPartition]] = self.assignment
+
+        def subscribe(topics: Nes[Topic], listener: RebalanceListener1[F]): F[Unit] = {
+          // TODO RebalanceListener1 add metrics - https://github.com/evolution-gaming/skafka/issues/124
+          for {
+            _ <- count("subscribe", topics.toList)
+            r <- self.subscribe(topics, listener)
+          } yield r
+        }
+
+        def subscribe(topics: Nes[Topic]): F[Unit] = {
+          for {
+            _ <- count("subscribe", topics.toList)
+            r <- self.subscribe(topics)
+          } yield r
+        }
+
+        def subscribe(pattern: Pattern, listener: RebalanceListener1[F]): F[Unit] = {
+          // TODO RebalanceListener1 add metrics - https://github.com/evolution-gaming/skafka/issues/124
+          for {
+            _ <- count("subscribe", List("pattern"))
+            r <- self.subscribe(pattern, listener)
+          } yield r
+        }
+
+        def subscribe(pattern: Pattern): F[Unit] = {
+          for {
+            _ <- count("subscribe", List("pattern"))
+            r <- self.subscribe(pattern)
+          } yield r
+        }
+
+        def subscription: F[Set[Topic]] = self.subscription
+
+        def unsubscribe: F[Unit] = {
+          call1("unsubscribe") { self.unsubscribe }
+        }
+
+        def poll(timeout: FiniteDuration): F[ConsumerRecords[K, V]] =
+          for {
+            records <- call1("poll") { self.poll(timeout) }
+            now     <- Clock[F].realTime
+            _       <- records
+              .values
+              .values
+              .flatMap { _.toList }
+              .groupBy { _.topic }
+              .toList
+              .foldMapM {
+                case (topic, records) =>
+                  val bytes = records.foldLeft(0) {
+                    case (bytes, record) =>
+                      bytes + record.value.foldMap { _.serializedSize }
+                  }
+                  val age = records
+                    .foldLeft(none[Long]) {
+                      case (timestamp, record) =>
+                        record
+                          .timestampAndType
+                          .fold {
+                            timestamp
+                          } { timestampAndType =>
+                            val timestamp1 = timestampAndType
+                              .timestamp
+                              .toEpochMilli
+                            timestamp.fold { timestamp1 } { _ min timestamp1 }.some
+                          }
+                    }
+                    .map { timestamp => now - timestamp.millis }
+                  metrics.poll(topic, bytes = bytes, records = records.size, age = age)
+              }
+          } yield records
+
+        def commit: F[Unit] = {
+          call1("commit") { self.commit }
+        }
+
+        def commit(timeout: FiniteDuration): F[Unit] = {
+          call1("commit") { self.commit(timeout) }
+        }
+
+        def commit(offsets: Nem[TopicPartition, OffsetAndMetadata]): F[Unit] = {
+          val topics = offsets
+            .keys
+            .toList
+            .map { _.topic }
+          call("commit", topics) { self.commit(offsets) }
+        }
+
+        def commit(offsets: Nem[TopicPartition, OffsetAndMetadata], timeout: FiniteDuration): F[Unit] = {
+          val topics = offsets
+            .keys
+            .toList
+            .map(_.topic)
+          call("commit", topics) { self.commit(offsets, timeout) }
+        }
+
+        def commitLater: F[Map[TopicPartition, OffsetAndMetadata]] = call1("commit_later") {
+          self.commitLater
+        }
+
+        def commitLater(offsets: Nem[TopicPartition, OffsetAndMetadata]): F[Unit] = {
+          val topics = offsets
+            .keys
+            .toList
+            .map(_.topic)
+          call("commit_later", topics) { self.commitLater(offsets) }
+        }
+
+        def seek(partition: TopicPartition, offset: Offset): F[Unit] = {
+          for {
+            _ <- count("seek", List(partition.topic))
+            r <- self.seek(partition, offset)
+          } yield r
+        }
+
+        def seek(partition: TopicPartition, offsetAndMetadata: OffsetAndMetadata): F[Unit] = {
+          for {
+            _ <- count("seek", List(partition.topic))
+            r <- self.seek(partition, offsetAndMetadata)
+          } yield r
+        }
+
+        def seekToBeginning(partitions: Nes[TopicPartition]): F[Unit] = {
+          val topics = partitions.map(_.topic).toList
+          for {
+            _ <- count("seek_to_beginning", topics)
+            r <- self.seekToBeginning(partitions)
+          } yield r
+        }
+
+        def seekToEnd(partitions: Nes[TopicPartition]): F[Unit] = {
+          val topics = partitions.map(_.topic).toList
+          for {
+            _ <- count("seek_to_end", topics)
+            r <- self.seekToEnd(partitions)
+          } yield r
+        }
+
+        def position(partition: TopicPartition): F[Offset] = {
+          for {
+            _ <- count("position", List(partition.topic))
+            r <- self.position(partition)
+          } yield r
+        }
+
+        def position(partition: TopicPartition, timeout: FiniteDuration): F[Offset] = {
+          for {
+            _ <- count("position", List(partition.topic))
+            r <- self.position(partition, timeout)
+          } yield r
+        }
+
+        def committed(partitions: Nes[TopicPartition]): F[Map[TopicPartition, OffsetAndMetadata]] = {
+          def topics: List[Topic] = partitions
+            .toList
+            .map { _.topic }
+            .distinct
+
+          for {
+            _ <- count("committed", topics)
+            r <- self.committed(partitions)
+          } yield r
+        }
+
+        def committed(
+          partitions: Nes[TopicPartition],
+          timeout: FiniteDuration
+        ): F[Map[TopicPartition, OffsetAndMetadata]] = {
+          def topics: List[Topic] = partitions
+            .toList
+            .map { _.topic }
+            .distinct
+
+          for {
+            _ <- count("committed", topics)
+            r <- self.committed(partitions, timeout)
+          } yield r
+        }
+
+        override def clientInstanceId(timeout: FiniteDuration): F[Uuid] = {
+          for {
+            _ <- count1("client_instance_id")
+            a <- self.clientInstanceId(timeout)
+          } yield a
+        }
+
+        def partitions(topic: Topic): F[List[PartitionInfo]] = {
+          for {
+            _ <- count("partitions", List(topic))
+            r <- self.partitions(topic)
+          } yield r
+        }
+
+        def partitions(topic: Topic, timeout: FiniteDuration): F[List[PartitionInfo]] = {
+          for {
+            _ <- count("partitions", List(topic))
+            r <- self.partitions(topic, timeout)
+          } yield r
+        }
+
+        def topics: F[Map[Topic, List[PartitionInfo]]] = {
+          for {
+            d <- MeasureDuration[F].start
+            r <- self.topics.attempt
+            d <- d
+            _ <- metrics.topics(d)
+            r <- r.liftTo[F]
+          } yield r
+        }
+
+        def topics(timeout: FiniteDuration): F[Map[Topic, List[PartitionInfo]]] = {
+          for {
+            d <- MeasureDuration[F].start
+            r <- self.topics(timeout).attempt
+            d <- d
+            _ <- metrics.topics(d)
+            r <- r.liftTo[F]
+          } yield r
+        }
+
+        def pause(partitions: Nes[TopicPartition]): F[Unit] = {
+          val topics = partitions.map(_.topic).toList
+          for {
+            _ <- count("pause", topics)
+            r <- self.pause(partitions)
+          } yield r
+        }
+
+        def paused: F[Set[TopicPartition]] = self.paused
+
+        def resume(partitions: Nes[TopicPartition]): F[Unit] = {
+          val topics = partitions.map(_.topic).toList
+          for {
+            _ <- count("resume", topics)
+            r <- self.resume(partitions)
+          } yield r
+        }
+
+        def offsetsForTimes(
+          timestampsToSearch: Map[TopicPartition, Offset]
+        ): F[Map[TopicPartition, Option[OffsetAndTimestamp]]] = {
+          val topics = timestampsToSearch.keySet.map(_.topic)
+          call("offsets_for_times", topics) { self.offsetsForTimes(timestampsToSearch) }
+        }
+
+        def offsetsForTimes(
+          timestampsToSearch: Map[TopicPartition, Offset],
+          timeout: FiniteDuration
+        ): F[Map[TopicPartition, Option[OffsetAndTimestamp]]] = {
+          val topics = timestampsToSearch.keySet.map(_.topic)
+          call("offsets_for_times", topics) { self.offsetsForTimes(timestampsToSearch, timeout) }
+        }
+
+        def beginningOffsets(partitions: Nes[TopicPartition]): F[Map[TopicPartition, Offset]] = {
+          val topics = partitions.map(_.topic).toList
+          call("beginning_offsets", topics) { self.beginningOffsets(partitions) }
+        }
+
+        def beginningOffsets(
+          partitions: Nes[TopicPartition],
+          timeout: FiniteDuration
+        ): F[Map[TopicPartition, Offset]] = {
+          val topics = partitions.map(_.topic).toList
+          call("beginning_offsets", topics) { self.beginningOffsets(partitions, timeout) }
+        }
+
+        def endOffsets(partitions: Nes[TopicPartition]): F[Map[TopicPartition, Offset]] = {
+          val topics = partitions.map(_.topic).toList
+          call("end_offsets", topics) { self.endOffsets(partitions) }
+        }
+
+        def endOffsets(partitions: Nes[TopicPartition], timeout: FiniteDuration): F[Map[TopicPartition, Offset]] = {
+          val topics = partitions.map(_.topic).toList
+          call("end_offsets", topics) { self.endOffsets(partitions, timeout) }
+        }
+
+        def currentLag(partition: TopicPartition): F[Option[Long]] = {
+          for {
+            _ <- count("current_lag", List(partition.topic))
+            r <- self.currentLag(partition)
+          } yield r
+        }
+
+        def groupMetadata: F[ConsumerGroupMetadata] = {
+          call1("group_metadata") { self.groupMetadata }
+        }
+
+        def wakeup: F[Unit] = {
+          for {
+            _ <- count1("wakeup")
+            r <- self.wakeup
+          } yield r
+        }
+
+        def enforceRebalance: F[Unit] = {
+          for {
+            _ <- count1("enforceRebalance")
+            a <- self.enforceRebalance
+          } yield a
+        }
+
+        def clientMetrics: F[Seq[ClientMetric[F]]] = self.clientMetrics
+      }
+    }
+
+    def withLogging(log: Log[F])(implicit F: Monad[F], measureDuration: MeasureDuration[F]): Consumer[F, K, V] = {
+      ConsumerLogging(log, self)
+    }
+
+    def mapK[G[_]](fg: F ~> G, gf: G ~> F)(implicit F: Monad[F]): Consumer[G, K, V] = new MapK with Consumer[G, K, V] {
+
+      def assign(partitions: Nes[TopicPartition]): G[Unit] = fg(self.assign(partitions))
+
+      def assignment: G[Set[TopicPartition]] = fg(self.assignment)
+
+      def subscribe(topics: Nes[Topic], listener: RebalanceListener1[G]): G[Unit] = {
+        val listener1 = listener.mapK(gf)
+        fg(self.subscribe(topics, listener1))
+      }
+
+      def subscribe(topics: Nes[Topic]): G[Unit] = {
+        fg(self.subscribe(topics))
+      }
+
+      def subscribe(pattern: Pattern, listener: RebalanceListener1[G]): G[Unit] = {
+        val listener1 = listener.mapK(gf)
+        fg(self.subscribe(pattern, listener1))
+      }
+
+      def subscribe(pattern: Pattern): G[Unit] = {
+        fg(self.subscribe(pattern))
+      }
+
+      def subscription: G[Set[Topic]] = fg(self.subscription)
+
+      def unsubscribe: G[Unit] = fg(self.unsubscribe)
+
+      def poll(timeout: FiniteDuration): G[ConsumerRecords[K, V]] = fg(self.poll(timeout))
+
+      def commit: G[Unit] = fg(self.commit)
+
+      def commit(timeout: FiniteDuration): G[Unit] = fg(self.commit(timeout))
+
+      def commit(offsets: Nem[TopicPartition, OffsetAndMetadata]): G[Unit] = fg(self.commit(offsets))
+
+      def commit(offsets: Nem[TopicPartition, OffsetAndMetadata], timeout: FiniteDuration): G[Unit] = fg(
+        self.commit(offsets, timeout)
+      )
+
+      def commitLater: G[Map[TopicPartition, OffsetAndMetadata]] = fg(self.commitLater)
+
+      def commitLater(offsets: Nem[TopicPartition, OffsetAndMetadata]): G[Unit] = fg(self.commitLater(offsets))
+
+      def seek(partition: TopicPartition, offset: Offset): G[Unit] = fg(self.seek(partition, offset))
+
+      def seek(partition: TopicPartition, offsetAndMetadata: OffsetAndMetadata): G[Unit] = fg(
+        self.seek(partition, offsetAndMetadata)
+      )
+
+      def seekToBeginning(partitions: Nes[TopicPartition]): G[Unit] = fg(self.seekToBeginning(partitions))
+
+      def seekToEnd(partitions: Nes[TopicPartition]): G[Unit] = fg(self.seekToEnd(partitions))
+
+      def position(partition: TopicPartition): G[Offset] = fg(self.position(partition))
+
+      def position(partition: TopicPartition, timeout: FiniteDuration): G[Offset] = fg(
+        self.position(partition, timeout)
+      )
+
+      def committed(partitions: Nes[TopicPartition]): G[Map[TopicPartition, OffsetAndMetadata]] = fg(
+        self.committed(partitions)
+      )
+
+      def committed(
+        partitions: Nes[TopicPartition],
+        timeout: FiniteDuration
+      ): G[Map[TopicPartition, OffsetAndMetadata]] = fg(self.committed(partitions, timeout))
+
+      def clientInstanceId(timeout: FiniteDuration): G[Uuid] = fg(self.clientInstanceId(timeout))
+
+      def partitions(topic: Topic): G[List[PartitionInfo]] = fg(self.partitions(topic))
+
+      def partitions(topic: Topic, timeout: FiniteDuration): G[List[PartitionInfo]] = fg(
+        self.partitions(topic, timeout)
+      )
+
+      def topics: G[Map[Topic, List[PartitionInfo]]] = fg(self.topics)
+
+      def topics(timeout: FiniteDuration): G[Map[Topic, List[PartitionInfo]]] = fg(self.topics(timeout))
+
+      def pause(partitions: Nes[TopicPartition]): G[Unit] = fg(self.pause(partitions))
+
+      def paused: G[Set[TopicPartition]] = fg(self.paused)
+
+      def resume(partitions: Nes[TopicPartition]): G[Unit] = fg(self.resume(partitions))
+
+      def offsetsForTimes(
+        timestampsToSearch: Map[TopicPartition, Offset]
+      ): G[Map[TopicPartition, Option[OffsetAndTimestamp]]] = {
+        fg(self.offsetsForTimes(timestampsToSearch))
+      }
+
+      def offsetsForTimes(
+        timestampsToSearch: Map[TopicPartition, Offset],
+        timeout: FiniteDuration
+      ): G[Map[TopicPartition, Option[OffsetAndTimestamp]]] = {
+        fg(self.offsetsForTimes(timestampsToSearch, timeout))
+      }
+
+      def beginningOffsets(partitions: Nes[TopicPartition]): G[Map[TopicPartition, Offset]] = fg(
+        self.beginningOffsets(partitions)
+      )
+
+      def beginningOffsets(partitions: Nes[TopicPartition], timeout: FiniteDuration): G[Map[TopicPartition, Offset]] = {
+        fg(self.beginningOffsets(partitions, timeout))
+      }
+
+      def endOffsets(partitions: Nes[TopicPartition]): G[Map[TopicPartition, Offset]] = {
+        fg(self.endOffsets(partitions))
+      }
+
+      def endOffsets(partitions: Nes[TopicPartition], timeout: FiniteDuration): G[Map[TopicPartition, Offset]] = {
+        fg(self.endOffsets(partitions, timeout))
+      }
+
+      def currentLag(partition: TopicPartition): G[Option[Long]] = {
+        fg(self.currentLag(partition))
+      }
+
+      def groupMetadata: G[ConsumerGroupMetadata] = fg(self.groupMetadata)
+
+      def wakeup: G[Unit] = fg(self.wakeup)
+
+      def enforceRebalance: G[Unit] = fg(self.enforceRebalance)
+
+      def clientMetrics: G[Seq[ClientMetric[G]]] = fg(self.clientMetrics.map(_.map(m => m.copy(value = fg(m.value)))))
+    }
+  }
+}

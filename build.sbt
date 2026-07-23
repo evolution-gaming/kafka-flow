@@ -60,7 +60,32 @@ lazy val root = (project in file("."))
     scalaVersion := Scala2Version,
   )
 
+// Vendored fork of skafka 20.2.0 (sources under lib/skafka), used instead of the published artifact so the
+// experimental `group.protocol=consumer` (KIP-848) support added to ConsumerConfig is reproducible from source
+// without an upstream release. Only the fork differs from upstream; the rest of skafka is verbatim.
+lazy val skafka = (project in file("lib/skafka"))
+  .settings(commonSettings)
+  .settings(
+    name := "skafka",
+    // skafka's own build does the same: its sources carry deprecations (e.g. a kafka-clients 4.2-deprecated
+    // constructor) that upstream intentionally does not fail the build on
+    scalacOptsFailOnWarn := Some(false),
+    libraryDependencies ++= Seq(
+      Cats.core,
+      Cats.effect,
+      "org.typelevel"          %% "cats-effect-std"         % "3.7.0",
+      "com.evolutiongaming"    %% "config-tools"            % "1.0.5",
+      "org.apache.kafka"        % "kafka-clients"           % "4.3.0",
+      "com.evolutiongaming"    %% "future-helper"           % "1.0.7",
+      catsHelper,
+      smetrics,
+      "org.scala-lang.modules" %% "scala-java8-compat"      % "1.0.2",
+      "org.scala-lang.modules" %% "scala-collection-compat" % "2.14.0",
+    ),
+  )
+
 lazy val core = (project in file("core"))
+  .dependsOn(skafka)
   .settings(commonSettings)
   .settings(
     name := "kafka-flow",
@@ -73,7 +98,6 @@ lazy val core = (project in file("core"))
       Monocle.core       % Test,
       catsHelper,
       scache,
-      skafka,
       sstream,
       random,
       retry,

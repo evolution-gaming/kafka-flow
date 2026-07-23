@@ -1,0 +1,39 @@
+package com.evolutiongaming.skafka
+
+import cats.effect.Sync
+import org.apache.kafka.clients.consumer.Consumer
+import org.apache.kafka.clients.producer.Producer
+import org.apache.kafka.common.{Metric, MetricName}
+
+import java.util
+import scala.jdk.CollectionConverters.*
+
+private[skafka] trait ClientMetricsProvider[F[_]] {
+  def get: F[Seq[ClientMetric[F]]]
+}
+private[skafka] object ClientMetricsProvider {
+
+  def apply[F[_]: Sync](consumer: Consumer[?, ?]): ClientMetricsProvider[F] =
+    new ClientMetricsProviderImpl(consumer.metrics())
+
+  def apply[F[_]: Sync](producer: Producer[?, ?]): ClientMetricsProvider[F] =
+    new ClientMetricsProviderImpl[F](producer.metrics())
+
+  private class ClientMetricsProviderImpl[F[_]: Sync](source: => util.Map[MetricName, ? <: Metric])
+      extends ClientMetricsProvider[F] {
+
+    def get: F[Seq[ClientMetric[F]]] = Sync[F].delay {
+      source.asScala.values.toSeq.map { m =>
+        val metricName = m.metricName()
+        ClientMetric(
+          metricName.name(),
+          metricName.group(),
+          metricName.description(),
+          metricName.tags().asScala.toMap,
+          Sync[F].delay(m.metricValue())
+        )
+      }
+    }
+
+  }
+}

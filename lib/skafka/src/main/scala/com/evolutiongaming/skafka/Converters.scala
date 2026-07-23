@@ -1,0 +1,241 @@
+package com.evolutiongaming.skafka
+
+import java.lang.Long as LongJ
+import java.time.Duration as DurationJ
+import java.util.{Optional, Collection as CollectionJ, Map as MapJ, Set as SetJ, List as ListJ}
+
+import cats.Monad
+import cats.data.{NonEmptyList as Nel, NonEmptySet as Nes, NonEmptyMap as Nem}
+import cats.syntax.all.*
+import com.evolutiongaming.catshelper.CatsHelper.*
+import com.evolutiongaming.catshelper.{ApplicativeThrowable, FromTry, MonadThrowable, ToTry}
+import org.apache.kafka.clients.consumer.OffsetAndMetadata as OffsetAndMetadataJ
+import org.apache.kafka.common.header.Header as HeaderJ
+import org.apache.kafka.common.serialization.{Deserializer, Serializer}
+import org.apache.kafka.common.{PartitionInfo as PartitionInfoJ, TopicPartition as TopicPartitionJ}
+
+import scala.compat.java8.DurationConverters
+import scala.concurrent.duration.FiniteDuration
+import scala.jdk.CollectionConverters.*
+
+object Converters {
+
+  implicit class HeaderOps(val self: Header) extends AnyVal {
+
+    def asJava: HeaderJ = new HeaderJ {
+      def value: Array[Byte] = self.value
+
+      def key: Metadata = self.key
+    }
+  }
+
+  implicit class HeaderJOps(val self: HeaderJ) extends AnyVal {
+    def asScala: Header = Header(self.key(), self.value())
+  }
+
+  implicit class AnyOps[A](val self: A) extends AnyVal {
+    def noneIf(x: A): Option[A] = if (self == x) None else Some(self)
+  }
+
+  implicit class SetTopicPartitionOps(val self: Nes[TopicPartition]) extends AnyVal {
+
+    def asJava: SetJ[TopicPartitionJ] = {
+      self
+        .toSortedSet
+        .toSet[TopicPartition]
+        .map { _.asJava }
+        .asJava
+    }
+  }
+
+  implicit class TopicPartitionOps(val self: TopicPartition) extends AnyVal {
+    def asJava: TopicPartitionJ = new TopicPartitionJ(self.topic, self.partition.value)
+  }
+
+  implicit class TopicPartitionJOps(val self: TopicPartitionJ) extends AnyVal {
+
+    def asScala[F[_]: ApplicativeThrowable]: F[TopicPartition] = {
+      for {
+        partition <- Partition.of[F](self.partition())
+      } yield {
+        TopicPartition(self.topic(), partition)
+      }
+    }
+  }
+
+  implicit class PartitionInfoJOps(val self: PartitionInfoJ) extends AnyVal {
+
+    def asScala[F[_]: ApplicativeThrowable]: F[PartitionInfo] = {
+      for {
+        partition <- Partition.of[F](self.partition())
+      } yield {
+        PartitionInfo(
+          topicPartition  = TopicPartition(self.topic, partition),
+          leader          = self.leader,
+          replicas        = self.replicas.toList,
+          inSyncReplicas  = self.inSyncReplicas.toList,
+          offlineReplicas = self.offlineReplicas.toList
+        )
+      }
+    }
+  }
+
+  implicit class PartitionInfoOps(val self: PartitionInfo) extends AnyVal {
+
+    def asJava: PartitionInfoJ = {
+      new PartitionInfoJ(
+        self.topic,
+        self.partition.value,
+        self.leader,
+        self.replicas.toArray,
+        self.inSyncReplicas.toArray,
+        self.offlineReplicas.toArray
+      )
+    }
+  }
+
+  implicit class MapJOps[K, V](val self: MapJ[K, V]) extends AnyVal {
+    def asScalaMap[F[_]: Monad, A, B](ka: K => F[A], vb: V => F[B], keepNullValues: Boolean): F[Map[A, B]] = {
+      self
+        .asScala
+        .toList
+        // at the moment we cannot use partial functions inside `AnyVal`, see: https://github.com/lampepfl/dotty/issues/18769
+        .traverseFilter {
+          case (k, v) =>
+            if (k != null && (keepNullValues || v != null)) (ka(k), vb(v)).mapN((_, _).some)
+            else none[(A, B)].pure[F]
+        }
+        .map(_.toMap)
+    }
+
+    def asScalaMap[F[_]: Monad, A, B](ka: K => F[A], vb: V => F[B]): F[Map[A, B]] = {
+      asScalaMap(ka, vb, keepNullValues = false)
+    }
+  }
+
+  implicit class MapOps[K, V](val self: Map[K, V]) extends AnyVal {
+
+    def asJavaMap[KK, VV](kf: K => KK, vf: V => VV): MapJ[KK, VV] = {
+      val zero = new java.util.HashMap[KK, VV]()
+      self.foldLeft(zero) {
+        case (map, (k, v)) =>
+          val kk = kf(k)
+          val vv = vf(v)
+          map.put(kk, vv)
+          map
+      }
+    }
+  }
+
+  implicit class SerializerOps[A](val self: Serializer[A]) extends AnyVal {
+
+    def asScala[F[_]: FromTry]: ToBytes[F, A] = (a: A, topic: Topic) => {
+      FromTry[F].unsafe { self.serialize(topic, a) }
+    }
+  }
+
+  implicit class DeserializerOps[A](val self: Deserializer[A]) extends AnyVal {
+
+    def asScala[F[_]: FromTry]: FromBytes[F, A] = (value: Bytes, topic: Topic) => {
+      FromTry[F].unsafe { self.deserialize(topic, value) }
+    }
+  }
+
+  implicit class ToBytesOps[F[_], A](val self: ToBytes[F, A]) extends AnyVal {
+
+    def asJava(implicit toTry: ToTry[F]): Serializer[A] = new Serializer[A] {
+      override def configure(configs: MapJ[String, ?], isKey: Boolean): Unit = {}
+
+      def serialize(topic: Topic, a: A): Array[Byte] = self(a, topic).toTry.get
+
+      override def close(): Unit = {}
+    }
+  }
+
+  implicit class SkafkaFromBytesOps[F[_], A](val self: FromBytes[F, A]) extends AnyVal {
+
+    def asJava(implicit toTry: ToTry[F]): Deserializer[A] = new Deserializer[A] {
+      override def configure(configs: MapJ[String, ?], isKey: Boolean): Unit = {}
+
+      def deserialize(topic: Topic, bytes: Array[Byte]): A = self(bytes, topic).toTry.get
+
+      override def close(): Unit = {}
+    }
+  }
+
+  implicit class SkafkaNelOps[A](val self: Nel[A]) extends AnyVal {
+    def asJava: CollectionJ[A] = self.toList.asJavaCollection
+  }
+
+  implicit final class SkafkaDurationJOps(val duration: DurationJ) extends AnyVal {
+
+    def asScala: scala.concurrent.duration.FiniteDuration = DurationConverters.toScala(duration)
+  }
+
+  implicit final class SkafkaFiniteDurationOps(val duration: FiniteDuration) extends AnyVal {
+
+    def asJava: java.time.Duration = DurationConverters.toJava(duration)
+  }
+
+  implicit class SkafkaOffsetAndMetadataJOpsConverters(val self: OffsetAndMetadataJ) extends AnyVal {
+
+    def asScala[F[_]: ApplicativeThrowable]: F[OffsetAndMetadata] = {
+      for {
+        offset <- Offset.of[F](self.offset())
+      } yield {
+        OffsetAndMetadata(offset, self.metadata())
+      }
+    }
+  }
+
+  implicit class SkafkaOffsetAndMetadataOpsConverters(val self: OffsetAndMetadata) extends AnyVal {
+
+    def asJava: OffsetAndMetadataJ = new OffsetAndMetadataJ(self.offset.value, self.metadata)
+  }
+
+  implicit class OptionalOpsConverters[A](val self: Optional[A]) extends AnyVal {
+
+    def toOption: Option[A] = if (self.isPresent) self.get().some else none
+  }
+
+  implicit class OptionOpsConverters[A](val self: Option[A]) extends AnyVal {
+
+    def toOptional: Optional[A] = self.fold(Optional.empty[A]()) { a => Optional.of(a) }
+  }
+
+  def committedOffsetsF[F[_]: MonadThrowable](
+    mapJ: MapJ[TopicPartitionJ, OffsetAndMetadataJ]
+  ): F[Map[TopicPartition, OffsetAndMetadata]] = {
+    Option(mapJ).fold {
+      Map.empty[TopicPartition, OffsetAndMetadata].pure[F]
+    } {
+      _.asScalaMap(_.asScala[F], _.asScala[F])
+    }
+  }
+
+  def offsetsMapF[F[_]: MonadThrowable](mapJ: MapJ[TopicPartitionJ, LongJ]): F[Map[TopicPartition, Offset]] = {
+    mapJ.asScalaMap(_.asScala[F], a => Offset.of[F](a))
+  }
+
+  def asOffsetsAndMetadataJ(
+    offsets: Nem[TopicPartition, OffsetAndMetadata]
+  ): MapJ[TopicPartitionJ, OffsetAndMetadataJ] = {
+    offsets.toSortedMap.asJavaMap(_.asJava, _.asJava)
+  }
+
+  def partitionsInfoListF[F[_]: ApplicativeThrowable](listJ: ListJ[PartitionInfoJ]): F[List[PartitionInfo]] = {
+    listJ.asScala.toList.traverse { _.asScala[F] }
+  }
+
+  def partitionsInfoMapF[F[_]: MonadThrowable](
+    mapJ: MapJ[Topic, ListJ[PartitionInfoJ]]
+  ): F[Map[Topic, List[PartitionInfo]]] = {
+    mapJ.asScalaMap(_.pure[F], partitionsInfoListF[F])
+  }
+
+  def topicPartitionsSetF[F[_]: ApplicativeThrowable](setJ: SetJ[TopicPartitionJ]): F[Set[TopicPartition]] = {
+    for {
+      r <- setJ.asScala.toList.traverse { _.asScala[F] }
+    } yield r.toSet
+  }
+}

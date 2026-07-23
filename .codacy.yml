@@ -1,0 +1,7 @@
+---
+# lib/skafka is a vendored source fork of skafka; keep it verbatim (upstream
+# style) so the fork stays a minimal diff. This mirrors the same exclusion in
+# .scalafmt.conf so Codacy does not flag upstream code we intentionally do not
+# reformat.
+exclude_paths:
+  - "lib/skafka/**"
