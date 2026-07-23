@@ -9,11 +9,11 @@ import com.evolutiongaming.kafka.flow.PartitionFlow.{FilterRecord, PartitionKey}
 import com.evolutiongaming.kafka.flow.PartitionFlowSpec.*
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.journal.JournalsOf
-import com.evolutiongaming.kafka.flow.kafka.{ScheduleCommit, ToOffset}
+import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.{KeyDatabase, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
-import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf}
+import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotsOf, Stored}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf, TimersOf, Timestamp}
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Offset, Partition, TopicPartition}
@@ -172,12 +172,12 @@ class PartitionFlowSpec extends FunSuite {
     class LocalFixture(waitForN: Int) extends ConstFixture(waitForN) {
       // It fails persisting for key = 'key2' on the 3rd event only
       private val snapshotDatabase = new SnapshotDatabase[IO, String, State] {
-        def get(key: String): IO[Option[(Offset, Int)]] = IO.pure(none)
-        def persist(key: String, snapshot: (Offset, Int)): IO[Unit] = {
-          val (_, sent) = snapshot
-          IO.whenA(key == "key2" && sent == 3)(IO.raiseError(new Exception("Test error")))
-        }
-        def delete(key: String): IO[Unit] = IO.unit
+        def read(key: String): IO[Option[Stored[State]]] = IO.pure(none)
+        def write(key: String, stored: Stored[State]): IO[Unit] =
+          stored.value.traverse_ {
+            case (_, sent) =>
+              IO.whenA(key == "key2" && sent == 3)(IO.raiseError(new Exception("Test error")))
+          }
       }
 
       override def flow: Resource[IO, PartitionFlow[IO]] = makeFlow(
@@ -359,11 +359,10 @@ class PartitionFlowSpec extends FunSuite {
     // Waiting for 100 events to represents a long-living flow that doesn't unload the state during its lifetime
     class LocalFixture extends ConstFixture(100) {
       private val snapshotDatabase = new SnapshotDatabase[IO, String, State] {
-        def get(key: String): IO[Option[(Offset, Int)]] = IO.pure(none)
+        def read(key: String): IO[Option[Stored[State]]] = IO.pure(none)
         // Fail snapshot persistence for the second key
-        def persist(key: String, snapshot: (Offset, Int)): IO[Unit] =
-          IO.raiseError(new Exception("Test error")).whenA(key == key2)
-        def delete(key: String): IO[Unit] = IO.unit
+        def write(key: String, stored: Stored[State]): IO[Unit] =
+          IO.raiseError(new Exception("Test error")).whenA(stored.value.isDefined && key == key2)
       }
 
       override def flow: Resource[IO, PartitionFlow[IO]] = makeFlow(
@@ -485,20 +484,16 @@ object PartitionFlowSpec {
     implicit val logOf: LogOf[IO] = LogOf.empty
     implicit val log: Log[IO]     = Log.empty
 
-    implicit val stateToOffset: ToOffset[State] = new ToOffset[State] {
-      def offset(state: State): Offset = {
-        val (offset, _) = state
-        offset
-      }
-    }
-
     type State = (Offset, Int)
 
     val keysOf     = KeysOf.memory1[IO, String].unsafeRunSync()(IORuntime.global)
     val journalsOf = JournalsOf.memory[IO, String, ConsumerRecord[String, ByteVector]].unsafeRunSync()(IORuntime.global)
     val snapshotsOf = SnapshotsOf.memory[IO, String, State].unsafeRunSync()(IORuntime.global)
     val (persistenceOf, _) =
-      PersistenceOf.restoreEvents(keysOf, journalsOf, snapshotsOf).allocated.unsafeRunSync()(IORuntime.global)
+      PersistenceOf
+        .restoreEvents(keysOf, journalsOf, snapshotsOf, (record: ConsumerRecord[String, ByteVector]) => record.offset)
+        .allocated
+        .unsafeRunSync()(IORuntime.global)
 
     def fold: FoldOption[IO, State, ConsumerRecord[String, ByteVector]] =
       FoldOption.of { (state, record) =>

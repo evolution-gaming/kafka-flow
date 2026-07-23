@@ -400,6 +400,39 @@ Unit suites pin the client-side pieces the mechanism depends on:
   its diagnosis (a failing re-read never masks the stall), a progressing read outliving the
   deadline, and the control (with no deadline the read stays unbounded).
 
+### Formal models
+
+The mechanism is model-checked in `models/` (TLA+), as a refinement tower: one abstract
+`SingleWriterStore` spec that each design refines.
+
+- **`Kafka`** — the generation fence. Each load-bearing detail is pinned by a negative control that
+  breaks the refinement while `kafka_refines` holds: the group-metadata capture coupled to flow teardown
+  (`kafka_decoupled`), the seeded offset (`kafka_unseeded`), and the atomic offset binding that closes
+  the replay window (`kafka_replay_unbound`; `kafka_replay` shows the honest commit-lag pair
+  `INV_CommittedNeverAhead` / `LIVE_CommitCatchesUp`, and `kafka_lag_nofilter` the recovered-snapshot
+  filter). The post-poll generation refresh has its own control — `kafka_genlag` violates `RefLive`
+  without it (the generation-lag spurious fence, finding F-8). The write orchestration is the separate
+  finer `GroupCommit` refinement (no stranded write, no deadlock; the committed offset stays within the
+  durable prefix).
+- **`Epoch`** — the *rejected* producer-epoch design, encoded as a refinement that must **fail**
+  (`epoch_refines`): epochs are handed out in `initTransactions` order, not ownership order, so a late
+  stale owner wins the epoch and its write lands. This is why the fence is on the consumer generation,
+  not the producer epoch.
+- **`RecoveryRead` ⇒ `RecoveryReadAtomic`** — the recovery read as a grain-of-atomicity theorem: the
+  read as implemented (capture a bound, drain to it, complete) must refine the one-step atomic read
+  the `Kafka` model assumes in `OwnerRecover`. The theorem was **false for the read as first
+  shipped** (issue #850: a crashed writer's open transaction pins the `read_committed` end offset
+  below newer committed snapshots — `recoveryread_lso_unique`), and holds under either remedy, both
+  since merged upstream together (the high-watermark bound — `recoveryread_hw_unique`; the stable
+  per-partition id takeover-abort — `recoveryread_lso_stable`). The same model states issue #849:
+  with log truncation as an environment action, the bounded read can hang forever
+  (`recoveryread_truncate_stall`); the no-progress tripwire remedy
+  (`recoveryread_truncate_tripwire`) is likewise merged, as the recovery stall deadline.
+
+The models verify behaviour *under* their assumptions (the KIP-447 broker fence, poll-thread
+serialization of rebalance callbacks, one open transaction per partition); they do not re-derive them.
+See `models/README.md` for the full config catalogue.
+
 ## Rejected alternatives
 
 - **Transactional snapshot read + snapshot write**: fence a stale writer with a compare-and-set on the

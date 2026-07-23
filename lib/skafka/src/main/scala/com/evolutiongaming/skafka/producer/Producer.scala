@@ -1,0 +1,480 @@
+package com.evolutiongaming.skafka
+package producer
+
+import cats.data.NonEmptyMap as Nem
+import cats.effect.{Async, Deferred, Resource, Sync}
+import cats.effect.implicits.*
+import cats.implicits.*
+import cats.{Applicative, Functor, Monad, MonadError, MonadThrow, ~>}
+import com.evolutiongaming.catshelper.CatsHelper.*
+import com.evolutiongaming.catshelper.{Log, MeasureDuration, ToTry}
+import com.evolutiongaming.skafka.Converters.*
+import com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata
+import com.evolutiongaming.skafka.consumer.ConsumerConverters.*
+import com.evolutiongaming.skafka.producer.ProducerConverters.*
+import org.apache.kafka.clients.producer.{
+  Callback,
+  Producer as ProducerJ,
+  ProducerRecord as ProducerRecordJ,
+  RecordMetadata as RecordMetadataJ
+}
+import org.apache.kafka.common.Uuid
+
+import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.ExecutionException
+import scala.jdk.CollectionConverters.*
+
+/** See [[org.apache.kafka.clients.producer.Producer]]
+  */
+trait Producer[F[_]] {
+
+  def initTransactions: F[Unit]
+
+  def beginTransaction: F[Unit]
+
+  def commitTransaction: F[Unit]
+
+  def abortTransaction: F[Unit]
+
+  /** Sends consumed offsets to the consumer group coordinator as part of the current transaction, fencing zombie
+    * writers by the consumer group generation (KIP-447). The `consumerGroupMetadata` must come from the input
+    * consumer's `groupMetadata()`; offsets become committed only if the transaction commits.
+    */
+  def sendOffsetsToTransaction(
+    offsets: Nem[TopicPartition, OffsetAndMetadata],
+    consumerGroupMetadata: ConsumerGroupMetadata
+  ): F[Unit]
+
+  /** @return
+    *   Outer F[_] is about sending event (including batching if required), inner F[_] is about waiting and getting the
+    *   result of the send operation.
+    */
+  def send[K, V](
+    record: ProducerRecord[K, V]
+  )(implicit toBytesK: ToBytes[F, K], toBytesV: ToBytes[F, V]): F[F[RecordMetadata]]
+
+  def partitions(topic: Topic): F[List[PartitionInfo]]
+
+  def flush: F[Unit]
+
+  def clientMetrics: F[Seq[ClientMetric[F]]]
+
+  def clientInstanceId(timeout: FiniteDuration): F[Uuid]
+}
+
+object Producer {
+
+  def apply[F[_]](implicit F: Producer[F]): Producer[F] = F
+
+  private sealed abstract class Empty
+
+  def empty[F[_]: Applicative]: Producer[F] = {
+
+    def empty: F[Unit] = ().pure[F]
+
+    new Empty with Producer[F] {
+
+      def initTransactions: F[Unit] = empty
+
+      def beginTransaction: F[Unit] = empty
+
+      def commitTransaction: F[Unit] = empty
+
+      def abortTransaction: F[Unit] = empty
+
+      def sendOffsetsToTransaction(
+        offsets: Nem[TopicPartition, OffsetAndMetadata],
+        consumerGroupMetadata: ConsumerGroupMetadata
+      ): F[Unit] = empty
+
+      def send[K, V](
+        record: ProducerRecord[K, V]
+      )(implicit toBytesK: ToBytes[F, K], toBytesV: ToBytes[F, V]): F[F[RecordMetadata]] = {
+        val partition      = record.partition getOrElse Partition.min
+        val topicPartition = TopicPartition(record.topic, partition)
+        val metadata       = RecordMetadata(topicPartition, record.timestamp)
+        metadata.pure[F].pure[F]
+      }
+
+      def partitions(topic: Topic): F[List[PartitionInfo]] = List.empty[PartitionInfo].pure[F]
+
+      def flush: F[Unit] = empty
+
+      def clientMetrics: F[Seq[ClientMetric[F]]] = Seq.empty[ClientMetric[F]].pure[F]
+
+      def clientInstanceId(timeout: FiniteDuration): F[Uuid] = Uuid.ZERO_UUID.pure[F]
+    }
+  }
+
+  def of[F[_]: ToTry: Async](
+    config: ProducerConfig
+  ): Resource[F, Producer[F]] = {
+    val producer = CreateProducerJ(config)
+    fromProducerJ2(producer)
+  }
+
+  private sealed abstract class Main
+
+  def fromProducerJ2[F[_]: ToTry: Async](producer: F[ProducerJ[Bytes, Bytes]]): Resource[F, Producer[F]] = {
+
+    def blocking[A](f: => A): F[A] = Sync[F].blocking(f)
+
+    def apply(producer: ProducerJ[Bytes, Bytes]): Producer[F] = {
+      new Main with Producer[F] {
+
+        def initTransactions: F[Unit] = {
+          blocking { producer.initTransactions() }
+        }
+
+        def beginTransaction: F[Unit] = {
+          Sync[F].delay { producer.beginTransaction() }
+        }
+
+        def commitTransaction: F[Unit] = {
+          blocking { producer.commitTransaction() }
+        }
+
+        def abortTransaction: F[Unit] = {
+          blocking { producer.abortTransaction() }
+        }
+
+        def sendOffsetsToTransaction(
+          offsets: Nem[TopicPartition, OffsetAndMetadata],
+          consumerGroupMetadata: ConsumerGroupMetadata
+        ): F[Unit] = {
+          blocking { producer.sendOffsetsToTransaction(asOffsetsAndMetadataJ(offsets), consumerGroupMetadata.asJava) }
+        }
+
+        def send[K, V](
+          record: ProducerRecord[K, V]
+        )(implicit toBytesK: ToBytes[F, K], toBytesV: ToBytes[F, V]): F[F[RecordMetadata]] = {
+
+          def executionException[A]: PartialFunction[Throwable, F[A]] = {
+            case failure: ExecutionException => failure.getCause.raiseError[F, A]
+          }
+
+          def block(record: ProducerRecordJ[Bytes, Bytes]): F[F[RecordMetadataJ]] = {
+
+            def callbackOf(deferred: Deferred[F, Either[Throwable, RecordMetadataJ]]): Callback = {
+              (metadata: RecordMetadataJ, exception: Exception) =>
+                val result = if (exception != null) {
+                  exception.asLeft[RecordMetadataJ]
+                } else if (metadata != null) {
+                  metadata.asRight[Throwable]
+                } else {
+                  SkafkaError("both metadata & exception are nulls").asLeft[RecordMetadataJ]
+                }
+                deferred
+                  .complete(result)
+                  .toTry
+                  .get
+                ()
+            }
+
+            val result = for {
+              deferred <- Async[F].deferred[Either[Throwable, RecordMetadataJ]]
+              callback  = callbackOf(deferred)
+              _        <- blocking { producer.send(record, callback) }
+            } yield {
+              deferred
+                .get
+                .flatMap { _.liftTo[F] }
+                .recoverWith(executionException)
+            }
+            result.recoverWith(executionException)
+          }
+
+          def toBytesError(error: Throwable): F[ProducerRecord[Bytes, Bytes]] = {
+            SkafkaError(s"toBytes failed for $record", error).raiseError[F, ProducerRecord[Bytes, Bytes]]
+          }
+
+          for {
+            bytes  <- record.toBytes.handleErrorWith(toBytesError)
+            bytesJ  = bytes.asJava
+            result <- block(bytesJ)
+          } yield
+            for {
+              result <- result
+              result <- result.asScala[F]
+            } yield result
+        }
+
+        def partitions(topic: Topic): F[List[PartitionInfo]] = {
+          for {
+            result <- blocking { producer.partitionsFor(topic) }
+            result <- result.asScala.toList.traverse { _.asScala[F] }
+          } yield result
+        }
+
+        def flush: F[Unit] = {
+          blocking { producer.flush() }
+        }
+
+        private val metricsProvider = ClientMetricsProvider[F](producer)
+
+        def clientMetrics: F[Seq[ClientMetric[F]]] = metricsProvider.get
+
+        def clientInstanceId(timeout: FiniteDuration): F[Uuid] = {
+          blocking { producer.clientInstanceId(timeout.asJava) }
+        }
+      }
+    }
+
+    for {
+      producerJ <- producer.toResource
+      producer   = apply(producerJ)
+      close      = blocking { producerJ.close() }
+      flush      = producer.flush.attempt
+      _         <- Resource.release { flush *> close }
+    } yield producer
+  }
+
+  private sealed abstract class WithMetrics
+
+  def apply[F[_]: MeasureDuration, E](producer: Producer[F], metrics: ProducerMetrics[F])(
+    implicit F: MonadError[F, E],
+  ): Producer[F] = {
+
+    new WithMetrics with Producer[F] {
+
+      def initTransactions: F[Unit] = {
+        for {
+          d <- MeasureDuration[F].start
+          r <- producer.initTransactions.attempt
+          d <- d
+          _ <- metrics.initTransactions(d)
+          r <- r.liftTo[F]
+        } yield r
+      }
+
+      def beginTransaction: F[Unit] = {
+        for {
+          r <- producer.beginTransaction
+          _ <- metrics.beginTransaction
+        } yield r
+      }
+
+      def commitTransaction: F[Unit] = {
+        for {
+          d <- MeasureDuration[F].start
+          r <- producer.commitTransaction.attempt
+          d <- d
+          _ <- metrics.commitTransaction(d)
+          r <- r.liftTo[F]
+        } yield r
+      }
+
+      def abortTransaction: F[Unit] = {
+        for {
+          d <- MeasureDuration[F].start
+          r <- producer.abortTransaction.attempt
+          d <- d
+          _ <- metrics.abortTransaction(d)
+          r <- r.liftTo[F]
+        } yield r
+      }
+
+      def sendOffsetsToTransaction(
+        offsets: Nem[TopicPartition, OffsetAndMetadata],
+        consumerGroupMetadata: ConsumerGroupMetadata
+      ): F[Unit] = {
+        for {
+          d <- MeasureDuration[F].start
+          r <- producer.sendOffsetsToTransaction(offsets, consumerGroupMetadata).attempt
+          d <- d
+          _ <- metrics.sendOffsetsToTransaction(d)
+          r <- r.liftTo[F]
+        } yield r
+      }
+
+      def send[K, V](
+        record: ProducerRecord[K, V]
+      )(implicit toBytesK: ToBytes[F, K], toBytesV: ToBytes[F, V]): F[F[RecordMetadata]] = {
+        val topic = record.topic
+        for {
+          d <- MeasureDuration[F].start
+          r <- producer.send(record).attempt
+          d <- d
+          _ <- metrics.block(topic, d)
+          _ <- r match {
+            case Right(_) => ().pure[F]
+            case Left(_)  => metrics.failure(topic, d)
+          }
+          r <- r.liftTo[F]
+        } yield
+          for {
+            d <- MeasureDuration[F].start
+            r <- r.attempt
+            d <- d
+            _ <- r match {
+              case Right(r) => metrics.send(topic, d, r.valueSerializedSize getOrElse 0)
+              case Left(_)  => metrics.failure(topic, d)
+            }
+            r <- r.liftTo[F]
+          } yield r
+      }
+
+      def partitions(topic: Topic): F[List[PartitionInfo]] = {
+        for {
+          d <- MeasureDuration[F].start
+          r <- producer.partitions(topic).attempt
+          d <- d
+          _ <- metrics.partitions(topic, d)
+          r <- r.liftTo[F]
+        } yield r
+      }
+
+      def flush: F[Unit] = {
+        for {
+          d <- MeasureDuration[F].start
+          r <- producer.flush.attempt
+          d <- d
+          _ <- metrics.flush(d)
+          r <- r.liftTo[F]
+        } yield r
+      }
+
+      def clientMetrics: F[Seq[ClientMetric[F]]] = producer.clientMetrics
+
+      def clientInstanceId(timeout: FiniteDuration): F[Uuid] = {
+        for {
+          d <- MeasureDuration[F].start
+          r <- producer.clientInstanceId(timeout).attempt
+          d <- d
+          _ <- metrics.clientInstanceId(d)
+          r <- r.liftTo[F]
+        } yield r
+      }
+    }
+  }
+
+  private sealed abstract class MapK
+
+  implicit class ProducerOps[F[_]](val self: Producer[F]) extends AnyVal {
+
+    def withLogging(log: Log[F])(implicit F: MonadThrow[F], measureDuration: MeasureDuration[F]): Producer[F] = {
+      ProducerLogging(self, log)
+    }
+
+    /** @param charsToTrim
+      *   a number of chars from record's value to log when producing fails because of a too large record
+      */
+    def withLogging(
+      log: Log[F],
+      charsToTrim: Int
+    )(implicit F: MonadThrow[F], measureDuration: MeasureDuration[F]): Producer[F] = {
+      ProducerLogging(self, log, charsToTrim)
+    }
+
+    def withMetrics[E](
+      metrics: ProducerMetrics[F]
+    )(implicit F: MonadError[F, E], measureDuration: MeasureDuration[F]): Producer[F] = {
+      Producer(self, metrics)
+    }
+
+    def mapK[G[_]: Functor](fg: F ~> G, gf: G ~> F)(implicit F: Monad[F]): Producer[G] = new MapK with Producer[G] {
+
+      def initTransactions: G[Unit] = fg(self.initTransactions)
+
+      def beginTransaction: G[Unit] = fg(self.beginTransaction)
+
+      def commitTransaction: G[Unit] = fg(self.commitTransaction)
+
+      def abortTransaction: G[Unit] = fg(self.abortTransaction)
+
+      def sendOffsetsToTransaction(
+        offsets: Nem[TopicPartition, OffsetAndMetadata],
+        consumerGroupMetadata: ConsumerGroupMetadata
+      ): G[Unit] = fg(self.sendOffsetsToTransaction(offsets, consumerGroupMetadata))
+
+      def send[K, V](
+        record: ProducerRecord[K, V]
+      )(implicit toBytesK: ToBytes[G, K], toBytesV: ToBytes[G, V]): G[G[RecordMetadata]] = {
+        for {
+          a <- fg(self.send(record)(toBytesK.mapK(gf), toBytesV.mapK(gf)))
+        } yield {
+          fg(a)
+        }
+      }
+
+      def partitions(topic: Topic): G[List[PartitionInfo]] = fg(self.partitions(topic))
+
+      def flush: G[Unit] = fg(self.flush)
+
+      def clientMetrics: G[Seq[ClientMetric[G]]] = fg(self.clientMetrics.map(_.map(m => m.copy(value = fg(m.value)))))
+
+      def clientInstanceId(timeout: FiniteDuration): G[Uuid] = fg(self.clientInstanceId(timeout))
+    }
+
+    def toSend: Send[F] = Send(self)
+
+    def sendNoKey[V](
+      record: ProducerRecord[Nothing, V]
+    )(implicit F: Applicative[F], toBytes: ToBytes[F, V]): F[F[RecordMetadata]] = {
+      self.send(record)(ToBytes.empty, toBytes)
+    }
+
+    def sendNoVal[K](
+      record: ProducerRecord[K, Nothing]
+    )(implicit F: Applicative[F], toBytes: ToBytes[F, K]): F[F[RecordMetadata]] = {
+      self.send(record)(toBytes, ToBytes.empty)
+    }
+
+    def sendEmpty(record: ProducerRecord[Nothing, Nothing])(implicit F: Applicative[F]): F[F[RecordMetadata]] = {
+      self.send(record)(ToBytes.empty, ToBytes.empty)
+    }
+  }
+
+  trait Send[F[_]] {
+
+    def apply[K, V](
+      record: ProducerRecord[K, V]
+    )(implicit toBytesK: ToBytes[F, K], toBytesV: ToBytes[F, V]): F[F[RecordMetadata]]
+  }
+
+  object Send {
+
+    def empty[F[_]: Applicative]: Send[F] = apply(Producer.empty)
+
+    def apply[F[_]](producer: Producer[F]): Send[F] = new Send[F] {
+
+      def apply[K, V](
+        record: ProducerRecord[K, V]
+      )(implicit toBytesK: ToBytes[F, K], toBytesV: ToBytes[F, V]): F[F[RecordMetadata]] = {
+        producer.send(record)
+      }
+    }
+
+    implicit class SendOps[F[_]](val self: Send[F]) extends AnyVal {
+
+      def mapK[G[_]: Functor](fg: F ~> G, gf: G ~> F): Send[G] = new Send[G] {
+
+        def apply[K, V](
+          record: ProducerRecord[K, V]
+        )(implicit toBytesK: ToBytes[G, K], toBytesV: ToBytes[G, V]): G[G[RecordMetadata]] = {
+          for {
+            a <- fg(self(record)(toBytesK.mapK(gf), toBytesV.mapK(gf)))
+          } yield {
+            fg(a)
+          }
+        }
+      }
+
+      def noKey[V](
+        record: ProducerRecord[Nothing, V]
+      )(implicit F: Applicative[F], toBytes: ToBytes[F, V]): F[F[RecordMetadata]] = {
+        self.apply(record)(ToBytes.empty, toBytes)
+      }
+
+      def noVal[K](
+        record: ProducerRecord[K, Nothing]
+      )(implicit F: Applicative[F], toBytes: ToBytes[F, K]): F[F[RecordMetadata]] = {
+        self.apply(record)(toBytes, ToBytes.empty)
+      }
+
+      def empty(record: ProducerRecord[Nothing, Nothing])(implicit F: Applicative[F]): F[F[RecordMetadata]] = {
+        self.apply(record)(ToBytes.empty, ToBytes.empty)
+      }
+    }
+  }
+}
