@@ -342,6 +342,32 @@ Entry point: `CassandraSnapshots.withSchema(compareAndSet = true)` (or
   floor read and the journal-revive filter, including the second-recovery re-entry on both the
   tombstone and the live-snapshot arm.
 
+### Formal models
+
+The mechanisms above are model-checked in `models/` (TLA+), as a refinement tower: one abstract
+`SingleWriterStore` spec (the durable cell always equals the correct fold) that each design refines.
+
+- **`Cassandra`** — the offset compare-and-set, the tombstone, and the replay-window monotone buffer,
+  all three load-bearing negative controls: `cassandra_unguarded` (no offset guard) and
+  `cassandra_notomb` (plain delete) each break the refinement / `INV_NoCorruptDurable`, and
+  `cassandra_replay_fixoff` (no monotone buffer) makes the legitimate owner livelock mid-replay
+  (conflict→recover→retry, never committing; `RefLive` violated), while `cassandra_refines` holds with
+  all three. Modelled *with the zombie present*, so a genuinely stale writer is still correctly
+  rejected; only the legitimate owner livelocks. Events-recovery (the journal fold) is checked too, as a
+  **row-set** journal: `cassandra_events_refines` holds with the offset floor filter, its non-vacuity
+  control `cassandra_events_revive_reentry` and the unguarded `cassandra_events_journal_revive` both
+  VIOLATE `INV_NoCorruptDurable`, and the floor/ordering controls `cassandra_events_nofloor` /
+  `cassandra_events_unordered` VIOLATE-TEMPORAL `RefLive`. (`models/README.md` covers how Kafka protects
+  the same shared replay window differently — atomic offset binding rather than the monotone buffer.)
+- **`CasFirstWrite`** — the non-atomic first-write `UPDATE`/`INSERT`/retry compound, checked under
+  every interleaving against the atomic CAS it stands in for (`CasFirstWriteAtomic`). Its one deviation,
+  a spurious conflict (the retry finds the row gone), is fed into the conflict/recover loop in
+  `cassandra_firstwrite_spurious`: it leaves the row absent, so no replay window arises and it converges
+  (it recovers on the next flush) — in contrast to the replay-window livelock.
+
+The models verify behaviour *under* the assumptions below; they do not prove them. See `models/README.md`
+for the full config catalogue and the rejected designs that must *fail* checking.
+
 ## Assumptions
 
 This design takes four things as given:

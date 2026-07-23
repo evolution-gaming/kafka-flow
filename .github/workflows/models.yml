@@ -1,0 +1,37 @@
+# Runs the TLA+ model suite (models/run.sh) in CI — the models were previously verified only locally.
+# run.sh fetches the pinned tla2tools release v1.7.0 (jar self-reports TLC 2.15 rev eb3ff99; the suite is verified against it) and
+# checks every config's declared outcome (HOLDS / VIOLATES*). Guarded to branches carrying models/ (see
+# below), so it is inert on the code-only branches lower in the stack. (A re-run on newer TLC, e.g. 2.18,
+# remains open: 2.18's output tripped run.sh's matchers, and that toolchain is unreachable in the study's
+# sandbox — see research/cassandra-report.md.)
+name: Models (TLA+)
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+
+jobs:
+  tlc:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Skip if this branch has no models
+      id: guard
+      run: |
+        if [ -f models/run.sh ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; echo "no models/ on this branch — nothing to check"; fi
+
+    - name: setup Java 21
+      if: steps.guard.outputs.run == 'true'
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+
+    - name: Run TLC suite (models/run.sh — fetches tla2tools release v1.7.0 / TLC 2.15)
+      if: steps.guard.outputs.run == 'true'
+      working-directory: ./models
+      run: |
+        java -version
+        ./run.sh
