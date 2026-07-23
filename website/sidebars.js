@@ -13,7 +13,7 @@ const sidebars = {
       type: "category",
       label: "Design notes",
       collapsed: false,
-      items: ["kafka-single-writer-design"],
+      items: ["kafka-single-writer-design", "cassandra-single-writer-design"],
     },
   ],
 };
