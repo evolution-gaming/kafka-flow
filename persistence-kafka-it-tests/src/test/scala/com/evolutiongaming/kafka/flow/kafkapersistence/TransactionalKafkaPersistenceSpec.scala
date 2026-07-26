@@ -487,7 +487,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
   test("a takeover aborts the crashed owner's unfinished transaction (stable transactional.id)") {
     // The crashed producer's transaction.timeout.ms is deliberately long (10 minutes): the
     // last-stable-offset can be back at the high watermark right after module acquisition only through
-    // the takeover-abort of the stable "<prefix>-<partition>" id, never the broker's timeout - a
+    // the takeover-abort of the stable "<prefix>-snapshot-<partition>" id, never the broker's timeout - a
     // unique-suffix id would leave the transaction open and fail the assertion.
     val stateTopic = "tx-takeover-abort-state-topic"
     val inputTopic = s"input-$stateTopic"
@@ -503,7 +503,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
     val crashedProducer =
       producerOf(
         producerConfig.copy(
-          transactionalId    = s"$appId-${Partition.min.value}".some,
+          transactionalId    = s"$appId-snapshot-${Partition.min.value}".some,
           idempotence        = true,
           transactionTimeout = 10.minutes,
         )

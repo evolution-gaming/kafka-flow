@@ -64,7 +64,7 @@ class KafkaPersistenceModuleSpec extends FunSuite {
       config <- captured.get
     } yield {
       val produced = config.getOrElse(fail("no producer was created at module acquisition"))
-      assertEquals(produced.transactionalId, "app-0".some)
+      assertEquals(produced.transactionalId, "app-snapshot-0".some)
       assertEquals(produced.idempotence, true)
       assertEquals(produced.common.clientId, "client-snapshot-0".some)
     }

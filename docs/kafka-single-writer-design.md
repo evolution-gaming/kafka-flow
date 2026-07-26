@@ -157,7 +157,7 @@ default timeout.
 
 ### Stable transactional.id: the takeover aborts unfinished transactions
 
-Each partition's producer uses a **stable** `transactional.id`, `"<prefix>-<partition>"` — a scheme
+Each partition's producer uses a **stable** `transactional.id`, `"<prefix>-snapshot-<partition>"` — a scheme
 whose cost, a producer per partition, this mode pays anyway. Every owner of a partition shares its
 id, so a new owner's mandatory `initTransactions` fences the previous owner's producer and aborts
 any transaction it left open, before the new owner may write.
@@ -373,7 +373,7 @@ real broker:
 - **Unfinished transactions, both resolutions** — the takeover-abort at the handover: the
   last-stable-offset is back at the high watermark immediately after module acquisition, a state
   only the abort produces, never the broker's timeout; the same test pins the
-  `"<prefix>-<partition>"` id shape. And the wait for a transaction no takeover aborts (Recovery
+  `"<prefix>-snapshot-<partition>"` id shape. And the wait for a transaction no takeover aborts (Recovery
   read, above): a foreign transaction held open through the read, its LSO pin asserted active, then
   waited out under a deadline set above the wait — the read completes, the deadline never fires.
 
@@ -413,7 +413,7 @@ Unit suites pin the client-side pieces the mechanism depends on:
 - **Producer-epoch order as the fence**: epoch order can diverge from ownership order, spuriously
   fencing the true owner — the stable id is kept for the takeover-abort, never as the fence (see
   Stable transactional.id).
-- **Unique per-assignment `transactional.id`s** (`"<prefix>-<partition>-<uuid8>"`): with no shared
+- **Unique per-assignment `transactional.id`s** (`"<prefix>-snapshot-<partition>-<uuid8>"`): with no shared
   id a late-initing stale owner cannot win the epoch and spuriously fence the valid owner (see
   Stable transactional.id) — but nothing ever aborts a crashed owner's unfinished transaction, so
   every post-crash recovery waits out the full transaction timeout the stable id resolves at init,
