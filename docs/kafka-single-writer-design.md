@@ -413,7 +413,7 @@ Unit suites pin the client-side pieces the mechanism depends on:
 - **Producer-epoch order as the fence**: epoch order can diverge from ownership order, spuriously
   fencing the true owner — the stable id is kept for the takeover-abort, never as the fence (see
   Stable transactional.id).
-- **Unique per-assignment `transactional.id`s** (`"<prefix>-snapshot-<partition>-<uuid8>"`): with no shared
+- **Unique per-assignment `transactional.id`s** (`"<prefix>-snapshot-<partition>-<uuid>"`): with no shared
   id a late-initing stale owner cannot win the epoch and spuriously fence the valid owner (see
   Stable transactional.id) — but nothing ever aborts a crashed owner's unfinished transaction, so
   every post-crash recovery waits out the full transaction timeout the stable id resolves at init,
