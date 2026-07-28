@@ -380,6 +380,64 @@ class TimerFlowOfSpec extends FunSuite {
 
   }
 
+  /** Ticks the clock forward one minute at a time, triggering the timers on every tick and never processing a record,
+    * and returns how many times the state was flushed.
+    *
+    * A key that is never touched keeps its offset, so `maxOffsetDifference` cannot cause a flush here: whatever flushes
+    * happen are driven by `persistEvery` alone.
+    */
+  private def flushesOverMinutes(flowOf: TimerFlowOf[IO], minutes: Int): IO[Int] = {
+    val f       = new ConstFixture
+    val startAt = f.timestamp.clock
+
+    def tick(flow: TimerFlow[IO], minute: Int) =
+      f.timerContext.set(f.timestamp.copy(clock = startAt.plusSeconds(minute * 60L))) *>
+        f.timerContext.trigger(flow)
+
+    flowOf(f.keyContext, f.flushBuffers, f.timerContext)
+      .use(flow => (1 to minutes).toList.traverse_(minute => tick(flow, minute)))
+      .flatMap(_ => f.contextRef.get.map(_.flushed))
+  }
+
+  /** Both flows that honour `persistEvery`, fired every minute, with unloading kept out of the way */
+  private def flowsFiringEveryMinute(persistEvery: FiniteDuration): List[(String, TimerFlowOf[IO])] = List(
+    "persistPeriodically" -> TimerFlowOf.persistPeriodically[IO](
+      fireEvery    = 1.minute,
+      persistEvery = persistEvery
+    ),
+    "persistPeriodicallyAndUnloadOrphaned" -> TimerFlowOf.persistPeriodicallyAndUnloadOrphaned[IO](
+      fireEvery    = 1.minute,
+      persistEvery = persistEvery,
+      maxIdle      = 1.hour
+    )
+  )
+
+  test(
+    "persistPeriodically and persistPeriodicallyAndUnloadOrphaned flush every minute when persistEvery = fireEvery"
+  ) {
+
+    // Given("flows that fire every minute and persist every minute")
+    // When("timers are triggered once a minute for six minutes")
+    flowsFiringEveryMinute(persistEvery = 1.minute) foreach {
+      case (name, flowOf) =>
+        // Then("the state is flushed on every trigger")
+        assertEquals(flushesOverMinutes(flowOf, minutes = 6).unsafeRunSync(), 6, name)
+    }
+
+  }
+
+  test("persistPeriodically and persistPeriodicallyAndUnloadOrphaned flush every persistEvery, not every fireEvery") {
+
+    // Given("flows that fire every minute but are only supposed to persist every three minutes")
+    // When("timers are triggered once a minute for six minutes")
+    flowsFiringEveryMinute(persistEvery = 3.minutes) foreach {
+      case (name, flowOf) =>
+        // Then("the state is flushed twice: at the third and at the sixth minute")
+        assertEquals(flushesOverMinutes(flowOf, minutes = 6).unsafeRunSync(), 2, name)
+    }
+
+  }
+
   test("persistPeriodically flushes when resource is cancelled if configured to do so") {
 
     val f = new ConstFixture
