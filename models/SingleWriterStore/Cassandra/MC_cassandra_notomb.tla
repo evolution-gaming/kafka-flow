@@ -1,0 +1,9 @@
+------------------------ MODULE MC_cassandra_notomb ------------------------
+\* expect: VIOLATES INV_NoCorruptDurable
+\* flags: -deadlock
+\* A row-removing delete instead of the offset-carrying tombstone lets a
+\* zombie revive the key; the owner reloads that stale base and folds forward
+\* onto it, persisting WRONG contents -- the delete-then-revive corruption.
+\* The offset-carrying tombstone (Tombstone=TRUE) prevents it.
+EXTENDS Cassandra
+=============================================================================

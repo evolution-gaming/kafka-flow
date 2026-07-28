@@ -1,0 +1,18 @@
+------------------- MODULE MC_cassandra_tombstone_replay -------------------
+\* expect: VIOLATES-TEMPORAL RefLive
+\* The replay-window livelock for a DELETED key. The monotone-buffer fix is
+\* on (Fix=TRUE) and the delete keeps an offset-carrying tombstone
+\* (Tombstone=TRUE), but recovery does NOT surface the tombstone's offset
+\* (TombFloor=FALSE): a tombstone reads back as None, so the recovering owner
+\* establishes no floor (recoveredAt=0) though the durable offset leads the
+\* committed one. It resumes below the tombstone, replays up, flushes the
+\* lagging offset, the offset CAS rejects it though the owner is legitimate,
+\* the flush raises, the flow tears down, re-recovers the SAME tombstone
+\* (again no floor) and resumes below it again: the same
+\* conflict->recover->retry lasso as cassandra_replay_fixoff, but reached
+\* through a tombstone rather than a live snapshot. Safety still holds (a
+\* conflict writes nothing): purely a LIVENESS failure. The fix
+\* (TombFloor=TRUE -- SnapshotDatabase.read surfacing Stored.Tombstone, held
+\* by Snapshots as the buffer floor) closes it; see cassandra_refines.
+EXTENDS Cassandra
+=============================================================================

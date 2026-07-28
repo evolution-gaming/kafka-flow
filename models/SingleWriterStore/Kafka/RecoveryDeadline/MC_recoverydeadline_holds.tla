@@ -1,0 +1,12 @@
+--------------------- MODULE MC_recoverydeadline_holds ---------------------
+\* expect: HOLDS
+\* flags: -deadlock
+\* The correct tripwire does not over-fire: a healthy read (HealthyProgress =
+\* TRUE) with the no-progress tripwire (NoProgressTrip = TRUE, TripAt <
+\* Deadline) only ever fails after a genuine run of no progress -- never
+\* while it was advancing. INV_NoSilentEviction is deliberately NOT checked
+\* here: a slow-but-progressing read that legitimately outruns the deadline
+\* is the orthogonal large-restore concern (the two clocks diverge), not the
+\* #849 hang.
+EXTENDS RecoveryDeadline
+=============================================================================

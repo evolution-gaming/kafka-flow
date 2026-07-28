@@ -1,0 +1,19 @@
+----------------- MODULE MC_cassandra_events_journal_revive -----------------
+\* expect: VIOLATES INV_NoCorruptDurable
+\* The journal revive, un-guarded (FloorGuard=FALSE): journal appends are
+\* unfenced, so a zombie's delete (journal cleared, tombstone written, offset
+\* committed) racing a not-yet-fenced owner's REPLAYED appends leaves the
+\* journal holding pre-delete events. The next events-recovery folds that
+\* journal -- stale pre-delete state -- resumes past the delete at the
+\* committed offset, folds forward onto the stale base and persists it
+\* durably above the tombstone: resurrection with correct-looking offsets.
+\* The buffer's monotonic floor guards only persistence; the in-memory state
+\* still carries the stale fold, so INV_NoCorruptDurable is violated (found
+\* by TLC while composing events-recovery with the fence; reproduced against
+\* the code line by line). The same revive exists under last-write-wins --
+\* pre-existing, and there unfixable (no tombstone to compare against); the
+\* fenced mode CAN guard it: a tombstone floor leading the journal fold
+\* proves the fold predates the delete, so recovery discards it
+\* (FloorGuard=TRUE, cassandra_events_refines).
+EXTENDS Cassandra
+=============================================================================

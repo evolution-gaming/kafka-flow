@@ -1,0 +1,18 @@
+-------------------------- MODULE MC_kafka_genlag --------------------------
+\* expect: VIOLATES-TEMPORAL RefLive
+\* flags: -deadlock
+\* The owner-side token lag, without the post-poll refresh (Refresh=FALSE --
+\* assignment-time capture alone, the pre-fix code). A cooperative rebalance
+\* bumps the generation while assigning this member nothing new (GenBump): no
+\* callback fires, the owner's published token lags, and the broker rejects
+\* its next transactional commit though it is the legitimate owner -- a
+\* spurious fence. The teardown/recover that follows re-captures nothing
+\* (still no assignment), so the rejection repeats: a livelock that never
+\* advances `committed` (TLC shows the lasso; RefLive fails). Safety holds
+\* throughout -- a rejected commit writes nothing, and a lagging token is the
+\* safe direction (only a leading one could let a stale write land, and the
+\* token never leads). The fix is the post-poll refresh: kafka_refines
+\* (Refresh=TRUE) holds with GenBump reachable. Pins the availability half of
+\* "Refresh the captured consumer generation after every poll".
+EXTENDS Kafka
+=============================================================================

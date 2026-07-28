@@ -1,0 +1,13 @@
+------------------ MODULE MC_cassandra_events_refines_mo4 ------------------
+\* expect: HOLDS
+\* Higher-bound (MaxOffset=4) companion to cassandra_events_refines. Finding
+\* B-1: at MaxOffset=3 only the journal-under-representation LOSS dual of the
+\* F-7 revive is reachable; the genuine delete-residue REVIVE (a pre-delete
+\* row surviving past a tombstone, re-folded durably) needs MaxOffset>=4.
+\* Shows the FloorFilter fix (FloorGuard=TRUE, FloorFilter=TRUE) still HOLDS
+\* at the bound where the flagship hazard appears, not only where its dual
+\* does. Paired with cassandra_events_revive_reentry_mo4 (FloorFilter=FALSE),
+\* which VIOLATES at the same bound. Costlier than the MaxOffset=3 configs,
+\* so it complements rather than replaces them.
+EXTENDS Cassandra
+=============================================================================

@@ -1,0 +1,9 @@
+---------------------- MODULE MC_recoverydeadline_late ----------------------
+\* expect: VIOLATES INV_NoSilentEviction
+\* flags: -deadlock
+\* R-849.2 is load-bearing: a tripwire whose threshold is NOT below the
+\* deadline (TripAt = 5 > Deadline = 4) fires too late -- the hang reaches
+\* the eviction deadline first and the member is silently evicted anyway. The
+\* budget inequality TripAt < Deadline is a requirement, not advice.
+EXTENDS RecoveryDeadline
+=============================================================================
