@@ -1,49 +1,52 @@
------------------------------ MODULE GroupCommitLanes -----------------------------
-(*****************************************************************************)
-(* The Kafka transactional writer's TWO-LANE group commit, at the grain of  *)
-(* `KafkaSnapshotWriteDatabase.transactional` (docs/kafka-single-writer-    *)
-(* design.md). Sibling of GroupCommit.tla that splits the single queue into *)
-(* the two real lanes and adds the abort path, closing the G1/G2 residual.  *)
-(*                                                                          *)
-(* Two lanes feed one serialized transaction lock:                          *)
-(*   - `writes`  : snapshot writes, drained up to Cap per transaction        *)
-(*                 (`writes.tryTakeN(maxWritesPerTransaction)`).             *)
-(*   - `markers` : offset-only commit tokens, UNBOUNDED, drained in full     *)
-(*                 (`markers.tryTakeN(none)`); `scheduleCommit` sets shared  *)
-(*                 `offsetToCommit` then submits a marker.                   *)
-(* A transaction drains min(Cap,|writes|) writes plus all markers; on commit *)
-(* the writes become durable and the latest `offsetToCommit` binds via       *)
-(* `sendOffsetsToTransaction`. On abort neither lands.                       *)
-(*                                                                          *)
-(*   G1  marker lane never starves, never steals a write slot:               *)
-(*       INV_NoSlotSteal         a transaction always takes the full          *)
-(*                               cap-limited write batch.                     *)
-(*       LIVE_MarkersNotStarved  every submitted marker's offset commit is    *)
-(*                               eventually delivered (the marker lane self-   *)
-(*                               triggers a transaction).                     *)
-(*   G2  offset-within-durable under the two-lane race and on abort:          *)
-(*       INV_OffsetWithinDurable the committed offset never leads the durable  *)
-(*                               write prefix, even when the marker lane       *)
-(*                               commits an offset scheduled while a write was  *)
-(*                               in flight and that write's transaction aborts.*)
-(*                                                                          *)
-(* Knobs, each a paired positive/negative control:                          *)
-(*   Gated            offset coupling: schedule only once the covered writes   *)
-(*                    are durable. FALSE drops it (G2).                        *)
-(*   SharedBudget     markers eat into the per-transaction Cap. TRUE steals    *)
-(*                    write slots (G1).                                        *)
-(*   MarkerSelfCommit a marker submission self-triggers a transaction. FALSE   *)
-(*                    strands markers arriving with no write to ride (G1        *)
-(*                    liveness).                                               *)
-(*   EnableAbort      transactions may abort (fenced generation).             *)
-(*   AtomicDurable    a write becomes durable ATOMICALLY with the commit.      *)
-(*                    FALSE makes it durable when sent (eager), so an abort     *)
-(*                    falsifies an offset already scheduled against it (G2       *)
-(*                    abort path).                                             *)
-(*****************************************************************************)
+-------------------------- MODULE GroupCommitLanes --------------------------
+(***************************************************************************)
+(* The Kafka transactional writer's TWO-LANE group commit, at the grain of *)
+(* `KafkaSnapshotWriteDatabase.transactional`                              *)
+(* (docs/kafka-single-writer-design.md). Sibling of GroupCommit.tla that   *)
+(* splits the single queue into the two real lanes and adds the abort      *)
+(* path, closing the G1/G2 residual.                                       *)
+(*                                                                         *)
+(* Two lanes feed one serialized transaction lock:                         *)
+(*   - `writes`  : snapshot writes, drained up to Cap per transaction      *)
+(*                 (`writes.tryTakeN(maxWritesPerTransaction)`).           *)
+(*   - `markers` : offset-only commit tokens, UNBOUNDED, drained in full   *)
+(*                 (`markers.tryTakeN(none)`); `scheduleCommit` sets       *)
+(*                 shared `offsetToCommit` then submits a marker.          *)
+(* A transaction drains min(Cap,|writes|) writes plus all markers; on      *)
+(* commit the writes become durable and the latest `offsetToCommit` binds  *)
+(* via `sendOffsetsToTransaction`. On abort neither lands.                 *)
+(*                                                                         *)
+(*   G1  marker lane never starves, never steals a write slot:             *)
+(*       INV_NoSlotSteal         a transaction always takes the full       *)
+(*                               cap-limited write batch.                  *)
+(*       LIVE_MarkersNotStarved  every submitted marker's offset commit is *)
+(*                               eventually delivered (the marker lane     *)
+(*                               self-triggers a transaction).             *)
+(*   G2  offset-within-durable under the two-lane race and on abort:       *)
+(*       INV_OffsetWithinDurable the committed offset never leads the      *)
+(*                               durable write prefix, even when the       *)
+(*                               marker lane commits an offset scheduled   *)
+(*                               while a write was in flight and that      *)
+(*                               write's transaction aborts.               *)
+(*                                                                         *)
+(* Knobs, each a paired positive/negative control:                         *)
+(*   Gated            offset coupling: schedule only once the covered      *)
+(*                    writes are durable. FALSE drops it (G2).             *)
+(*   SharedBudget     markers eat into the per-transaction Cap. TRUE       *)
+(*                    steals write slots (G1).                             *)
+(*   MarkerSelfCommit a marker submission self-triggers a transaction.     *)
+(*                    FALSE strands markers arriving with no write to ride *)
+(*                    (G1 liveness).                                       *)
+(*   EnableAbort      transactions may abort (fenced generation).          *)
+(*   AtomicDurable    a write becomes durable ATOMICALLY with the commit.  *)
+(*                    FALSE makes it durable when sent (eager), so an      *)
+(*                    abort falsifies an offset already scheduled against  *)
+(*                    it (G2 abort path).                                  *)
+(***************************************************************************)
 EXTENDS Naturals, Sequences, FiniteSets
 
-CONSTANTS N, Cap, Gated, SharedBudget, MarkerSelfCommit, EnableAbort, AtomicDurable
+CONSTANTS N, Cap, Gated, SharedBudget, MarkerSelfCommit, EnableAbort,
+          AtomicDurable
 Writers == 1 .. N
 \* writer w persists one snapshot write whose offset is w (offsets 1..N)
 
@@ -59,7 +62,8 @@ VARIABLES
   done,              \* committed (durable) write ids
   oc,                \* offsetToCommit: the scheduled offset (shared Ref)
   co,                \* committedOffset: what has durably committed
-  lastBegin          \* [wAvail, wTake] of the last transaction begin (for G1 safety)
+  lastBegin          \* [wAvail, wTake] of the last transaction begin
+                     \* (for G1 safety)
 
 vars == << writes, offered, markers, markersScheduled, markersDelivered,
            txnOpen, txnWrites, txnMarkers, done, oc, co, lastBegin >>
@@ -94,7 +98,8 @@ Init ==
 
 \* action guards (reused to define a precise dead-end stutter)
 CanOffer    == \E w \in Writers : w \notin offered
-CanSchedule == oc < N /\ \E o \in (oc + 1) .. N : (~Gated \/ DurablePrefix(o))
+CanSchedule ==
+  oc < N /\ \E o \in (oc + 1) .. N : (~Gated \/ DurablePrefix(o))
 CanBegin    == /\ ~txnOpen
                /\ (Len(writes) > 0 \/ (markers > 0 /\ MarkerSelfCommit))
 CanCommit   == txnOpen
@@ -121,8 +126,9 @@ ScheduleMarker ==
   /\ UNCHANGED << writes, offered, markersDelivered, txnOpen, txnWrites,
                   txnMarkers, done, co, lastBegin >>
 
-\* a holder takes the lock and drains: min(Cap,|writes|) writes plus the markers
-\* (all of them on the own lane; only what fits in the shared budget otherwise).
+\* a holder takes the lock and drains: min(Cap,|writes|) writes plus the
+\* markers (all of them on the own lane; only what fits in the shared budget
+\* otherwise).
 TxnBegin ==
   /\ ~txnOpen
   /\ (Len(writes) > 0 \/ (markers > 0 /\ MarkerSelfCommit))
@@ -132,11 +138,13 @@ TxnBegin ==
   /\ writes'    = SubSeq(writes, WriteTake + 1, Len(writes))
   /\ markers'   = markers - MarkerTake
   /\ lastBegin' = [wAvail |-> Len(writes), wTake |-> WriteTake]
-  /\ UNCHANGED << offered, markersScheduled, markersDelivered, done, oc, co >>
+  /\ UNCHANGED << offered, markersScheduled, markersDelivered, done, oc,
+                  co >>
 
 \* the transaction commits: the batch's writes become durable and the LATEST
-\* offset is bound (co := oc) -- markers only ever commit the latest offset, so
-\* any number collapse into one. This is the sole place `done` and `co` advance.
+\* offset is bound (co := oc) -- markers only ever commit the latest offset,
+\* so any number collapse into one. This is the sole place `done` and `co`
+\* advance.
 TxnCommit ==
   /\ txnOpen
   /\ done'  = done \cup txnWrites
@@ -145,7 +153,8 @@ TxnCommit ==
   /\ txnOpen'   = FALSE
   /\ txnWrites' = {}
   /\ txnMarkers' = 0
-  /\ UNCHANGED << writes, offered, markers, markersScheduled, oc, lastBegin >>
+  /\ UNCHANGED << writes, offered, markers, markersScheduled, oc,
+                  lastBegin >>
 
 \* the transaction aborts (stale generation, KIP-447): NEITHER the writes nor
 \* the offset land. The taken items are consumed (their callers error) but
@@ -156,8 +165,8 @@ TxnAbort ==
   /\ txnOpen'   = FALSE
   /\ txnWrites' = {}
   /\ txnMarkers' = 0
-  /\ UNCHANGED << writes, offered, markers, markersScheduled, markersDelivered,
-                  done, oc, co, lastBegin >>
+  /\ UNCHANGED << writes, offered, markers, markersScheduled,
+                  markersDelivered, done, oc, co, lastBegin >>
 
 \* stutter only at a genuine dead-end (no real action enabled), so a stranded
 \* marker shows up as a liveness violation rather than a TLC deadlock report.
@@ -193,18 +202,18 @@ Terminated ==
   /\ writes = <<>>
 Termination == <>Terminated
 
-\* G1 liveness: the marker lane never starves -- queued markers are eventually
-\* (and then permanently) drained. The own-lane self-trigger is what guarantees
-\* it; drop it (MarkerSelfCommit = FALSE) and a marker with no write to ride is
-\* stranded forever.
+\* G1 liveness: the marker lane never starves -- queued markers are
+\* eventually (and then permanently) drained. The own-lane self-trigger is
+\* what guarantees it; drop it (MarkerSelfCommit = FALSE) and a marker with
+\* no write to ride is stranded forever.
 LIVE_MarkersNotStarved == <>[](markers = 0)
 
-\* G1 safety: markers never consume a write slot -- a transaction always takes
-\* the full cap-limited write batch regardless of pending markers.
+\* G1 safety: markers never consume a write slot -- a transaction always
+\* takes the full cap-limited write batch regardless of pending markers.
 INV_NoSlotSteal == lastBegin.wTake = Min(Cap, lastBegin.wAvail)
 
-\* G2 safety: the committed offset never leads the durable (committed) prefix,
-\* under the two-lane race and on abort.
+\* G2 safety: the committed offset never leads the durable (committed)
+\* prefix, under the two-lane race and on abort.
 INV_OffsetWithinDurable == \A k \in 1 .. co : k \in done
 
 TypeOK ==

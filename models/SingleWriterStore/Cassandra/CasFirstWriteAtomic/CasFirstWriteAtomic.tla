@@ -1,14 +1,14 @@
--------------------------- MODULE CasFirstWriteAtomic --------------------------
-(*****************************************************************************)
-(* The atomic abstraction of a single persist: each writer does its write   *)
-(* as ONE offset-gated compare-and-set, or gives up.  This is the grain of  *)
-(* atomicity (Specifying Systems Sec. 7.3) at which CasStore treats a        *)
-(* persist -- a single atomic step.  The real first-write compound          *)
-(* (UPDATE -> INSERT IF NOT EXISTS -> retry) is finer grained; CasFirstWrite *)
-(* is model-checked to refine THIS spec under a refinement mapping, so every *)
-(* interleaving of the compound is a behaviour this atomic spec already      *)
-(* allows.                                                                   *)
-(*****************************************************************************)
+------------------------ MODULE CasFirstWriteAtomic ------------------------
+(***************************************************************************)
+(* The atomic abstraction of a single persist: each writer does its write  *)
+(* as ONE offset-gated compare-and-set, or gives up.  This is the grain of *)
+(* atomicity (Specifying Systems Sec. 7.3) at which CasStore treats a      *)
+(* persist -- a single atomic step.  The real first-write compound (UPDATE *)
+(* -> INSERT IF NOT EXISTS -> retry) is finer grained; CasFirstWrite is    *)
+(* model-checked to refine THIS spec under a refinement mapping, so every  *)
+(* interleaving of the compound is a behaviour this atomic spec already    *)
+(* allows.                                                                 *)
+(***************************************************************************)
 EXTENDS Naturals
 
 CONSTANTS Writers, MaxOffset, Guarded, Reap
