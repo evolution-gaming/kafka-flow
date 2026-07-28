@@ -134,3 +134,13 @@ left as "flagged for a future pass." What the caveats above record is the disclo
 mechanization, not review findings parked unaddressed.
 
 Snapshot date: 2026-07-12 (keep in step with the report's status header, [`README.md`](README.md)).
+
+**Later than this snapshot (2026-07-28).** The findings above stand as recorded; these are apparatus
+facts that have since moved, kept out of the findings' own prose so the record stays checkable:
+
+- The pin moved from release v1.7.0 (TLC 2.15 rev eb3ff99) to **v1.7.4 (TLC 2.19 rev 5a47802)**,
+  banner-verified per M6's own lesson. The suite reproduces 75/75 on it.
+- `WORKERS=auto` also passes 75/75 as the tree now stands. Three things changed together (the pin,
+  the per-config `-metadir`, and the flat-cfg → `MC_*.tla` restructure) and which of them retired the
+  multi-worker crash was not isolated; serial stays the default for reproducibility.
+- L4's suite count (73 at this snapshot) has grown to **75**.

@@ -69,12 +69,17 @@ negative control.
   equal-offset admission lets the redo apply, but that was unstated; plain writes must never touch the
   table. All now in the design doc ("Cassandra preconditions") and persistence.md.
 
-## F-5 — run.sh mis-classified temporal violations under the pinned TLC (v1.7.0, self-reports 2.15) — **FIXED (models tooling)**
+## F-5 — run.sh mis-classified temporal violations under the then-pinned TLC (release v1.7.0, self-reports 2.15 rev eb3ff99 — pre-2.17) — **FIXED (models tooling)**
 
-- run.sh grepped for TLC ≥ 2.17's named report ("Temporal property X was violated"); the pinned pre-2.17 TLC emits an
-  unnamed one, so all three temporal negative controls read as FAIL under the older tool — a silent
-  reproducibility hazard for anyone running a different TLC. run.sh now accepts the unnamed form
-  exactly when the config declares the one expected temporal property (`71cb0e8`).
+- run.sh grepped for TLC ≥ 2.17's named report ("Temporal property X was violated"); the pre-2.17 TLC
+  pinned at the time emits an unnamed one, so all three temporal negative controls read as FAIL under
+  that tool — a silent reproducibility hazard for anyone running a different TLC. The first fix taught
+  run.sh to accept the unnamed form when the config declared exactly one temporal property (`71cb0e8`).
+- The root cause — asserting on TLC's *output text* — is now gone. run.sh does not parse output at
+  all: outcomes are asserted by exit code (`tlc2.output.EC$ExitStatus`) and violation identity is
+  structural, an expected-violation wrapper declaring exactly one property of the expected exit class,
+  enforced by the runner. The suite runs on the current pin (TLC 2.19 / release v1.7.4) unchanged, and
+  a future bump needs only a suite re-run.
 
 ## F-6 (seam S4, reopened by the model) — The journal revive: events-recovery durably resurrects a deleted key — **FIXED (first fix insufficient — see F-7)**
 
@@ -491,7 +496,7 @@ The authoritative current counts, superseding any intermediate snapshot scattere
 | persistence-cassandra IT (real Cassandra) | **36/36** (incl. the F-9 never-persisted delete + zombie-rejection + idempotency) |
 | persistence-kafka IT (real Kafka) | **14/14** (incl. `RevokeTimeFlushSpec` — the revoke-time flush under a *real* second-member rebalance, cooperative-sticky fenced / eager-sticky control commits, claim KF14; a full-module run observes 17/17 with `Kip848ConsumerProtocolSpec` on a host that can pull the pinned 4.3.0 image) |
 | persistence-kafka / metrics unit | **14/14, 6/6** (incl. `Kip848ConfigSpec` — the forked-config bindings + the `group.remote.assignor` classic-omission pin) |
-| TLA+ (TLC 2.15 rev eb3ff99, pinned via tlaplus release v1.7.0; `models.yml` runs the suite in CI; a newer-TLC (2.18) re-run needs matcher work — see `run.sh`) | **75/75** (40 negative controls: `tokensync_*` the capture-vs-refresh 2×2 + equivalence, `gclanes_*`, `*_mo4`, `flowsalive_*`, the `recoveryread*` read-refinement family — `RecoveryRead ⇒ RecoveryReadAtomic` with the `EndOffsetsIsLSO` fact-sweep (F-10/#850), the `Foreign` asymmetry (A holds / B violates — B not full safety), the `Truncation`/`Tripwire` liveness pair (#849), the `FreezeObserved` truncation-safety pair — and the `recoverydeadline_*` timing family (the #849 tripwire-vs-eviction budget)) |
+| TLA+ (TLC 2.19 rev 5a47802, pinned via tlaplus release v1.7.4; `models.yml` runs the suite in CI; outcomes are asserted purely by TLC exit code, so a future bump needs only a suite re-run, no matcher work — see `run.sh`) | **75/75** (40 negative controls: `tokensync_*` the capture-vs-refresh 2×2 + equivalence, `gclanes_*`, `*_mo4`, `flowsalive_*`, the `recoveryread*` read-refinement family — `RecoveryRead ⇒ RecoveryReadAtomic` with the `EndOffsetsIsLSO` fact-sweep (F-10/#850), the `Foreign` asymmetry (A holds / B violates — B not full safety), the `Truncation`/`Tripwire` liveness pair (#849), the `FreezeObserved` truncation-safety pair — and the `recoverydeadline_*` timing family (the #849 tripwire-vs-eviction budget)) |
 
 **Count scope (two branches).** The current column is the models branch, with capture removed in
 `Consumer.scala` (core 121/121, persistence-kafka unit 14/14). The standalone consumer-protocol

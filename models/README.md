@@ -99,34 +99,78 @@ lives in shared snapshot code (it's Cassandra's protection) while Kafka leans on
 ## Running
 
 Needs a JRE. `tla2tools.jar` is downloaded to this folder on first run if missing (git-ignored),
-pinned to the tlaplus release **v1.7.0** — the reproducible artifact the suite is verified against. Its
-jar self-reports **TLC2 Version 2.15 (rev eb3ff99)**. The outcome matchers target this pre-2.17 output
-(`run.sh` accepts the unnamed temporal-violation report when a config declares exactly one temporal
-property). A newer TLC is not a drop-in — its output tripped every matcher (see the `run.sh` header) —
-so bump `JAR_VERSION` in `run.sh` only alongside a full
-suite re-run. Then:
+pinned to the tlaplus release **v1.7.4** — the reproducible artifact the suite is verified against.
+Its jar self-reports **TLC2 Version 2.19 (rev 5a47802)**. Outcomes are asserted by **TLC exit code**
+alone (`tlc2.output.EC$ExitStatus`, stable across TLC versions) — the runner never parses TLC's
+output, so a TLC bump needs only a full suite re-run, not matcher surgery. Then:
 
 ```sh
-./run.sh             # check every config; one PASS/FAIL line each, non-zero exit on any failure
-./run.sh refines     # only configs whose name contains the filter
+./run.sh                # check every wrapper; one PASS/FAIL line each, non-zero exit on any failure
+./run.sh refines        # only wrappers whose name contains the filter
 ```
 
-The layout is **flat**, but cross-module: the three backends `EXTENDS SnapshotFlow`, a base module
-holding the parts that are *identical* across them — the durable cell type (`Absent`/`Snap`/`Tomb`),
-the correct fold (`CorrectContents`), and the `SingleWriterStore` refinement mapping (`AbsCell`, the
-`SWS` instance, the `Ref*` aliases) over the shared `op`/`store` variables. Each backend adds only its
-own variables, fence and actions — which is where they genuinely differ, so those stay per-backend.
-Each config declares its module and expected outcome inline:
+The directories **are the tower**: one folder per spec, and a refining model lives *under* the
+spec it refines —
 
 ```
-\* spec: Cassandra                       -- the module to run
-\* expect: HOLDS                          -- model checking completes with no error
-\* expect: VIOLATES INV_Some               -- a state invariant is violated (a safety control)
-\* expect: VIOLATES-TEMPORAL Prop          -- a temporal property is violated (a liveness control)
+SingleWriterStore/                      THE spec (+ SnapshotFlow, the shared base module)
+├── Cassandra/
+│   └── CasFirstWriteAtomic/            the atomic CAS spec …
+│       └── CasFirstWrite/              … that the first-write compound refines
+├── Kafka/
+│   ├── GroupCommit/  GroupCommitLanes/  RecoveryDeadline/  TokenSync/  FlowsAlive/
+│   └── RecoveryReadAtomic/             the atomic read spec …
+│       └── RecoveryRead/               … that the read compound refines
+└── Epoch/
+FlushCell/                              the generic A4 assumption control (outside the tower)
+```
+
+Cross-folder references — the three backends `EXTENDS SnapshotFlow`, a base module holding the
+parts that are *identical* across them: the durable cell type (`Absent`/`Snap`/`Tomb`), the
+correct fold (`CorrectContents`), and the `SingleWriterStore` refinement mapping (`AbsCell`, the
+`SWS` instance, the `Ref*` aliases) over the shared `op`/`store` variables — resolve via
+`-DTLA-Library`, set by the runner (TLC honors it only for a spec given by absolute path — the
+runner does this for you). Each backend adds only its own variables, fence and actions — which is
+where they genuinely differ, so those stay per-backend.
+
+Formatting follows Lamport's conventions as encoded in the TLA+ Toolbox: a **77-column right
+margin** (`EDITOR_RIGHT_MARGIN_DEFAULT`) for every line, module header dashes sized by the
+Toolbox template (`max(4, (77 - len(name) - 9) / 2)` per side), 77-character `====` footers,
+and boxed comments squared to the margin. Files are ASCII-only, so the column count is
+unambiguous. `run.sh` fails fast on either violation.
+
+Each run is the standard MC pair next to the spec it checks: `MC_<name>.tla` (the wrapper module
+`EXTENDS` the spec and declares the expected outcome inline) and `MC_<name>.cfg` (its TLC
+configuration). A config referred to as `name` in this README lives in the folder of the spec it
+checks, as `MC_<name>.tla`/`.cfg`. Because the pair is the layout the tooling already speaks, the
+VS Code TLA+ extension model-checks any wrapper out of the box — for the cross-folder modules to
+resolve there, list the three folders that are referenced across directories in the extension's
+`tlaplus.moduleSearchPaths` setting (it feeds them to `-DTLA-Library`):
+`models/SingleWriterStore`, `models/SingleWriterStore/Cassandra/CasFirstWriteAtomic`,
+`models/SingleWriterStore/Kafka/RecoveryReadAtomic` (absolute paths). Remember an expected-violation
+wrapper (its `\* expect: VIOLATES...` line) *should* show a counterexample there — the PASS/FAIL
+verdict against the declared expectation is `run.sh`'s job.
+
+```
+\* expect: HOLDS                          -- model checking completes with no error (exit 0)
+\* expect: VIOLATES INV_Some               -- a state invariant is violated (a safety control, exit 12)
+\* expect: VIOLATES-TEMPORAL Prop          -- a temporal property is violated (a liveness control, exit 13)
 \* expect: VIOLATES-REFINEMENT Prop        -- the refinement (step simulation) fails: Impl does NOT
-                                             imply the spec (a rejected design, or a removed fence)
+                                             imply the spec (a rejected design, or a removed fence; exit 13)
 \* flags:  -deadlock                       -- optional; for a HOLDS run that reaches a terminal state
 ```
+
+The exit code carries the violation's *class*, not its name — the property name in the directive
+is documentation. Identity is **structural**: an expected-violation config declares exactly one
+*name* of the expected class (one invariant for `VIOLATES`, one property for
+`VIOLATES-TEMPORAL`/`VIOLATES-REFINEMENT`), so the exit code can only mean that one — the runner
+enforces it by counting names rather than declaration lines, since TLC's plural forms
+(`INVARIANTS A B`) take several names on a line. A co-check of the *other* class may ride along,
+because its violation exits with a different code and so fails the run rather than passing as the
+expected one: the `VIOLATES-TEMPORAL` and `VIOLATES-REFINEMENT` controls (exit 13) keep their
+`TypeOK` invariant (exit 12) as exactly such a co-check. The `VIOLATES` controls cannot — `TypeOK`
+would share their own exit code — so they carry the target invariant alone and their paired
+positive checks `TypeOK` instead.
 
 What makes the suite trustworthy is **pairing**: almost every theorem/invariant that should hold has a
 sibling config that flips one knob and makes it *fail* (a removed guard / tombstone / fence / fix /
@@ -409,13 +453,15 @@ commit corrupts, *eventual* removal is not enough.
 
 The negative shows the awaited coupling is load-bearing, not incidental — a future fire-and-forget refactor
 would reintroduce the exact race. In-code complement: a unit test (`TopicFlowSpec`, "remove awaits the flow
-teardown", on the Kafka branch) adds then removes a partition whose flow release completes a `Deferred` and
+teardown", present in this tree) adds then removes a partition whose flow release completes a `Deferred` and
 asserts it is completed by the time `remove` returns, so a fire-and-forget refactor fails the build.
 Modelled here, pinned by the test there.
 
-*(Related artifacts outside `models/`: `.github/workflows/models.yml` runs this suite on TLC 2.15 (release v1.7.0) in CI.
-The JVM counterpart of the `FlushCell`/A4 model — `FlushCellConcurrencySpec` — and the F-9
-replay-of-a-reaped-tombstone IT ship with the code they protect on the cassandra branch, not here.)*
+*(Related artifacts outside `models/`: `.github/workflows/models.yml` runs this suite on TLC 2.19 (release v1.7.4) in CI.
+The JVM counterpart of the `FlushCell`/A4 model — `core/.../snapshot/FlushCellConcurrencySpec.scala` —
+and the F-9 replay-of-a-reaped-tombstone IT
+(`persistence-cassandra-it-tests/.../snapshot/SnapshotSpec.scala`) ship with the code they protect,
+and both are present in this tree.)*
 
 ### `TokenSync` — capture vs. refresh (why the refresh subsumes the assignment capture)
 
@@ -488,19 +534,30 @@ covers it.
 
 ## Assumptions (verified *under*, not proven)
 
-Per-key linearizable writes (each backend's primitive is one atomic register op — the first-write
-compound is the one place this is modelled, `CasFirstWrite`); deterministic, replayable folds (a
-user contract, so a value is a function of its offset); poll-thread serialization of rebalance
-callbacks and a key's processing — **A4**, the basis of `Kafka`'s capture-coupling and of treating
-`flushCell`'s read→write→mark compound as atomic (its paired control is `FlushCell`: remove
-serialization and the compound loses a write, `serial_race`); the KIP-447 broker fence; and the
-**takeover-abort visibility** half of ext(K5) — that once a successor's `initTransactions` returns, the
-aborted predecessor's records are not only decided but *visible as aborted* to a `read_committed`
-reader (the marker has replicated). `RecoveryRead` folds the *contract* half (init-before-produce
-serializes the id lineage) into `BInit` and takes this visibility half as given — corroborated on a
-live broker (ext(K5)'s takeover-abort IT: `read_committed` = `read_uncommitted` endOffsets right after
-init) but not mechanized. The models
-verify behaviour under these; they do not re-derive them.
+The models verify behaviour under these six; they do not re-derive them. This is the suite-wide
+list: **A1–A4 are the four of
+[`docs/cassandra-single-writer-design.md`](../docs/cassandra-single-writer-design.md), same order**
+(so **A4**, the one label cited across the corpus, means per-key serialization everywhere), and
+A5–A6 are the two the Kafka arm adds.
+
+- **A1 — Per-key linearizable writes.** Each backend's primitive is one atomic register op; the
+  first-write compound is the one place this is modelled (`CasFirstWrite`).
+- **A2 — Deterministic, replayable folds** (a user contract, so a value is a function of its
+  offset).
+- **A3 — Per-key independence.** #732 corruption is per key and keys are independent, so per-key
+  monotonic durability is the whole guarantee — which is what lets every model here check a
+  *single* key without loss of generality.
+- **A4 — Poll-thread serialization** of rebalance callbacks and a key's processing: the basis of
+  `Kafka`'s capture-coupling and of treating `flushCell`'s read→write→mark compound as atomic. Its
+  paired control is `FlushCell` — remove serialization and the compound loses a write
+  (`serial_race`).
+- **A5 — The KIP-447 broker fence.**
+- **A6 — The takeover-abort visibility half of ext(K5)**: once a successor's `initTransactions`
+  returns, the aborted predecessor's records are not only decided but *visible as aborted* to a
+  `read_committed` reader (the marker has replicated). `RecoveryRead` folds the *contract* half
+  (init-before-produce serializes the id lineage) into `BInit` and takes this visibility half as
+  given — corroborated on a live broker (ext(K5)'s takeover-abort IT: `read_committed` =
+  `read_uncommitted` endOffsets right after init) but not mechanized.
 
 **Every atomic action is a compressed assumption.** The listed assumptions are the ones that were
 *written down* — but a coarse-grained action smuggles in more (Sec. 7.3): `Kafka.tla`'s one-step

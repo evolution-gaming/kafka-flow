@@ -72,7 +72,7 @@ Suite (as of this sub-study): 30 configs, 17 negative controls, all as declared.
   `INV_FlowsAlive == live ⊆ owned` is checked as *safety* (a single un-owned commit corrupts, so eventual
   removal is not enough) — `flowsalive_holds` HOLDS with the awaited coupling, `flowsalive_race` VIOLATES
   it under fire-and-forget (a reassignment leaves the old flow alive-but-un-owned), so the coupling is
-  shown load-bearing, not incidental. (2) A unit test on the Kafka branch pins it in code: `TopicFlowSpec`
+  shown load-bearing, not incidental. (2) A unit test in this tree pins it in code: `TopicFlowSpec`
   "remove awaits the flow teardown" adds then removes a partition whose flow release completes a
   `Deferred`, and asserts it is completed by the time `remove` returns — so a fire-and-forget refactor
   fails the build rather than only logging at runtime.

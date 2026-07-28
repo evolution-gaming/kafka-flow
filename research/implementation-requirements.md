@@ -506,5 +506,5 @@ A-test/B-test/R-849-test citations re-homed from the draft branches to the merge
 - **The tower↔RecoveryRead seam composes by implication transitivity** — a stated interface lemma, not a
   TLC substitution; legitimate for a refinement tower.
 - **Toolchain bump** — verifying on a newer TLC is a refresh, not a correctness task; the suite is pinned
-  to release v1.7.0 (self-reports 2.15, [`findings.md`](findings.md) ledger; see `run.sh` for why a bump
-  isn't a drop-in).
+  to release v1.7.4 (self-reports 2.19; the runner asserts by TLC exit code, so a bump needs only a
+  full suite re-run — the output-matcher fragility [`findings.md`](findings.md) F-5 recorded is gone).

@@ -5,7 +5,7 @@
 Method: every model action/definition mapped to the code construct it abstracts and verified by
 reading both; every config's constants/expectations checked; pairing discipline audited. Run results:
 all 75 configs replicated (the full suite — see the ledger in [`findings.md`](findings.md)), TLC
-2.15 (rev eb3ff99, release v1.7.0), matching declared outcomes. The audit below merges an independent full-read audit with the orchestrator's
+2.19 (rev 5a47802, release v1.7.4), matching declared outcomes. The audit below merges an independent full-read audit with the orchestrator's
 adversarial verification of its findings; dispositions state what was done.
 
 This file is shared across implementations and its sections are thematic (faithful / findings / gaps /
@@ -72,7 +72,8 @@ safety).
 never checked → `cassandra_replay_fixoff_safe` (HOLDS, safety-only). (#3) `INV_NoReplayGap`'s
 binding-dependence was never pinned → `kafka_replay_unbound_gap` (VIOLATES). (#4) the
 VIOLATES-REFINEMENT matcher accepted *any* action-property violation → run.sh now matches the
-abstract module the declared alias instantiates. (#1) no negative control for `casfw_refines`
+abstract module the declared alias instantiates (itself later superseded by the structural
+exit-code check — see "Addendum: the models advisory review" below). (#1) no negative control for `casfw_refines`
 (a vacuous mapping would pass) — **closed**:
 `CasFirstWrite`'s abstract instance takes its own `SpecGuarded` (normally = `Guarded`), and
 `casfw_refines_vacuous` runs the ungated compound against the guarded atomic spec: the mapping must
@@ -83,6 +84,25 @@ ADT) in `Cassandra.tla` and `cassandra_tombstone_replay.cfg`; `offsetOf = Offset
 sentinel) in `Kafka.tla`.
 
 ## Accepted coverage gaps (with rationale)
+
+- **R-849.2's budget is a configuration contract, not a construction guarantee** — the timing model
+  checks that a tripwire threshold *above* the eviction deadline loses the race
+  (`recoverydeadline_late`, `TripAt = 5 > Deadline = 4`, VIOLATES `INV_NoSilentEviction`; the
+  `TripAt = Deadline` boundary was confirmed by a throwaway config, not by a suite config), and the
+  register states the budget as a MUST. It is two-sided —
+  `transaction.timeout.ms + abort scan (≈70 s) < recoveryStallTimeout < max.poll.interval.ms`, with
+  headroom for the R-849.3 diagnostic re-read on trip — and **nothing in the code enforces either
+  bound**: `recoveryStallTimeout` (`KafkaPersistenceModule.TransactionalConfig`) is compared against
+  neither the open-transaction wait nor the driving consumer's poll interval at construction. It
+  holds because the 3-minute default clears both at Kafka defaults (70 s < 180 s, and 180 s + a 60 s
+  diagnostic re-read < 300 s) and because the scaladoc tells the operator to keep it that way. The
+  checked theorem is unaffected — it is proved *under* the budget — but "verified under" and
+  "guaranteed by construction" are different things, and this is the former. Unlike F-12's
+  `groupId`/`autoCommit` contract — the same "true of intent, unenforced in code" shape, closed by
+  forcing it at the `suffixed` chokepoint — this one has no chokepoint to force it at: R-849.2a
+  records that both comparisons rest on values the module cannot see (the driving consumer's poll
+  interval, the broker's abort-scan interval), which is why the wiring-time check was built and then
+  reversed in final review. Accepted, not overlooked.
 
 - **The recovery read's bound (Kafka)** — *closed; see the RecoveryRead addendum.* The tower
   models recovery as an atomic read of the modeled store, so the read's bound (LSO vs. high watermark
@@ -238,7 +258,7 @@ review found, and what survived it:
   the reentry negative fires via the journal-under-representation *loss* dual, not the delete-*revive* its
   comment narrates (the revive needs MaxOffset≥4 and is not even the counterexample TLC reports there).
   Both are the same F-7 family, both closed by the same fold-onto-fenced-base fix, so the pair is genuinely
-  non-vacuous; `cassandra_events_revive_reentry.cfg` now carries a note saying so. Bound not raised
+  non-vacuous; `MC_cassandra_events_revive_reentry.tla` now carries a note saying so. Bound not raised
   (raising it does not change which trace TLC reports).
 - **Refuted / out of scope.** The Kafka `-1` unknown-generation gap (Axis D) is broker semantics the models
   rightly *assume* (like the KIP-447 fence) — source-verified in [`external-semantics.md`](external-semantics.md) ext(K3), claim-pinned
@@ -246,9 +266,12 @@ review found, and what survived it:
   — that [`docs/kafka-single-writer-design.md`](../docs/kafka-single-writer-design.md) could frame −1 as a freshness matter, not the fence-*bypass*
   it is — is resolved: the design doc (as amended by the generation-refresh change) states publishing `generationId < 0` lands the
   offset commit unfenced, which is why `Consumer.publish` refuses it. The
-  `run.sh` `VIOLATES-REFINEMENT` matcher
-  keys on the abstract module only (Axis C): sound today (one action property in `SingleWriterStore`),
-  documented in the runner, left as-is. The group-commit×fence×lag composition (Axis D) is a sound modular
+  `VIOLATES-REFINEMENT` identity concern (Axis C — the old `run.sh` matcher keyed on the abstract
+  module only) is superseded: the runner asserts by TLC exit code, and identity is structural — an
+  expected-violation config declares exactly one name of the expected class, and that name must be
+  the one its `\* expect:` directive states. `run.sh` enforces both, collecting names per cfg
+  *section* rather than per line, since TLC's grammar lets a second same-class check ride a
+  continuation line. The group-commit×fence×lag composition (Axis D) is a sound modular
   factoring (the fence is a whole-transaction abort, orthogonal to batching; the marker/write race is
   safety-subsumed by `GroupCommit`'s `INV_OffsetWithinDurable`) — and the previously "argued, unverified"
   G1/G2 pieces are now **modelled** in `GroupCommitLanes.tla` (the two-lane split + abort
@@ -330,7 +353,7 @@ documented correspondence, not a checked substitution. Adds **13 configs (9 HOLD
 controls)**, including the spec's own self-check (`recoveryreadatomic_holds`, cf. `sws_holds`), the
 `trunc_safe`/`trunc_recompute` history-variable pair, and `recoveryread_both` completing the remedy
 2×2 (either remedy alone closes #850; both compose). Run in CI with the rest of the suite (the pinned
-TLC, v1.7.0 / self-reports 2.15).
+TLC, v1.7.4 / self-reports 2.19).
 
 ## Addendum: RecoveryDeadline — the #849 timing (the tripwire vs the eviction deadline)
 

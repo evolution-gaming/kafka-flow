@@ -76,7 +76,7 @@ is the conservative first step whose cost/benefit the audit justifies.
 2. **Test replication and audit** (§11 below, the test-coverage appendix): all suites run (JDK 21, sbt; testcontainers with
    real Cassandra and Kafka); every snapshot/persistence test read and graded against the inventory.
 3. **Model replication and audit** ([`model-fidelity.md`](model-fidelity.md)): all TLC configs run
-   (TLC 2.15 rev eb3ff99, pinned via tla2tools release v1.7.0); every model action mapped to
+   (TLC 2.19 rev 5a47802, pinned via tla2tools release v1.7.4); every model action mapped to
    the code construct it abstracts; configs audited for pairing (each positive theorem should have a
    knob-flipped negative control).
 4. **External semantics** ([`external-semantics.md`](external-semantics.md)): four independent research passes over Apache
@@ -160,7 +160,8 @@ the livelock lasso when the fix is off.
   verified rather than asserted), `kafka_replay_unbound_gap` (pins `INV_NoReplayGap` as
   binding-dependent). Suite counts: the [`findings.md`](findings.md) ledger.
 - **Tooling**: run.sh's temporal-violation matcher targeted a newer TLC's output format (silently failing three
-  controls under the pinned pre-2.17 TLC) and its refinement matcher accepted any action-property violation; both fixed.
+  controls under the then-pinned pre-2.17 TLC) and its refinement matcher accepted any action-property violation; both
+  fixed — and since superseded: the runner no longer parses TLC output at all.
 
 ### 4.5 Test-coverage holes (closed)
 
@@ -210,12 +211,15 @@ configured from the first deployment (else the F-1 repair path handles the resid
 
 ## 6. Threats to validity
 
-- **Tool version**: TLC 2.15 rev eb3ff99 (pinned via tlaplus release v1.7.0); the three temporal-violation
-  verdicts were disambiguated manually (single declared property per config) with a version-tolerant
-  classifier. State spaces are small (MaxOffset=3) and no liveness result is *believed* to depend on
-  pre-2.17-specific behaviour. The `models.yml` CI job runs `run.sh` on this same pinned release; a bump
-  to a newer TLC would need matcher work (see the `run.sh` header), so "CI covers it" holds for the
-  pinned release.
+- **Tool version**: TLC 2.19 rev 5a47802 (pinned via tlaplus release v1.7.4). State spaces are small
+  (MaxOffset=3). The `models.yml` CI job runs `run.sh` on this same pinned release. The *harness* is
+  version-insensitive: `run.sh` asserts every outcome by TLC exit code and never parses output, and
+  violation identity is structural — an expected-violation config declares exactly one name of the
+  expected exit class, enforced by the runner. So a bump needs a suite re-run, not matcher work, and
+  the suite has been re-run green on a TLC newer than the pin. What a bump could still move is a TLC
+  *verdict* — a liveness-checker change, say — which no property of the harness rules out; no
+  liveness result here is *believed* to depend on version-specific behaviour, but that residual is
+  why the pin exists.
 - **Serialization assumption (A4)**: `flushCell`'s read→write→mark sequence and Kafka's commit-time
   generation read are safe only under kafka-flow's per-key serialization; now stated in the design
   doc's Assumptions, but still **argument-only, unverified** — the study did not attempt to violate it
@@ -307,7 +311,7 @@ reachable; `FlushCellConcurrencySpec` is the JVM counterpart of the `FlushCell`/
 reaped-tombstone replay case pins the **F-9** residual against real Cassandra; `FlowsAlive.tla`
 (`flowsalive_holds` / `flowsalive_race`) pins the cross-partition **flows-alive** invariant as *safety*
 (the awaited teardown coupling HOLDS, a fire-and-forget refactor VIOLATES); and `models.yml` runs the
-suite in CI on the pinned TLC 2.15. The Scala tests ship with the code they protect on the cassandra
+suite in CI on the pinned TLC 2.19. The Scala tests ship with the code they protect on the cassandra
 branch; the flows-alive unit test (`TopicFlowSpec` "remove awaits the flow teardown") is on the Kafka
 branch, with the generation-refresh change.
 
@@ -600,5 +604,5 @@ row from a truly absent one (condition column present-with-null vs absent from t
 settling ext(2)/(3) empirically and later re-confirmed at Cassandra source level
 (external-semantics.md). Fixed as findings **F-1** (`6053bb5`): guard-expired row reads as absent,
 delete on it is an idempotent no-op, persist claims it via the Paxos-safe `IF offset = null` repair;
-`SnapshotTtlEdgeSpec` (now on the cassandra branch) pins the state and the repair end to end.
+`SnapshotTtlEdgeSpec` (present in this tree) pins the state and the repair end to end.
 **Closed (fixed).**

@@ -79,7 +79,7 @@ verified this for six of seven of the defended HOLDS it audited).
 independent replication: subject, audit, and fixes share one lineage. The hedge against self-review bias
 is a **fresh-context adversarial review** that treats the finished artifact as a submission — and it
 earned its keep (it caught F-7, which the self-audit had certified). **Toolchain:** sbt + JDK 21; TLC
-2.15 (rev eb3ff99) via `tla2tools.jar` release v1.7.0 (suite run in CI); Docker + testcontainers for the
+2.19 (rev 5a47802) via `tla2tools.jar` release v1.7.4 (suite run in CI); Docker + testcontainers for the
 integration tests. Model
 fidelity — every model action mapped to the code it abstracts, and the accepted coverage gaps — is
 audited in [`model-fidelity.md`](model-fidelity.md); the suite itself is [`../models/`](../models/).
@@ -191,7 +191,7 @@ opens with a role banner.
 | [`claims.md`](claims.md) | Evidence | every design claim → evidence class → verdict (Cassandra families; Kafka KF-series). |
 | [`external-semantics.md`](external-semantics.md) | Evidence | primary-source verification of external facts (Cassandra ext(1)–(X2), ext(C-F9); Kafka ext(K1)–(K15)). |
 | [`model-fidelity.md`](model-fidelity.md) | Apparatus | TLA+ model↔code fidelity, non-vacuity, accepted coverage gaps. |
-| [`../models/`](../models/) (+ [`../models/README.md`](../models/README.md)) | Apparatus | the TLA+ suite: the refinement tower, the configs, `run.sh`. |
+| [`../models/`](../models/) (+ [`../models/README.md`](../models/README.md)) | Apparatus | the TLA+ suite: the refinement tower, the `MC_*.tla` wrappers, `run.sh`. |
 | [`implementation-requirements.md`](implementation-requirements.md) | Forward | the normative register (§5) + the per-arm merge status and the discharged cross-branch integration obligations. |
 | [`850-remedy-decision.md`](850-remedy-decision.md) | Forward | the #850 remedy comparison (A vs B vs composed): decision rule, criteria, matrix, recommendation with staged path and flip conditions; its external pins are homed as ext(K9)–(K14), its §6 routes to them. |
 | [`849-stall-operations.md`](849-stall-operations.md) | Forward | the two recovery-stall causes operationally: detection (application × SRE), recovery playbooks, what each bound achieves, the Kafka Streams contrast, Kafka's recognition trail, and the out-of-range masking experiment. |

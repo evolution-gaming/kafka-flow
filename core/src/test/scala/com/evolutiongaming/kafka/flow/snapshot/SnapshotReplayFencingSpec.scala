@@ -356,15 +356,16 @@ class SnapshotReplayFencingSpec extends FunSuite {
     assertEquals(stored, Row.Live(KafkaSnapshot(offset = Offset.unsafe(2), value = "e3")).some)
   }
 
-  test("REGRESSION (delete path): a tick-delete during replay on a tombstone stays a buffer-only no-op") {
-    // The persist path was the only one that ever reached the store for a tombstone: after a `None` recovery nothing is
-    // marked persisted (`Persistence.read` calls `onPersisted` only for a `Some` state), so a tick-delete during replay
-    // is dispatched with persist=false - a buffer-only delete that never touches the offset-gated store. This holds
-    // before and after the fix; the test pins it so a future change to the recovered floor cannot turn it into a
-    // store delete fenced below the tombstone's offset.
+  test("REGRESSION (delete path): a tick-delete during replay on a tombstone leaves the tombstone as it was") {
+    // After a `None` recovery nothing is marked persisted (`Persistence.read` calls `onPersisted` only for a `Some`
+    // state), so a tick-delete during replay is dispatched with persist=false. A FENCED store writes the tombstone
+    // anyway (`Snapshots.delete`: `persist || fenced`), but the buffer's high-water raises it back to the recovered
+    // offset, so the write is an idempotent rewrite AT that offset - admitted by the gate's equality, never a delete
+    // fenced BELOW the tombstone. This holds before and after the fix; the test pins it so a future change to the
+    // recovered floor cannot turn the rewrite into a regression.
     val (outcome, stored) =
       runRecoveredFromTombstone(deletingTick, deleteOnTimer, records = List(replayedRecord(2, "e3")))
-    assert(clue(outcome).isRight, "a buffer-only delete must not reach the store")
+    assert(clue(outcome).isRight, "the delete must not self-fence below the tombstone's offset")
     assertEquals(stored, Row.Tombstone(recoveredAt).some)
   }
 
