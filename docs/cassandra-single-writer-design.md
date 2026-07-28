@@ -345,7 +345,9 @@ Entry point: `CassandraSnapshots.withSchema(compareAndSet = true)` (or
 ### Formal models
 
 The mechanisms above are model-checked in `models/` (TLA+), as a refinement tower: one abstract
-`SingleWriterStore` spec (the durable cell always equals the correct fold) that each design refines.
+`SingleWriterStore` spec (the durable cell always equals the correct fold) that each design is checked
+against — a backend is correct iff `Backend => SingleWriterStore`, and a rejected design is one whose
+refinement theorem is false.
 
 - **`Cassandra`** — the offset compare-and-set, the tombstone, and the replay-window monotone buffer,
   all three load-bearing negative controls: `cassandra_unguarded` (no offset guard) and
@@ -354,19 +356,22 @@ The mechanisms above are model-checked in `models/` (TLA+), as a refinement towe
   (conflict→recover→retry, never committing; `RefLive` violated), while `cassandra_refines` holds with
   all three. Modelled *with the zombie present*, so a genuinely stale writer is still correctly
   rejected; only the legitimate owner livelocks. Events-recovery (the journal fold) is checked too, as a
-  **row-set** journal: `cassandra_events_refines` holds with the offset floor filter, its non-vacuity
-  control `cassandra_events_revive_reentry` and the unguarded `cassandra_events_journal_revive` both
+  **row-set** journal: `cassandra_events_refines` holds with the offset floor filter, its paired
+  negative control `cassandra_events_revive_reentry` (F-7: the fold-*result* comparison the first fix
+  attempted) and the unguarded `cassandra_events_journal_revive` both
   VIOLATE `INV_NoCorruptDurable`, and the floor/ordering controls `cassandra_events_nofloor` /
   `cassandra_events_unordered` VIOLATE-TEMPORAL `RefLive`. (`models/README.md` covers how Kafka protects
   the same shared replay window differently — atomic offset binding rather than the monotone buffer.)
-- **`CasFirstWrite`** — the non-atomic first-write `UPDATE`/`INSERT`/retry compound, checked under
-  every interleaving against the atomic CAS it stands in for (`CasFirstWriteAtomic`). Its one deviation,
+- **`CasFirstWrite`** — the non-atomic first-write `UPDATE`/`INSERT`/retry compound, checked
+  exhaustively at two concurrent writers (`casfw_refines`; three at `casfw_3w`) against the atomic CAS
+  it stands in for (`CasFirstWriteAtomic`). Its one deviation,
   a spurious conflict (the retry finds the row gone), is fed into the conflict/recover loop in
   `cassandra_firstwrite_spurious`: it leaves the row absent, so no replay window arises and it converges
   (it recovers on the next flush) — in contrast to the replay-window livelock.
 
 The models verify behaviour *under* the assumptions below; they do not prove them. See `models/README.md`
-for the full config catalogue and the rejected designs that must *fail* checking.
+for the full config catalogue and the negative controls — including the rejected `Epoch` design —
+that must *fail* checking.
 
 ## Assumptions
 
@@ -385,6 +390,10 @@ This design takes four things as given:
   timers, and its flush concurrently (one poll thread per partition drives them in sequence), so no
   concurrent `append` can slip between a flush's database write and its mark-persisted. A mid-flush timer
   on another thread would break this — a concurrency hazard, not a clock one, and out of scope here.
+  Alone among these four, this one has a checked sibling: `FlushCell` models the compound, and
+  `serial_race` (serialization removed) loses a write where `serial_holds` does not. That does not
+  discharge the assumption — TLC cannot see JVM threads — but it makes it a checked choice rather than
+  a silent article of faith.
 
 ## Rejected alternatives
 

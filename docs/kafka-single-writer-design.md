@@ -408,13 +408,22 @@ The mechanism is model-checked in `models/` (TLA+), as a refinement tower: one a
 `SingleWriterStore` spec that each design refines.
 
 - **`Kafka`** — the generation fence. Each load-bearing detail is pinned by a negative control that
-  breaks the refinement while `kafka_refines` holds: the group-metadata capture coupled to flow teardown
-  (`kafka_decoupled`), the seeded offset (`kafka_unseeded`), and the atomic offset binding that closes
+  breaks the refinement while `kafka_refines` holds: the zombie fence (`kafka_decoupled`), the seeded
+  offset (`kafka_unseeded`), and the atomic offset binding that closes
   the replay window (`kafka_replay_unbound`; `kafka_replay` shows the honest commit-lag pair
   `INV_CommittedNeverAhead` / `LIVE_CommitCatchesUp`, and `kafka_lag_nofilter` the recovered-snapshot
   filter). The post-poll generation refresh has its own control — `kafka_genlag` violates `RefLive`
-  without it (the generation-lag spurious fence, finding F-8). The write orchestration is the separate
-  finer `GroupCommit` refinement (no stranded write, no deadlock; the committed offset stays within the
+  without it (the generation-lag spurious fence, finding F-8).
+  **The model's zombie fence is not quite the shipped one.** `Kafka.tla`'s `Coupled` knob conflates
+  two mechanisms the code keeps separate: it models the fence as a group-metadata capture *coupled to*
+  flow teardown, whereas what ships is unconditional teardown-on-revoke (`TopicFlow.remove`, awaited
+  in the revoke callback — modelled separately as `flowsalive_holds` / `flowsalive_race`) plus the
+  post-poll refresh, with assignment capture *removed* (see the rejected alternatives below). So the
+  flagship theorem is checked against a near-variant of the shipped design; the bridge to what ships
+  is argued across `TokenSync`, `FlowsAlive` and code reading, not mechanized — gap M5 in
+  [`../research/model-fidelity.md`](../research/model-fidelity.md).
+  The write orchestration is the separate finer `GroupCommit` model — an invariant and liveness check,
+  not a refinement theorem (no stranded write, no deadlock; the committed offset stays within the
   durable prefix).
 - **`Epoch`** — the *rejected* producer-epoch design, encoded as a refinement that must **fail**
   (`epoch_refines`): epochs are handed out in `initTransactions` order, not ownership order, so a late
@@ -422,19 +431,29 @@ The mechanism is model-checked in `models/` (TLA+), as a refinement tower: one a
   not the producer epoch.
 - **`RecoveryRead` ⇒ `RecoveryReadAtomic`** — the recovery read as a grain-of-atomicity theorem: the
   read as implemented (capture a bound, drain to it, complete) must refine the one-step atomic read
-  the `Kafka` model assumes in `OwnerRecover`. The theorem was **false for the read as first
+  the `Kafka` model assumes in `OwnerRecover`. The two theorems compose by implication transitivity
+  across separate TLC runs; that `OwnerRecover` and `RecoveryReadAtomic` state the *same* read is a
+  documented correspondence, not a checked substitution. The theorem was **false for the read as first
   shipped** (issue #850: a crashed writer's open transaction pins the `read_committed` end offset
-  below newer committed snapshots — `recoveryread_lso_unique`), and holds under either remedy, both
-  since merged upstream together (the high-watermark bound — `recoveryread_hw_unique`; the stable
-  per-partition id takeover-abort — `recoveryread_lso_stable`). The same model states issue #849:
+  below newer committed snapshots — `recoveryread_lso_unique`), and holds under either remedy
+  *within the partition's id lineage* (the high-watermark bound — `recoveryread_hw_unique`; the stable
+  per-partition id takeover-abort — `recoveryread_lso_stable`), both since merged upstream together.
+  Out of lineage the two split: under a foreign open transaction the high-watermark bound still holds
+  (`recoveryread_hw_foreign`) while the stable id alone violates the refinement
+  (`recoveryread_lso_foreign`) — which is why A is required for full safety and B is a post-crash
+  speed optimization ([`../research/850-remedy-decision.md`](../research/850-remedy-decision.md)).
+  The same model states issue #849:
   with log truncation as an environment action, the bounded read can hang forever
   (`recoveryread_truncate_stall`); the no-progress tripwire remedy
   (`recoveryread_truncate_tripwire`) is likewise merged, as the recovery stall deadline.
 
-The models verify behaviour *under* their assumptions (the KIP-447 broker fence, poll-thread
-serialization of rebalance callbacks, one open transaction per id lineage — the `Foreign` knob
-deliberately checks a second, out-of-lineage open); they do not re-derive them.
-See `models/README.md` for the full config catalogue.
+The models verify behaviour *under* their assumptions; they do not re-derive them. For this arm those
+are the KIP-447 broker fence (**A5**), poll-thread serialization of rebalance callbacks (**A4**), and
+the takeover-abort *visibility* half of ext(K5) (**A6**) — that once a successor's `initTransactions`
+returns, the predecessor's aborted records are visible *as aborted* to a `read_committed` reader,
+corroborated on a live broker but not mechanized. The lineage-serialization contract half is folded
+into the model's `BInit`, and the `Foreign` knob deliberately checks a second, out-of-lineage open.
+See `models/README.md` for the assumption list A1–A6 and the full config catalogue.
 
 ## Rejected alternatives
 
