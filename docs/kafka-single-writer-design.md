@@ -446,6 +446,41 @@ The mechanism is model-checked in `models/` (TLA+), as a refinement tower: one a
   with log truncation as an environment action, the bounded read can hang forever
   (`recoveryread_truncate_stall`); the no-progress tripwire remedy
   (`recoveryread_truncate_tripwire`) is likewise merged, as the recovery stall deadline.
+- **`RecoveryDeadline`** — the timing half of #849, which `RecoveryRead` states but does not size: two
+  clocks (total recovery time against consecutive no-progress) and the budget between the tripwire and
+  the rebalance eviction deadline. Both halves of the budget are load-bearing and both have controls.
+  Without a tripwire at all — the read loop as shipped before the remedy — the hang runs into the
+  eviction deadline and the member is dropped silently (`recoverydeadline_notrip` violates
+  `INV_NoSilentEviction`); with one whose threshold is not below the deadline, it fires too late and
+  eviction still wins (`recoverydeadline_late`). Keying the tripwire on *total* elapsed time rather
+  than consecutive no-progress fails a read that is making progress (`recoverydeadline_total` violates
+  `INV_OnlyStalledFails`) — which is why the threshold resets on progress. The budget inequality
+  itself is a configuration contract, not something the code enforces; see
+  [`../research/model-fidelity.md`](../research/model-fidelity.md).
+- **`TokenSync`** — why the owner's published generation token needs the post-poll refresh and not an
+  assignment capture. Two bump kinds (callback-firing and silent) against two sync mechanisms
+  (capture and refresh) as a 2×2: refresh alone keeps the token current (`tokensync_refresh`), capture
+  alone cannot — a silent bump drives no callback, so the token sticks below the live generation
+  (`tokensync_capture` violates `Synced`, the KIP-848 case), and neither mechanism is worse still
+  (`tokensync_neither`). Capture adds nothing on top of refresh (`tokensync_both`,
+  `tokensync_capture_assigning`), which is the model-side reason capture was removed rather than kept
+  alongside.
+- **`GroupCommitLanes`** — `GroupCommit` with the writer's *two* real lanes: writes bounded by
+  `maxWritesPerTransaction`, and the unbounded offset-only marker lane, sharing one transaction lock.
+  The lanes must not share the per-transaction budget, or a marker can take a write's slot
+  (`gclanes_shared` violates `INV_NoSlotSteal`); the marker lane must trigger its own commit, or a
+  marker scheduled after the last write waits for a write that never comes (`gclanes_starve` violates
+  `LIVE_MarkersNotStarved`); and the offset must stay gated on durability whether the transaction
+  commits or aborts (`gclanes_ungated`, `gclanes_abort_race`).
+- **`FlowsAlive`** — the cross-partition coupling the generation fence does *not* give you. KIP-447
+  fences an offset commit by consumer generation, but `sendOffsetsToTransaction` validates member and
+  generation only; there is no per-partition ownership check on the broker. What stops a lingering
+  flow for a no-longer-owned partition from committing under a fresh token is that the flow is torn
+  down first — `TopicFlow.remove` awaiting the cache release inside the revoked callback, before the
+  node acts in the new generation. Modelled as safety: the awaited teardown holds
+  (`flowsalive_holds`), and a fire-and-forget refactor of that await breaks it (`flowsalive_race`
+  violates `INV_FlowsAlive`). This is also the model that carries the shipped zombie fence, which
+  `Kafka.tla` folds into its `Coupled` knob (see above).
 
 The models verify behaviour *under* their assumptions; they do not re-derive them. For this arm those
 are the KIP-447 broker fence (**A5**), poll-thread serialization of rebalance callbacks (**A4**), and
