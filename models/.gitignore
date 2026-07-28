@@ -1,6 +1,7 @@
+# fetched by run.sh (pinned release)
 tla2tools.jar
+# TLC scratch (metadir)
 states/
-*_TTrace_*.tla
-*_TTrace_*.bin
-*.st
-*.fp
+# VS Code TLA+ extension run artifacts (captured output + dumped counterexample traces)
+*.out
+*_trace_*.tlc
