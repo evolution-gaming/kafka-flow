@@ -177,6 +177,7 @@ object TimerFlowOf {
         def onTimer: F[Unit] = for {
           current         <- timers.current
           processedAt     <- timers.processedAt
+          persistedAt     <- timers.persistedAt
           touchedAt        = processedAt getOrElse committedAt
           expiredAt        = touchedAt.clock plusMillis maxIdle.toMillis
           offsetDifference = current.offset.value - touchedAt.offset.value
