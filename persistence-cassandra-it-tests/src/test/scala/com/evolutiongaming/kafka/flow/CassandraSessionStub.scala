@@ -6,6 +6,8 @@ import cats.syntax.all.*
 import com.datastax.driver.core.{Host, PreparedStatement, RegularStatement, ResultSet, Statement}
 import com.evolutiongaming.scassandra.CassandraSession
 
+import scala.annotation.nowarn
+
 object CassandraSessionStub {
   // Doesn't inject failures on statements preparation since we don't prepare them on each call.
   def injectFailures[F[_]](
@@ -39,11 +41,21 @@ object CassandraSessionStub {
     override def prepare(statement: RegularStatement): F[PreparedStatement] =
       session.prepare(statement)
 
+    override def stateSnapshot: F[CassandraSession.StateSnapshot] = F.pure {
+      new CassandraSession.StateSnapshot {
+        override def connectedHosts: Iterable[Host]      = Iterable.empty
+        override def openConnections(host: Host): Int    = 0
+        override def trashedConnections(host: Host): Int = 0
+        override def inFlightQueries(host: Host): Int    = 0
+      }
+    }
+
+    @nowarn("cat=deprecation")
     override def state: CassandraSession.State[F] = new CassandraSession.State[F] {
-      override def connectedHosts: F[Iterable[Host]]      = F.pure(Iterable.empty)
-      override def openConnections(host: Host): F[Int]    = F.pure(0)
-      override def trashedConnections(host: Host): F[Int] = F.pure(0)
-      override def inFlightQueries(host: Host): F[Int]    = F.pure(0)
+      override def connectedHosts: F[Iterable[Host]]      = stateSnapshot.map(_.connectedHosts)
+      override def openConnections(host: Host): F[Int]    = stateSnapshot.map(_.openConnections(host))
+      override def trashedConnections(host: Host): F[Int] = stateSnapshot.map(_.trashedConnections(host))
+      override def inFlightQueries(host: Host): F[Int]    = stateSnapshot.map(_.inFlightQueries(host))
     }
 
   }
