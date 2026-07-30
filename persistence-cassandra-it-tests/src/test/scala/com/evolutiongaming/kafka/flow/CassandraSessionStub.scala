@@ -39,6 +39,7 @@ object CassandraSessionStub {
     override def prepare(statement: RegularStatement): F[PreparedStatement] =
       session.prepare(statement)
 
+    @deprecated(message = "Remove this after the deprecated delegate is removed from scassandra", since = "10.0.3")
     override def state: CassandraSession.State[F] = new CassandraSession.State[F] {
       override def connectedHosts: F[Iterable[Host]]      = F.pure(Iterable.empty)
       override def openConnections(host: Host): F[Int]    = F.pure(0)

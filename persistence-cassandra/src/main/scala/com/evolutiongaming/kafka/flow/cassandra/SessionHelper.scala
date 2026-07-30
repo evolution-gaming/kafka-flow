@@ -65,6 +65,10 @@ object SessionHelper {
 
   // A delegate class allowing to override only specific methods of the original session
   private class Delegate[F[_]](self: CassandraSession[F]) extends CassandraSession[F] {
+
+    @deprecated(message = "Remove this after the deprecated delegate is removed from scassandra", since = "10.0.3")
+    override def state: CassandraSession.State[F] = self.state
+
     def loggedKeyspace: F[Option[String]]                                 = self.loggedKeyspace
     def init: F[Unit]                                                     = self.init
     def execute(query: String): F[ResultSet]                              = self.execute(query)
@@ -73,6 +77,6 @@ object SessionHelper {
     def execute(statement: Statement): F[ResultSet]                       = self.execute(statement)
     def prepare(query: String): F[PreparedStatement]                      = self.prepare(query)
     def prepare(statement: RegularStatement): F[PreparedStatement]        = self.prepare(statement)
-    def state: CassandraSession.State[F]                                  = self.state
+    override def stateSnapshot: F[CassandraSession.StateSnapshot]         = self.stateSnapshot
   }
 }
