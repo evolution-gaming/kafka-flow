@@ -92,7 +92,7 @@ val moduleOf = KafkaPersistenceModuleOf.cachingTransactional[F, State](
 `idempotence` and the per-partition `transactional.id` are set for you — don't configure them in
 `producerConfig` — and the snapshot `consumerConfig` is forced to `read_committed`, with `groupId`
 cleared and `autoCommit` off: the recovery readers never join a group or commit offsets.
-The id is stable per partition (`"<prefix>-<partition>"`): every owner of a partition shares it, so a
+The id is stable per partition (`"<prefix>-snapshot-<partition>"`): every owner of a partition shares it, so a
 takeover's `initTransactions` fences the previous owner's producer and aborts any transaction it left
 open. The input topic whose offsets are committed transactionally, and the consumer generation used
 to fence stale writers, are both supplied

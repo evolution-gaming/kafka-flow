@@ -157,10 +157,11 @@ default timeout.
 
 ### Stable transactional.id: the takeover aborts unfinished transactions
 
-Each partition's producer uses a **stable** `transactional.id`, `"<prefix>-<partition>"` — a scheme
-whose cost, a producer per partition, this mode pays anyway. Every owner of a partition shares its
-id, so a new owner's mandatory `initTransactions` fences the previous owner's producer and aborts
-any transaction it left open, before the new owner may write.
+Each partition's producer uses a **stable** `transactional.id`, derived from the configured prefix
+and the partition, with nothing per-assignment in it — a scheme whose cost, a producer per
+partition, this mode pays anyway. Every owner of a partition shares its id, so a new owner's
+mandatory `initTransactions` fences the previous owner's producer and aborts any transaction it
+left open, before the new owner may write.
 
 Sharing the id serializes the partition's own writes: a committed snapshot never sits above an open
 transaction of the same id, so the recovery read's wait (previous section) never engages for the
@@ -372,10 +373,10 @@ real broker:
   (Write path, above); asserted safe for distinct keys.
 - **Unfinished transactions, both resolutions** — the takeover-abort at the handover: the
   last-stable-offset is back at the high watermark immediately after module acquisition, a state
-  only the abort produces, never the broker's timeout; the same test pins the
-  `"<prefix>-<partition>"` id shape. And the wait for a transaction no takeover aborts (Recovery
-  read, above): a foreign transaction held open through the read, its LSO pin asserted active, then
-  waited out under a deadline set above the wait — the read completes, the deadline never fires.
+  only the abort produces, never the broker's timeout; the same test pins the id shape. And the
+  wait for a transaction no takeover aborts (Recovery read, above): a foreign transaction held
+  open through the read, its LSO pin asserted active, then waited out under a deadline set above
+  the wait — the read completes, the deadline never fires.
 
 The suites drive flows with explicit consumer generations rather than live rebalances; the
 protocol/assignor matrix (Consumer rebalance protocols, above) rests on broker semantics, not on
@@ -413,13 +414,13 @@ Unit suites pin the client-side pieces the mechanism depends on:
 - **Producer-epoch order as the fence**: epoch order can diverge from ownership order, spuriously
   fencing the true owner — the stable id is kept for the takeover-abort, never as the fence (see
   Stable transactional.id).
-- **Unique per-assignment `transactional.id`s** (`"<prefix>-<partition>-<uuid8>"`): with no shared
-  id a late-initing stale owner cannot win the epoch and spuriously fence the valid owner (see
-  Stable transactional.id) — but nothing ever aborts a crashed owner's unfinished transaction, so
-  every post-crash recovery waits out the full transaction timeout the stable id resolves at init,
-  and coordinator state accumulates per assignment until `transactional.id.expiration.ms`. Either
-  choice is sound (the read bound holds under both); the sub-second takeover was judged worth the
-  spurious-fence cost.
+- **Unique per-assignment `transactional.id`s** (the per-partition id plus a unique suffix): with
+  no shared id a late-initing stale owner cannot win the epoch and spuriously fence the valid
+  owner (see Stable transactional.id) — but nothing ever aborts a crashed owner's unfinished
+  transaction, so every post-crash recovery waits out the full transaction timeout the stable id
+  resolves at init, and coordinator state accumulates per assignment until
+  `transactional.id.expiration.ms`. Either choice is sound (the read bound holds under both); the
+  sub-second takeover was judged worth the spurious-fence cost.
 - **Static partition assignment** (`assign()` instead of `subscribe()`): no consumer group, so no
   rebalance, no overlap window, no fence needed — but it gives up automatic failover and elastic
   reassignment, and safe *dynamic* assignment is the point of this design. (Static *membership*

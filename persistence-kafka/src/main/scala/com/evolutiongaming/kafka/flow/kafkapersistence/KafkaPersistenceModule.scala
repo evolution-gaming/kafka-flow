@@ -44,7 +44,7 @@ object KafkaPersistenceModule {
     *   base config for the snapshot producer; `transactionalId` and `idempotence` are overridden per producer and
     *   `clientId` is suffixed with `-snapshot-<partition>`
     * @param transactionalIdPrefix
-    *   prefix for `transactional.id` (the partition number is appended; stable per partition). It does not affect
+    *   prefix for `transactional.id` (suffixed `-snapshot-<partition>`; stable per partition). It does not affect
     *   fencing of stale writers (that is by consumer generation) - it is a readable label and, on an ACL-secured
     *   cluster, the `transactional.id` prefix the producer principal must be authorized for. Because the id is stable
     *   per partition, the prefix must be unique per flow: use your `applicationId`, and an application running several
@@ -228,7 +228,7 @@ object KafkaPersistenceModule {
     import assignment.{assignedAt, groupMetadata, topicPartition as inputTopicPartition}
 
     val partition       = inputTopicPartition.partition
-    val transactionalId = s"$transactionalIdPrefix-${partition.value}"
+    val transactionalId = s"$transactionalIdPrefix-snapshot-${partition.value}"
     val transactionalProducerConfig = producerConfig.copy(
       transactionalId = transactionalId.some,
       idempotence     = true,
