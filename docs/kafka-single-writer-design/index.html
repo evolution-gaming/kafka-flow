@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.1">
 <title data-rh="true">Kafka single-writer design · Kafka Flow</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://evolution-gaming.github.io/kafka-flow/img/undraw_online.svg"><meta data-rh="true" name="twitter:image" content="https://evolution-gaming.github.io/kafka-flow/img/undraw_online.svg"><meta data-rh="true" property="og:url" content="https://evolution-gaming.github.io/kafka-flow/docs/kafka-single-writer-design"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Kafka single-writer design · Kafka Flow"><meta data-rh="true" name="description" content="Design notes for the transactional snapshot mode of kafka-flow-persistence-kafka"><meta data-rh="true" property="og:description" content="Design notes for the transactional snapshot mode of kafka-flow-persistence-kafka"><link data-rh="true" rel="icon" href="/kafka-flow/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://evolution-gaming.github.io/kafka-flow/docs/kafka-single-writer-design"><link data-rh="true" rel="alternate" href="https://evolution-gaming.github.io/kafka-flow/docs/kafka-single-writer-design" hreflang="en"><link data-rh="true" rel="alternate" href="https://evolution-gaming.github.io/kafka-flow/docs/kafka-single-writer-design" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Kafka single-writer design","item":"https://evolution-gaming.github.io/kafka-flow/docs/kafka-single-writer-design"}]}</script><link rel="stylesheet" href="/kafka-flow/assets/css/styles.88f7f80e.css">
-<script src="/kafka-flow/assets/js/runtime~main.51dc25f1.js" defer="defer"></script>
+<script src="/kafka-flow/assets/js/runtime~main.8da009ff.js" defer="defer"></script>
 <script src="/kafka-flow/assets/js/main.b931c677.js" defer="defer"></script>
 </head>
 <body>
@@ -119,10 +119,11 @@ bounded by the <em>pinning</em> producer&#x27;s <code>transaction.timeout.ms</co
 (<code>transaction.abort.timed.out.transaction.cleanup.interval.ms</code>, default 10 s): ~70 s at Kafka&#x27;s
 default timeout.</p>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="stable-transactionalid-the-takeover-aborts-unfinished-transactions">Stable transactional.id: the takeover aborts unfinished transactions<a href="#stable-transactionalid-the-takeover-aborts-unfinished-transactions" class="hash-link" aria-label="Direct link to Stable transactional.id: the takeover aborts unfinished transactions" title="Direct link to Stable transactional.id: the takeover aborts unfinished transactions" translate="no">​</a></h3>
-<p>Each partition&#x27;s producer uses a <strong>stable</strong> <code>transactional.id</code>, <code>&quot;&lt;prefix&gt;-&lt;partition&gt;&quot;</code> — a scheme
-whose cost, a producer per partition, this mode pays anyway. Every owner of a partition shares its
-id, so a new owner&#x27;s mandatory <code>initTransactions</code> fences the previous owner&#x27;s producer and aborts
-any transaction it left open, before the new owner may write.</p>
+<p>Each partition&#x27;s producer uses a <strong>stable</strong> <code>transactional.id</code>, derived from the configured prefix
+and the partition, with nothing per-assignment in it — a scheme whose cost, a producer per
+partition, this mode pays anyway. Every owner of a partition shares its id, so a new owner&#x27;s
+mandatory <code>initTransactions</code> fences the previous owner&#x27;s producer and aborts any transaction it
+left open, before the new owner may write.</p>
 <p>Sharing the id serializes the partition&#x27;s own writes: a committed snapshot never sits above an open
 transaction of the same id, so the recovery read&#x27;s wait (previous section) never engages for the
 module&#x27;s own transactions. Takeover after a hard crash is immediate — nothing waits for
@@ -293,10 +294,10 @@ at assignment, and a transactional offset commit is rejected.</li>
 (Write path, above); asserted safe for distinct keys.</li>
 <li class=""><strong>Unfinished transactions, both resolutions</strong> — the takeover-abort at the handover: the
 last-stable-offset is back at the high watermark immediately after module acquisition, a state
-only the abort produces, never the broker&#x27;s timeout; the same test pins the
-<code>&quot;&lt;prefix&gt;-&lt;partition&gt;&quot;</code> id shape. And the wait for a transaction no takeover aborts (Recovery
-read, above): a foreign transaction held open through the read, its LSO pin asserted active, then
-waited out under a deadline set above the wait — the read completes, the deadline never fires.</li>
+only the abort produces, never the broker&#x27;s timeout; the same test pins the id shape. And the
+wait for a transaction no takeover aborts (Recovery read, above): a foreign transaction held
+open through the read, its LSO pin asserted active, then waited out under a deadline set above
+the wait — the read completes, the deadline never fires.</li>
 </ul>
 <p>The suites drive flows with explicit consumer generations rather than live rebalances; the
 protocol/assignor matrix (Consumer rebalance protocols, above) rests on broker semantics, not on
@@ -333,13 +334,13 @@ all.</li>
 <li class=""><strong>Producer-epoch order as the fence</strong>: epoch order can diverge from ownership order, spuriously
 fencing the true owner — the stable id is kept for the takeover-abort, never as the fence (see
 Stable transactional.id).</li>
-<li class=""><strong>Unique per-assignment <code>transactional.id</code>s</strong> (<code>&quot;&lt;prefix&gt;-&lt;partition&gt;-&lt;uuid8&gt;&quot;</code>): with no shared
-id a late-initing stale owner cannot win the epoch and spuriously fence the valid owner (see
-Stable transactional.id) — but nothing ever aborts a crashed owner&#x27;s unfinished transaction, so
-every post-crash recovery waits out the full transaction timeout the stable id resolves at init,
-and coordinator state accumulates per assignment until <code>transactional.id.expiration.ms</code>. Either
-choice is sound (the read bound holds under both); the sub-second takeover was judged worth the
-spurious-fence cost.</li>
+<li class=""><strong>Unique per-assignment <code>transactional.id</code>s</strong> (the per-partition id plus a unique suffix): with
+no shared id a late-initing stale owner cannot win the epoch and spuriously fence the valid
+owner (see Stable transactional.id) — but nothing ever aborts a crashed owner&#x27;s unfinished
+transaction, so every post-crash recovery waits out the full transaction timeout the stable id
+resolves at init, and coordinator state accumulates per assignment until
+<code>transactional.id.expiration.ms</code>. Either choice is sound (the read bound holds under both); the
+sub-second takeover was judged worth the spurious-fence cost.</li>
 <li class=""><strong>Static partition assignment</strong> (<code>assign()</code> instead of <code>subscribe()</code>): no consumer group, so no
 rebalance, no overlap window, no fence needed — but it gives up automatic failover and elastic
 reassignment, and safe <em>dynamic</em> assignment is the point of this design. (Static <em>membership</em>
