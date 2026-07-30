@@ -9,6 +9,8 @@ import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.Runtime
 import com.evolutiongaming.scassandra.{CassandraSession, NextHostRetryPolicy}
 
+import scala.annotation.nowarn
+
 object SessionHelper {
   implicit final class SessionOps[F[_]](val self: CassandraSession[F]) extends AnyVal {
     def enhanceError(implicit F: MonadThrow[F]): CassandraSession[F] = {
@@ -73,6 +75,9 @@ object SessionHelper {
     def execute(statement: Statement): F[ResultSet]                       = self.execute(statement)
     def prepare(query: String): F[PreparedStatement]                      = self.prepare(query)
     def prepare(statement: RegularStatement): F[PreparedStatement]        = self.prepare(statement)
-    def state: CassandraSession.State[F]                                  = self.state
+    override def stateSnapshot: F[CassandraSession.StateSnapshot]         = self.stateSnapshot
+
+    @nowarn("cat=deprecation")
+    def state: CassandraSession.State[F] = self.state
   }
 }
