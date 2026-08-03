@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
+import cats.effect.testkit.TestControl
 import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
 import cats.syntax.all.*
@@ -67,6 +68,8 @@ class PartitionFlowSpec extends FunSuite {
 
     val flow = f.flow use { flow =>
       for {
+        // step past the acquisition ms: poll gates are strict `isAfter`
+        _ <- IO.sleep(1.milli)
         // When("exactly 3 messages come")
         _      <- flow(f.records("key1", 100, List("event1", "event2", "event3")))
         offset <- f.pendingOffset.get
@@ -74,7 +77,7 @@ class PartitionFlowSpec extends FunSuite {
         _ <- IO { assertEquals(offset, Some(Offset.unsafe(103))) }
       } yield ()
     }
-    flow.unsafeRunSync()
+    TestControl.executeEmbed(flow).unsafeRunSync()
   }
 
   test("PartitionFlow does not allow commit until working with key is finished") {
@@ -84,6 +87,8 @@ class PartitionFlowSpec extends FunSuite {
 
     val flow = f.flow use { flow =>
       for {
+        // step past the acquisition ms: poll gates are strict `isAfter`
+        _ <- IO.sleep(1.milli)
         // When("2 messages come for the key1")
         _ <- flow(f.records("key1", 100, List("event1", "event2")))
         // And("2 messages come for the key2")
@@ -102,7 +107,7 @@ class PartitionFlowSpec extends FunSuite {
 
       } yield ()
     }
-    flow.unsafeRunSync()
+    TestControl.executeEmbed(flow).unsafeRunSync()
 
   }
 
@@ -192,6 +197,8 @@ class PartitionFlowSpec extends FunSuite {
 
     val flow = f.flow.use { flow =>
       for {
+        // step past the acquisition ms: poll gates are strict `isAfter`
+        _ <- IO.sleep(1.milli)
         // The first two events for each state are handled without errors, offset is committed
         _ <- flow(f.records("key1", 100, List("event1", "event2")) ++ f.records("key2", 102, List("event3", "event4")))
         _ <- f.pendingOffset.get.map(offset => assertEquals(offset, Some(Offset.unsafe(104))))
@@ -204,7 +211,7 @@ class PartitionFlowSpec extends FunSuite {
       } yield ()
     }
 
-    flow.unsafeRunSync()
+    TestControl.executeEmbed(flow).unsafeRunSync()
   }
 
   test("PartitionFlow filters out events but commits offsets") {
@@ -247,6 +254,8 @@ class PartitionFlowSpec extends FunSuite {
 
     val flow = f.flow.use { flow =>
       for {
+        // step past the acquisition ms: poll gates are strict `isAfter`
+        _ <- IO.sleep(1.milli)
         // Only one key is processed and persisted, the second one is not, but the latest offset is committed nonetheless
         _ <- flow(f.records(processedKey, 100, List("event1")) ++ f.records(skippedKey, 101, List("event2")))
         _ <- f.pendingOffset.get.map(offset => assertEquals(offset, Some(Offset.unsafe(102))))
@@ -265,7 +274,7 @@ class PartitionFlowSpec extends FunSuite {
       } yield ()
     }
 
-    flow.unsafeRunSync()
+    TestControl.executeEmbed(flow).unsafeRunSync()
   }
 
   test("RemapKeys derives keys correctly and updates them before applying filters and folds") {
@@ -294,6 +303,8 @@ class PartitionFlowSpec extends FunSuite {
         )
 
         for {
+          // step past the acquisition ms: poll gates are strict `isAfter`
+          _ <- IO.sleep(1.milli)
           // Ensure pre-existing data is loaded correctly from the storage
           _ <- cache.keys.map(keys => assertEquals(keys.size, 1))
           _ <- keys.get.map(keys => assertEquals(keys, Set(initialKey)))
@@ -319,7 +330,7 @@ class PartitionFlowSpec extends FunSuite {
 
     }
 
-    test.unsafeRunSync()
+    TestControl.executeEmbed(test).unsafeRunSync()
   }
 
   test(
