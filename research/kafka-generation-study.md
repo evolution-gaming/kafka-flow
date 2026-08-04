@@ -23,7 +23,7 @@ poll (`poll <* refresh`), guarded so the pre-join unknown sentinel (−1) is nev
 | "Rebalances complete within a poll, so the refresh always observes the post-rebalance generation" | **PARTIALLY CONFIRMED → corrected** | Callbacks and the `groupMetadata` update do run on the poll thread; but since KIP-266, `poll(Duration)` does **not** block on the join — a round can span polls, and `groupMetadata()` after a poll reflects the last *completed* join. The refresh therefore converges on the poll after the round finishes; the interim lag self-fences (safe direction). Availability fix intact; wording corrected in code comment + doc. |
 | Publish guard: "-1 before the first join **and after falling out of the group**" | **HALF-REFUTED → corrected** | Source-verified: `ConsumerCoordinator` assigns the public `groupMetadata` only in the constructor and `onJoinComplete`; `resetStateAndGeneration` resets the *internal* generation, not the public token. After fall-out the client deliberately keeps the stale joined token — which is exactly what gets a zombie fenced. The guard is still load-bearing (every startup polls before the first join completes), but its comment claimed the wrong second scenario; corrected, along with the doc's live-read-rejection bullet (whose other two reasons stand). |
 | −1 + empty memberId skips coordinator validation (would land unfenced) | **CONFIRMED** | `GroupCoordinator.validateOffsetCommit` (and the KRaft `ClassicGroup` twin): the transactional branch falls through to accept exactly that shape — the pre-KIP-447 compatibility path. The guard is what stands between a pre-join refresh and an unfenceable commit. Since source-verified for KIP-848 too: the new coordinator accepts exactly this sentinel shape unfenced from 4.0 (KAFKA-18060 deliberately restored it after an initial rejection), so the guard is load-bearing under both protocols (kafka-rebalance-semantics.md, KIP-848 addendum B3). Gate shapes since pinned: the classic skip fires on *any* negative generation (not only −1), the consumer-group type on −1 exactly and only from 4.0.0 — full per-version span table in external-semantics.md ext(K3). |
-| Refresh cannot weaken the fence ("every flow alive after a poll is owned in the refreshed generation") | **CONFIRMED — holds by the documented rebalance contract + awaited teardown; both closed: model `FlowsAlive` (`flowsalive_race` negative) + unit test `TopicFlowSpec` "remove awaits the flow teardown" (see Residual risks)** | Two halves: (a) TxnOffsetCommit validates member+generation but **no per-partition ownership** (source-verified; the validators take no partition arguments) — so this invariant is the *only* thing preventing a lingering foreign-partition flow from committing under a fresh token, and refresh removes the incidental stale-token second net; (b) the invariant holds by construction: `TopicFlow.remove` awaits the cache release (`cache.remove(_).flatten`, `parTraverse_`) inside the revoked/lost callback, and the client invokes revoked/lost before assigned, with the refresh after the poll. Release errors are swallowed but the entry is still removed. The construction is bounded by the rebalance timeout: teardown stalling past it gets the member evicted and the partition reassigned over still-live flows — outside the invariant, but an evicted member is *removed* from the group, so its commits fail member validation (`UNKNOWN_MEMBER_ID`, before any generation comparison — same abortable `CommitFailedException`). Normal path closed by teardown, eviction path by the broker's rejection; neither relies on the timeout never firing. |
+| Refresh cannot weaken the fence ("every flow alive after a poll is owned in the refreshed generation") | **CONFIRMED — holds by the documented rebalance contract + awaited teardown; both closed: model `FlowsAlive` (`flowsalive_race` negative) + unit test `TopicFlowSpec` "remove awaits the flow teardown" (see Residual risks)** | Two halves: (a) TxnOffsetCommit validates member+generation but **no per-partition ownership** (source-verified; the validators take no partition arguments) — so this invariant is the *only* thing preventing a lingering foreign-partition flow from committing under a fresh token, and refresh removes the incidental stale-token second net; (b) the invariant holds by construction: `TopicFlow.remove` awaits the cache release (`cache.remove(_).flatten`, `parTraverse_`) inside the revoked/lost callback, and the client invokes revoked/lost before assigned, with the refresh after the poll. Release errors are swallowed but the entry is still removed. The construction is bounded by the rebalance timeout: teardown stalling past it gets the member evicted and the partition reassigned over still-live flows — outside the invariant, but an evicted member is *removed* from the group, so its commits fail member validation (`UNKNOWN_MEMBER_ID`, before any generation comparison — same abortable `CommitFailedException`). Normal path closed by teardown, eviction path by the broker's rejection; neither relies on the timeout never firing. **The eviction path is realized, not only reasoned** (the real-eviction teardown experiment below) — with one correction: member validation is reached only by an offset-only marker batch, since a batch carrying a write is rejected on the producer epoch first (KF17). |
 | Lag-safe / lead-unsafe asymmetry ("the token never leads") | **CONFIRMED** | The token is only ever a generation the member actually joined (capture on assignment; refresh publishes the member's own current membership). A leading token is unrepresentable through this path. |
 
 ## Model check
@@ -122,6 +122,40 @@ the testing work, not a support tier.
 - **Residual:** a read-to-commit window survives (closable by neither a live nor a post-poll read), and
   static membership is out of scope — so `consumer` is a deliberate experimental *build*, but supported
   and verified, not a lesser tier.
+
+## The real-eviction teardown experiment
+
+Every retained pin of the write fence supplies the hazard's cause itself: `TransactionalKafkaPersistenceSpec`
+hands a stale `PartitionFlow` a `staleGeneration(current)` token, and the KIP-848 zombie-fence IT
+fabricates `current − 1` (disclosed as synthetic above). This experiment supplies none of it — a real
+broker evicts a real member and reassigns its partition — so it is the only place the handover is real.
+
+- **Route** (not the revoke callback). A fold stalls past `max.poll.interval.ms`, so the broker evicts
+  the member and reassigns its partition while its flows stay cached; an error then escapes its poll
+  loop and `TopicFlow`'s teardown release drops *every* cached `PartitionFlow`, including the reassigned
+  one, because teardown cannot know it was taken away. `flushOnRevoke` flushes the stale buffered state.
+  This is the flows-alive invariant's eviction boundary (KF8, S-3) — past the rebalance timeout the
+  broker is the only remaining net.
+- **Result.** The fence holds end to end: the new owner's fresher snapshot survives, and the next owner
+  recovers a consistent pair and carries it forward. The stale member's release still succeeds, the
+  rejection surfacing only as the swallowed `scache: failed to release cache entry: ...` line that
+  [`../docs/persistence.md`](../docs/persistence.md) documents.
+- **Measured, and it corrects the clause above.** The evicted member's writer, wrapped to record every
+  broker-answered call, recorded exactly one: `send-ack → InvalidProducerEpochException`, with no
+  `sendOffsetsToTransaction` — so member validation never ran, where the verdict table above named
+  `UNKNOWN_MEMBER_ID` as this path's closer. ext(K5) already pins the ordering from source; what is new
+  is that it is corroborated on the eviction route, and that composing it with `commitBatch`'s shape
+  makes member validation on an eviction *unreachable* for any batch carrying a write (KF17). KF9 is
+  unaffected — the epoch remains an opportunistic second net, never relied on.
+- **Status: experiment, not a retained pin.** The harness (three member lifecycles around a real
+  rebalance, ~45 s) was deliberately not merged: breaking either fence already fails the revoke-route
+  tests, and its strongest assertion — that the flush was attempted and rejected — is coupled to the
+  teardown route staying open, so it would fail once teardown is fixed to skip reassigned partitions.
+  Re-runnable from `tj/characterize-teardown-flush` on the fork (`TeardownFlushFencingSpec`); worth
+  re-running before the transactional mode loses its EXPERIMENTAL label.
+- **Follow-up (open).** Teardown flushes every cached partition where `TopicFlow.remove` knows which are
+  gone; skipping reassigned partitions there would close this route locally instead of leaning on the
+  broker. Independent of the write path, not attempted.
 
 ## Appendix: Review dispositions (the generation-refresh discussions)
 

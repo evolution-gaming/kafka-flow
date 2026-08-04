@@ -1,6 +1,6 @@
 # External Cassandra semantics — verification results
 
-*Evidence (shared, sectioned by implementation) — primary-source verification of external facts the designs rest on (Cassandra ext(1)–(X2) and ext(C-F9); Kafka ecosystem ext(K1)–(K15)). Corpus index: [`README.md`](README.md).*
+*Evidence (shared, sectioned by implementation) — primary-source verification of external facts the designs rest on (Cassandra ext(1)–(X2) and ext(C-F9); Kafka ecosystem ext(K1)–(K16)). Corpus index: [`README.md`](README.md).*
 
 Claims the design rests on, verified against primary sources (Apache docs, Apache JIRA, Cassandra
 source, DataStax docs; corroborating expert material). Four research passes. Sources are cited by
@@ -586,6 +586,48 @@ Sources: kafka-clients 4.3.1 `ConsumerConfig.maybeOverrideEnableAutoCommit`,
 `ConsumerCoordinator.close`/`maybeAutoCommitOffsetsSync`; `KafkaConsumer.assign` javadoc;
 skafka 20.2.1 `ConsumerConfig.bindings` (bytecode, both emission rules); `GroupCoordinatorConfig`
 (offsets retention, standalone-consumer scope).
+
+## ext(K16) An ambiguous `commitTransaction` timeout is unresolvable locally, and the abort after it is inert — **CONFIRMED (javadoc + measured on a real broker; client internals carried, see below)**
+
+The facts behind the group-commit failure that is not a rejection: a `commitTransaction` that times out
+client-side (`max.block.ms`) while the broker may already have committed. They decide whether
+`commitBatch`'s abort-on-every-failure (`producer.abortTransaction.voidError`) is a defect — review had
+reported that the abort poisons the producer.
+
+- **Contract.** `KafkaProducer.commitTransaction` javadoc: *"It is safe to retry in either case, but it
+  is not possible to attempt a different operation (such as `abortTransaction`) since the commit may
+  already be in the progress of completing. If not retrying, the only option is to close the producer."*
+- **Client behavior.** While the commit stays unacked, every other transactional operation —
+  `beginTransaction` and `abortTransaction` alike — throws `IllegalStateException("Cannot attempt
+  operation `X` because the previous call to `commitTransaction` timed out and must be retried")`, before
+  any state transition. `TransactionalRequestResult.await` sets `isAcked` on a completed-with-error result
+  and leaves it false on a timeout, which is what separates definitively-failed (abortable) from
+  unresolved (not).
+- **Measured** (commit turned ambiguous by pausing the broker container): the commit fails with a
+  client-side `TimeoutException`; the abort throws the above and aborts nothing; the transaction
+  nonetheless lands, snapshot *and* bound input offset both visible under `read_committed`; and the
+  producer refuses every later `beginTransaction` until the commit is retried on that instance or the
+  producer is rebuilt.
+
+Consequences. The blanket abort is inert exactly where it cannot help and effective where it can, so
+narrowing it to definitive failures changes no outcome. Nothing is lost either way — the input offset
+rides the same transaction — so this is an availability event, not a #732-class corruption. Retrying in
+place is the only thing that would change an outcome, and is rejected: each attempt blocks up to a
+user-configured `max.block.ms` inside the poll cycle, trading a loud failure for a possible silent
+`max.poll.interval.ms` eviction. With the default `ignorePersistErrors = false` the failure tears the
+module down and the next producer's `initTransactions` settles the transaction (ext(K5)); with it true the
+failure is swallowed and the producer stays spent, so the partition stops persisting *and* stops advancing
+offsets until the next rebalance — frozen and self-consistent rather than corrupted
+([`../docs/persistence.md`](../docs/persistence.md)).
+
+Provenance: javadoc for the contract; the measured half ran on master's pinned skafka 21.0.1 against the
+Testcontainers default broker image (unpinned by `ForAllKafkaSuite` — reproducible, not version-pinned);
+the named client internals are carried from the measuring spec's source reading at kafka-clients 4.3.0,
+not re-derived, and nothing above depends on them beyond the observed behavior. Recorded here rather than
+retained as a test, since it pins a client contract rather than kafka-flow behavior and paused the broker
+container to do it; the half that can regress stays in the default run (`GroupCommitSpec` — the commit is
+never retried). Re-runnable from the closed branch on the fork (`AmbiguousCommitAbortSpec`) on a client or
+broker bump.
 
 ## ext(C-F9) The F-9 fix's Cassandra mechanics — **CONFIRMED (source-level)**
 
