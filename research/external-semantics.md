@@ -587,7 +587,7 @@ Sources: kafka-clients 4.3.1 `ConsumerConfig.maybeOverrideEnableAutoCommit`,
 skafka 20.2.1 `ConsumerConfig.bindings` (bytecode, both emission rules); `GroupCoordinatorConfig`
 (offsets retention, standalone-consumer scope).
 
-## ext(K16) An ambiguous `commitTransaction` timeout is unresolvable locally, and the abort after it is inert — **CONFIRMED (javadoc + measured on a real broker; client internals carried, see below)**
+## ext(K16) An ambiguous `commitTransaction` timeout leaves the producer spent, and the abort after it is inert — **CONFIRMED (javadoc + source-level at kafka-clients 4.3.1 + measured on a real broker)**
 
 The facts behind the group-commit failure that is not a rejection: a `commitTransaction` that times out
 client-side (`max.block.ms`) while the broker may already have committed. They decide whether
@@ -597,12 +597,17 @@ reported that the abort poisons the producer.
 - **Contract.** `KafkaProducer.commitTransaction` javadoc: *"It is safe to retry in either case, but it
   is not possible to attempt a different operation (such as `abortTransaction`) since the commit may
   already be in the progress of completing. If not retrying, the only option is to close the producer."*
-- **Client behavior.** While the commit stays unacked, every other transactional operation —
-  `beginTransaction` and `abortTransaction` alike — throws `IllegalStateException("Cannot attempt
-  operation `X` because the previous call to `commitTransaction` timed out and must be retried")`, before
-  any state transition. `TransactionalRequestResult.await` sets `isAcked` on a completed-with-error result
-  and leaves it false on a timeout, which is what separates definitively-failed (abortable) from
-  unresolved (not).
+- **Client behavior — source-verified at 4.3.1, and it does not self-heal.** While the commit stays
+  unacked, every other transactional operation — `beginTransaction` and `abortTransaction` alike — throws
+  `IllegalStateException("Cannot attempt operation `X` because the previous call to `commitTransaction`
+  timed out and must be retried")`, before any state transition. It stays that way until the app retries
+  *that same* commit: `pendingTransition` is nulled only in `throwIfPendingState` /
+  `handleCachedTransactionRequestResult`, only when `result.isAcked()`, and `isAcked` is set **only** in
+  `TransactionalRequestResult.await` on the app thread — the Sender merely calls `done()`, and
+  `resetTransactionState` never touches `pendingTransition`. This refutes the plausible reading that the
+  Sender completing the EndTxn with `Errors.NONE` silently returns the producer to `READY`: the state does
+  reset, but the guard is consulted first and still fails. kafka-flow does not retry the commit, so the
+  producer is spent until rebuilt.
 - **Measured** (commit turned ambiguous by pausing the broker container): the commit fails with a
   client-side `TimeoutException`; the abort throws the above and aborts nothing; the transaction
   nonetheless lands, snapshot *and* bound input offset both visible under `read_committed`; and the
@@ -610,20 +615,21 @@ reported that the abort poisons the producer.
   producer is rebuilt.
 
 Consequences. The blanket abort is inert exactly where it cannot help and effective where it can, so
-narrowing it to definitive failures changes no outcome. Nothing is lost either way — the input offset
-rides the same transaction — so this is an availability event, not a #732-class corruption. Retrying in
-place is the only thing that would change an outcome, and is rejected: each attempt blocks up to a
-user-configured `max.block.ms` inside the poll cycle, trading a loud failure for a possible silent
-`max.poll.interval.ms` eviction. With the default `ignorePersistErrors = false` the failure tears the
-module down and the next producer's `initTransactions` settles the transaction (ext(K5)); with it true the
-failure is swallowed and the producer stays spent, so the partition stops persisting *and* stops advancing
-offsets until the next rebalance — frozen and self-consistent rather than corrupted
+narrowing it to definitive failures changes no outcome. Nothing is lost either way — the input offset rides
+the same transaction — so this is an availability event, not a #732-class corruption. Retrying in place is
+the only thing that would change an outcome, and is rejected: each attempt blocks up to a user-configured
+`max.block.ms` inside the poll cycle, trading a loud failure for a possible silent
+`max.poll.interval.ms` eviction. Under the default `ignorePersistErrors = false` the failure tears the flow
+down and the next `initTransactions` settles the transaction (ext(K5)); with it true the failure is
+swallowed and the partition stops persisting *and* stops advancing offsets until the flow restarts — the
+next rebalance, or sooner, since under `persistPeriodicallyAndUnloadOrphaned` a swallowed persist still
+lets `canUnload` remove the key and the freed offset's commit through the spent producer runs on
+`PartitionFlow`'s deliberately unhandled path ("must crash the stale instance")
 ([`../docs/persistence.md`](../docs/persistence.md)).
 
-Provenance: javadoc for the contract; the measured half ran on master's pinned skafka 21.0.1 against the
+Provenance: javadoc for the contract; the client internals above read from kafka-clients 4.3.1 source (skafka 21.0.1's pinned dependency), not carried; the measured half ran on master's pinned skafka 21.0.1 against the
 Testcontainers default broker image (unpinned by `ForAllKafkaSuite` — reproducible, not version-pinned);
-the named client internals are carried from the measuring spec's source reading at kafka-clients 4.3.0,
-not re-derived, and nothing above depends on them beyond the observed behavior. Recorded here rather than
+Recorded here rather than
 retained as a test, since it pins a client contract rather than kafka-flow behavior and paused the broker
 container to do it; the half that can regress stays in the default run (`GroupCommitSpec` — the commit is
 never retried). Re-runnable from the closed branch on the fork (`AmbiguousCommitAbortSpec`) on a client or
