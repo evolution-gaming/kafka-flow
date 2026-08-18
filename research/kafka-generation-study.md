@@ -152,7 +152,16 @@ broker evicts a real member and reassigns its partition — so it is the only pl
   tests, and its strongest assertion — that the flush was attempted and rejected — is coupled to the
   teardown route staying open, so it would fail once teardown is fixed to skip reassigned partitions.
   Re-runnable from `tj/characterize-teardown-flush` on the fork (`TeardownFlushFencingSpec`); worth
-  re-running before the transactional mode loses its EXPERIMENTAL label.
+  re-running before the transactional mode loses its EXPERIMENTAL label. A second harness reaches the
+  same eviction by the *periodic* route (`flushOnRevoke = false`, the stale flush fired while the member
+  is still stalled and still holds its flows), so it is not coupled to teardown and would survive the
+  follow-up below — `tj/DRGN-2204-live-rebalance-fencing` on the fork (`LiveRebalanceFencingSpec`), the
+  one to re-run once teardown skips reassigned partitions.
+- **Re-run cost.** Closing an evicted member costs a flat 30 s: skafka closes with no timeout argument
+  (`blocking { consumer.close() }`), so kafka-clients applies `ConsumerUtils.DEFAULT_CLOSE_TIMEOUT_MS`
+  — 30 s in 4.3.1 — to cleanup an evicted member can no longer complete. Measured as a ~31 s gap after
+  the last assertion, per evicted member: the periodic harness lands near 70 s or near 160 s depending
+  on how many of its three arms pay it. Bimodal runtime in either harness is this, not flakiness.
 - **Follow-up (open).** Teardown flushes every cached partition where `TopicFlow.remove` knows which are
   gone; skipping reassigned partitions there would close this route locally instead of leaning on the
   broker. Independent of the write path, not attempted.
