@@ -4,7 +4,7 @@ object Dependencies {
 
   val catsHelper        = "com.evolutiongaming" %% "cats-helper"         % "3.12.2"
   val catsHelperLogback = "com.evolutiongaming" %% "cats-helper-logback" % "3.12.2"
-  val smetrics          = "com.evolutiongaming" %% "smetrics"            % "2.5.0"
+  val smetrics          = "com.evolutiongaming" %% "smetrics"            % "3.0.0"
   val scache            = "com.evolution"       %% "scache"              % "6.0.1"
   val skafka            = "com.evolutiongaming" %% "skafka"              % "21.0.1"
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.3.0"
@@ -12,7 +12,7 @@ object Dependencies {
   val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "4.0.0"
   val random            = "com.evolution"       %% "random"              % "1.0.5"
   val retry             = "com.evolutiongaming" %% "retry"               % "3.1.0"
-  val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.3.0"
+  val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.4.0"
 
   object Cats {
     private val version       = "2.13.0"
@@ -46,7 +46,7 @@ object Dependencies {
   }
 
   object Testing {
-    val munit = "org.scalameta" %% "munit" % "1.3.4"
+    val munit = "org.scalameta" %% "munit" % "1.3.5"
 
     object Testcontainers {
       private val version = "0.44.1"

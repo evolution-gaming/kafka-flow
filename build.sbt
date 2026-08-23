@@ -188,4 +188,6 @@ lazy val docs = (project in file("kafka-flow-docs"))
     scalacOptions -= "-Xfatal-warnings",
   )
 
-addCommandAlias("check", "versionPolicyCheck")
+addCommandAlias("check", "all scalafmtCheckRepo versionPolicyCheck")
+addCommandAlias("fmt", "+scalafmtRepo")
+addCommandAlias("build", "all compile testFull")
