@@ -6,7 +6,7 @@ ThisBuild / versionPolicyIntention := Compatibility.None
 
 ThisBuild / dependencyOverrides ++= Seq(
   "at.yawk.lz4"                % "lz4-java"                           % "1.11.1",
-  "com.fasterxml.jackson.core" % "jackson-core"                       % "2.18.8",
+  "com.fasterxml.jackson.core" % "jackson-core"                       % "2.18.9",
   "com.fasterxml.jackson.core" % "jackson-databind"                   % "2.18.9",
   "com.google.guava"           % "guava"                              % "32.1.3-jre",
   "io.netty"                   % "netty-buffer"                       % "4.1.136.Final",
