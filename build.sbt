@@ -5,17 +5,17 @@ ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / versionPolicyIntention := Compatibility.None
 
 ThisBuild / dependencyOverrides ++= Seq(
-  "at.yawk.lz4" % "lz4-java" % "1.11.1",
-  "com.fasterxml.jackson.core" % "jackson-core" % "2.18.8",
-  "com.fasterxml.jackson.core" % "jackson-databind" % "2.18.9",
-  "com.google.guava" % "guava" % "32.1.3-jre",
-  "io.netty" % "netty-buffer" % "4.1.136.Final",
-  "io.netty" % "netty-codec" % "4.1.136.Final",
-  "io.netty" % "netty-common" % "4.1.136.Final",
-  "io.netty" % "netty-handler" % "4.1.136.Final",
-  "io.netty" % "netty-resolver" % "4.1.136.Final",
-  "io.netty" % "netty-transport" % "4.1.136.Final",
-  "io.netty" % "netty-transport-native-unix-common" % "4.1.136.Final",
+  "at.yawk.lz4"                % "lz4-java"                           % "1.11.1",
+  "com.fasterxml.jackson.core" % "jackson-core"                       % "2.18.8",
+  "com.fasterxml.jackson.core" % "jackson-databind"                   % "2.18.9",
+  "com.google.guava"           % "guava"                              % "32.1.3-jre",
+  "io.netty"                   % "netty-buffer"                       % "4.1.136.Final",
+  "io.netty"                   % "netty-codec"                        % "4.1.136.Final",
+  "io.netty"                   % "netty-common"                       % "4.1.136.Final",
+  "io.netty"                   % "netty-handler"                      % "4.1.136.Final",
+  "io.netty"                   % "netty-resolver"                     % "4.1.136.Final",
+  "io.netty"                   % "netty-transport"                    % "4.1.136.Final",
+  "io.netty"                   % "netty-transport-native-unix-common" % "4.1.136.Final",
 )
 
 lazy val Scala3Version = "3.3.8"
