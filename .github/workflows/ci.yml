@@ -5,50 +5,57 @@ on:
     branches: [ master ]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  clear-cache:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clear SBT compiler bridge cache # Gets corrupted often in GH actions
+        run: rm -rf ~/.sbt/boot/scala-*/org.scala-sbt/sbt/*/org.scala-sbt-compiler-bridge*
+
   test:
-    uses: evolution-gaming/scala-github-actions/.github/workflows/ci.yml@dde27b9bd793d41d5aacf8fb74403c9de5da1146 # v6.3.0
+    uses: evolution-gaming/scala-github-actions/.github/workflows/ci.yml@f02d2d572f3070fba1fd22edfb02070e57a0651b # v7.0.0
 
   docs:
-
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-    - uses: coursier/cache-action@v6
+      - uses: coursier/cache-action@v6
 
-    - name: setup Java 17
-      uses: actions/setup-java@v5
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: 'sbt'
+      - name: setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'sbt'
 
-    - name: setup SBT
-      uses: sbt/setup-sbt@v1
+      - name: setup SBT
+        uses: sbt/setup-sbt@v1
 
-    - name: generate docs
-      run: sbt docs/mdoc
+      - name: generate docs
+        run: sbt docs/mdoc
 
-    - name: setup Node
-      uses: actions/setup-node@v4
-      with:
-        node-version: '22'
-        cache: 'yarn'
-        cache-dependency-path: website/yarn.lock
+      - name: setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+          cache-dependency-path: website/yarn.lock
 
-    - name: install dependencies
-      working-directory: ./website
-      run: yarn install --frozen-lockfile
+      - name: install dependencies
+        working-directory: ./website
+        run: yarn install --frozen-lockfile
 
-    - name: build site
-      working-directory: ./website
-      run: yarn build
+      - name: build site
+        working-directory: ./website
+        run: yarn build
 
-    - name: deploy
-      if: github.ref == 'refs/heads/master' && github.repository == 'evolution-gaming/kafka-flow'
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./website/build
+      - name: deploy
+        if: github.ref == 'refs/heads/master' && github.repository == 'evolution-gaming/kafka-flow'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./website/build
