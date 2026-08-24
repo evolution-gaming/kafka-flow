@@ -13,6 +13,10 @@ jobs:
     with:
       modules_ignore: >-
         docs_2.13
+        docs_3
         kafka-flow-core-it-tests_2.13
+        kafka-flow-core-it-tests_3
         kafka-flow-persistence-kafka-it-tests_2.13
+        kafka-flow-persistence-kafka-it-tests_3
         kafka-flow-persistence-cassandra-it-tests_2.13
+        kafka-flow-persistence-cassandra-it-tests_3
