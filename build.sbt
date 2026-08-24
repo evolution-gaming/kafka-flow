@@ -5,19 +5,20 @@ ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / versionPolicyIntention := Compatibility.None
 
 lazy val JacksonVersion = "2.18.9"
+lazy val NettyVersion   = "4.1.136.Final"
 
 ThisBuild / dependencyOverrides ++= Seq(
   "at.yawk.lz4"                % "lz4-java"                           % "1.11.1",
   "com.fasterxml.jackson.core" % "jackson-core"                       % JacksonVersion,
   "com.fasterxml.jackson.core" % "jackson-databind"                   % JacksonVersion,
   "com.google.guava"           % "guava"                              % "32.1.3-jre",
-  "io.netty"                   % "netty-buffer"                       % "4.1.136.Final",
-  "io.netty"                   % "netty-codec"                        % "4.1.136.Final",
-  "io.netty"                   % "netty-common"                       % "4.1.136.Final",
-  "io.netty"                   % "netty-handler"                      % "4.1.136.Final",
-  "io.netty"                   % "netty-resolver"                     % "4.1.136.Final",
-  "io.netty"                   % "netty-transport"                    % "4.1.136.Final",
-  "io.netty"                   % "netty-transport-native-unix-common" % "4.1.136.Final",
+  "io.netty"                   % "netty-buffer"                       % NettyVersion,
+  "io.netty"                   % "netty-codec"                        % NettyVersion,
+  "io.netty"                   % "netty-common"                       % NettyVersion,
+  "io.netty"                   % "netty-handler"                      % NettyVersion,
+  "io.netty"                   % "netty-resolver"                     % NettyVersion,
+  "io.netty"                   % "netty-transport"                    % NettyVersion,
+  "io.netty"                   % "netty-transport-native-unix-common" % NettyVersion,
 )
 
 lazy val Scala3Version = "3.3.8"
