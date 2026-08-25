@@ -4,26 +4,12 @@ ThisBuild / versionScheme := Some("early-semver")
 ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
 
-lazy val JacksonVersion = "2.18.9"
-lazy val NettyVersion   = "4.1.136.Final"
+// covers the test-only dependency paths, the published modules declare `Pinned` explicitly
+ThisBuild / dependencyOverrides ++= Pinned.all
 
-ThisBuild / dependencyOverrides ++= Seq(
-  "at.yawk.lz4"                % "lz4-java"                           % "1.11.1",
-  "com.fasterxml.jackson.core" % "jackson-core"                       % JacksonVersion,
-  "com.fasterxml.jackson.core" % "jackson-databind"                   % JacksonVersion,
-  "com.google.guava"           % "guava"                              % "32.1.3-jre",
-  "io.netty"                   % "netty-buffer"                       % NettyVersion,
-  "io.netty"                   % "netty-codec"                        % NettyVersion,
-  "io.netty"                   % "netty-common"                       % NettyVersion,
-  "io.netty"                   % "netty-handler"                      % NettyVersion,
-  "io.netty"                   % "netty-resolver"                     % NettyVersion,
-  "io.netty"                   % "netty-transport"                    % NettyVersion,
-  "io.netty"                   % "netty-transport-native-unix-common" % NettyVersion,
-)
-
-// `dependencyOverrides` above are not published to the POM, so from a consumer's point of view
-// the previous release still brings the versions pulled in by the Cassandra driver. Ignore these
-// libraries in the version policy check for as long as they are bumped via overrides.
+// The previous release resolves guava and netty to the versions brought in by the Cassandra
+// driver, because back then they were pinned via `dependencyOverrides` only, which sbt does not
+// publish to the POM. TODO remove after the next release, which declares them properly.
 ThisBuild / versionPolicyIgnored ++= Seq(
   "com.google.guava" % "guava",
   "io.netty"         % "netty-buffer",
@@ -109,6 +95,7 @@ lazy val core = (project in file("core"))
       random,
       retry,
       Scodec.bits,
+      Pinned.lz4,
       Testing.munit % Test,
     ),
     libraryDependencies ++= crossSettings(
@@ -151,7 +138,9 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
     libraryDependencies ++= Seq(
       scassandra,
       cassandraSync,
+      Pinned.guava,
     ),
+    libraryDependencies ++= Pinned.netty,
     libraryDependencies ++= crossSettings(
       scalaVersion.value,
       if3 = List(PureConfig.GenericScala3),
@@ -209,6 +198,7 @@ lazy val journal = (project in file("kafka-journal"))
       KafkaJournal.journal,
       Testing.munit % Test,
     ),
+    libraryDependencies ++= Pinned.jackson,
   )
 
 lazy val docs = (project in file("kafka-flow-docs"))
