@@ -24,7 +24,7 @@ lazy val JacksonVersion = "2.18.9"
 lazy val NettyVersion   = "4.1.136.Final"
 
 ThisBuild / dependencyOverrides ++= Seq(
-  "at.yawk.lz4"                % "lz4-java"                           % "1.11.1",
+  "at.yawk.lz4"                % "lz4-java"                           % "1.11.2",
   "com.fasterxml.jackson.core" % "jackson-core"                       % JacksonVersion,
   "com.fasterxml.jackson.core" % "jackson-databind"                   % JacksonVersion,
   "com.google.guava"           % "guava"                              % "32.1.3-jre",
