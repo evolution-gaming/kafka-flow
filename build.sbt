@@ -27,7 +27,7 @@ ThisBuild / dependencyOverrides ++= Seq(
   "at.yawk.lz4"                % "lz4-java"                           % "1.11.1",
   "com.fasterxml.jackson.core" % "jackson-core"                       % JacksonVersion,
   "com.fasterxml.jackson.core" % "jackson-databind"                   % JacksonVersion,
-  "com.google.guava"           % "guava"                              % "32.1.3-jre",
+  "com.google.guava"           % "guava"                              % "33.7.1-jre",
   "io.netty"                   % "netty-buffer"                       % NettyVersion,
   "io.netty"                   % "netty-codec"                        % NettyVersion,
   "io.netty"                   % "netty-common"                       % NettyVersion,
