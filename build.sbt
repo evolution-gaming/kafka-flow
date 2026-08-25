@@ -20,7 +20,7 @@ ThisBuild / versionPolicyIgnored ++= Seq(
   "io.netty"             % "netty-transport-native-unix-common",
 )
 
-lazy val JacksonVersion = "2.18.9"
+lazy val JacksonVersion = "2.18.10"
 lazy val NettyVersion   = "4.1.136.Final"
 
 ThisBuild / dependencyOverrides ++= Seq(
