@@ -20,6 +20,8 @@ jobs:
 
   docs:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # required by `peaceiris/actions-gh-pages` to push to `gh-pages`
     steps:
       - uses: actions/checkout@v5
 
