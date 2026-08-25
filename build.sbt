@@ -21,6 +21,20 @@ ThisBuild / dependencyOverrides ++= Seq(
   "io.netty"                   % "netty-transport-native-unix-common" % NettyVersion,
 )
 
+// `dependencyOverrides` above are not published to the POM, so from a consumer's point of view
+// the previous release still brings the versions pulled in by the Cassandra driver. Ignore these
+// libraries in the version policy check for as long as they are bumped via overrides.
+ThisBuild / versionPolicyIgnored ++= Seq(
+  "com.google.guava" % "guava",
+  "io.netty"         % "netty-buffer",
+  "io.netty"         % "netty-codec",
+  "io.netty"         % "netty-common",
+  "io.netty"         % "netty-handler",
+  "io.netty"         % "netty-resolver",
+  "io.netty"         % "netty-transport",
+  "io.netty"         % "netty-transport-native-unix-common",
+)
+
 lazy val Scala3Version = "3.3.8"
 lazy val Scala2Version = "2.13.18"
 
