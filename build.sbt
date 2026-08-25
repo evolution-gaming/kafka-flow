@@ -2,7 +2,23 @@ import Dependencies.*
 
 ThisBuild / versionScheme := Some("early-semver")
 ThisBuild / evictionErrorLevel := Level.Warn
-ThisBuild / versionPolicyIntention := Compatibility.None
+ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
+ThisBuild / versionPolicyIgnored ++= Seq(
+  // add libraries here that are known to be binary compatible, like:
+  // TODO remove after next release, this project doesn't use doobie module from `smetrics`
+  //  and all other libraries do not affect public API
+  "com.evolutiongaming" %% "smetrics",
+  "com.evolution"       %% "kafka-journal-core",
+  "com.evolution"       %% "kafka-journal",
+  "com.google.guava"     % "guava",
+  "io.netty"             % "netty-buffer",
+  "io.netty"             % "netty-codec",
+  "io.netty"             % "netty-common",
+  "io.netty"             % "netty-handler",
+  "io.netty"             % "netty-resolver",
+  "io.netty"             % "netty-transport",
+  "io.netty"             % "netty-transport-native-unix-common",
+)
 
 lazy val JacksonVersion = "2.18.9"
 lazy val NettyVersion   = "4.1.136.Final"
@@ -206,5 +222,5 @@ lazy val docs = (project in file("kafka-flow-docs"))
   )
 
 addCommandAlias("check", "all scalafmtCheckRepo versionPolicyCheck")
-addCommandAlias("fmt", "+scalafmtRepo")
+addCommandAlias("fmt", "scalafmtRepo")
 addCommandAlias("build", "all compile testFull")
