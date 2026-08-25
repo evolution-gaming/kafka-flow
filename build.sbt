@@ -21,7 +21,7 @@ ThisBuild / versionPolicyIgnored ++= Seq(
 )
 
 lazy val JacksonVersion = "2.18.9"
-lazy val NettyVersion   = "4.1.136.Final"
+lazy val NettyVersion   = "4.1.137.Final"
 
 ThisBuild / dependencyOverrides ++= Seq(
   "at.yawk.lz4"                % "lz4-java"                           % "1.11.1",
