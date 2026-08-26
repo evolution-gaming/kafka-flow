@@ -4,31 +4,26 @@ title: Overview
 sidebar_label: Overview
 ---
 
-There is a very nice Akka Persistence implementation called [Kafka Journal](https://github.com/evolution-gaming/kafka-journal).
+Kafka Flow is a library for reliable, stateful processing of Kafka topics. You write the
+per-key business logic; the library takes care of everything around it — consumer group
+membership, partition assignment and revocation, offset commits that never run ahead of the
+state they cover, timers, and optionally pluggable persistence so that a restart or a
+rebalance does not mean replaying the topic from the beginning.
 
-It allows one to use Kafka as a main storage for the Akka Persistence journals.
-In theory it provides ability to react on produced events with a minimal latency
-and with an amazing scalability without the need to use the classic stream
-processing solutions such as Apache Spark.
+It works with any Kafka topic, whatever format the payloads happen to be in. Records reach
+the business logic undecoded, as `ConsumerRecord[String, ByteVector]`, and turning those
+bytes into something meaningful is part of the logic you write — nothing in the core assumes
+a particular encoding.
 
-The problem is that reading whatever Kafka Journal produced might require some
-knowledge of implementation details. Besides that, it might be hard to organize
-the reliable processing of the incoming events.
+The library grew out of [Kafka Journal](https://github.com/evolution-gaming/kafka-journal),
+which uses Kafka as the main storage for Akka Persistence journals. Reading what Kafka
+Journal produces requires some knowledge of its implementation details, and organizing
+reliable processing of those events on top is harder still — the kind of problem that
+otherwise reaches for a heavyweight solution such as Apache Flink. Kafka Flow solves both
+with an elegant use of Kafka consumer groups. That integration is optional, though, and
+lives in its own module, `kafka-flow-kafka-journal`; the core does not depend on it.
 
-While the first problem could be solved by looking into Kafka Journal sources,
-the second is more complicated and might ask for more heavyweight solutions such
-as Apache Flink.
-
-This library solves them both with a very elegant use of Kafka consumer groups
-and optionally pluggable persistence (may be required if infinite journals are
-being processed).
-
-The current version of the library is tighlty coupled with Kafka Journal and
-requires it as dependency. There is a plan to separate the integration with
-Kafka Journal to a distinct module to allow reusing reliable Kafka message
-processing without having Kafka Journal dependency.
-
-# KafkaFlow library
+## Building blocks
 
 The library consists of the following main building blocks nested into each other:
 - `ConsumerFlow` - handles everything coming to a specific consumer,
@@ -36,10 +31,9 @@ The library consists of the following main building blocks nested into each othe
 - `PartitionFlow` - processes messages coming to the specific partition,
 - `KeyFlow` - process the message coming for specific key in the partition.
 
-It is possible and allowed to implement these traits manually, but,
-for most of the uses cases the convenient builders are provided.
-The top level builder is called `KafkaFlow`, others are `ConsumerFlowOf`,
-`TopicFlowOf`, `PartitionFlowOf` and `KeyFlowOf`.
+It is possible and allowed to implement these traits manually, but, for most of the use cases
+the convenient builders are provided. The top level builder is called `KafkaFlow`, others are
+`ConsumerFlowOf`, `TopicFlowOf`, `PartitionFlowOf` and `KeyFlowOf`.
 
 For some of these factories and produced classes it is possible to use predefined
 metrics from `kafka-flow-metrics` module by using one of two standard methods,
@@ -72,15 +66,15 @@ To run the Kafka consumption it is enough to call one of the methods on `KafkaFl
 object, i.e. `resource`, `stream` or `retryOnError`.
 
 The most generic one is `stream`, which uses provided retry strategy and returns
-the procesed records as `Stream` from `sstream` library. It is useful for writing
+the processed records as `Stream` from `sstream` library. It is useful for writing
 the application wide unit tests, as one does not need to accumulate the processed
-records in `StateT` or `Ref` to check if these were handled succesfully.
+records in `StateT` or `Ref` to check if these were handled successfully.
 
 As one does not need to have such an output and, often, does not want to handle
 `Stream` from `sstream` directly, a simpler `resource` method is provided, which
-returns a `Fiber[F, Unit]` instead of stream. `retryOnError` provides the same
-functionality, but with default retry strategy. The `Fiber` is required to allow
-correct error handling in case the underlying stream fails.
+returns an `F[Unit]` completing when the underlying stream finishes, instead of a stream.
+`retryOnError` provides the same functionality, but with default retry strategy. Do not
+forget to `flatMap` the returned `F[Unit]`, or the potential errors will be lost.
 
 The typical call of `KafkaFlow` could look like following:
 ```scala mdoc
@@ -96,9 +90,9 @@ def kafkaFlow = KafkaFlow.retryOnError(
 ```
 
 The consumer parameter is a thin wrapper over `Consumer` coming from `skafka`
-meant to facilitate the simpler unit tests will less methods to stub. The recommended
+meant to facilitate the simpler unit tests with less methods to stub. The recommended
 way, currently, to create such a `Consumer` is to use `consumerOf` method from
-`KafkaModule` helper, which will configure `Consumer` properly and also proivde
+`KafkaModule` helper, which will configure `Consumer` properly and also provide
 a `KafkaHealthCheck` which could be used for application-wide health check.
 
 If one decides to construct `Consumer` directly, he or she should be aware that
@@ -115,12 +109,16 @@ to a single `Consumer` instance. The only method of the trait is `stream`, which
 returns the list of the handled records, which could be useful for unit testing.
 
 `ConsumerFlowOf` provides a default implementation for the specific topic, which
-does required polls and correctly handles partiton assginment and revocation. As
-most of the libray code relies on this behavior, it is recommended to never
+does required polls and correctly handles partition assignment and revocation. As
+most of the library code relies on this behavior, it is recommended to never
 reimplement it, though this is possible (to quickly fix a bug on production?).
 
-The passed topic should contain a journal in the format of
-[Kafka Journal](https://github.com/evolution-gaming/kafka-journal) library.
+As noted above, the records arrive undecoded, as `ConsumerRecord[String, ByteVector]`;
+decoding them is the job of the business logic described in [FoldOption](#foldoption) below.
+If the topic does happen to hold a journal in the format of
+[Kafka Journal](https://github.com/evolution-gaming/kafka-journal), the
+`kafka-flow-kafka-journal` module provides `JournalParser` to decode those records and
+`JournalFold` to fold them.
 
 The typical call of `ConsumerFlowOf` could look like following:
 ```scala mdoc:nest
@@ -153,7 +151,9 @@ def consumerFlowOf: ConsumerFlowOf[IO] = ConsumerFlowOf(
 ```
 In this case, one may opt to use `TopicFlowOf.route` method to combine
 several `TopicFlowOf` instances into one routing the records to the correct
-instances. It is possible to reuse the `TopicFlowOf`,
+instances. The same `TopicFlowOf` may be returned for more than one topic, in which
+case the topics share a single flow definition (though each topic still gets its own
+`TopicFlow` instance, and therefore its own state).
 
 ### Configuration
 
@@ -163,7 +163,6 @@ implementation works by replacing default `config` parameter passed into
 
 ```scala mdoc:passthrough:nest
 import com.evolutiongaming.kafka.flow.ConsumerFlowConfig
-import scala.concurrent.duration._
 val config = ConsumerFlowConfig()
 
 println(s"""`pollTimeout`, which defaults to ${config.pollTimeout}, configures
@@ -197,12 +196,15 @@ The `partitionFlowOf` parameter is discussed further in this document.
 
 ### Metrics
 
-The only metric, currently, exposed is callled `topic_flow_add_duration_seconds`
-summary. It measures the time which is required to add a partition to a flow.
-It is important for the projects where it could be a long operation (i.e.
-causes recovery of all previously persisted state objects). Another way to use
-it is to expose `topic_flow_add_duration_seconds_count` rate to find out
-how often partition are being reassigned.
+Two summaries are exposed, both without labels:
+
+- `topic_flow_add_duration_seconds` measures the time which is required to add all newly
+  assigned partitions to a flow. It is important for the projects where it could be a long
+  operation (i.e. causes recovery of all previously persisted state objects). Another way to
+  use it is to expose the `topic_flow_add_duration_seconds_count` rate to find out how often
+  partitions are being reassigned.
+- `topic_flow_apply_duration_seconds` measures the time which is required to process the
+  records coming from a single poll, across all the partitions assigned to this topic.
 
 The following is a typical example of how these metrics could be initialized.
 ```scala mdoc
@@ -221,11 +223,6 @@ with empty record lists), but could be initialized eagerly.
 After each call `PartitionFlow` may decide to commit an offset in the
 appropriate partition. The decision is reflected in a returned offset.
 
-The default implementation require `applicationId` and `groupId`
-parameteres passed. These parameters are used to enable several
-applications / consumers storing their state into a single
-database (usually Cassandra).
-
 The typical call of `PartitionFlowOf` could look like following:
 ```scala mdoc
 import com.evolutiongaming.kafka.flow.PartitionFlowOf
@@ -238,13 +235,24 @@ The default implementation maintains the list of `KeyState` objects,
 which contains a tuple of `KeyFlow` and `TimerContext` objects,
 which are discussed further.
 
-Besides that, it also responsible for the following functions:
-- Sending consumer records to underlying `KeyFlow` instaces in a thread safe way,
-- Trigerring timer events in underlying `KeyFlow` instances in a thread safe way,
+Besides that, it is also responsible for the following functions:
+- Sending consumer records to underlying `KeyFlow` instances in a thread safe way,
+- Triggering timer events in underlying `KeyFlow` instances in a thread safe way,
 - Filling timestamps in underlying `TimerContext` object,
 - Reacting to the actions performed by `KeyFlow` on an appropriate `KeyContext` object,
   i.e. removing `KeyFlow` if processing of the key is finished, or holding the
   commits in the specific partition until moving forward is allowed.
+
+Two optional parameters allow the incoming records to be pre-processed before they reach
+the business logic:
+- `filter: Option[FilterRecord[F]]` decides whether a record should be processed or skipped.
+  Skipping a record means no state is restored for its key and no fold is executed for it.
+  It does not affect committing consumer offsets, so even if every record in a batch is
+  skipped, new offsets are still committed when necessary.
+- `remapKey: Option[RemapKey[F]]` derives a new key for a record from the current key and
+  the record itself. Remapping happens first, so `filter` and the fold both see the remapped
+  key. It is useful when the natural key of the entity is inside the payload rather than in
+  the Kafka record key.
 
 The `keyStateOf` parameter is discussed further in this document.
 
@@ -256,41 +264,58 @@ implementation works by replacing default `config` parameter passed into
 
 ```scala mdoc:passthrough:nest
 import com.evolutiongaming.kafka.flow.PartitionFlowConfig
-import scala.concurrent.duration._
 val config = PartitionFlowConfig()
 
-println(s"""`triggerTimersInterval`, which defaults to
-${config.triggerTimersInterval}, configures how often the clock based timers
-are triggered, `commitOffsetsInterval`, which defaults to ${config.commitOffsetsInterval}
-configures how often key states are inspected for the possible commits to Kafka.""")
+println(s"""- `triggerTimersInterval`, which defaults to `${config.triggerTimersInterval}`,
+  configures how often the clock based timers are triggered.
+- `commitOffsetsInterval`, which defaults to `${config.commitOffsetsInterval}`, configures
+  how often key states are inspected for the possible commits to Kafka.
+- `recoveryMode`, which defaults to `${config.recoveryMode}`, controls how the snapshots are
+  recovered on partition assignment: in parallel without a limit, in parallel bounded by
+  `Parallel.Bounded(n)` fibers, or `Sequential`. The parallel modes are the fastest, but
+  they require all the keys to fit in memory before the snapshots are read and may starve
+  the CPU when the number of keys is large.
+- `timersExecutionMode`, which defaults to `${config.timersExecutionMode}`, limits how many
+  timers are executed concurrently. Timers always run in parallel; this only caps the number
+  of concurrent executions.
+- `commitOnRevoke`, which defaults to `${config.commitOnRevoke}`, makes a revoked partition
+  try to commit its minimum held offset, so that the next owner reprocesses fewer events on
+  handoff.""")
 ```
 
-Both operations are quite heavyweight when there are lot of different active
-keys in one partition, so these operations are not performed on every poll.
-See scaladoc of `PartitionFlowConfig` for more details.
+Triggering the timers and inspecting the state for commits are quite heavyweight
+operations when there are lot of different active keys in one partition, so they are not
+performed on every poll. See scaladoc of `PartitionFlowConfig` for more details.
 
 ### Metrics
 
-The only metric, currently, exposed is callled `partition_flow_apply_duration_seconds`
-summary. It measures the time which is required to process records coming
-to `PartitionFlow` in a single Kafka poll request.
+Two summaries are exposed:
 
-It is one of the most important metrics, because it directly reflects the performance
-of the stream processing routine. It is fine if it takes longer from time to time,
-i.e. if the records come in bursts into application, but if it is slow all the time,
-and CPU usage is high, then some optimization or increasing number of consumer nodes
-might be required.
+- `partition_flow_apply_duration_seconds`, labelled by `topic` and `partition`, measures the
+  time which is required to process records coming to `PartitionFlow` in a single Kafka poll
+  request.
 
-One might also be interested in `partition_flow_apply_duration_seconds_count` rate to see
-how often the actual calls are happening, because these call do not happen for the empty
-polls and this rate actually reflects the actual load on the consumer.
+  It is one of the most important metrics, because it directly reflects the performance
+  of the stream processing routine. It is fine if it takes longer from time to time,
+  i.e. if the records come in bursts into application, but if it is slow all the time,
+  and CPU usage is high, then some optimization or increasing number of consumer nodes
+  might be required.
+
+  One might also be interested in `partition_flow_apply_duration_seconds_count` rate to see
+  how often the actual calls are happening, because these calls do not happen for the empty
+  polls and this rate actually reflects the actual load on the consumer.
+
+- `partition_flow_triggerTimers_duration_seconds`, without labels, measures the same call
+  when the batch is empty, i.e. the time spent triggering the timers alone. If this is high
+  while the application is idle, there are too many timers registered — see the
+  [FAQ](faq.md) and the `triggerTimersInterval` setting above.
 
 The following is a typical example of how these metrics could be initialized.
 ```scala mdoc
 import com.evolutiongaming.kafka.flow.PartitionFlowMetrics._
 import com.evolutiongaming.kafka.flow.metrics.syntax._
 
-def paritionFlowOfWithMetrics = partitionFlowOf.withCollectorRegistry(???)
+def partitionFlowOfWithMetrics = partitionFlowOf.withCollectorRegistry(???)
 ```
 
 ## KeyStateOf
@@ -326,19 +351,196 @@ long time, but need to have their state recovered when they start doing somethin
 it is an ideal solution because they can stay in the inactive mode in the storage
 without affecting the performance anyhow.
 
+```scala mdoc
+import com.evolutiongaming.kafka.flow.KeyStateOf
+
+def keyStateOf[S]: KeyStateOf[IO] = KeyStateOf.lazyRecovery[IO, S](
+  applicationId = "my-application",
+  groupId       = "consumer-group-id",
+  timersOf      = ???,
+  persistenceOf = ???,
+  timerFlowOf   = ???,
+  fold          = ???,
+  registry      = ???
+)
+```
+
+`applicationId` and `groupId` are required by every factory method here. They become a part
+of the `KafkaKey` under which the state is stored, which is what allows several
+applications, or several consumer groups of the same application, to keep their state in a
+single database (usually Cassandra) without colliding.
+
 If it is required to recover all the keys from a state storage when partition is
 assigned, then one of the `KeyStateOf.eagerRecovery` methods might be a better choice.
 The signature is very similar to one provided by `KeyStateOf.lazyRecovery`, but,
-in addition, requires `applicationId` and `groupId` identifiers also described in
-`PartitionFlowOf` section.
+in addition, requires a `keysOf` parameter holding an instance of the `KeysOf` trait. That
+is the key storage implementation which `KeyStateOf` uses to get the list of the keys
+belonging to this application, group and partition.
 
-These are need to allow `KeyStateOf` to get list of application related keys
-from a key storage implementation, which is to be passed as `KeysOf` trait.
+The remaining parameters are the building blocks discussed in the rest of this document:
+`fold` is the business logic ([FoldOption](#foldoption)), `timerFlowOf` decides when the
+state is persisted and when the timers fire ([TimerFlowOf](#timerflowof)), `timersOf` is
+the timer storage, `persistenceOf` is the [persistence](persistence.md) layer, and
+`registry` is the [EntityRegistry](#entityregistry). Some `eagerRecovery` overloads take a
+`keyFlowOf` ([KeyFlowOf](#keyflowof)) instead of `timerFlowOf`, which is more flexible but
+less convenient.
 
-The business logic in all of the factory methods described above is specified by
-implementation of `FoldOption` trait. Besides that, implementation of `KeyFlowOf`
-is required, which describes when the state is to be persisted and timers are fired.
-Some implementations are requiring `TimerFlowOf` instead of `KeyFlowOf`, which
-is easier to use, but is also less flexible.
+### Metrics
 
-All of these traits are discussed further in this document.
+A single gauge, `key_flow_count`, labelled by `topic`, reports the number of key flows
+currently held in memory. It is the natural companion to the `PartitionFlow` metrics above:
+the cost of triggering timers and of inspecting the state for commits grows with it.
+
+## FoldOption
+
+`FoldOption` is where the business logic lives. It is a thin wrapper over `Fold`, which is
+roughly `(S, A) => F[S]`, specialised for an optional state: given the current state of a
+key — `None` if the key has not been seen yet — and an incoming record, it produces the new
+state. Returning `None` means the key is finished: its state is dropped and, if there is a
+persistence configured, deleted.
+
+```scala mdoc:silent
+import com.evolutiongaming.kafka.flow.FoldOption
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
+import scodec.bits.ByteVector
+
+final case class Session(clicks: Int)
+
+val fold: FoldOption[IO, Session, ConsumerRecord[String, ByteVector]] =
+  FoldOption.of { (state, _) =>
+    val session = state.fold(Session(1))(session => session.copy(clicks = session.clicks + 1))
+    IO.pure(Option(session))
+  }
+```
+
+Note that the fold receives the record undecoded. `contramap` and `contramapM` are the
+idiomatic way to keep the decoding separate from the logic: write the fold against your own
+event type, then `contramap` it into a fold over `ConsumerRecord`. `transformState` and
+`transformStateM` do the same for the state, which is useful to augment it with
+metainformation such as an offset. `flatMap` chains folds, skipping the rest of the chain
+once a fold returns `None`.
+
+`TickOption` is the timer-side counterpart of `FoldOption`: it changes the state when a
+timer fires rather than when a record comes in. `TickOption.id` leaves the state untouched
+and is the default in the factory methods which do not ask for it.
+
+There is also `EnhancedFold`, which additionally receives a `KeyFlowExtras` instance. It
+currently exposes `requestAdditionalPersist`, allowing the logic to ask for the state to be
+persisted right after the fold has run, outside the regular schedule. It only has an effect
+if a functional `AdditionalStatePersistOf` was passed when building the flow;
+`AdditionalStatePersistOf.of` takes a `cooldown` bounding how often such requests are
+honoured. `EnhancedFold.fromFold` lifts a plain `FoldOption` where an `EnhancedFold` is
+expected.
+
+## TimerFlowOf
+
+While `FoldOption` says *what* to do with the state, `TimerFlowOf` says *when* to persist it
+and when to let the offsets move forward. It is the setting which trades recovery time
+against write load, so it is worth choosing deliberately.
+
+Three implementations are provided:
+
+- `persistPeriodically` flushes the state on a fixed schedule and keeps the key in memory.
+- `unloadOrphaned` flushes and *removes* the key from memory once it has been idle for
+  `maxIdle`, or once `maxOffsetDifference` events have passed without touching it. This is
+  what keeps the memory bounded when the key population is effectively unbounded.
+- `persistPeriodicallyAndUnloadOrphaned` combines the two.
+
+```scala mdoc:silent
+import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
+import scala.concurrent.duration._
+
+val timerFlowOf: TimerFlowOf[IO] = TimerFlowOf.persistPeriodically(
+  fireEvery = 1.minute,
+  persistEvery = 1.minute,
+  flushOnRevoke = true
+)
+```
+
+`fireEvery` is how often `onTimer` is called, `persistEvery` how often that call actually
+persists. Raising `persistEvery` reduces the write load at the cost of more events to replay
+on recovery.
+
+`flushOnRevoke` makes a revoked partition flush its state on the way out, which shortens the
+replay window for the next owner. Note that it also widens the window in which a partition
+that no longer belongs to this consumer writes to the state storage — see
+[Protecting against stale snapshot writes](persistence.md#protecting-against-stale-snapshot-writes).
+
+`ignorePersistErrors` turns a failure to persist into a logged message rather than a failed
+flow. It is not free: no new offset is held for the key, so the offset does not advance, and
+the persisted state can end up inconsistent with the committed offset. The processing logic
+has to be idempotent for this to be safe.
+
+## KeyFlowOf
+
+`KeyFlow` is the innermost block: it holds the state of one key and applies the records
+coming to it. `KeyFlowOf` assembles one from the pieces above — a `TimerFlowOf`, a fold and
+a tick:
+
+```scala mdoc:silent
+import com.evolutiongaming.kafka.flow.KeyFlowOf
+import com.evolutiongaming.kafka.flow.TickOption
+
+val keyFlowOf = KeyFlowOf(timerFlowOf, fold, TickOption.id[IO, Session])
+```
+
+Most applications never need to touch it. The `KeyStateOf` factory methods which take a
+`timerFlowOf` build the `KeyFlowOf` themselves; passing one explicitly is only necessary
+when a custom `KeyFlow` is wanted, or when `AdditionalStatePersistOf` is being used together
+with an `EnhancedFold`.
+
+## EntityRegistry
+
+Every `KeyStateOf` factory takes a `registry: EntityRegistry[F, KafkaKey, S]`. It is an
+observability API: the library registers each in-memory entity when its state is first
+created and removes it when the key is dropped, so that the current state can be inspected
+from outside the flow — from an HTTP handler, for example, via `get` and `getAll`.
+
+There is no default. Pass `EntityRegistry.empty` if the feature is not wanted, and pay
+nothing for it:
+
+```scala mdoc:silent
+import com.evolutiongaming.kafka.flow.KafkaKey
+import com.evolutiongaming.kafka.flow.registry.EntityRegistry
+
+val registry = EntityRegistry.empty[IO, KafkaKey, Session]
+```
+
+`EntityRegistry.memory` is the fully functional in-memory implementation, and
+`EntityRegistry.const` returns fixed data, which is convenient in tests.
+
+## Putting it together
+
+The pieces above assemble bottom-up into the `flowOf` which `KafkaFlow` needs:
+
+```scala mdoc:silent
+import com.evolutiongaming.kafka.flow.PartitionFlowOf
+import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
+import com.evolutiongaming.kafka.flow.timer.TimersOf
+
+val consumerFlow: IO[ConsumerFlowOf[IO]] =
+  TimersOf.memory[IO, KafkaKey] map { timersOf =>
+    ConsumerFlowOf[IO](
+      topic = "my-topic",
+      flowOf = TopicFlowOf(
+        PartitionFlowOf(
+          KeyStateOf.lazyRecovery[IO, Session](
+            applicationId = "my-application",
+            groupId       = "consumer-group-id",
+            timersOf      = timersOf,
+            persistenceOf = PersistenceOf.empty[IO, KafkaKey, Session, ConsumerRecord[String, ByteVector]],
+            timerFlowOf   = timerFlowOf,
+            fold          = fold,
+            registry      = registry
+          )
+        )
+      )
+    )
+  }
+```
+
+This one keeps no state across restarts — `PersistenceOf.empty` discards it, so a newly
+assigned partition is folded from the committed offset. Replacing it with a real backend is
+the subject of the [Persistence](persistence.md) page, which covers the Cassandra and Kafka
+implementations, state compression, and the protections against a revoked partition
+overwriting the state of its successor.
