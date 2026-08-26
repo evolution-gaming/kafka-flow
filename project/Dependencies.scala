@@ -21,20 +21,20 @@ object Dependencies {
     * their own they leave the consumers of the library with the original, vulnerable versions.
     */
   object Pinned {
-    private val jacksonVersion = "2.18.9"
+    private val jacksonVersion = "2.18.10"
     private val nettyVersion   = "4.1.136.Final"
 
     // comes from `skafka` via `kafka-clients`
     val lz4 = "at.yawk.lz4" % "lz4-java" % "1.11.1"
 
-    // comes from `kafka-journal`
+    // comes from `kafka-journal` and from `scassandra` via `cassandra-driver-core`
     val jackson = Seq(
       "com.fasterxml.jackson.core" % "jackson-core"     % jacksonVersion,
       "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
     )
 
     // come from `scassandra` and `cassandra-sync` via `cassandra-driver-core`
-    val guava = "com.google.guava" % "guava" % "32.1.3-jre"
+    val guava = "com.google.guava" % "guava" % "33.5.0-jre"
     val netty = Seq(
       "io.netty" % "netty-buffer"                       % nettyVersion,
       "io.netty" % "netty-codec"                        % nettyVersion,

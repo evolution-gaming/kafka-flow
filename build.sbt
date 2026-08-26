@@ -7,18 +7,19 @@ ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
 // covers the test-only dependency paths, the published modules declare `Pinned` explicitly
 ThisBuild / dependencyOverrides ++= Pinned.all
 
-// The previous release resolves guava and netty to the versions brought in by the Cassandra
-// driver, because back then they were pinned via `dependencyOverrides` only, which sbt does not
-// publish to the POM. TODO remove after the next release, which declares them properly.
+// Guava major bumps are security fixes. The only Guava type reaching the public API is
+// `ListenableFuture`, coming from `scassandra`, which is unchanged since 19.0. The rest are the
+// annotation-only artifacts that Guava adds, drops and bumps between its major versions.
+//
+// TODO remove the annotation-only entries after the next release: they only cover the 32 -> 33
+//  transition, and once a release ships with Guava 33 both sides of the check resolve the same
+//  graph. The `guava` entry itself is needed for as long as the version is pinned here, as every
+//  security bump of it is a major one.
 ThisBuild / versionPolicyIgnored ++= Seq(
-  "com.google.guava" % "guava",
-  "io.netty"         % "netty-buffer",
-  "io.netty"         % "netty-codec",
-  "io.netty"         % "netty-common",
-  "io.netty"         % "netty-handler",
-  "io.netty"         % "netty-resolver",
-  "io.netty"         % "netty-transport",
-  "io.netty"         % "netty-transport-native-unix-common",
+  "com.google.guava"         % "guava",
+  "com.google.code.findbugs" % "jsr305",
+  "com.google.j2objc"        % "j2objc-annotations",
+  "org.checkerframework"     % "checker-qual",
 )
 
 lazy val Scala3Version = "3.3.8"
@@ -140,7 +141,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
       cassandraSync,
       Pinned.guava,
     ),
-    libraryDependencies ++= Pinned.netty,
+    libraryDependencies ++= Pinned.netty ++ Pinned.jackson,
     libraryDependencies ++= crossSettings(
       scalaVersion.value,
       if3 = List(PureConfig.GenericScala3),
