@@ -7,18 +7,21 @@ ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
 // covers the test-only dependency paths, the published modules declare `Pinned` explicitly
 ThisBuild / dependencyOverrides ++= Pinned.all
 
-// The previous release resolves guava and netty to the versions brought in by the Cassandra
-// driver, because back then they were pinned via `dependencyOverrides` only, which sbt does not
-// publish to the POM. TODO remove after the next release, which declares them properly.
+// One-time diff against 10.2.0, which pinned Guava and Netty itself: both now come from
+// `scassandra` at newer versions, and Guava 33.x also swaps its annotation-only dependencies.
+// TODO drop the whole block after the next release; empty it and run `versionPolicyCheck` to confirm.
 ThisBuild / versionPolicyIgnored ++= Seq(
-  "com.google.guava" % "guava",
-  "io.netty"         % "netty-buffer",
-  "io.netty"         % "netty-codec",
-  "io.netty"         % "netty-common",
-  "io.netty"         % "netty-handler",
-  "io.netty"         % "netty-resolver",
-  "io.netty"         % "netty-transport",
-  "io.netty"         % "netty-transport-native-unix-common",
+  "com.google.guava"         % "guava",
+  "com.google.code.findbugs" % "jsr305",
+  "com.google.j2objc"        % "j2objc-annotations",
+  "org.checkerframework"     % "checker-qual",
+  "io.netty"                 % "netty-buffer",
+  "io.netty"                 % "netty-codec",
+  "io.netty"                 % "netty-common",
+  "io.netty"                 % "netty-handler",
+  "io.netty"                 % "netty-resolver",
+  "io.netty"                 % "netty-transport",
+  "io.netty"                 % "netty-transport-native-unix-common",
 )
 
 lazy val Scala3Version = "3.3.8"
@@ -138,9 +141,7 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
     libraryDependencies ++= Seq(
       scassandra,
       cassandraSync,
-      Pinned.guava,
     ),
-    libraryDependencies ++= Pinned.netty,
     libraryDependencies ++= crossSettings(
       scalaVersion.value,
       if3 = List(PureConfig.GenericScala3),
