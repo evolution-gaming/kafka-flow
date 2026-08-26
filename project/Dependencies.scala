@@ -8,7 +8,7 @@ object Dependencies {
   val scache            = "com.evolution"       %% "scache"              % "6.0.2"
   val skafka            = "com.evolutiongaming" %% "skafka"              % "21.0.3"
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.3.0"
-  val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.6.0"
+  val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.7.0"
   val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "4.0.0"
   val random            = "com.evolution"       %% "random"              % "1.0.5"
   val retry             = "com.evolutiongaming" %% "retry"               % "3.1.0"
@@ -19,33 +19,26 @@ object Dependencies {
     * These are declared as direct dependencies of the modules that pull them in, on top of being listed in
     * `dependencyOverrides`: overrides only affect the resolution of this build and are not published to the POM, so on
     * their own they leave the consumers of the library with the original, vulnerable versions.
+    *
+    * Do not pin what upstream already pins. Since 5.7.0 `scassandra` pins Guava, Netty and Jackson itself, so
+    * `persistence-cassandra` needs no pins for them here. Adding one anyway would risk holding them back: a pin that
+    * falls behind `scassandra` downgrades a patched version instead of raising an unpatched one.
     */
   object Pinned {
-    private val jacksonVersion = "2.18.9"
-    private val nettyVersion   = "4.1.136.Final"
-
-    // comes from `skafka` via `kafka-clients`
+    // comes from `skafka` via `kafka-clients`, which still brings 1.10.2
     val lz4 = "at.yawk.lz4" % "lz4-java" % "1.11.1"
 
-    // comes from `kafka-journal`
+    // Raises Jackson for the `journal` module, which gets 2.14.3 from `kafka-journal` and has no `scassandra` on its
+    // classpath to pin anything newer. The version matches what `scassandra` resolves to, so that the build-wide
+    // `dependencyOverrides` does not drag `persistence-cassandra` down to an older Jackson than it gets today.
+    // Pins `jackson-core` and `jackson-databind` only; `jackson-annotations` and `jackson-datatype-*` stay at 2.14.3.
+    private val jacksonVersion = "2.18.10"
     val jackson = Seq(
       "com.fasterxml.jackson.core" % "jackson-core"     % jacksonVersion,
       "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
     )
 
-    // come from `scassandra` and `cassandra-sync` via `cassandra-driver-core`
-    val guava = "com.google.guava" % "guava" % "32.1.3-jre"
-    val netty = Seq(
-      "io.netty" % "netty-buffer"                       % nettyVersion,
-      "io.netty" % "netty-codec"                        % nettyVersion,
-      "io.netty" % "netty-common"                       % nettyVersion,
-      "io.netty" % "netty-handler"                      % nettyVersion,
-      "io.netty" % "netty-resolver"                     % nettyVersion,
-      "io.netty" % "netty-transport"                    % nettyVersion,
-      "io.netty" % "netty-transport-native-unix-common" % nettyVersion,
-    )
-
-    val all = lz4 +: guava +: (jackson ++ netty)
+    val all = lz4 +: jackson
   }
 
   object Cats {
