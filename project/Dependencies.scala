@@ -14,6 +14,40 @@ object Dependencies {
   val retry             = "com.evolutiongaming" %% "retry"               % "3.1.0"
   val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.4.0"
 
+  /** Transitive dependencies pinned to versions without known vulnerabilities.
+    *
+    * These are declared as direct dependencies of the modules that pull them in, on top of being listed in
+    * `dependencyOverrides`: overrides only affect the resolution of this build and are not published to the POM, so on
+    * their own they leave the consumers of the library with the original, vulnerable versions.
+    */
+  object Pinned {
+    private val jacksonVersion = "2.18.9"
+    private val nettyVersion   = "4.1.136.Final"
+
+    // comes from `skafka` via `kafka-clients`
+    val lz4 = "at.yawk.lz4" % "lz4-java" % "1.11.1"
+
+    // comes from `kafka-journal`
+    val jackson = Seq(
+      "com.fasterxml.jackson.core" % "jackson-core"     % jacksonVersion,
+      "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
+    )
+
+    // come from `scassandra` and `cassandra-sync` via `cassandra-driver-core`
+    val guava = "com.google.guava" % "guava" % "32.1.3-jre"
+    val netty = Seq(
+      "io.netty" % "netty-buffer"                       % nettyVersion,
+      "io.netty" % "netty-codec"                        % nettyVersion,
+      "io.netty" % "netty-common"                       % nettyVersion,
+      "io.netty" % "netty-handler"                      % nettyVersion,
+      "io.netty" % "netty-resolver"                     % nettyVersion,
+      "io.netty" % "netty-transport"                    % nettyVersion,
+      "io.netty" % "netty-transport-native-unix-common" % nettyVersion,
+    )
+
+    val all = lz4 +: guava +: (jackson ++ netty)
+  }
+
   object Cats {
     private val version       = "2.13.0"
     private val effectVersion = "3.7.1"

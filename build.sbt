@@ -3,38 +3,22 @@ import Dependencies.*
 ThisBuild / versionScheme := Some("early-semver")
 ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
+
+// covers the test-only dependency paths, the published modules declare `Pinned` explicitly
+ThisBuild / dependencyOverrides ++= Pinned.all
+
+// The previous release resolves guava and netty to the versions brought in by the Cassandra
+// driver, because back then they were pinned via `dependencyOverrides` only, which sbt does not
+// publish to the POM. TODO remove after the next release, which declares them properly.
 ThisBuild / versionPolicyIgnored ++= Seq(
-  // add libraries here that are known to be binary compatible, like:
-  // TODO remove after next release, this project doesn't use doobie module from `smetrics`
-  //  and all other libraries do not affect public API
-  "com.evolutiongaming" %% "smetrics",
-  "com.evolution"       %% "kafka-journal-core",
-  "com.evolution"       %% "kafka-journal",
-  "com.google.guava"     % "guava",
-  "io.netty"             % "netty-buffer",
-  "io.netty"             % "netty-codec",
-  "io.netty"             % "netty-common",
-  "io.netty"             % "netty-handler",
-  "io.netty"             % "netty-resolver",
-  "io.netty"             % "netty-transport",
-  "io.netty"             % "netty-transport-native-unix-common",
-)
-
-lazy val JacksonVersion = "2.18.9"
-lazy val NettyVersion   = "4.1.136.Final"
-
-ThisBuild / dependencyOverrides ++= Seq(
-  "at.yawk.lz4"                % "lz4-java"                           % "1.11.1",
-  "com.fasterxml.jackson.core" % "jackson-core"                       % JacksonVersion,
-  "com.fasterxml.jackson.core" % "jackson-databind"                   % JacksonVersion,
-  "com.google.guava"           % "guava"                              % "32.1.3-jre",
-  "io.netty"                   % "netty-buffer"                       % NettyVersion,
-  "io.netty"                   % "netty-codec"                        % NettyVersion,
-  "io.netty"                   % "netty-common"                       % NettyVersion,
-  "io.netty"                   % "netty-handler"                      % NettyVersion,
-  "io.netty"                   % "netty-resolver"                     % NettyVersion,
-  "io.netty"                   % "netty-transport"                    % NettyVersion,
-  "io.netty"                   % "netty-transport-native-unix-common" % NettyVersion,
+  "com.google.guava" % "guava",
+  "io.netty"         % "netty-buffer",
+  "io.netty"         % "netty-codec",
+  "io.netty"         % "netty-common",
+  "io.netty"         % "netty-handler",
+  "io.netty"         % "netty-resolver",
+  "io.netty"         % "netty-transport",
+  "io.netty"         % "netty-transport-native-unix-common",
 )
 
 lazy val Scala3Version = "3.3.8"
@@ -111,6 +95,7 @@ lazy val core = (project in file("core"))
       random,
       retry,
       Scodec.bits,
+      Pinned.lz4,
       Testing.munit % Test,
     ),
     libraryDependencies ++= crossSettings(
@@ -153,7 +138,9 @@ lazy val `persistence-cassandra` = (project in file("persistence-cassandra"))
     libraryDependencies ++= Seq(
       scassandra,
       cassandraSync,
+      Pinned.guava,
     ),
+    libraryDependencies ++= Pinned.netty,
     libraryDependencies ++= crossSettings(
       scalaVersion.value,
       if3 = List(PureConfig.GenericScala3),
@@ -211,6 +198,7 @@ lazy val journal = (project in file("kafka-journal"))
       KafkaJournal.journal,
       Testing.munit % Test,
     ),
+    libraryDependencies ++= Pinned.jackson,
   )
 
 lazy val docs = (project in file("kafka-flow-docs"))
