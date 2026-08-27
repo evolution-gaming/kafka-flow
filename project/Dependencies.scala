@@ -12,7 +12,7 @@ object Dependencies {
   val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "4.0.0"
   val random            = "com.evolution"       %% "random"              % "1.0.5"
   val retry             = "com.evolutiongaming" %% "retry"               % "3.1.0"
-  val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.4.0"
+  val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.5.0"
 
   /** Transitive dependencies pinned to versions without known vulnerabilities.
     *
