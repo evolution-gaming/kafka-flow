@@ -315,7 +315,7 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flows that check every five minutes")
     // When("timers are triggered once a minute for four minutes")
-    unloadingFlowsCheckingEveryFiveMinutes foreach {
+    unloadingFlowsCheckingEveryFiveMinutes.foreach {
       case (name, flowOf) =>
         // Then("onTimer never fires")
         assertEquals(firesOverMinutes(new ConstFixture, flowOf, minutes = 4).unsafeRunSync(), 0, name)
@@ -327,7 +327,7 @@ class TimerFlowOfSpec extends FunSuite {
 
     // Given("flows that check every five minutes")
     // When("timers are triggered once a minute for half an hour")
-    unloadingFlowsCheckingEveryFiveMinutes foreach {
+    unloadingFlowsCheckingEveryFiveMinutes.foreach {
       case (name, flowOf) =>
         // Then("onTimer fires at the 5th, 10th, 15th, 20th, 25th and 30th minute")
         assertEquals(firesOverMinutes(new ConstFixture, flowOf, minutes = 30).unsafeRunSync(), 6, name)
@@ -339,7 +339,7 @@ class TimerFlowOfSpec extends FunSuite {
 
     // The cadence is anchored to the previous check, not to the last processed record, so a record arriving
     // mid-interval neither brings the next check forward nor pushes it back.
-    unloadingFlowsCheckingEveryFiveMinutes foreach {
+    unloadingFlowsCheckingEveryFiveMinutes.foreach {
       case (name, flowOf) =>
         val fixture = new ConstFixture
 
