@@ -37,31 +37,104 @@ between the two snapshots even though their offsets were committed. See
 [kafka-flow#732](https://github.com/evolution-gaming/kafka-flow/issues/732); overlaps of tens of
 seconds have been seen in production.
 
-This page is about turning the protection on and running it; for *how* it fences a stale writer, see
-the [Kafka single-writer design](kafka-single-writer-design.md).
+This page is about turning the protection on and running it; for *how* each backend fences a stale
+writer, see the design docs:
+[Cassandra](cassandra-single-writer-design.md), [Kafka](kafka-single-writer-design.md).
 
 Timer settings change how often the window is hit:
 `TimerFlowOf.persistPeriodically(flushOnRevoke = true)` makes it **more** likely (revoked partitions
 flush while the new owner starts up); a higher `persistEvery` makes it **less** likely, at the cost of
 more events to replay on recovery.
 
-For the Kafka snapshot backend the protection is **transactional** snapshot writes — opt-in, off by
-default, enabled with `KafkaPersistenceModuleOf.cachingTransactional`. (A custom `SnapshotDatabase`
-can implement its own protection — see [Custom snapshot storage](#custom-snapshot-storage).)
+The protections are **opt-in and off by default** — pick the one for your snapshot backend:
+
+|                    | Compare-and-set (Cassandra)                  | Transactional (Kafka)                                        |
+| ------------------ | -------------------------------------------- | ------------------------------------------------------------ |
+| **Enable**         | `compareAndSet = true`                       | `KafkaPersistenceModuleOf.cachingTransactional`              |
+| **Rejects with**   | `CassandraSnapshots.SnapshotWriteConflict`   | `CommitFailedException` (the fenced offset commit)           |
+| **Per-write cost** | a Cassandra lightweight transaction (Paxos)  | a Kafka transaction (concurrent writes are group-committed)  |
 
 ### What a rejected write looks like
 
-You do not catch the rejection yourself; it is handled for you:
+You do not catch the rejection yourself; it is handled the same way for both backends:
 
-- **Periodic flush** — the conflict fails the stale instance's flow. That is safe (it no longer owns
-  the partition), unless you set `persistPeriodically(ignorePersistErrors = true)`, in which case it
-  is logged and swallowed.
+- **Periodic flush** — the conflict fails the stale instance's flow, a harmless outcome since it no
+  longer owns the partition. Setting `persistPeriodically(ignorePersistErrors = true)` logs and
+  swallows it instead, so the flow keeps running — still safe either way: the fence already rejected
+  the write, and the flag only decides whether the stale flow tears down or keeps getting rejected.
 - **Flush-on-revoke** — the conflict surfaces as a cache-entry release error that scache prints to
   `System.err` — not via the logging framework — and swallows
   (`scache: failed to release cache entry: ...`), so the partition hands off cleanly.
 
 Either way the rejected write does not land and no offset is committed for it, so the new owner
 replays the affected events.
+
+### Compare-and-set snapshot writes (Cassandra)
+
+Enable with the `compareAndSet` flag:
+
+```scala
+CassandraSnapshots.withSchema[F, State](
+  session,
+  sync,
+  compareAndSet = true,
+)
+// or via the persistence module:
+CassandraPersistence.withSchema[F, State](
+  session,
+  sync,
+  consistencyOverrides,
+  keysSegments,
+  snapshotCompareAndSet = true,
+)
+```
+
+Each snapshot **persist** becomes an offset-guarded conditional write; a stale write is rejected with
+`CassandraSnapshots.SnapshotWriteConflict`. Deletes remain ordinary last-write-wins (offset-gated deletes
+are out of scope for this mode).
+
+- **Cost** — every persist becomes a lightweight transaction (Paxos): several inter-replica
+  round-trips, a few times slower and more coordinator-CPU-intensive than a quorum write. A
+  `persistEvery` wave flushes a partition's whole changed-key population, so the added load scales with
+  that wave.
+- **Consistency** — set `ConsistencyOverrides` read **and** write to a quorum (`QUORUM`, or
+  `LOCAL_QUORUM` single-DC); they are **not** defaulted, and the usual `LOCAL_ONE` default is too weak.
+  Recovery reads at the regular (non-serial) level, so it sees the fenced write only when `R + W > N`; a
+  too-weak read still lets the write-side LWT apply but can miss the newest snapshot, silently
+  reintroducing #732 on the read side. Single-DC ownership (a key contended only within one DC, whatever
+  its replication footprint) also needs `query.serial-consistency = LOCAL_SERIAL` on
+  the scassandra client — the LWT's serial level is separate and defaults to cross-DC `SERIAL`, so a
+  conditional write otherwise pays a cross-DC round-trip.
+- **TTL** — set a `ttl` to bound the live key set; the TTL rides onto each key's Paxos state too
+  (`system.paxos`, written per key by every LWT), so it bounds that internal table's growth as well. (A
+  plain `delete` also leaves a Cassandra row tombstone reclaimed only after `gc_grace_seconds` — the
+  cluster default, not set here; not a tombstone-scan risk since keys are single-row partitions read by
+  point lookup, but it feeds compaction and repair under create/delete churn.)
+- **Rollout** — no migration either direction (the condition reads the `offset` column every version
+  already writes). A rolling deploy is safe, with one caveat while the two modes coexist: a
+  conditional write is timestamped by the Cassandra coordinator, a plain write by the client, so an
+  application clock running ahead of the coordinators can let an old instance's plain write shadow a
+  newer conditional one. Negligible with NTP-synced clocks (application hosts and the Cassandra
+  cluster on one source), and gone once every instance writes conditionally.
+
+Limitations:
+- **Deletes are not fenced.** A delete is a plain last-write-wins `DELETE`, issued when your fold
+  returns `None` for a key whose state was already persisted or recovered (a `None` fold for a
+  never-persisted key touches only the in-memory buffer). During a rebalance overlap a stale writer can
+  then erase a newer owner's snapshot, or resurrect a just-deleted key by writing at a lower offset —
+  #732 for that key. For any key that can be concurrently re-written, **avoid the `None` delete — fold
+  to an empty/"tombstone" state (`Some(empty)`) instead**: the deletion then rides the offset-gated
+  persist path and is protected like any other write, at the cost of the row living until its TTL (which
+  also moves the tombstone from an immediate `DELETE` to a TTL expiry). Plain `None` is safe only for
+  keys never concurrently re-persisted.
+- Offsets must be monotonic per key: after a backward consumer-group offset reset every persist
+  conflicts and the affected flows **stall** until reprocessing passes the stored offsets — to replay
+  from an earlier offset, `truncate` the snapshot table first (`CassandraSnapshots.truncate`).
+- Writes at an *equal* offset are allowed (e.g. a timer-driven state change at the same offset), so a
+  stale writer holding exactly the stored offset is not detected. It is safe: a same-offset write
+  cannot drop committed events — it does not move the recovery point.
+- The guard lives in the row, so it expires with the `ttl`: once a row's TTL lapses a stale write can
+  land a fresh `INSERT`. Harmless when the TTL far exceeds the overlap window (the usual case).
 
 ### Transactional snapshot writes (Kafka)
 

@@ -5,7 +5,9 @@ sidebar_label: Kafka single-writer design
 ---
 
 Design notes for the transactional snapshot mode of `kafka-flow-persistence-kafka`
-(`KafkaPersistenceModuleOf.cachingTransactional`) — the mechanism and the measurements behind it.
+(`KafkaPersistenceModuleOf.cachingTransactional`) — the mechanism and the measurements behind it. The
+Cassandra backend solves the same problem differently — see
+[Cassandra single-writer design: persist only](cassandra-single-writer-design.md).
 
 ## Problem
 
