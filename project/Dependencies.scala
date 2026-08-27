@@ -32,7 +32,7 @@ object Dependencies {
     // classpath to pin anything newer. The version matches what `scassandra` resolves to, so that the build-wide
     // `dependencyOverrides` does not drag `persistence-cassandra` down to an older Jackson than it gets today.
     // Pins `jackson-core` and `jackson-databind` only; `jackson-annotations` and `jackson-datatype-*` stay at 2.14.3.
-    private val jacksonVersion = "2.18.10"
+    private val jacksonVersion = "2.22.2"
     val jackson = Seq(
       "com.fasterxml.jackson.core" % "jackson-core"     % jacksonVersion,
       "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
