@@ -9,7 +9,7 @@ import cats.syntax.all.*
 import com.evolutiongaming.catshelper.FromTry
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
-import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
+import com.evolutiongaming.kafka.flow.snapshot.{SnapshotWriteDatabase, Stored}
 import com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata
 import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord}
 import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, ToBytes, TopicPartition}
@@ -190,9 +190,9 @@ object KafkaSnapshotWriteDatabase {
     partitionMapper: KafkaPersistencePartitionMapper,
     send: ProducerRecord[String, S] => F[Unit],
   ): SnapshotWriteDatabase[F, KafkaKey, S] = new SnapshotWriteDatabase[F, KafkaKey, S] {
-    override def persist(key: KafkaKey, snapshot: S): F[Unit] = produce(key, snapshot.some)
-
-    override def delete(key: KafkaKey): F[Unit] = produce(key, none)
+    // a present value persists the snapshot, an absent value is a tombstone (delete); the Kafka path fences by the
+    // producer's transactional generation, so `stored.offset` is not needed here
+    override def write(key: KafkaKey, stored: Stored[S]): F[Unit] = produce(key, stored.value)
 
     private def produce(key: KafkaKey, snapshot: Option[S]): F[Unit] = {
       val targetPartition = partitionMapper.getStatePartition(key.topicPartition.partition)

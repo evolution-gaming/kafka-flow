@@ -51,6 +51,30 @@ class PersistenceSpec extends FunSuite {
     assert(context.deleteCalled)
   }
 
+  test("delete forwards the current processing offset to the database") {
+    val f = new ConstFixture
+
+    // Given("a flushed state and a known current processing offset")
+    val offset = Offset.unsafe(42)
+    val context0 = Context(timestamps =
+      TimestampState(Timestamp(clock = Instant.parse("2020-01-01T01:02:03.004Z"), watermark = None, offset = offset))
+    )
+
+    // And("delete is requested")
+    val program =
+      f.persistence.appendEvent("event1") *>
+        f.persistence.replaceState(0) *>
+        f.persistence.flush *>
+        f.persistence.delete
+
+    // When("program is run")
+    val context = program.runS(context0).value
+
+    // Then("the database delete receives that offset")
+    assert(context.deleteCalled)
+    assertEquals(context.deleteOffset, offset.some)
+  }
+
   test("delete is not called if the new state was never persisted") {
     val f = new ConstFixture
 
@@ -109,6 +133,7 @@ object PersistenceSpec {
       )
     ),
     deleteCalled: Boolean         = false,
+    deleteOffset: Option[Offset]  = None,
     initializedState: Option[Int] = None
   )
 
@@ -120,8 +145,8 @@ object PersistenceSpec {
       def initPersistedState(state: Int) = State.modify { context =>
         context.copy(initializedState = state.some)
       }
-      def delete(persist: Boolean) = State.modify { context =>
-        context.copy(deleteCalled = persist)
+      def delete(persist: Boolean, offset: Offset) = State.modify { context =>
+        context.copy(deleteCalled = persist, deleteOffset = offset.some)
       }
       def flushKeys  = ().pure[F]
       def flushState = ().pure[F]
