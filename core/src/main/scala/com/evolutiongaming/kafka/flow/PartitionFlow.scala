@@ -66,7 +66,7 @@ object PartitionFlow {
       }
     }
 
-  def of[F[_]: Async](
+  def of[F[_]: Async: LogOf](
     topicPartition: TopicPartition,
     assignedAt: Offset,
     keyStateOf: KeyStateOf[F],
@@ -97,7 +97,7 @@ object PartitionFlow {
   } yield flow
 
   // TODO: put most `Ref` variables into one state class?
-  def of[F[_]: Async](
+  def of[F[_]: Async: LogOf](
     topicPartition: TopicPartition,
     keyStateOf: KeyStateOf[F],
     committedOffset: Ref[F, Offset],
@@ -116,7 +116,7 @@ object PartitionFlow {
         for {
           context <- KeyContext.resource[F](
             removeFromCache = cache.remove(key).flatten.void,
-            log             = log.prefixed(key)
+            mdc             = Log.Mdc.Eager("key" -> key, "topicPartition" -> topicPartition.toString)
           )
           keyState <- keyStateOf(topicPartition, key, createdAt, context)
         } yield PartitionKey(keyState, context)
