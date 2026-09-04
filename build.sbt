@@ -8,7 +8,7 @@ ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
 ThisBuild / dependencyOverrides ++= Pinned.all
 
 lazy val Scala3Version = "3.3.8"
-lazy val Scala2Version = "2.13.18"
+lazy val Scala2Version = "3.9.0"
 
 lazy val commonSettings = Seq(
   organization := "com.evolutiongaming",
