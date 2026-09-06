@@ -7,19 +7,22 @@ import cats.effect.{Deferred, IO, Ref}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.FromTry
 import com.evolutiongaming.kafka.flow.KafkaKey
+import com.evolutiongaming.kafka.flow.kafka.GenerationFencedError
 import com.evolutiongaming.kafka.flow.kafkapersistence.GroupCommitSpec.*
 import com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata
 import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord, RecordMetadata}
 import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, Partition, ToBytes, Topic, TopicPartition}
 import munit.FunSuite
+import org.apache.kafka.clients.consumer.CommitFailedException
+import org.apache.kafka.common.KafkaException
 
 import scala.concurrent.duration.*
 
 /** Local (no broker) tests of the group-commit orchestration behind `KafkaSnapshotWriteDatabase.transactional`:
   * batching under the cap, committing the input offset on every transaction, the offset-only commit marker, the seeded
-  * first offset, and the abort / fail-loud paths. A recording in-memory `Producer` stands in for the broker - this is
-  * orchestration logic, independent of any broker behavior. The broker's generation fencing (the part that genuinely
-  * needs Kafka) is covered by `TransactionalKafkaPersistenceSpec`.
+  * first offset, the abort / fail-loud paths, and the classification of a generation fence. A recording in-memory
+  * `Producer` stands in for the broker - this is orchestration logic, independent of any broker behavior. The broker's
+  * generation fencing (the part that genuinely needs Kafka) is covered by `TransactionalKafkaPersistenceSpec`.
   */
 class GroupCommitSpec extends FunSuite {
 
@@ -222,18 +225,48 @@ class GroupCommitSpec extends FunSuite {
     test.unsafeRunSync()
   }
 
-  test("a commit failure aborts the transaction and surfaces to the caller") {
+  test("a commit failure aborts the transaction and surfaces to the caller, unclassified") {
     val test = for {
       events <- Ref.of[IO, Vector[Event]](Vector.empty)
       tx     <- buildTransactional(recordingProducer(events, failCommit = true), ConsumerGroupMetadata.Empty.some, 256)
       result <- tx.writeDatabase.persist(kafkaKey("key1"), "state-1").attempt
       log    <- events.get
     } yield {
-      assert(result.isLeft, s"error surfaced: $result")
+      assertEquals(result, Left(CommitBoom)) // not a fence: surfaces as is
       assertEquals(log.count(_ == Event.Commit), 0)
       assert(log.contains(Event.Abort), s"aborted: $log")
     }
     test.unsafeRunSync()
+  }
+
+  List(
+    "bare"                                            -> new CommitFailedException("stale generation"),
+    "wrapped by the producer's lingering error state" -> new KafkaException("error state", new CommitFailedException()),
+  ).foreach {
+    case (shape, error) =>
+      test(s"a generation fence ($shape) aborts and surfaces as GenerationFencedError") {
+        // both entry points into commitBatch, the write and the offset-only marker, get the fenced type back, so
+        // their callers keep the state dirty / the offset uncommitted and retry
+        val test = for {
+          events <- Ref.of[IO, Vector[Event]](Vector.empty)
+          tx <- buildTransactional(
+            recordingProducer(events, failOffsets = error.some),
+            ConsumerGroupMetadata.Empty.some,
+            256,
+          )
+          write  <- tx.writeDatabase.persist(kafkaKey("key1"), "state-1").attempt
+          marker <- tx.scheduleCommit.schedule(Offset.unsafe(7)).attempt
+          log    <- events.get
+        } yield {
+          List(write, marker).foreach {
+            case Left(GenerationFencedError(cause)) => assertEquals(cause, error)
+            case other                              => fail(s"expected GenerationFencedError, got $other")
+          }
+          assertEquals(log.count(_ == Event.Commit), 0)
+          assertEquals(log.count(_ == Event.Abort), 2)
+        }
+        test.unsafeRunSync()
+      }
   }
 }
 
@@ -251,12 +284,14 @@ object GroupCommitSpec {
   private val CommitBoom = new RuntimeException("commit boom")
 
   /** A `Producer` that records the transactional calls into `events` and delegates everything else to a no-op producer
-    * (which also fabricates the `RecordMetadata` for `send`). `failCommit` makes `commitTransaction` raise.
+    * (which also fabricates the `RecordMetadata` for `send`). `failCommit` makes `commitTransaction` raise;
+    * `failOffsets` makes `sendOffsetsToTransaction` raise the given error (the broker's rejection of a commit).
     */
   def recordingProducer(
     events: Ref[IO, Vector[Event]],
-    failCommit: Boolean          = false,
-    onBeginTransaction: IO[Unit] = IO.unit,
+    failCommit: Boolean            = false,
+    onBeginTransaction: IO[Unit]   = IO.unit,
+    failOffsets: Option[Throwable] = none,
   ): Producer[IO] = {
     val base = Producer.empty[IO]
     new Producer[IO] {
@@ -268,7 +303,13 @@ object GroupCommitSpec {
       def sendOffsetsToTransaction(
         offsets: NonEmptyMap[TopicPartition, OffsetAndMetadata],
         consumerGroupMetadata: ConsumerGroupMetadata,
-      ): IO[Unit] = events.update(_ :+ Event.Offsets(offsets.head._2.offset, consumerGroupMetadata.generationId))
+      ): IO[Unit] =
+        failOffsets match {
+          case Some(error) => IO.raiseError(error)
+          case None =>
+            val (_, committed) = offsets.head
+            events.update(_ :+ Event.Offsets(committed.offset, consumerGroupMetadata.generationId))
+        }
 
       def send[K, V](
         record: ProducerRecord[K, V]

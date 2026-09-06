@@ -5,7 +5,7 @@ import cats.effect.unsafe.IORuntime
 import cats.effect.{IO, Ref, Resource}
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
-import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
+import com.evolutiongaming.kafka.flow.kafka.{GenerationFencedError, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -122,6 +122,59 @@ class AdditionalPersistSpec extends FunSuite {
             )
           )
         _ <- fixture.commits.get.map(assertEquals(_, List(Offset.unsafe(103L), Offset.unsafe(117L))))
+      } yield ()
+    }
+
+    testIO.unsafeRunSync()
+  }
+
+  test("a fenced additional persist is tolerated: the state stays dirty and its offset uncommitted") {
+    val fold: EnhancedFold[IO, String, ConsumerRecord[String, ByteVector]] =
+      EnhancedFold.of[IO, String, ConsumerRecord[String, ByteVector]] { (extras, _, record) =>
+        val value = new String(record.value.get.value.toArray, StandardCharsets.UTF_8)
+        val key   = record.key.get.value
+
+        for {
+          _ <- key match {
+            case "key1" if value == "value2" => extras.requestAdditionalPersist
+            case "key2" if value == "value4" => extras.requestAdditionalPersist
+            case _                           => IO.unit
+          }
+        } yield Some(value)
+      }
+
+    // ignorePersistErrors stays off: the fence is tolerated on its own
+    val fixture = new TestFixture {
+      override val enhancedFold: EnhancedFold[IO, String, ConsumerRecord[String, ByteVector]] = fold
+
+      override def snapshotDatabase: SnapshotDatabase[IO, KafkaKey, String] =
+        new SnapshotDatabase[IO, KafkaKey, String] {
+          override def delete(key: KafkaKey): IO[Unit]        = snapshots.update(_ - key)
+          override def get(key: KafkaKey): IO[Option[String]] = snapshots.get.map(_.get(key))
+          override def persist(key: KafkaKey, snapshot: String): IO[Unit] =
+            if (key.key == "key1") IO.raiseError(GenerationFencedError(new Exception("stale generation")))
+            else snapshots.update(_ + (key -> snapshot))
+        }
+    }
+
+    val batch = fixture.batch("key1", 1, 3) ++ fixture.batch("key2", 4, 6)
+
+    val program = fixture.partitionFlow.use { partitionFlow =>
+      IO.sleep(1.second) *> partitionFlow(batch)
+    }
+
+    val testIO = TestControl.execute(program).flatMap { control =>
+      for {
+        _ <- control.tick
+        _ <- control.advanceAndTick(1.second)
+        // key1's additional persist was fenced and key2's landed; key1 still holds its initial offset (101), so
+        // that is what the partition commits - not key2's 105
+        _ <- fixture
+          .snapshots
+          .get
+          .map(assertEquals(_, Map(KafkaKey("app", "group", TopicPartition.empty, "key2") -> "value4")))
+        _ <- fixture.commits.get.map(assertEquals(_, List(Offset.unsafe(101L))))
+        _ <- control.results.map(results => assert(clue(results).exists(_.isSuccess), "the flow must not fail"))
       } yield ()
     }
 

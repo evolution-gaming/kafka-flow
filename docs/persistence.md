@@ -53,9 +53,15 @@ can implement its own protection — see [Custom snapshot storage](#custom-snaps
 
 You do not catch the rejection yourself; it is handled for you:
 
-- **Periodic flush** — the conflict fails the stale instance's flow. That is safe (it no longer owns
-  the partition), unless you set `persistPeriodically(ignorePersistErrors = true)`, in which case it
-  is logged and swallowed.
+- **Periodic flush** — the rejection is logged and the write is retried on the next tick: the key stays
+  dirty and keeps holding its offset, so nothing past it is committed. The broker's rejection is the
+  fence; the flow does not fail on it (the consumer's next completed rebalance either brings the member
+  to the current generation or tears the partition's flows down). This covers `persistPeriodically`,
+  `persistPeriodicallyAndUnloadOrphaned` and the additional persist; `unloadOrphaned` and the
+  revoke-time flush are unchanged. Every other persist error still fails the flow, unless you set
+  `persistPeriodically(ignorePersistErrors = true)`, in which case it is logged and swallowed.
+- **Periodic offset commit** — the same: the rejection is logged and the offset is scheduled again on
+  the next tick, or committed sooner by the next snapshot write. Any other commit error fails the flow.
 - **Flush-on-revoke** — the conflict surfaces as a cache-entry release error that scache prints to
   `System.err` — not via the logging framework — and swallows
   (`scache: failed to release cache entry: ...`), so the partition hands off cleanly.
@@ -187,8 +193,8 @@ Limitations:
   a non-identity mapper is not supported here.
 - The fence works under both the **classic** and the **consumer** group protocols
   (`group.protocol=classic|consumer`). With `consumer`, use **brokers 4.3.0+** — below that a still-valid
-  owner can be spuriously fenced during a rebalance and crash; the restart converges, but any later
-  rebalance can fence again (safe, never corruption, but not stable).
+  owner can be spuriously fenced during a rebalance; the fenced write is retried on the next tick (safe,
+  never corruption, but a retry on every rebalance).
 
 ### Custom snapshot storage
 

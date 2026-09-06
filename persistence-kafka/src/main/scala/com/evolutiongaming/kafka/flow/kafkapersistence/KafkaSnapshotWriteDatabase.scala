@@ -8,11 +8,12 @@ import cats.effect.{Concurrent, Deferred, Outcome, Poll, Ref}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.FromTry
 import com.evolutiongaming.kafka.flow.KafkaKey
-import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
+import com.evolutiongaming.kafka.flow.kafka.{GenerationFencedError, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
 import com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata
 import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord}
 import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, ToBytes, TopicPartition}
+import org.apache.kafka.clients.consumer.CommitFailedException
 
 object KafkaSnapshotWriteDatabase {
 
@@ -33,8 +34,8 @@ object KafkaSnapshotWriteDatabase {
 
   /** Variant of [[of]] performing writes as group-committed Kafka transactions that also commit the input offset. The
     * producer must be transactional with `initTransactions` already called. A stale consumer generation is rejected by
-    * the broker (KIP-447), aborting the transaction so neither the writes nor the offset land. See
-    * `docs/kafka-single-writer-design.md`.
+    * the broker (KIP-447), aborting the transaction so neither the writes nor the offset land; that rejection surfaces
+    * as `GenerationFencedError`, which callers retry on their next tick. See `docs/kafka-single-writer-design.md`.
     *
     * @param groupMetadata
     *   current consumer group metadata (generation); see `Consumer.groupMetadata`. `None` (consumer not yet joined) is
@@ -154,9 +155,21 @@ object KafkaSnapshotWriteDatabase {
 
       transaction
         .attempt
+        .map(classifyFence)
         .flatMap(complete)
         .onCancel(complete(new InterruptedException("snapshot write batch canceled").asLeft))
     }
+
+    // every fence surfaces here, as the one outcome shared by the batch, so it is classified once: callers match on
+    // GenerationFencedError and nobody else walks cause chains
+    private def classifyFence(result: Either[Throwable, Unit]): Either[Throwable, Unit] =
+      result.leftMap(e => if (isGenerationFence(e)) GenerationFencedError(e) else e)
+
+    // the fence arrives bare from sendOffsetsToTransaction, or as KafkaException(cause = CommitFailedException) when
+    // the abort failed to clear the producer's error state and the next transactional call re-raises it; hence the
+    // chain walk, depth-bounded rather than cycle-guarded (16 is far past any real wrapping depth)
+    private def isGenerationFence(e: Throwable): Boolean =
+      Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(16).exists(_.isInstanceOf[CommitFailedException])
 
     // every transaction commits an offset, so the broker's generation check (KIP-447) gates every write. Committing
     // the *latest* offset is safe across capped batches: each persist blocks until durable before its offset is

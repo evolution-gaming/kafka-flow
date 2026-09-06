@@ -106,8 +106,11 @@ Key points:
   partition is never committed through the consumer.
 - Both the write and the offset-only commit are **synchronous** — there is no background committer, so
   the call itself drives the transaction and blocks on its outcome. That blocking is what lets a fence
-  (`CommitFailedException`) propagate into the flow and crash a stale owner, rather than being lost on a
-  fire-and-forget commit thread.
+  (`CommitFailedException`, surfaced as `GenerationFencedError`) reach the caller, rather than being lost
+  on a fire-and-forget commit thread. The rejection itself is the fence: the transaction aborted and
+  nothing landed, so the caller does not fail the flow; it keeps the key dirty, or the offset
+  uncommitted, and retries on its next tick, under the generation the consumer refreshes once it
+  completes the rebalance. Every other error still fails the flow.
 - The fence is per **member + generation**, not per partition: the coordinator checks the committer's
   generation, not which partitions it still owns, so a member still on the current generation cannot be
   stopped from committing a partition it just lost. That is closed client-side: a revoked partition's
@@ -125,8 +128,9 @@ the flow.
 A generation captured once at assignment would miss a routine case: a rebalance can advance the
 generation while leaving this member's partitions unchanged. The capture would go stale, and the
 retained partition's next transactional commit would be spuriously fenced though the member still owns
-it, crashing a still-valid owner — safe (a fenced commit writes nothing), but not stable. Refreshing
-after every poll avoids it: a post-poll read follows the silent bump a rebalance callback does not.
+it. That is safe (a fenced commit writes nothing and is retried on the next tick), but a retry on
+every rebalance. Refreshing after every poll avoids it: a post-poll read follows the silent bump a
+rebalance callback does not.
 The unknown (negative) pre-join generation is never published — for a commit carrying it against an
 empty group (exactly the pre-join case) the coordinator *skips* generation validation, so it would
 land unfenced; a flush before the first join instead fails loudly rather than committing ungated.
@@ -367,8 +371,9 @@ real broker:
   consumer generation* and asserts the newer snapshot survives.
 - **Generation fence, isolated** — under the stable id a stale flush dies at the epoch fence first
   (Stable transactional.id, above), so these tests drive a live, unfenced producer whose generation
-  alone is stale: the next periodic flush fails fast, the first flush is gated by the offset seeded
-  at assignment, and a transactional offset commit is rejected.
+  alone is stale: the next periodic flush is rejected without failing the flow and lands once the
+  generation is current again, the first flush is gated by the offset seeded at assignment, and a
+  transactional offset commit is rejected.
 - **Concurrent writes** — a partition's keys flush in parallel against the one shared producer
   (Write path, above); asserted safe for distinct keys.
 - **Unfinished transactions, both resolutions** — the takeover-abort at the handover: the

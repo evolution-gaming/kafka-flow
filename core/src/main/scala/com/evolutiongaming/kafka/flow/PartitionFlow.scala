@@ -10,7 +10,7 @@ import com.evolution.scache.Cache
 import com.evolutiongaming.catshelper.ClockHelper.*
 import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.PartitionFlowConfig.ParallelismMode.*
-import com.evolutiongaming.kafka.flow.kafka.{OffsetToCommit, ScheduleCommit}
+import com.evolutiongaming.kafka.flow.kafka.{GenerationFencedError, OffsetToCommit, ScheduleCommit}
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, Timestamp}
 import com.evolutiongaming.skafka.consumer.{ConsumerRecord, WithSize}
 import com.evolutiongaming.skafka.{Offset, TopicPartition}
@@ -251,20 +251,26 @@ object PartitionFlow {
 
       // we move forward if minimum offset became larger, or it is empty,
       // i.e. if we dealt with all the states, and there is nothing holding
-      // us from moving forward
+      // us from moving forward. `committedOffset` itself advances only after the commit succeeds (see `commit`)
       committedOffsetValue <- committedOffset.get
-      moveForward <-
-        if (allowedOffset > committedOffsetValue) {
-          committedOffset.set(allowedOffset).as((allowedOffset.value - committedOffsetValue.value).some)
-        } else none[Long].pure[F]
-      offsetToCommit <- moveForward traverse { moveForward =>
-        log.info(s"offset: $allowedOffset (+$moveForward)") as allowedOffset
+      offsetToCommit <- Option.when(allowedOffset > committedOffsetValue)(allowedOffset) traverse { offset =>
+        log.info(s"offset: $offset (+${offset.value - committedOffsetValue.value})") as offset
       }
       _ <- commitOffsetsAt update { commitOffsetsAt =>
         commitOffsetsAt plusMillis config.commitOffsetsInterval.toMillis
       }
 
     } yield offsetToCommit
+
+    // a fenced commit is retried next tick, so `committedOffset` advances only on success. every other error
+    // fails the flow; the revoke path below swallows all of them
+    def commit(offset: Offset): F[Unit] =
+      scheduleCommit.schedule(offset).attempt.flatMap {
+        case Right(()) => committedOffset.set(offset)
+        case Left(e: GenerationFencedError) =>
+          log.warn(s"offset commit $offset fenced by a stale consumer generation, retrying on the next tick: $e")
+        case Left(e) => e.raiseError[F, Unit]
+      }
 
     val acquire: F[PartitionFlow[F]] = init as { records =>
       for {
@@ -280,9 +286,7 @@ object PartitionFlow {
 
         _ <- log.debug(s"offset to commit: ${offsetToCommit.show}")
 
-        // not error-handled like the revoke path below: in transactional mode a fenced periodic commit
-        // (CommitFailedException) must crash the stale instance - that is the fencing
-        _ <- offsetToCommit.traverse_(offset => scheduleCommit.schedule(offset))
+        _ <- offsetToCommit.traverse_(commit)
 
         _ <- log.debug("done with commits")
       } yield ()

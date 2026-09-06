@@ -7,6 +7,7 @@ import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.KeyContext
 import com.evolutiongaming.kafka.flow.MonadStateHelper.*
+import com.evolutiongaming.kafka.flow.kafka.GenerationFencedError
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
 import com.evolutiongaming.kafka.flow.timer.TimerFlowSpec.*
 import com.evolutiongaming.kafka.flow.timer.Timers.TimerState
@@ -627,40 +628,93 @@ class TimerFlowOfSpec extends FunSuite {
     List(persistPeriodicallyFlowOf, persistingAndUnloadingFlowOf).map(flowOf => testIO(flowOf).unsafeRunSync())
   }
 
-  test("persistPeriodicallyAndUnloadOrphaned keeps a key loaded when its persist error is ignored") {
+  List(
+    "is fenced"        -> (GenerationFencedError(new Exception("stale generation")), false),
+    "error is ignored" -> (new Exception("Test error"), true),
+  ).foreach {
+    case (kind, (error, ignorePersistErrors)) =>
+      test(s"persistPeriodicallyAndUnloadOrphaned keeps a key loaded when its persist $kind") {
+
+        val f = new ConstFixture
+
+        val flushBuffersErr: FlushBuffers[IO] = new FlushBuffers[IO] {
+          def flush: IO[Unit] = error.raiseError[IO, Unit]
+        }
+
+        // Given("flow unloads after 3 messages accumulated and the flush always fails")
+        val startedAt = f.timestamp.copy(offset = Offset.unsafe(1000))
+        val context   = Context(timestamps = TimestampState(startedAt))
+        val flowOf = TimerFlowOf.persistPeriodicallyAndUnloadOrphaned[IO](
+          fireEvery           = 0.minutes,
+          maxOffsetDifference = 3,
+          ignorePersistErrors = ignorePersistErrors,
+        )
+
+        // When("the unload threshold is crossed but the persist fails")
+        def program(flow: Resource[IO, TimerFlow[IO]]) = flow use { flow =>
+          f.timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1004))) *>
+            f.timerContext.trigger(flow)
+        }
+
+        val testIO = for {
+          _      <- f.contextRef.set(context)
+          _      <- program(flowOf(f.keyContext, flushBuffersErr, f.timerContext))
+          result <- f.contextRef.get
+        } yield {
+          // Then("the key is not unloaded and still holds its last persisted offset")
+          assertEquals(result.removed, 0)
+          assertEquals(result.holding, Some(Offset.unsafe(1000)))
+        }
+
+        testIO.unsafeRunSync()
+      }
+  }
+
+  test("persistPeriodically tolerates a fenced persist even when ignorePersistErrors = false") {
 
     val f = new ConstFixture
 
-    val flushBuffersErr: FlushBuffers[IO] = new FlushBuffers[IO] {
-      def flush: IO[Unit] = new Exception("Test error").raiseError[IO, Unit]
+    // the writer's classification of the broker's stale-generation rejection; the timer flow must not fail on it
+    val fencedFlushBuffers: FlushBuffers[IO] = new FlushBuffers[IO] {
+      def flush: IO[Unit] = GenerationFencedError(new Exception("stale generation")).raiseError[IO, Unit]
     }
 
-    // Given("flow unloads after 3 messages accumulated and the flush always fails")
-    val startedAt = f.timestamp.copy(offset = Offset.unsafe(1000))
-    val context   = Context(timestamps = TimestampState(startedAt))
-    val flowOf = TimerFlowOf.persistPeriodicallyAndUnloadOrphaned[IO](
-      fireEvery           = 0.minutes,
-      maxOffsetDifference = 3,
-      ignorePersistErrors = true,
+    val context = Context(timestamps =
+      TimestampState(
+        f.timestamp.copy(clock = Instant.parse("2020-03-01T00:00:00.000Z"))
+      )
     )
+    val persistPeriodicallyFlowOf =
+      TimerFlowOf.persistPeriodically[IO](fireEvery = 1.minute, ignorePersistErrors = false)
+    val persistingAndUnloadingFlowOf =
+      TimerFlowOf.persistPeriodicallyAndUnloadOrphaned[IO](fireEvery = 1.minute, ignorePersistErrors = false)
 
-    // When("the unload threshold is crossed but the persist fails")
-    def program(flow: Resource[IO, TimerFlow[IO]]) = flow use { flow =>
-      f.timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1004))) *>
-        f.timerContext.trigger(flow)
+    def program(flow: Resource[IO, TimerFlow[IO]]) = flow.use { flow =>
+      for {
+        _ <- f
+          .timerContext
+          .set(f.timestamp.copy(offset = Offset.unsafe(101), clock = Instant.parse("2020-03-01T00:01:00.000Z")))
+        _ <- f.timerContext.trigger(flow)
+        _ <- f
+          .timerContext
+          .set(f.timestamp.copy(offset = Offset.unsafe(102), clock = Instant.parse("2020-03-01T00:02:00.000Z")))
+        _ <- f.timerContext.trigger(flow)
+      } yield ()
     }
 
-    val testIO = for {
+    def testIO(flowOf: TimerFlowOf[IO]) = for {
       _      <- f.contextRef.set(context)
-      _      <- program(flowOf(f.keyContext, flushBuffersErr, f.timerContext))
+      _      <- program(flowOf(f.keyContext, fencedFlushBuffers, f.timerContext))
       result <- f.contextRef.get
     } yield {
-      // Then("the key is not unloaded and still holds its last persisted offset")
+      // the key stays dirty and loaded
+      assertEquals(result.flushed, 0)
       assertEquals(result.removed, 0)
-      assertEquals(result.holding, Some(Offset.unsafe(1000)))
+      // and keeps holding the offset of its last successful persist, so nothing past it is committed
+      assertEquals(result.holding, Some(Offset.unsafe(100)))
     }
 
-    testIO.unsafeRunSync()
+    List(persistPeriodicallyFlowOf, persistingAndUnloadingFlowOf).map(flowOf => testIO(flowOf).unsafeRunSync())
   }
 
 }

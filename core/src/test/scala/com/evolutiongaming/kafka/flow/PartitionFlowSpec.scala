@@ -10,7 +10,7 @@ import com.evolutiongaming.kafka.flow.PartitionFlow.{FilterRecord, PartitionKey}
 import com.evolutiongaming.kafka.flow.PartitionFlowSpec.*
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.journal.JournalsOf
-import com.evolutiongaming.kafka.flow.kafka.{ScheduleCommit, ToOffset}
+import com.evolutiongaming.kafka.flow.kafka.{GenerationFencedError, ScheduleCommit, ToOffset}
 import com.evolutiongaming.kafka.flow.key.{KeyDatabase, KeysOf}
 import com.evolutiongaming.kafka.flow.persistence.PersistenceOf
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -429,6 +429,66 @@ class PartitionFlowSpec extends FunSuite {
     }
 
     test.unsafeRunSync()
+  }
+
+  test("PartitionFlow retries a fenced periodic offset commit with the same offset on the next tick") {
+    // a transactional ScheduleCommit rejected for a stale consumer generation must not fail the flow: the committed
+    // offset stays behind so the same offset is scheduled again, and it advances once a commit goes through
+    class LocalFixture extends ConstFixture(waitForN = 3) {
+      val fence: Ref[IO, Boolean]          = Ref.unsafe(true)
+      val scheduled: Ref[IO, List[Offset]] = Ref.unsafe(Nil)
+      override val scheduleCommit: ScheduleCommit[IO] = new ScheduleCommit[IO] {
+        def schedule(offset: Offset): IO[Unit] =
+          scheduled.update(_ :+ offset) *> fence.get.flatMap { fenced =>
+            if (fenced) IO.raiseError(GenerationFencedError(new RuntimeException("stale generation")))
+            else pendingOffset.set(offset.some)
+          }
+      }
+    }
+
+    val f = new LocalFixture
+
+    val flow = f.flow use { flow =>
+      for {
+        // step past the acquisition ms: poll gates are strict `isAfter`
+        _ <- IO.sleep(1.milli)
+        // the key finishes, so offset 103 becomes committable - and its commit is fenced
+        _ <- flow(f.records("key1", 100, List("event1", "event2", "event3")))
+        _ <- f.scheduled.get.map(assertEquals(_, List(Offset.unsafe(103))))
+        _ <- f.pendingOffset.get.map(assertEquals(_, None))
+        // the next tick schedules the same offset again, still fenced
+        _ <- IO.sleep(1.milli)
+        _ <- flow(Nil)
+        _ <- f.scheduled.get.map(assertEquals(_, List.fill(2)(Offset.unsafe(103))))
+        // the generation is current again: the retry commits and the committed offset advances
+        _ <- f.fence.set(false)
+        _ <- IO.sleep(1.milli)
+        _ <- flow(Nil)
+        _ <- f.scheduled.get.map(assertEquals(_, List.fill(3)(Offset.unsafe(103))))
+        _ <- f.pendingOffset.get.map(assertEquals(_, Some(Offset.unsafe(103))))
+        // nothing new to commit: no further schedule
+        _ <- IO.sleep(1.milli)
+        _ <- flow(Nil)
+        _ <- f.scheduled.get.map(assertEquals(_, List.fill(3)(Offset.unsafe(103))))
+      } yield ()
+    }
+    TestControl.executeEmbed(flow).unsafeRunSync()
+  }
+
+  test("PartitionFlow fails on a periodic offset commit error that is not a fence") {
+    class LocalFixture extends ConstFixture(waitForN = 3) {
+      override val scheduleCommit: ScheduleCommit[IO] = new ScheduleCommit[IO] {
+        def schedule(offset: Offset): IO[Unit] = IO.raiseError(new RuntimeException("broker unavailable"))
+      }
+    }
+
+    val f = new LocalFixture
+
+    val flow = f.flow use { flow =>
+      IO.sleep(1.milli) *> flow(f.records("key1", 100, List("event1", "event2", "event3"))).attempt
+    }
+    val result = TestControl.executeEmbed(flow).unsafeRunSync()
+    assert(clue(result).left.exists(_.getMessage == "broker unavailable"))
   }
 
   def setupRemapKeyTest(remapKey: RemapKey[IO], initialData: Map[KafkaKey, String]) = {

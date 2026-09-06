@@ -5,6 +5,7 @@ import cats.effect.Resource
 import cats.effect.kernel.Resource.ExitCase
 import cats.syntax.all.*
 import com.evolutiongaming.kafka.flow.KeyContext
+import com.evolutiongaming.kafka.flow.kafka.GenerationFencedError
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
 import com.evolutiongaming.skafka.Offset
 
@@ -86,6 +87,10 @@ object TimerFlowOf {
     * restored from these snapshots and some messages will be reprocessed again, so it's important to have an idempotent
     * processing logic
     *
+    * A persist rejected by the broker for a stale consumer generation (transactional Kafka snapshots,
+    * `GenerationFencedError`) is handled the same way regardless of `ignorePersistErrors`: the key stays dirty, keeps
+    * holding its offset and is retried on the next tick.
+    *
     * @param fireEvery
     *   the interval at which `onTimer` triggers
     * @param persistEvery
@@ -139,7 +144,7 @@ object TimerFlowOf {
   }
 
   /** Combines [[unloadOrphaned]] with [[persistPeriodically]] in a single TimerFlow. A key is unloaded only once its
-    * state is persisted: an ignored persist failure keeps it loaded, holding its offset.
+    * state is persisted: an ignored or fenced persist keeps it loaded, holding its offset.
     *
     * @param fireEvery
     *   the interval at which `onTimer` triggers
@@ -238,6 +243,9 @@ object TimerFlowOf {
     /** Flushes and, on success, holds `currentOffset`; returns whether the state was persisted. */
     def attemptToPersist(ignorePersistErrors: Boolean, context: KeyContext[F], currentOffset: Offset): F[Boolean] =
       persistence.flush.attempt.flatMap {
+        case Left(err: GenerationFencedError) =>
+          // the rejection is the fence: keep the key dirty and its held offset, retry on the next tick
+          context.log.warn(s"persist fenced by a stale consumer generation, retrying on the next tick: $err").as(false)
         case Left(err) if ignorePersistErrors =>
           // 'context' will continue holding the previous offset from the last time the state was persisted
           // and offsets committed (or just the last committed offset if no state has ever been persisted before).
