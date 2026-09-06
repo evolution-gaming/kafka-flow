@@ -138,7 +138,8 @@ object TimerFlowOf {
 
   }
 
-  /** Combines [[unloadOrphaned]] with [[persistPeriodically]] in a single TimerFlow
+  /** Combines [[unloadOrphaned]] with [[persistPeriodically]] in a single TimerFlow. A key is unloaded only once its
+    * state is persisted: an ignored persist failure keeps it loaded, holding its offset.
     *
     * @param fireEvery
     *   the interval at which `onTimer` triggers
@@ -151,9 +152,10 @@ object TimerFlowOf {
     * @param flushOnRevoke
     *   controls whether persistence flushing should happen on partition revocation
     * @param ignorePersistErrors
-    *   if true, a failure to persist the state will not fail the computation. Instead, an error message will be logged
-    *   and a new offset for the key will not be `held`, so as a result no new offset will be committed for the
-    *   partition.
+    *   if true, a failure to persist the state will not fail the computation. Instead, an error message will be logged,
+    *   a new offset for the key will not be `held`, so no new offset will be committed for the partition, and the key
+    *   is not unloaded: it stays in memory until a later tick persists it, so keys accumulate while the store keeps
+    *   failing.
     */
   def persistPeriodicallyAndUnloadOrphaned[F[_]: MonadThrow](
     fireEvery: FiniteDuration    = 1.minute,
@@ -186,14 +188,16 @@ object TimerFlowOf {
           expired          = current.clock isAfter expiredAt
           canUnload        = expired || offsetDifference > maxOffsetDifference
           canPersist       = (current.clock compareTo triggerFlushAt) >= 0
-          _ <- Applicative[F].whenA(canPersist || canUnload)(
-            persistence.attemptToPersist(
-              ignorePersistErrors = ignorePersistErrors,
-              context             = context,
-              currentOffset       = current.offset
-            )
-          )
-          _ <- Applicative[F].whenA(canUnload)(
+          persisted <-
+            if (canPersist || canUnload)
+              persistence.attemptToPersist(
+                ignorePersistErrors = ignorePersistErrors,
+                context             = context,
+                currentOffset       = current.offset
+              )
+            else false.pure[F]
+          // `remove` drops the held offset too: unloading an unpersisted key lets the partition commit past it
+          _ <- Applicative[F].whenA(canUnload && persisted)(
             context.log.info(s"flush, offset difference: $offsetDifference") *> context.remove
           )
           _ <- register(current)
@@ -230,7 +234,9 @@ object TimerFlowOf {
   }
 
   private implicit class AttemptToPersist[F[_]: MonadThrow](persistence: FlushBuffers[F]) {
-    def attemptToPersist(ignorePersistErrors: Boolean, context: KeyContext[F], currentOffset: Offset): F[Unit] =
+
+    /** Flushes and, on success, holds `currentOffset`; returns whether the state was persisted. */
+    def attemptToPersist(ignorePersistErrors: Boolean, context: KeyContext[F], currentOffset: Offset): F[Boolean] =
       persistence.flush.attempt.flatMap {
         case Left(err) if ignorePersistErrors =>
           // 'context' will continue holding the previous offset from the last time the state was persisted
@@ -240,8 +246,9 @@ object TimerFlowOf {
           context
             .log
             .info(s"Failed to persist state, the error is ignored and offsets won't be committed, error: $err")
-        case Left(err) => err.raiseError[F, Unit]
-        case Right(_)  => context.hold(currentOffset)
+            .as(false)
+        case Left(err) => err.raiseError[F, Boolean]
+        case Right(_)  => context.hold(currentOffset).as(true)
       }
   }
 }
