@@ -83,10 +83,43 @@
 (* CANNOT bind at all (snapshot and offset live in different stores) and   *)
 (* so needs the offset-CAS + monotone buffer -- Kafka's protection IS the  *)
 (* binding plus the filter.                                                *)
+(*                                                                         *)
+(* THE REVOKE-TIME WRITE (RevokeWrite) AND THE ORDERING IT RESTS ON        *)
+(* (RevokeBeforeHandover). Under the classic cooperative assignor the      *)
+(* client moves to the new generation BEFORE it runs onPartitionsRevoked   *)
+(* (ConsumerCoordinator.onJoinComplete assigns groupMetadata, then invokes *)
+(* the callback), so a revoke-time commit bound to the post-poll token is  *)
+(* fenced every time and the new owner replays. The proposed change reads  *)
+(* the client's generation inside the callback, publishes it, and lets the *)
+(* revoke flush and offset commit land under it: a zombie-to-be captures   *)
+(* the LIVE generation and writes ONCE before its flow is torn down        *)
+(* (RevokeCallback). The fence cannot make that safe by itself -- KIP-447  *)
+(* validates member and generation, not partition ownership, and the new   *)
+(* owner holds the same live generation here (this spec coarsens the two   *)
+(* cooperative rounds into one bump, the harder case for the fence). What  *)
+(* makes it safe is an ORDERING fact about the platform, held as the knob  *)
+(* RevokeBeforeHandover: a partition transferring ownership is withheld    *)
+(* from its next owner for the whole round                                 *)
+(* (CooperativeStickyAssignor.adjustAssignment strips it; for any other    *)
+(* cooperative assignor validateCooperativeAssignment throws on the        *)
+(* overlap), and the round that finally assigns it cannot complete until   *)
+(* the revoking member rejoins, which it does only after the callback      *)
+(* returns (requestRejoin follows invokePartitionsRevoked). So while the   *)
+(* callback runs nobody else owns the partition and no round completes; by *)
+(* the time someone does, the write is done and the flow is gone. TRUE     *)
+(* enforces exactly that quiescence (Withheld). FALSE lets the callback    *)
+(* run any time after its Rebalance -- after the Handover, after the new   *)
+(* owner has written -- the reading in which some member already owns the  *)
+(* partition in the generation the revoker captures (a non-withholding     *)
+(* assignor, or a revoke callback for a partition another member holds):   *)
+(* the refinement fails (kafka_revokewrite_unordered), while               *)
+(* INV_CaptureCoupled stays blind to it because the alive-with-live-       *)
+(* generation window lives inside one action.                              *)
 (***************************************************************************)
 EXTENDS SnapshotFlow
 
-CONSTANTS Coupled, Seeded, AtomicBind, Refresh, ReplayFilter
+CONSTANTS Coupled, Seeded, AtomicBind, Refresh, ReplayFilter,
+          RevokeWrite, RevokeBeforeHandover
 
 RebalanceLimit == 2
 GenBumpLimit   == 2
@@ -96,7 +129,7 @@ Zombies        == 1 .. RebalanceLimit
 
 VARIABLES overwrote, committed, scheduled, recoveredAt,
           liveGen, zAlive, zCapturedGen, zCarriesOffset, rebalances,
-          handovers, oCapturedGen, genBumps
+          handovers, oCapturedGen, genBumps, zFlush, zSched
   \* (op, store, ownerPos, ownerLoaded, ownerState are the shared flow state
   \* from SnapshotFlow)
   \* overwrote    : a stale write has regressed a present cell's offset (the
@@ -124,10 +157,20 @@ VARIABLES overwrote, committed, scheduled, recoveredAt,
   \*                commits carry
   \* genBumps     : how many no-assignment generation bumps have happened (<=
   \*                GenBumpLimit)
+  \* zFlush       : [Zombies -> CellType] -- what each revoked flow would
+  \*                flush from its buffer at revoke time. This spec folds and
+  \*                flushes in one step, so a loaded key's buffer is exactly
+  \*                the cell it last wrote or recovered: the store as of the
+  \*                Rebalance. Absent when there was nothing to flush (a
+  \*                torn-down or deleted key)
+  \* zSched       : [Zombies -> Offsets] -- the offsetToCommit each revoked
+  \*                flow held at revoke time: what its revoke-time commit
+  \*                binds
 
 vars == <<op, store, ownerPos, ownerLoaded, ownerState, overwrote, committed,
           scheduled, recoveredAt, liveGen, zAlive, zCapturedGen,
-          zCarriesOffset, rebalances, handovers, oCapturedGen, genBumps>>
+          zCarriesOffset, rebalances, handovers, oCapturedGen, genBumps,
+          zFlush, zSched>>
 
 Folded(o) == IF op[o] = "persist" THEN Snap(o, CorrectContents(o))
              ELSE Tomb(o)
@@ -159,6 +202,22 @@ Init ==
   /\ handovers = 0
   /\ oCapturedGen = 1
   /\ genBumps = 0
+  /\ zFlush = [z \in Zombies |-> Absent]
+  /\ zSched = [z \in Zombies |-> 0]
+
+\* the cooperative quiescence the revoke-time write rests on: a revoke
+\* callback is outstanding (under RevokeWrite the callback is the only
+\* teardown, so an alive zombie has not run it yet). Withheld, the revoked
+\* partition has no other owner and no round can complete -- the group is
+\* waiting for the revoking member's JoinGroup, sent only after the callback
+\* returns -- so Handover, Rebalance, GenBump and the owner's write lanes all
+\* wait. RevokeBeforeHandover=FALSE: nothing waits (a non-withholding
+\* assignor, or a revoke callback for a partition another member already
+\* holds). Inert without RevokeWrite, so every pre-existing config is
+\* unchanged.
+Withheld == /\ RevokeWrite
+            /\ RevokeBeforeHandover
+            /\ \E z \in Zombies : zAlive[z]
 
 \* the live owner folds a BATCH of events up to some offset o (a flush wave
 \* -- matches the abstract Commit's jump) and flushes, gated by the token it
@@ -186,6 +245,7 @@ Init ==
 OwnerFold ==
   /\ ownerPos < MaxOffset
   /\ ownerLoaded
+  /\ ~Withheld
   /\ IF oCapturedGen = liveGen
        THEN \E o \in (ownerPos + 1) .. MaxOffset :
             LET start    == IF ReplayFilter
@@ -215,7 +275,7 @@ OwnerFold ==
                            ownerState>>
   /\ UNCHANGED <<op, recoveredAt, liveGen, zAlive, zCapturedGen,
                  zCarriesOffset, rebalances, handovers, oCapturedGen,
-                 genBumps>>
+                 genBumps, zFlush, zSched>>
 
 \* the offset-only marker lane: a transaction with no writes commits the
 \* scheduled offset (the periodic commit path), closing the one-round lag.
@@ -224,11 +284,12 @@ OwnerMarker ==
   /\ AtomicBind
   /\ committed /= scheduled
   /\ oCapturedGen = liveGen
+  /\ ~Withheld
   /\ committed' = scheduled
   /\ UNCHANGED <<op, store, ownerPos, ownerLoaded, ownerState, overwrote,
                  scheduled, recoveredAt, liveGen, zAlive, zCapturedGen,
                  zCarriesOffset, rebalances, handovers, oCapturedGen,
-                 genBumps>>
+                 genBumps, zFlush, zSched>>
 
 \* the owner recovers the durable state -- ONE atomic step. That grain of
 \* atomicity (Specifying Systems Sec. 7.3) compresses a real compound
@@ -248,7 +309,7 @@ OwnerRecover ==
   /\ ownerLoaded' = TRUE
   /\ UNCHANGED <<op, store, ownerPos, overwrote, committed, scheduled,
                  liveGen, zAlive, zCapturedGen, zCarriesOffset, rebalances,
-                 handovers, oCapturedGen, genBumps>>
+                 handovers, oCapturedGen, genBumps, zFlush, zSched>>
 
 \* a new owner takes over and resumes from the committed input offset. Under
 \* the binding that is `committed` exactly -- which can genuinely TRAIL the
@@ -258,9 +319,11 @@ OwnerRecover ==
 \* cadence is decoupled from flushes, so it may resume anywhere at or below
 \* the snapshot. Its seeded offsetToCommit is the assigned offset. A
 \* SingleWriterStore stutter (the durable store is unchanged). Bounded to
-\* HandoverLimit.
+\* HandoverLimit. Waits for an outstanding revoke callback (Withheld): the
+\* new owner is assigned only in the round the revoker's rejoin completes.
 Handover ==
   /\ handovers < HandoverLimit
+  /\ ~Withheld
   /\ store.present
   /\ \E c \in 0 .. store.offset :
        /\ (AtomicBind => c = committed)
@@ -273,19 +336,30 @@ Handover ==
   /\ handovers' = handovers + 1
   /\ oCapturedGen' = liveGen   \* the new owner captured on its assignment
   /\ UNCHANGED <<op, store, overwrote, liveGen, zAlive, zCapturedGen,
-                 zCarriesOffset, rebalances, genBumps>>
+                 zCarriesOffset, rebalances, genBumps, zFlush, zSched>>
 
 \* the broker reassigns the partition: the generation bumps; the prior owner
 \* becomes a zombie (a new incarnation z) that still holds the now-stale
 \* generation it last captured, and carries an offset iff seeded. Two
-\* rebalances leave two concurrent stale zombies (RebalanceLimit).
+\* rebalances leave two concurrent stale zombies (RebalanceLimit). The
+\* revoked flow's buffer and pending offset are frozen here, for its
+\* revoke-time write (RevokeCallback). Waits for an outstanding revoke
+\* callback (Withheld): a round completes only once the revoker rejoined.
 Rebalance ==
   /\ rebalances < RebalanceLimit
+  /\ ~Withheld
   /\ LET z == rebalances + 1 IN
        /\ zAlive'         = [zAlive EXCEPT ![z] = TRUE]
        \* the OLD (pre-bump) generation -- now stale
        /\ zCapturedGen'   = [zCapturedGen EXCEPT ![z] = liveGen]
        /\ zCarriesOffset' = [zCarriesOffset EXCEPT ![z] = Seeded]
+       \* frozen only when RevokeCallback will read them, so the pre-existing
+       \* configs keep their exact state graph
+       /\ zFlush'         = [zFlush EXCEPT ![z] =
+                               IF RevokeWrite /\ ownerLoaded THEN store
+                               ELSE Absent]
+       /\ zSched'         = [zSched EXCEPT ![z] =
+                               IF RevokeWrite THEN scheduled ELSE 0]
   /\ liveGen' = liveGen + 1
   /\ rebalances' = rebalances + 1
   /\ UNCHANGED <<op, store, ownerPos, ownerLoaded, ownerState, overwrote,
@@ -296,14 +370,59 @@ Rebalance ==
 \* generation. With capture COUPLED to teardown, capturing closes its flow
 \* (zAlive[z] -> FALSE). Decoupled, the flow survives -- now holding a
 \* CURRENT captured generation though it is stale (the refactor hazard).
+\* Under RevokeWrite the callback is RevokeCallback instead.
 Poll(z) ==
+  /\ ~RevokeWrite
   /\ zAlive[z]
   /\ zCapturedGen[z] /= liveGen
   /\ zCapturedGen' = [zCapturedGen EXCEPT ![z] = liveGen]
   /\ zAlive' = [zAlive EXCEPT ![z] = (~Coupled)]
   /\ UNCHANGED <<op, store, ownerPos, ownerLoaded, ownerState, overwrote,
                  committed, scheduled, recoveredAt, liveGen, zCarriesOffset,
-                 rebalances, handovers, oCapturedGen, genBumps>>
+                 rebalances, handovers, oCapturedGen, genBumps, zFlush,
+                 zSched>>
+
+\* zombie z's consumer runs the revoke callback with the revoke-time write
+\* (RevokeWrite): it reads the client's generation -- the LIVE one, since
+\* onJoinComplete moved the member before invoking the callback -- publishes
+\* it, flushes the revoked flow's frozen buffer (zFlush) and commits its
+\* pending offset (zSched) in one transaction gated on that generation, and
+\* tears the flow down. ONE action: capture, write and teardown all run
+\* inside the callback on the poll thread. The gate is ZombieCommit's, but
+\* against the generation JUST captured, so it is TRUE by construction: the
+\* fence is inert here, and whether the write is safe is decided by what
+\* else happened between the Rebalance and this step (Withheld). Ordered,
+\* the buffer is exactly what the store holds -- an idempotent rewrite -- and
+\* the commit closes the one-round lag, which is the change's point.
+\* Unordered, a later owner may have advanced the store, and the rewrite
+\* regresses it: #732 through an ACCEPTED write. Eviction is not this
+\* action: a member evicted while in the callback reaches onPartitionsLost
+\* with its generation reset and cannot capture anything -- that is the
+\* zombie that never runs its callback, whose stale ZombieCommit is rejected.
+\* A member evicted AFTER capturing but before its commit lands (the
+\* coordinator drops it and bumps the generation at the same point) is
+\* rejected at the broker; capture and write are one step here, so that
+\* interleaving is not represented -- it is the safe direction, the
+\* pre-change behaviour.
+RevokeCallback(z) ==
+  /\ RevokeWrite
+  /\ zAlive[z]
+  /\ LET captured == liveGen
+         accepted == IF AtomicBind
+                       THEN ((~zCarriesOffset[z]) \/ (captured = liveGen))
+                       ELSE TRUE
+         write    == accepted /\ zFlush[z].present
+     IN
+       /\ zCapturedGen' = [zCapturedGen EXCEPT ![z] = captured]
+       /\ zAlive'       = [zAlive EXCEPT ![z] = FALSE]
+       /\ store'        = IF write THEN zFlush[z] ELSE store
+       /\ overwrote'    = (overwrote
+                            \/ (write /\ OverwroteHigher(zFlush[z].offset)))
+       /\ committed'    = IF accepted /\ AtomicBind THEN zSched[z]
+                          ELSE committed
+  /\ UNCHANGED <<op, ownerPos, ownerLoaded, ownerState, scheduled,
+                 recoveredAt, liveGen, zCarriesOffset, rebalances, handovers,
+                 oCapturedGen, genBumps, zFlush, zSched>>
 
 \* zombie z flushes its fold at some offset m. Under the binding a seeded
 \* flush is gated on its captured generation and an unseeded one is ungated;
@@ -325,21 +444,25 @@ ZombieCommit(z, m) ==
        /\ overwrote' = (overwrote \/ (accepted /\ OverwroteHigher(m)))
   /\ UNCHANGED <<op, ownerPos, ownerLoaded, ownerState, scheduled,
                  recoveredAt, liveGen, zAlive, zCapturedGen, zCarriesOffset,
-                 rebalances, handovers, oCapturedGen, genBumps>>
+                 rebalances, handovers, oCapturedGen, genBumps, zFlush,
+                 zSched>>
 
 \* a rebalance that bumps the generation while assigning THIS member nothing
 \* new (a cooperative assignor: another member joins and takes partitions
 \* only from others). No callback fires on this member, so the
 \* assignment-time capture never runs -- only the post-poll refresh can
 \* re-sync its token. The owner still owns its partition throughout (no
-\* zombie, no handover). Bounded to GenBumpLimit.
+\* zombie, no handover). Bounded to GenBumpLimit. Waits for an outstanding
+\* revoke callback (Withheld): any round needs the revoker's rejoin.
 GenBump ==
   /\ genBumps < GenBumpLimit
+  /\ ~Withheld
   /\ liveGen' = liveGen + 1
   /\ genBumps' = genBumps + 1
   /\ UNCHANGED <<op, store, ownerPos, ownerLoaded, ownerState, overwrote,
                  committed, scheduled, recoveredAt, zAlive, zCapturedGen,
-                 zCarriesOffset, rebalances, handovers, oCapturedGen>>
+                 zCarriesOffset, rebalances, handovers, oCapturedGen, zFlush,
+                 zSched>>
 
 \* the post-poll refresh (Consumer.of: poll <* refresh): the owner
 \* re-publishes the live generation it is a member of. Never leading -- it
@@ -369,7 +492,7 @@ OwnerRefresh ==
   /\ UNCHANGED <<op, store, ownerPos, ownerLoaded, ownerState, overwrote,
                  committed, scheduled, recoveredAt, liveGen, zAlive,
                  zCapturedGen, zCarriesOffset, rebalances, handovers,
-                 genBumps>>
+                 genBumps, zFlush, zSched>>
 
 Next ==
   \/ OwnerFold
@@ -378,17 +501,30 @@ Next ==
   \/ OwnerMarker
   \/ Rebalance
   \/ \E z \in Zombies : Poll(z)
+  \/ \E z \in Zombies : RevokeCallback(z)
   \/ GenBump
   \/ OwnerRefresh
   \/ \E z \in Zombies, m \in 1 .. MaxOffset : ZombieCommit(z, m)
 
+\* the revoke callback returns (the member is not evicted inside it) -- what
+\* makes the Withheld wait a wait rather than a stall. Only under
+\* RevokeWrite, so the pre-existing configs' liveness checks are untouched.
+RevokeFairness ==
+  RevokeWrite => WF_vars(\E z \in Zombies : RevokeCallback(z))
+
 Spec == Init /\ [][Next]_vars /\ WF_vars(OwnerFold) /\ WF_vars(OwnerRecover)
              /\ WF_vars(OwnerRefresh) /\ WF_vars(OwnerMarker)
+             /\ RevokeFairness
 
 ----------------------------------------------------------------------------
 INV_NoStaleOverwrite == ~overwrote
 \* capture-coupling: no alive (not-torn-down) zombie has captured the current
-\* generation.
+\* generation. Holds unchanged under RevokeWrite -- capture, write and
+\* teardown are one action, so no state shows a zombie alive with the live
+\* generation -- which is exactly why it is blind to the unordered
+\* revoke-write hazard: kafka_revokewrite_unordered_coupling HOLDS it while
+\* the refinement fails. That hazard is in the write's EFFECT, and only the
+\* step simulation (RefSafeSpec) sees it.
 INV_CaptureCoupled   ==
   \A z \in Zombies : zAlive[z] => (zCapturedGen[z] /= liveGen)
 \* the IDEALIZED no-gap property: committed never trails the snapshot. The
@@ -421,4 +557,6 @@ TypeOK ==
   /\ handovers \in 0 .. HandoverLimit
   /\ oCapturedGen \in 0 .. (MaxOffset + 5)
   /\ genBumps \in 0 .. GenBumpLimit
+  /\ zFlush \in [Zombies -> CellType]
+  /\ zSched \in [Zombies -> Offsets]
 =============================================================================

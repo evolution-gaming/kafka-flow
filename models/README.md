@@ -175,7 +175,7 @@ positive checks `TypeOK` instead.
 What makes the suite trustworthy is **pairing**: almost every theorem/invariant that should hold has a
 sibling config that flips one knob and makes it *fail* (a removed guard / tombstone / fence / fix /
 fairness), and the refinement check has its own control (`casfw_refines_vacuous`: a deliberately
-mismatched impl/spec pair must fail the mapping). The suite is **75 configs, 40 of them expected
+mismatched impl/spec pair must fail the mapping). The suite is **78 configs, 41 of them expected
 failures**. The most recent additions — the `tokensync_*` capture-vs-refresh 2×2 (+ equivalence), the
 `gclanes_*` two-lane GroupCommit controls, the two `*_mo4`
 higher-bound events configs, the `flowsalive_*` teardown-coupling controls, the `recoveryread*`
@@ -238,6 +238,23 @@ that `Kafka` otherwise has too (without the binding the owner's re-flush below t
 | `kafka_replay_unbound` | the atomic binding removed: the window opens and the owner's re-flush below the snapshot regresses it (no offset gate) — silent data loss | VIOLATES-REFINEMENT `RefSafeSpec` |
 | `kafka_replay_unbound_gap` | the same cause pinned at the invariant: without the binding `INV_NoReplayGap` itself is violated (so it cannot pass vacuously) | VIOLATES `INV_NoReplayGap` |
 | `kafka_genlag` | the owner-side token lag without the post-poll refresh (`Refresh` off): a no-assignment generation bump (cooperative assignor) fires no callback, the owner's token lags, the broker spuriously fences the legitimate owner, and the teardown/recover re-captures nothing — a livelock. The post-poll refresh closes it (`kafka_refines`, `Refresh=TRUE`); lag is the safe direction, so the fence is untouched | VIOLATES-TEMPORAL `RefLive` |
+| `kafka_revokewrite_refines` | the revoke-time write (`RevokeWrite`): under the classic cooperative assignor the client moves to the new generation *before* it runs the revoke callback, so the revoking member reads that generation inside the callback, publishes it, lands its flush and offset commit under it, and then tears down — a zombie-to-be writing once at the live generation. Under the ordering fact `RevokeBeforeHandover=TRUE` (the revoked partition is withheld from its next owner, and no round completes, until the revoker's callback has returned and it rejoined) nothing else owns the partition while the callback runs: the write is an idempotent rewrite and the commit closes the one-round lag | HOLDS |
+| `kafka_revokewrite_unordered` | the ordering removed (`RevokeBeforeHandover=FALSE`): the callback runs after the new owner has taken over and written; it captures the *same* live generation, so the fence accepts the flush, and the revoked flow's frozen buffer regresses the snapshot — #732 through an accepted write. The generation check does not encode partition ownership; the withholding does | VIOLATES-REFINEMENT `RefSafeSpec` |
+| `kafka_revokewrite_unordered_coupling` | the same unordered run at the coupling invariant: `INV_CaptureCoupled` holds, because capture, write and teardown are one action and no state shows a zombie alive with the live generation — the invariant that catches the decoupling refactor (`kafka_decoupled_coupling`) is blind to this hazard; only the step simulation sees it | HOLDS |
+
+**The revoke-time write rests on one assumption the generation fence does not enforce:** no other
+member owns the partition in the generation the revoker captures until the revoker's callback has
+returned — the classic cooperative *withholding* (`CooperativeStickyAssignor.adjustAssignment` strips a
+partition transferring ownership from its new owner's assignment for that round, and
+`validateCooperativeAssignment` throws for any other cooperative assignor that overlaps) plus
+*rejoin-after-callback* (`requestRejoin` follows `invokePartitionsRevoked` in `onJoinComplete`, so the
+round that assigns the partition cannot complete first), both read from the kafka-clients 4.3.1
+sources. `RevokeBeforeHandover` holds that fact as a knob; its FALSE reading is the refinement failure
+above. KIP-447 checks member and generation only, and `Kafka.tla` coarsens the two cooperative rounds
+into one bump, so the new owner holds the *same* generation the revoker captured — the fence is inert
+for this write, and only the ordering carries it. Not represented: a member evicted *after* capturing
+but before its commit lands (the coordinator drops it and bumps the generation at the same point, so
+the commit is rejected — the safe, pre-change direction); capture and write are one step in the model.
 
 ### `Epoch`
 
@@ -408,7 +425,7 @@ rather than a silent article of faith.
 ## Additional coverage
 
 These close residuals the study named but had earlier only argued. Grouped separately because they
-arrived after the core suite, but full members of it (counted in the 75 above, run by `run.sh`).
+arrived after the core suite, but full members of it (counted in the 78 above, run by `run.sh`).
 
 ### `GroupCommitLanes` — the two-lane write orchestration (closes G1/G2)
 
