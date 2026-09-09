@@ -135,6 +135,33 @@ The unknown (negative) pre-join generation is never published — for a commit c
 empty group (exactly the pre-join case) the coordinator *skips* generation validation, so it would
 land unfenced; a flush before the first join instead fails loudly rather than committing ungated.
 
+### Tolerating the fence
+
+A fenced transaction is not a failure to escalate: it aborted, nothing landed, the abort leaves the
+producer usable, and the dirty key or uncommitted offset is retried on the next tick. What bounds the
+retrying is the consumer itself. A member that is merely lagging the generation stops being fenced the
+moment it completes the in-flight round; an evicted member is rejected until its next rejoin, whose
+`onPartitionsLost` tears its flows down. Either way the fencing ends with a rebalance the consumer is
+already driving, not with a timer this library could set.
+
+The measurements say the same. Six rolling deploys of two services against one preprod cluster
+(classic protocol, `CooperativeStickyAssignor`) tolerated 14 945 fences with no flow failure and no
+partition left behind. Per member they arrive in short bursts — 42 of them across 28 members, counting
+a gap of more than 10 s as a new burst — with a median burst of 1.1 s, a p90 of 3.9 s and a maximum of
+20.6 s; none reached 30 s. A local two-member harness with a third member joining and leaving in a loop
+is tighter still: 793 of its 825 fences fell inside one 3.5 s window.
+
+So there is no tolerance duration to configure. A bound would have to sit well above 20 s not to fire
+on an ordinary rolling deploy, and by then it bounds nothing the consumer does not; set anywhere
+plausible-looking it fails the flow precisely during the longest rebalances — the ones where a peer is
+running eager recovery — and restarts the storm it was meant to prevent.
+
+The residual shape a bound would notionally catch is a member whose polls keep succeeding while its
+generation never becomes valid. That is not fence-specific, and it has a better detector: a partition
+whose **committed offset stops advancing** while its input keeps moving. That alert is worth having in
+any case — it also covers a key pinned by an undeleted tombstone, a stalled fold and a wedged producer
+— and `snapshot_write_fenced_total` (per topic-partition) then says whether fencing is the reason.
+
 ### Recovery read: bounded by the high watermark
 
 An open transaction on the snapshot topic distorts what a `read_committed` reader may see: the
@@ -439,6 +466,10 @@ Unit suites pin the client-side pieces the mechanism depends on:
 - **Capturing the generation in a rebalance callback** (instead of the post-poll read): the bump that
   matters fires no callback under two of the three protocol/assignor combinations (see Consumer
   rebalance protocols).
+- **A tolerance bound on the fence** (fail the flow after an unbroken run of fences longer than some
+  duration): the consumer's own rejoin already bounds the run, the measured maxima are far below any
+  bound worth setting, and such a bound fires exactly during the longest rebalances (see Tolerating
+  the fence). The stalled-committed-offset alert covers the case it was for.
 
 ## Forward-looking
 
