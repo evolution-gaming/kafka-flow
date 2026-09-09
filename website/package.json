@@ -22,6 +22,9 @@
     "react": "^18.0.0",
     "react-dom": "^18.0.0"
   },
+  "resolutions": {
+    "qs": "^6.16.0"
+  },
   "engines": {
     "node": ">=18.0"
   },
