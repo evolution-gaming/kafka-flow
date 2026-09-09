@@ -75,6 +75,8 @@ lazy val core = (project in file("core"))
     mimaBinaryIssueFilters ++= Seq(
       ProblemFilters.exclude[IncompatibleMethTypeProblem]("com.evolutiongaming.kafka.flow.KeyFlow.of"),
       ProblemFilters.exclude[IncompatibleMethTypeProblem]("com.evolutiongaming.kafka.flow.KeyFlowOf.apply"),
+      // `Snapshots.apply` is private to the `snapshot` package; Scala 3 still emits it as a static method
+      ProblemFilters.exclude[DirectMissingMethodProblem]("com.evolutiongaming.kafka.flow.snapshot.Snapshots.apply"),
     ),
     libraryDependencies ++= Seq(
       Cats.core,

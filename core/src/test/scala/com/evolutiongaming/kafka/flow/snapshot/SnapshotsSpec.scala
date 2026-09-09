@@ -1,10 +1,13 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
 import cats.data.State
+import cats.effect.{Ref, SyncIO}
 import cats.mtl.Stateful
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.MonadStateHelper.*
+import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
+import com.evolutiongaming.kafka.flow.kafka.GenerationFencedError
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotsSpec.*
 import com.evolutiongaming.skafka.Offset
@@ -19,7 +22,7 @@ class SnapshotsSpec extends FunSuite {
 
     // Given("empty database")
     val database  = SnapshotDatabase.memory(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer)
+    val snapshots = Snapshots("key1", database, f.buffer, f.tombstonePending)
 
     // When("buffer is filled with state")
     val program =
@@ -40,7 +43,7 @@ class SnapshotsSpec extends FunSuite {
 
     // Given("empty database")
     val database  = SnapshotDatabase.memory(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer)
+    val snapshots = Snapshots("key1", database, f.buffer, f.tombstonePending)
 
     // When("buffer is filled with state")
     // And("Snapshots is flushed")
@@ -63,7 +66,7 @@ class SnapshotsSpec extends FunSuite {
 
     // Given("database with contents")
     val database  = SnapshotDatabase.memory(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer)
+    val snapshots = Snapshots("key1", database, f.buffer, f.tombstonePending)
     val context = Context(
       database = Map("key1" -> 102),
       buffer   = Some(Snapshots.Snapshot(103, persisted = false))
@@ -86,7 +89,7 @@ class SnapshotsSpec extends FunSuite {
 
     // Given("database with contents")
     val database  = SnapshotDatabase.memory(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer)
+    val snapshots = Snapshots("key1", database, f.buffer, f.tombstonePending)
     val context = Context(
       database = Map("key1" -> 102),
       buffer   = Some(Snapshots.Snapshot(103, persisted = false))
@@ -103,13 +106,83 @@ class SnapshotsSpec extends FunSuite {
 
   }
 
+  test("Snapshots retries a delete the database refused, on the next flush") {
+
+    // Given("a database that refuses the delete, as the broker does to a stale consumer generation")
+    val db                              = Ref.unsafe[SyncIO, Map[K, S]](Map("key1" -> 102))
+    val refuse                          = Ref.unsafe[SyncIO, Boolean](true)
+    val buffer                          = Ref.unsafe[SyncIO, Option[Snapshots.Snapshot[S]]](None)
+    val tombstonePending                = Ref.unsafe[SyncIO, Boolean](false)
+    implicit val syncIoLog: Log[SyncIO] = Log.empty
+    val database = new SnapshotDatabase[SyncIO, K, S] {
+      def persist(key: K, snapshot: S) = db.update(_ + (key -> snapshot))
+      def get(key: K)                  = db.get.map(_.get(key))
+      def delete(key: K) = refuse
+        .get
+        .ifM(
+          GenerationFencedError(new Exception("stale generation")).raiseError[SyncIO, Unit],
+          db.update(_ - key),
+        )
+    }
+    val snapshots = Snapshots("key1", database, buffer.stateInstance, tombstonePending.stateInstance)
+
+    // When("the delete is refused")
+    snapshots.delete(persist = true).attempt.unsafeRunSync()
+    // Then("the snapshot is still there and the tombstone is recorded as pending")
+    assert(db.get.unsafeRunSync().contains("key1"))
+    assert(tombstonePending.get.unsafeRunSync())
+
+    // When("the key is flushed while the tombstone is pending")
+    snapshots.flush.attempt.unsafeRunSync()
+    // Then("the flush retried the delete rather than reporting success on the emptied buffer")
+    assert(db.get.unsafeRunSync().contains("key1"))
+
+    // When("the database accepts the delete")
+    refuse.set(false).unsafeRunSync()
+    snapshots.flush.unsafeRunSync()
+    // Then("the tombstone lands and nothing is left pending")
+    assert(!db.get.unsafeRunSync().contains("key1"))
+    assert(!tombstonePending.get.unsafeRunSync())
+  }
+
+  test("Snapshots drops a pending tombstone once the state comes back") {
+
+    // Given("a delete the database refused, so the tombstone is still owed")
+    val db                              = Ref.unsafe[SyncIO, Map[K, S]](Map("key1" -> 102))
+    val refuse                          = Ref.unsafe[SyncIO, Boolean](true)
+    val buffer                          = Ref.unsafe[SyncIO, Option[Snapshots.Snapshot[S]]](None)
+    val tombstonePending                = Ref.unsafe[SyncIO, Boolean](false)
+    implicit val syncIoLog: Log[SyncIO] = Log.empty
+    val database = new SnapshotDatabase[SyncIO, K, S] {
+      def persist(key: K, snapshot: S) = db.update(_ + (key -> snapshot))
+      def get(key: K)                  = db.get.map(_.get(key))
+      def delete(key: K) = refuse
+        .get
+        .ifM(
+          GenerationFencedError(new Exception("stale generation")).raiseError[SyncIO, Unit],
+          db.update(_ - key),
+        )
+    }
+    val snapshots = Snapshots("key1", database, buffer.stateInstance, tombstonePending.stateInstance)
+    snapshots.delete(persist = true).attempt.unsafeRunSync()
+
+    // When("the key is folded again before the tombstone lands, and flushed")
+    refuse.set(false).unsafeRunSync()
+    snapshots.append(103).unsafeRunSync()
+    snapshots.flush.unsafeRunSync()
+
+    // Then("the new state was written, not the tombstone")
+    assertEquals(db.get.unsafeRunSync().get("key1"), Some(103))
+    assert(!tombstonePending.get.unsafeRunSync())
+  }
+
   test("Snapshots does not persist the same snapshot more than once") {
 
     val f = new ConstFixture
 
     // Given("database with contents")
     val database  = countingSnapshotDb(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer)
+    val snapshots = Snapshots("key1", database, f.buffer, f.tombstonePending)
     val context = Context(
       database = Map("key1" -> 102),
       buffer   = Some(Snapshots.Snapshot(103, persisted = false))
@@ -132,7 +205,7 @@ class SnapshotsSpec extends FunSuite {
 
     // Given("database without contents")
     val database  = countingSnapshotDb(f.database)
-    val snapshots = Snapshots("key1", database, f.buffer)
+    val snapshots = Snapshots("key1", database, f.buffer, f.tombstonePending)
     val context = Context(
       database = Map.empty,
       buffer   = None
@@ -157,12 +230,14 @@ object SnapshotsSpec {
 
   case class Context(
     database: Map[K, S]                   = Map.empty,
-    buffer: Option[Snapshots.Snapshot[S]] = None
+    buffer: Option[Snapshots.Snapshot[S]] = None,
+    tombstonePending: Boolean             = false,
   )
 
   class ConstFixture {
-    val database = Stateful[F, Context] focus GenLens[Context](_.database)
-    val buffer   = Stateful[F, Context] focus GenLens[Context](_.buffer)
+    val database         = Stateful[F, Context] focus GenLens[Context](_.database)
+    val buffer           = Stateful[F, Context] focus GenLens[Context](_.buffer)
+    val tombstonePending = Stateful[F, Context] focus GenLens[Context](_.tombstonePending)
   }
 
   implicit val log: Log[F] = Log.empty[F]

@@ -62,6 +62,15 @@ You do not catch the rejection yourself; it is handled for you:
   `persistPeriodically(ignorePersistErrors = true)`, in which case it is logged and swallowed.
 - **Periodic offset commit** — the same: the rejection is logged and the offset is scheduled again on
   the next tick, or committed sooner by the next snapshot write. Any other commit error fails the flow.
+- **Tombstone** — the delete a tick or a fold triggers when a key's state goes empty is a transaction
+  like the others. The key is kept, with its held offset, and deleted again on the next tick; until the
+  tombstone lands it stays *pending*, so a flush of that key retries the delete rather than reporting
+  success on an emptied buffer. Without that a later unload or flush-on-revoke could drop the key and
+  let the partition commit past a snapshot that is still in the store. A key that is folded again
+  before its tombstone lands drops it: the state is back, and the next flush writes it over the
+  snapshot the delete did not remove. On the two paths that do not tolerate the fence -
+  `unloadOrphaned` and the revoke-time flush - a pending tombstone surfaces the way any fenced flush
+  does there, as a failed flow or a swallowed release error; both replay, neither loses state.
 - **Flush-on-revoke** — the conflict surfaces as a cache-entry release error that scache prints to
   `System.err` — not via the logging framework — and swallows
   (`scache: failed to release cache entry: ...`), so the partition hands off cleanly.

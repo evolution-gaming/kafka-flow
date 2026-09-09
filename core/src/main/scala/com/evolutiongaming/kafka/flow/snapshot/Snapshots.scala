@@ -53,50 +53,69 @@ object Snapshots {
     key: K,
     database: SnapshotDatabase[F, K, S]
   )(implicit log: Log[F]): F[Snapshots[F, S]] =
-    Ref.of[F, Option[Snapshot[S]]](None).map(buffer => Snapshots(key, database, buffer.stateInstance))
+    for {
+      buffer    <- Ref.of[F, Option[Snapshot[S]]](None)
+      tombstone <- Ref.of[F, Boolean](false)
+    } yield Snapshots(key, database, buffer.stateInstance, tombstone.stateInstance)
 
+  /** @param tombstonePending
+    *   set while a `delete` has emptied the buffer but its database call has not gone through - see `flush`.
+    */
   private[snapshot] def apply[F[_]: Monad, K: LogPrefix, S](
     key: K,
     database: SnapshotDatabase[F, K, S],
-    buffer: Stateful[F, Option[Snapshot[S]]]
+    buffer: Stateful[F, Option[Snapshot[S]]],
+    tombstonePending: Stateful[F, Boolean],
   )(implicit log: Log[F]): Snapshots[F, S] = new Snapshots[F, S] {
     private val prefixLog: Log[F] = log.prefixed(LogPrefix[K].extract(key))
 
     def read = database.get(key)
 
+    // a state that comes back cancels a tombstone still owed: the key is not going away after all, and the next
+    // flush writes the new snapshot over the one the delete did not remove
     def append(snapshot: S) = {
-      buffer.modify {
+      tombstonePending.set(false) *> buffer.modify {
         case Some(s) => s.updateValue(snapshot).some
         case None    => Snapshot.init(snapshot).some
       }
     }
 
     def initPersisted(snapshot: S) = {
-      buffer.set(Snapshot.initPersisted(snapshot).some)
+      tombstonePending.set(false) *> buffer.set(Snapshot.initPersisted(snapshot).some)
     }
 
-    def flush = {
-      for {
-        snapshot <- buffer.get
-        _ <- snapshot traverse_ { snapshot =>
-          if (!snapshot.persisted) {
-            for {
-              _ <- database.persist(key, snapshot.value)
-              _ <- buffer.set(snapshot.copy(persisted = true).some)
-            } yield ()
-          } else ().pure[F]
-        }
-      } yield ()
-    }
+    // a pending tombstone is flushed by retrying the delete. Reporting success on the emptied buffer instead would
+    // be a lie the caller acts on: `attemptToPersist` would hold the key's offset, and an unload or a revoke would
+    // then let the partition commit past a snapshot that is still in the store
+    def flush =
+      tombstonePending
+        .get
+        .ifM(
+          deleteFromDatabase,
+          for {
+            snapshot <- buffer.get
+            _ <- snapshot traverse_ { snapshot =>
+              if (!snapshot.persisted) {
+                for {
+                  _ <- database.persist(key, snapshot.value)
+                  _ <- buffer.set(snapshot.copy(persisted = true).some)
+                } yield ()
+              } else ().pure[F]
+            }
+          } yield ()
+        )
 
-    def delete(persist: Boolean) = {
-      val delete = if (persist) {
-        database.delete(key) *> prefixLog.info("deleted snapshot")
-      } else {
-        ().pure[F]
-      }
-      buffer.set(None) *> delete
-    }
+    def delete(persist: Boolean) =
+      if (persist) tombstonePending.set(true) *> deleteFromDatabase
+      else buffer.set(None)
+
+    // the buffer is emptied only once the tombstone lands: a delete that fails - the stale-generation fence is the
+    // one its callers tolerate - leaves the key to be deleted again
+    private def deleteFromDatabase =
+      database.delete(key) *>
+        prefixLog.info("deleted snapshot") *>
+        buffer.set(None) *>
+        tombstonePending.set(false)
 
   }
 

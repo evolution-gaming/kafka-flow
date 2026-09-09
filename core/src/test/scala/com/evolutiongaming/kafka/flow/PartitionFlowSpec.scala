@@ -484,14 +484,17 @@ class PartitionFlowSpec extends FunSuite {
       val snapshots: Ref[IO, Map[String, State]] = Ref.unsafe(Map.empty)
       val deletes: Ref[IO, Int]                  = Ref.unsafe(0)
       val evict: Ref[IO, Boolean]                = Ref.unsafe(false)
+      val fenceDeletes: Ref[IO, Boolean]         = Ref.unsafe(false)
       private val snapshotDatabase = new SnapshotDatabase[IO, String, State] {
         def get(key: String): IO[Option[State]]             = snapshots.get.map(_.get(key))
         def persist(key: String, snapshot: State): IO[Unit] = snapshots.update(_ + (key -> snapshot))
-        // the broker rejects the first tombstone for a stale consumer generation
-        def delete(key: String): IO[Unit] = deletes.updateAndGet(_ + 1).flatMap { n =>
-          if (n == 1) IO.raiseError(GenerationFencedError(new RuntimeException("stale generation")))
-          else snapshots.update(_ - key)
-        }
+        // while the member's generation is stale the broker rejects every tombstone
+        def delete(key: String): IO[Unit] = deletes.update(_ + 1) *> fenceDeletes
+          .get
+          .ifM(
+            IO.raiseError(GenerationFencedError(new RuntimeException("stale generation"))),
+            snapshots.update(_ - key),
+          )
       }
       override def flow: Resource[IO, PartitionFlow[IO]] = makeFlow(
         timerFlowOf = TimerFlowOf.persistPeriodically(fireEvery = 0.minute, persistEvery = 0.minute),
@@ -510,18 +513,20 @@ class PartitionFlowSpec extends FunSuite {
         _ <- flow(f.records("key1", 100, List("event1", "event2")))
         _ <- f.pendingOffset.get.map(assertEquals(_, Some(Offset.unsafe(102))))
         _ <- f.snapshots.get.map(s => assert(s.contains("key1")))
-        // the tick evicts key1 and its tombstone is fenced: nothing landed, so the key is kept
+        // the tick evicts key1 while the generation is stale: the tombstone is fenced, nothing landed, the key is
+        // kept and it still holds its offset
         _ <- f.evict.set(true)
+        _ <- f.fenceDeletes.set(true)
         _ <- IO.sleep(1.milli)
         _ <- flow(Nil)
-        _ <- f.deletes.get.map(assertEquals(_, 1))
+        _ <- f.deletes.get.map(n => assert(n >= 1, "the tick must have attempted the tombstone"))
         _ <- f.snapshots.get.map(s => assert(s.contains("key1"), "a fenced tombstone must not have landed"))
-        // the generation is current again: the next tick deletes key1 for real, and the partition commits past it
-        // as key2 arrives. With key1 pinned, the offset would have stayed at 102
-        _ <- f.evict.set(false)
+        _ <- f.pendingOffset.get.map(assertEquals(_, Some(Offset.unsafe(102))))
+        // the generation is current again: a later tick deletes key1 for real, and the partition commits past it as
+        // key2 arrives. With key1 pinned by its cancelled timers, the tombstone would never be retried
+        _ <- f.fenceDeletes.set(false)
         _ <- IO.sleep(1.milli)
         _ <- flow(f.records("key2", 102, List("event3", "event4")))
-        _ <- f.deletes.get.map(assertEquals(_, 2))
         _ <- f.snapshots.get.map(s => assert(!s.contains("key1"), "the retried tombstone must have landed"))
         _ <- f.pendingOffset.get.map(assertEquals(_, Some(Offset.unsafe(104))))
       } yield ()
