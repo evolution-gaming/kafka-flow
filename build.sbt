@@ -3,7 +3,9 @@ import com.typesafe.tools.mima.core.*
 
 ThisBuild / versionScheme := Some("early-semver")
 ThisBuild / evictionErrorLevel := Level.Warn
-ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
+// this release is a major: `KeyFlow.of` and `KeyFlowOf.apply` gained constraints. Back to `BinaryCompatible` once
+// it is out, as in 8081ea0 / ea43339
+ThisBuild / versionPolicyIntention := Compatibility.None
 
 // covers the test-only dependency paths, the published modules declare `Pinned` explicitly
 ThisBuild / dependencyOverrides ++= Pinned.all
@@ -68,15 +70,9 @@ lazy val core = (project in file("core"))
   .settings(commonSettings)
   .settings(
     name := "kafka-flow",
-    // `KeyFlow.of` and `KeyFlowOf.apply` build the delete path that tolerates a stale-generation fence, which needs
-    // `MonadThrow` where `Monad` was enough. The constraint is the only change, and every effect these are used with
-    // (`Sync`, `Async`, `IO`) already satisfies it, so callers recompile unchanged; only one linked against 10.3.x
-    // without recompiling would miss the method. Drop these if the fix goes out as a major instead.
-    mimaBinaryIssueFilters ++= Seq(
-      ProblemFilters.exclude[IncompatibleMethTypeProblem]("com.evolutiongaming.kafka.flow.KeyFlow.of"),
-      ProblemFilters.exclude[IncompatibleMethTypeProblem]("com.evolutiongaming.kafka.flow.KeyFlowOf.apply"),
-      // `Snapshots.apply` is private to the `snapshot` package; Scala 3 still emits it as a static method
-      ProblemFilters.exclude[DirectMissingMethodProblem]("com.evolutiongaming.kafka.flow.snapshot.Snapshots.apply"),
+    // `Snapshots.apply` is private to the `snapshot` package; Scala 3 still emits it as a static method
+    mimaBinaryIssueFilters += ProblemFilters.exclude[DirectMissingMethodProblem](
+      "com.evolutiongaming.kafka.flow.snapshot.Snapshots.apply"
     ),
     libraryDependencies ++= Seq(
       Cats.core,
