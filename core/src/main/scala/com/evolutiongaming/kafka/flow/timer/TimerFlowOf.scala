@@ -25,7 +25,9 @@ object TimerFlowOf {
   /** Performs persist based on the difference between the state offset and current offset and idle time since the state
     * was last touched.
     *
-    * Removes the state from memory after it is persisted.
+    * Removes the state from memory after it is persisted. A persist rejected by the broker for a stale consumer
+    * generation (transactional Kafka snapshots, `GenerationFencedError`) leaves the key loaded and holding its offset,
+    * and another tick is scheduled to retry it.
     *
     * @param fireEvery
     *   How often the check should be performed.
@@ -59,14 +61,19 @@ object TimerFlowOf {
           expired          = current.clock isAfter expiredAt
           offsetDifference = current.offset.value - touchedAt.offset.value
           canUnload        = expired || offsetDifference > maxOffsetDifference
+          persisted <-
+            if (canUnload)
+              persistence.attemptToPersist(
+                ignorePersistErrors = false,
+                context             = context,
+                currentOffset       = current.offset
+              )
+            else false.pure[F]
+          // a fenced persist keeps the key loaded and holding its offset, so it needs a next tick to retry
           _ <-
-            if (canUnload) {
-              context.log.info(s"flush, offset difference: $offsetDifference") *>
-                persistence.flush *>
-                context.remove
-            } else {
-              register(touchedAt)
-            }
+            if (canUnload && persisted)
+              context.log.info(s"flush, offset difference: $offsetDifference") *> context.remove
+            else register(touchedAt)
         } yield ()
       }
     }

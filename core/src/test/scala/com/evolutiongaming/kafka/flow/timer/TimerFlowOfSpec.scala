@@ -670,6 +670,58 @@ class TimerFlowOfSpec extends FunSuite {
       }
   }
 
+  test("unloadOrphaned tolerates a fenced persist and retries it on the next tick") {
+
+    val f = new ConstFixture
+
+    // the broker rejects the first persist for a stale consumer generation, the retry goes through
+    val attempts = Ref.unsafe[IO, Int](0)
+    val fencedOnce: FlushBuffers[IO] = new FlushBuffers[IO] {
+      def flush: IO[Unit] = attempts.updateAndGet(_ + 1) flatMap {
+        case 1 => GenerationFencedError(new Exception("stale generation")).raiseError[IO, Unit]
+        case _ => f.flushBuffers.flush
+      }
+    }
+
+    // Given("flow unloads after 3 messages accumulated")
+    val startedAt            = f.timestamp.copy(offset = Offset.unsafe(1000))
+    val context              = Context(timestamps = TimestampState(startedAt))
+    val unloadOrphanedFlowOf = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
+    val persistingAndUnloadingFlowOf =
+      TimerFlowOf.persistPeriodicallyAndUnloadOrphaned[IO](fireEvery = 0.minutes, maxOffsetDifference = 3)
+
+    // When("the unload threshold is crossed and the persist is fenced")
+    def program(flow: Resource[IO, TimerFlow[IO]]) = flow use { flow =>
+      for {
+        _      <- f.timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1004)))
+        _      <- f.timerContext.trigger(flow)
+        fenced <- f.contextRef.get
+        // Then("the fence does not fail the flow, and the key stays loaded holding its offset")
+        _ = assertEquals(fenced.removed, 0)
+        _ = assertEquals(fenced.holding, Some(Offset.unsafe(1000)))
+        // And("a next tick was scheduled" -- `trigger` fires `onTimer` only for a registered timer)
+        _ <- f.timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1005)))
+        _ <- f.timerContext.trigger(flow)
+      } yield ()
+    }
+
+    def testIO(flowOf: TimerFlowOf[IO]) = for {
+      _      <- attempts.set(0)
+      _      <- f.contextRef.set(context)
+      _      <- program(flowOf(f.keyContext, fencedOnce, f.timerContext))
+      count  <- attempts.get
+      result <- f.contextRef.get
+    } yield {
+      // Then("the persist was retried, and the key unloaded and released its offset only once it landed")
+      assertEquals(count, 2)
+      assertEquals(result.flushed, 1)
+      assertEquals(result.removed, 1)
+      assertEquals(result.holding, None)
+    }
+
+    List(unloadOrphanedFlowOf, persistingAndUnloadingFlowOf).map(flowOf => testIO(flowOf).unsafeRunSync())
+  }
+
   test("persistPeriodically tolerates a fenced persist even when ignorePersistErrors = false") {
 
     val f = new ConstFixture

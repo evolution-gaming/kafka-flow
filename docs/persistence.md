@@ -57,8 +57,9 @@ You do not catch the rejection yourself; it is handled for you:
   dirty and keeps holding its offset, so nothing past it is committed. The broker's rejection is the
   fence; the flow does not fail on it (the consumer's next completed rebalance either brings the member
   to the current generation or tears the partition's flows down). This covers `persistPeriodically`,
-  `persistPeriodicallyAndUnloadOrphaned` and the additional persist; `unloadOrphaned` and the
-  revoke-time flush are unchanged. Every other persist error still fails the flow, unless you set
+  `persistPeriodicallyAndUnloadOrphaned`, `unloadOrphaned` and the additional persist; the key an
+  `unloadOrphaned` tick would have unloaded stays loaded until its persist lands. Only the revoke-time
+  flush is unchanged. Every other persist error still fails the flow, unless you set
   `persistPeriodically(ignorePersistErrors = true)`, in which case it is logged and swallowed.
 - **Periodic offset commit** — the same: the rejection is logged and the offset is scheduled again on
   the next tick, or committed sooner by the next snapshot write. Any other commit error fails the flow.
@@ -68,9 +69,9 @@ You do not catch the rejection yourself; it is handled for you:
   success on an emptied buffer. Without that a later unload or flush-on-revoke could drop the key and
   let the partition commit past a snapshot that is still in the store. A key that is folded again
   before its tombstone lands drops it: the state is back, and the next flush writes it over the
-  snapshot the delete did not remove. On the two paths that do not tolerate the fence -
-  `unloadOrphaned` and the revoke-time flush - a pending tombstone surfaces the way any fenced flush
-  does there, as a failed flow or a swallowed release error; both replay, neither loses state.
+  snapshot the delete did not remove. On the one path that does not tolerate the fence - the
+  revoke-time flush - a pending tombstone surfaces the way any fenced flush does there, as a swallowed
+  release error; the events replay, no state is lost.
 - **Flush-on-revoke** — the conflict surfaces as a cache-entry release error that scache prints to
   `System.err` — not via the logging framework — and swallows
   (`scache: failed to release cache entry: ...`), so the partition hands off cleanly.
