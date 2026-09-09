@@ -475,6 +475,61 @@ class PartitionFlowSpec extends FunSuite {
     TestControl.executeEmbed(flow).unsafeRunSync()
   }
 
+  test("PartitionFlow retries a fenced tombstone delete on a later tick and commits past it") {
+    // only the real chain shows the pin a tolerated fenced delete used to leave behind: `Timers.trigger` runs
+    // `KeyFlow.onTimer` only for a registered timer, and the timer flow is what registers the next one, so a key
+    // whose timers were cancelled on its empty state never got the tick that would have retried the tombstone - it
+    // held its offset and the partition stopped committing
+    class LocalFixture extends ConstFixture(waitForN = 100) {
+      val snapshots: Ref[IO, Map[String, State]] = Ref.unsafe(Map.empty)
+      val deletes: Ref[IO, Int]                  = Ref.unsafe(0)
+      val evict: Ref[IO, Boolean]                = Ref.unsafe(false)
+      private val snapshotDatabase = new SnapshotDatabase[IO, String, State] {
+        def get(key: String): IO[Option[State]]             = snapshots.get.map(_.get(key))
+        def persist(key: String, snapshot: State): IO[Unit] = snapshots.update(_ + (key -> snapshot))
+        // the broker rejects the first tombstone for a stale consumer generation
+        def delete(key: String): IO[Unit] = deletes.updateAndGet(_ + 1).flatMap { n =>
+          if (n == 1) IO.raiseError(GenerationFencedError(new RuntimeException("stale generation")))
+          else snapshots.update(_ - key)
+        }
+      }
+      override def flow: Resource[IO, PartitionFlow[IO]] = makeFlow(
+        timerFlowOf = TimerFlowOf.persistPeriodically(fireEvery = 0.minute, persistEvery = 0.minute),
+        persistenceOf =
+          PersistenceOf.snapshotsOnly(keysOf = keysOf, snapshotsOf = SnapshotsOf.backedBy(snapshotDatabase)),
+        tick = TickOption.of(state => evict.get.map(if (_) none[State] else state)),
+      )
+    }
+
+    val f = new LocalFixture
+
+    val flow = f.flow.use { flow =>
+      for {
+        _ <- IO.sleep(1.milli)
+        // key1 is folded and persisted, and the offset past it is committed
+        _ <- flow(f.records("key1", 100, List("event1", "event2")))
+        _ <- f.pendingOffset.get.map(assertEquals(_, Some(Offset.unsafe(102))))
+        _ <- f.snapshots.get.map(s => assert(s.contains("key1")))
+        // the tick evicts key1 and its tombstone is fenced: nothing landed, so the key is kept
+        _ <- f.evict.set(true)
+        _ <- IO.sleep(1.milli)
+        _ <- flow(Nil)
+        _ <- f.deletes.get.map(assertEquals(_, 1))
+        _ <- f.snapshots.get.map(s => assert(s.contains("key1"), "a fenced tombstone must not have landed"))
+        // the generation is current again: the next tick deletes key1 for real, and the partition commits past it
+        // as key2 arrives. With key1 pinned, the offset would have stayed at 102
+        _ <- f.evict.set(false)
+        _ <- IO.sleep(1.milli)
+        _ <- flow(f.records("key2", 102, List("event3", "event4")))
+        _ <- f.deletes.get.map(assertEquals(_, 2))
+        _ <- f.snapshots.get.map(s => assert(!s.contains("key1"), "the retried tombstone must have landed"))
+        _ <- f.pendingOffset.get.map(assertEquals(_, Some(Offset.unsafe(104))))
+      } yield ()
+    }
+
+    TestControl.executeEmbed(flow).unsafeRunSync()
+  }
+
   test("PartitionFlow fails on a periodic offset commit error that is not a fence") {
     class LocalFixture extends ConstFixture(waitForN = 3) {
       override val scheduleCommit: ScheduleCommit[IO] = new ScheduleCommit[IO] {
@@ -600,6 +655,7 @@ object PartitionFlowSpec {
       persistenceOf: PersistenceOf[IO, String, State, ConsumerRecord[String, ByteVector]],
       filter: Option[FilterRecord[IO]] = none,
       remapKey: Option[RemapKey[IO]]   = none,
+      tick: TickOption[IO, State]      = TickOption.id[IO, State],
     ): Resource[IO, PartitionFlow[IO]] = {
       val keyStateOf: KeyStateOf[IO] = new KeyStateOf[IO] {
         def apply(
@@ -618,7 +674,7 @@ object PartitionFlowSpec {
             keyFlow <- KeyFlow.of(
               kafkaKey,
               fold0,
-              TickOption.id[IO, State],
+              tick,
               persistence,
               timerFlow,
               EntityRegistry.empty[IO, KafkaKey, State]

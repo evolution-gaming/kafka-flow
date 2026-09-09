@@ -33,6 +33,11 @@ case class TickOption[F[_], S](value: Tick[F, Option[S]]) {
   def toFold[A]: FoldOption[F, S, A] = FoldOption(value.toFold[A])
 
 }
+
+/** A tick must map an empty state to an empty state: [[TickToState]] leaves a key whose tombstone the broker fenced
+  * with an empty state until a later tick deletes it again, and a tick answering `Some` to `None` would resurrect it
+  * from nothing.
+  */
 object TickOption {
 
   def of[F[_], S](run: Option[S] => F[Option[S]]): TickOption[F, S] =

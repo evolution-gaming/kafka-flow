@@ -176,22 +176,28 @@ class KeyFlowSpec extends FunSuite {
     val persistence  = f.persistenceDeleting(deletes, failFirst = 1)
     // And("an eviction tick that asks for the key to go")
     val evict: TickOption[SyncIO, State] = TickOption.of(_ => none[State].pure[SyncIO])
+    val timerFired                       = Ref.unsafe[SyncIO, Int](0)
+    val timer: TimerFlow[SyncIO]         = new TimerFlow[SyncIO] { def onTimer = timerFired.update(_ + 1) }
 
     implicit val context: KeyContext[SyncIO] = f.contextRemoving(removeCalled)
 
     val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
-    val program = KeyFlow.of(key, f.fold, evict, persistence, TimerFlow.empty[SyncIO], f.registry).use { flow =>
+    val program = KeyFlow.of(key, f.fold, evict, persistence, timer, f.registry).use { flow =>
       for {
         // When("the first tick's delete is fenced")
         _ <- flow.onTimer
         // Then("nothing was deleted and the key stays, holding its offset")
         _ <- deletes.get.map(assertEquals(_, 1))
         _ <- removeCalled.get.map(r => assert(!r))
+        // And("its timer flow still runs, or there is no next tick to retry the delete on")
+        _ <- timerFired.get.map(assertEquals(_, 1))
         // When("the generation is current again on the next tick")
         _ <- flow.onTimer
         // Then("the delete lands and the key goes")
         _ <- deletes.get.map(assertEquals(_, 2))
         _ <- removeCalled.get.map(r => assert(r))
+        // And("the timer flow is skipped for a removed key")
+        _ <- timerFired.get.map(assertEquals(_, 1))
       } yield ()
     }
 
@@ -208,12 +214,14 @@ class KeyFlowSpec extends FunSuite {
     val removeCalled = Ref.unsafe[SyncIO, Boolean](false)
     val persistence  = f.persistenceDeleting(deletes, failFirst = 2)
     // And("a fold that completes the key at once")
-    val fold = FoldOption.empty[SyncIO, State, ConsumerRecord[String, ByteVector]]
+    val fold                     = FoldOption.empty[SyncIO, State, ConsumerRecord[String, ByteVector]]
+    val timerFired               = Ref.unsafe[SyncIO, Int](0)
+    val timer: TimerFlow[SyncIO] = new TimerFlow[SyncIO] { def onTimer = timerFired.update(_ + 1) }
 
     implicit val context: KeyContext[SyncIO] = f.contextRemoving(removeCalled)
 
     val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
-    val program = KeyFlow.of(key, fold, f.tick, persistence, TimerFlow.empty[SyncIO], f.registry).use { flow =>
+    val program = KeyFlow.of(key, fold, f.tick, persistence, timer, f.registry).use { flow =>
       for {
         // When("the fold empties the state and its delete is fenced")
         _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
@@ -225,11 +233,14 @@ class KeyFlowSpec extends FunSuite {
         _ <- flow.onTimer
         _ <- deletes.get.map(assertEquals(_, 2))
         _ <- removeCalled.get.map(r => assert(!r))
+        // Then("the timer flow still runs: the key was not removed, so its timers were not cancelled")
+        _ <- timerFired.get.map(assertEquals(_, 1))
         // When("the tick after that lands it")
         _ <- flow.onTimer
-        // Then("the key is removed")
+        // Then("the key is removed, and the timer flow is skipped from then on")
         _ <- deletes.get.map(assertEquals(_, 3))
         _ <- removeCalled.get.map(r => assert(r))
+        _ <- timerFired.get.map(assertEquals(_, 1))
       } yield ()
     }
 

@@ -43,7 +43,7 @@ object KeyFlow {
   }
 
   /** Create flow which persists snapshots, events and restores state if needed */
-  def of[F[_]: MonadThrow: KeyContext, S, A](
+  def of[F[_]: MonadThrow: Ref.Make: KeyContext, S, A](
     key: KafkaKey,
     storage: Stateful[F, Option[S]],
     fold: FoldOption[F, S, A],
@@ -63,7 +63,7 @@ object KeyFlow {
       registry
     )
 
-  def of[F[_]: MonadThrow: KeyContext, S, A](
+  def of[F[_]: MonadThrow: Ref.Make: KeyContext, S, A](
     key: KafkaKey,
     storage: Stateful[F, Option[S]],
     fold: EnhancedFold[F, S, A],
@@ -74,18 +74,23 @@ object KeyFlow {
     registry: EntityRegistry[F, KafkaKey, S],
   ): Resource[F, KeyFlow[F, A]] =
     for {
-      state <- persistence.read(KeyContext[F].log).toResource
-      _     <- storage.set(state).toResource
-      // we should not run any timers if there was decision
-      // by fold or tick to run the state, because in this
-      // case we may flush the key which was already removed
-      timerCancelled = storage inspect (_.isEmpty)
-      foldToState    = FoldToState(storage, fold, persistence, additionalPersist, KeyContext[F].remove)
-      tickToState    = TickToState(storage, tick, persistence, KeyContext[F].remove)
+      state   <- persistence.read(KeyContext[F].log).toResource
+      _       <- storage.set(state).toResource
+      removed <- Ref.of[F, Boolean](false).toResource
+      // a key's timers stop once it has been removed, since a timer would then flush a key the partition has already
+      // dropped. Not once its state is empty: a tolerated fenced delete leaves the state empty and the key in place,
+      // and the next tick is what deletes it again and removes it
+      timerCancelled = removed.get
+      remove         = KeyContext[F].remove *> removed.set(true)
+      foldToState    = FoldToState(storage, fold, persistence, additionalPersist, remove)
+      tickToState    = TickToState(storage, tick, persistence, remove)
       _             <- registry.register(key, storage.get)
     } yield new KeyFlow[F, A] {
       def apply(records: NonEmptyList[A]): F[Unit] = foldToState(records)
-      def onTimer: F[Unit]                         = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
+      // the tick runs before the timer flow on purpose: on a key whose tombstone was fenced it re-attempts the
+      // delete first, and `Persistence.delete` has marked the key persisted, so the timer flow's periodic persist
+      // does not flush the emptied buffer and hold an offset ahead of the tombstone
+      def onTimer: F[Unit] = tickToState.run *> timerCancelled.ifM(().pure, timer.onTimer)
     }
 
   /** Does not save anything to the database */
