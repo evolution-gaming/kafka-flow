@@ -178,6 +178,9 @@ lazy val `persistence-kafka-it-tests` = (project in file("persistence-kafka-it-t
   .settings(commonSettings)
   .settings(
     name := "kafka-flow-persistence-kafka-it-tests",
+    // one broker container per suite, and the rebalance suites are paced by real coordinator timeouts: run in
+    // parallel they starve each other (the churn suite took 38 minutes next to four peers, 2 alone)
+    Test / parallelExecution := false,
     libraryDependencies ++= Seq(
       catsHelperLogback            % Test,
       playJsonJsoniter             % Test,

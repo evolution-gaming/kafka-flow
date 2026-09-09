@@ -400,7 +400,8 @@ real broker:
   (Stable transactional.id, above), so these tests drive a live, unfenced producer whose generation
   alone is stale: the next periodic flush is rejected without failing the flow and lands once the
   generation is current again, the first flush is gated by the offset seeded at assignment, and a
-  transactional offset commit is rejected.
+  transactional offset commit is rejected. A fenced **tombstone** is covered the same way: the key
+  keeps its snapshot through the fence and the next tick deletes it for real.
 - **Concurrent writes** — a partition's keys flush in parallel against the one shared producer
   (Write path, above); asserted safe for distinct keys.
 - **Unfinished transactions, both resolutions** — the takeover-abort at the handover: the
@@ -410,7 +411,27 @@ real broker:
   open through the read, its LSO pin asserted active, then waited out under a deadline set above
   the wait — the read completes, the deadline never fires.
 
-The suites drive flows with explicit consumer generations rather than live rebalances; the
+Two suites drive real rebalances instead of injected generations:
+
+- **`FenceStormSpec`** - two instances in one group under cooperative-sticky with transactional
+  snapshots and continuous input, and a third member joining and leaving in a loop to bump the
+  generation under them. It asserts what the tolerance has to buy: no flow failure, no restart, at
+  least one fence actually provoked, a tombstone written, and every partition's committed offset
+  still advancing after the churn and draining to the end offsets. It then replays the input from
+  the committed offsets on top of the `read_committed` snapshots and requires the fold of
+  everything, so the run is checked against the store rather than against the flows' own opinion.
+- **`EvictionFenceSpec`** - the other rejection, `UNKNOWN_MEMBER_ID`: a member stalled in its fold
+  past `max.poll.interval.ms` is dropped by the coordinator while a second one takes the partition
+  over for real. The evicted member tolerates the rejection instead of failing, nothing of its write
+  lands, and its next poll completes the rejoin that reports the partition lost and tears its flows
+  down - leaving it in the group owning nothing while the new owner keeps committing. The two
+  instances use separate transactional ids here, or the takeover's `initTransactions` would
+  epoch-fence the stale producer before its write ever reached the offset commit.
+
+Both are paced by real coordinator timeouts, so the suite runs its tests one at a time (each also
+brings up its own broker); running them beside each other starved the churn suite into 38 minutes.
+
+The remaining suites drive flows with explicit consumer generations rather than live rebalances; the
 protocol/assignor matrix (Consumer rebalance protocols, above) rests on broker semantics, not on
 tests here.
 

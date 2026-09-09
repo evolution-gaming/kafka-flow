@@ -118,7 +118,8 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
   private def flowOf(
     moduleOf: KafkaPersistenceModuleOf[IO, String],
     timerFlowOf: TimerFlowOf[IO],
-    config: PartitionFlowConfig = PartitionFlowConfig(commitOnRevoke = true),
+    config: PartitionFlowConfig  = PartitionFlowConfig(commitOnRevoke = true),
+    tick: TickOption[IO, String] = TickOption.id[IO, String],
   ): IO[PartitionFlowOf[IO]] =
     TimersOf.memory[IO, KafkaKey].map { timersOf =>
       kafkaEagerRecovery[IO, String](
@@ -128,7 +129,7 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
         timersOf                 = timersOf,
         timerFlowOf              = timerFlowOf,
         fold                     = fold,
-        tick                     = TickOption.id[IO, String],
+        tick                     = tick,
         partitionFlowConfig      = config,
         registry                 = EntityRegistry.empty[IO, KafkaKey, String],
       )
@@ -329,6 +330,69 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
           assertEquals(clue(afterFence.get(key)), utf8("e1,e2,e3"))
           // the retry landed the state the fence held back, on the same producer
           assertEquals(clue(afterRetry.get(key)), utf8(events.mkString(",")))
+        }
+    }
+
+    test.unsafeRunSync()
+  }
+
+  test("issue #732 prevention: a stale writer's tombstone is fenced, the key kept, and it lands once current again") {
+    val stateTopic = "flow-732-tx-fenced-delete-state-topic"
+    val inputTopic = s"input-$stateTopic"
+    val group      = s"$groupId-fenced-delete"
+    val tp         = TopicPartition(inputTopic, Partition.min)
+    val key        = "key1"
+
+    // the delete a tick triggers when it empties a key's state is a transaction like a write, and is fenced the same
+    // way. Nothing may land, the key must stay - with its held offset - and the next tick must delete it again
+    val test = createTopic(stateTopic, 1) *> createTopic(inputTopic, 1) *> withJoinedConsumer(group, inputTopic) {
+      current =>
+        for {
+          gmRef <- Ref.of[IO, ConsumerGroupMetadata](current)
+          evict <- Ref.of[IO, Boolean](false)
+          moduleOf = KafkaPersistenceModuleOf.cachingTransactional[IO, String](
+            consumerOf = consumerOf,
+            producerOf = producerOf,
+            config = KafkaPersistenceModule.TransactionalConfig(
+              consumerConfig        = consumerConfig,
+              producerConfig        = producerConfig,
+              transactionalIdPrefix = appId,
+              snapshotTopic         = stateTopic,
+            ),
+          )
+          flow <- flowOf(
+            moduleOf,
+            TimerFlowOf.persistPeriodically[IO](fireEvery = 0.seconds, persistEvery = 0.seconds),
+            PartitionFlowConfig(triggerTimersInterval     = 0.seconds),
+            // a tick that tombstones the key on demand
+            TickOption.of(state => evict.get.map(if (_) none[String] else state)),
+          ).flatMap(
+            _.apply(
+              PartitionAssignment(tp, Offset.min, gmRef.get.map(_.some)),
+              ScheduleCommit.empty[IO]
+            ).allocated
+          )
+          (flow_, release) = flow
+          // persists fine while the generation is current
+          _           <- flow_(inputRecords(inputTopic, key, List("e1", "e2", "e3")))
+          beforeFence <- readSnapshots(stateTopic)
+          // the partition is reassigned and the tick asks for the key to go: the tombstone is fenced
+          _          <- gmRef.set(staleGeneration(current))
+          _          <- evict.set(true)
+          fenced     <- flow_(Nil).attempt
+          afterFence <- readSnapshots(stateTopic)
+          // the generation is current again: the next tick deletes the key for real
+          _          <- gmRef.set(current)
+          _          <- flow_(Nil)
+          afterRetry <- readSnapshots(stateTopic)
+          _          <- release.attempt // cleanup only: nothing flushes on revoke in this flow's configuration
+        } yield {
+          assertEquals(clue(beforeFence.get(key)), utf8("e1,e2,e3"))
+          assertEquals(clue(fenced), Right(()))
+          // the fenced tombstone did not land: the snapshot is still there
+          assertEquals(clue(afterFence.get(key)), utf8("e1,e2,e3"))
+          // and the retry deleted it
+          assertEquals(clue(afterRetry.get(key)), none[ByteVector])
         }
     }
 

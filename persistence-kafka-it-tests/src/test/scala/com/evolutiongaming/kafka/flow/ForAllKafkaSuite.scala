@@ -26,19 +26,20 @@ abstract class ForAllKafkaSuite extends FunSuite with TestContainersFixtures {
   // warrant code or doc updates; the transactional tests tolerate protocol-version differences
   val kafka = ForAllContainerFixture(KafkaContainer())
 
-  def createTopic(topic: String, partitions: Int): IO[Unit] = {
-    val props = new Properties
-    props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.container.bootstrapServers)
+  def bootstrapServers: String = kafka.container.bootstrapServers
 
-    Resource
-      .make(IO.delay(AdminClient.create(props)))(cl => IO(cl.close()))
-      .use { client =>
-        IO(client.createTopics(List(new NewTopic(topic, partitions, 1.toShort)).asJava)).map(res =>
-          res.all().get(10, TimeUnit.SECONDS)
-        )
-      }
-      .void
+  def adminClient: Resource[IO, AdminClient] = {
+    val props = new Properties
+    props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers)
+    Resource.make(IO.delay(AdminClient.create(props)))(client => IO.blocking(client.close()))
   }
+
+  def createTopic(topic: String, partitions: Int): IO[Unit] =
+    adminClient.use { client =>
+      IO(client.createTopics(List(new NewTopic(topic, partitions, 1.toShort)).asJava)).map(res =>
+        res.all().get(10, TimeUnit.SECONDS)
+      )
+    }.void
 
   val kafkaModule = new Fixture[KafkaModule[IO]]("KafkaModule") {
     private val moduleRef = new AtomicReference[(KafkaModule[IO], IO[Unit])]()
