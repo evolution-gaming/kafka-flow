@@ -71,6 +71,12 @@ import scala.jdk.CollectionConverters.*
   */
 class FenceStormSpec extends ForAllKafkaSuite {
 
+  // Deliberate-run suite, excluded from the default test run: it races real rebalances for minutes to provoke the
+  // fence, and a run that provokes none fails rather than passes, which is right when the run is the point and wrong
+  // on a shared CI runner. Run it on demand:
+  //   KAFKA_FLOW_FENCE_STORM=1 sbt "persistence-kafka-it-tests/testOnly *FenceStormSpec"
+  override def munitIgnore: Boolean = !sys.env.contains("KAFKA_FLOW_FENCE_STORM")
+
   // every phase has its own bounded wait that names the step; this is the backstop
   override def munitTimeout: Duration = 15.minutes
 
