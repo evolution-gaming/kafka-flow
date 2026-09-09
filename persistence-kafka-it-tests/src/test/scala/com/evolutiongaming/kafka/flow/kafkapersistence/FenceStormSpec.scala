@@ -20,8 +20,7 @@ import com.evolutiongaming.kafka.flow.{
   TickOption,
   TopicFlowOf
 }
-import com.evolutiongaming.random.Random
-import com.evolutiongaming.retry.{Decision, OnError, Retry, Strategy}
+import com.evolutiongaming.retry.Retry
 import com.evolutiongaming.skafka.CommonConfig
 import com.evolutiongaming.skafka.consumer.{AutoOffsetReset, ConsumerConfig, ConsumerOf, ConsumerRecord, IsolationLevel}
 import com.evolutiongaming.skafka.producer.{ProducerConfig, ProducerOf}
@@ -32,7 +31,7 @@ import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.{StringDeserializer, StringSerializer}
 import scodec.bits.ByteVector
 
-import java.time.{Duration as JDuration, Instant}
+import java.time.Duration as JDuration
 import java.util.Properties
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue, TimeUnit}
@@ -45,26 +44,26 @@ import scala.jdk.CollectionConverters.*
   * Two full kafka-flow instances, A and B, share one consumer group under `CooperativeStickyAssignor` with
   * transactional snapshot writes: the same transactional-id prefix, `persistPeriodically` with `flushOnRevoke = false`
   * and `ignorePersistErrors = false`, `commitOnRevoke = true`, a tick that tombstones a key once it has been empty for
-  * a while, and a retrying flow. Input is produced continuously for the whole run, so a transaction is nearly always in
-  * flight.
+  * a while, and no retry, so a flow that fails says so. Input is produced continuously for the whole run, so a
+  * transaction is nearly always in flight.
   *
   * The provocation is a third member C that joins and leaves the group in a loop. Every join and leave bumps the
   * generation while A and B keep their partitions, so a transaction they have in flight across the bump carries the
   * previous generation and the broker rejects it (KIP-447, `CommitFailedException`).
   *
-  * The spec asserts what tolerating that rejection has to buy: no flow failure, no give-up, no restart, at least one
-  * fence actually provoked (a run that provoked none proves nothing and fails), a tombstone written (so the delete path
-  * was exercised), and - the oracle for the pin a tolerated fenced delete used to leave behind - every partition's
+  * The spec asserts what tolerating that rejection has to buy: no flow failure at all, at least one fence actually
+  * provoked (a run that provoked none proves nothing and fails), a tombstone written (so the delete path was
+  * exercised), and - the oracle for the pin a tolerated fenced delete used to leave behind - every partition's
   * committed offset still advancing after the churn, then draining to the end offsets once input stops. It then checks
   * correctness without trusting the flows: the committed offsets and the `read_committed` snapshots are read after the
   * instances stop, the input is replayed from the committed offsets on top of the snapshots with the same fold, and the
   * result must equal the fold of the whole input per key (or be absent for a key that closed and was tombstoned).
   *
-  * Before the tolerance this scenario failed the flow instead: the fenced waiter re-raised, retry-on-error left and
-  * rejoined the group, and the rejoin bumped the generation and fenced the peer. That arm was run against kafka-flow
-  * `1a062dc` in an embedded copy of these sources - 17 flow failures carrying `CommitFailedException`, a give-up and a
-  * restart, where this arm tolerated 825 fences with none - and is not reproducible here, where only one version of the
-  * sources exists.
+  * Before the tolerance this scenario failed the flow instead: the fenced waiter re-raised, the flow left and rejoined
+  * the group, and the rejoin bumped the generation and fenced the peer. That arm was run against kafka-flow `1a062dc`
+  * in an embedded copy of these sources - 17 flow failures carrying `CommitFailedException` under a retry that gave up
+  * and had to be restarted, where this arm tolerated 825 fences with none - and is not reproducible here, where only
+  * one version of the sources exists.
   *
   * Fidelity: one broker, classic protocol, cooperative-sticky; a C join/leave is a rebalance, not a rolling restart.
   * The fence is a real broker rejection under a real generation bump; its rate here is not production's.
@@ -142,31 +141,11 @@ class FenceStormSpec extends ForAllKafkaSuite {
       case other => other.pure[IO]
     }
 
-  /** A production-shaped flow retry: exponential from 100 ms with jitter, capped at a minute, a 15 s
-    * accumulated-backoff budget, 24 attempts, and the budget reset only after a genuinely quiet attempt.
-    */
-  private def flowRetry(obs: Observations): IO[Retry[IO]] =
-    Random.State.fromClock[IO]().map { random =>
-      Retry(
-        strategy = resetOnQuiet(
-          Strategy.exponential(100.millis).jitter(random).cap(1.minute).limit(15.seconds).attempts(24),
-          quiet = 5.minutes,
-        ),
-        onError = new OnError[IO, Throwable] {
-          def apply(e: Throwable, status: Retry.Status, decision: OnError.Decision): IO[Unit] =
-            decision match {
-              case OnError.Decision.Retry(delay) =>
-                IO(obs.retries.add(e)) *> log.error(s"${obs.name}: flow failed, retrying in $delay: ${describe(e)}")
-              case OnError.Decision.GiveUp =>
-                IO(obs.giveUps.add(e)) *>
-                  log.error(s"${obs.name}: flow failed, giving up after ${status.retries} retries: ${describe(e)}")
-            }
-        },
-      )
-    }
+  // no retry: a tolerated fence never reaches the flow's error channel, so a failure that does must surface to the
+  // test rather than be retried under it
+  private implicit val retry: Retry[IO] = Retry.empty[IO]
 
-  /** One running instance: its own counting `LogOf`, the retry, the flow wiring. The returned effect is the flow's
-    * completion (its give-up error, under retry).
+  /** One running instance: its own counting `LogOf` and the flow wiring. The returned effect is the flow's completion.
     */
   private def instance(
     name: String,
@@ -176,11 +155,9 @@ class FenceStormSpec extends ForAllKafkaSuite {
     obs: Observations,
   ): Resource[IO, IO[Unit]] =
     for {
-      retry    <- flowRetry(obs).toResource
       timersOf <- TimersOf.memory[IO, KafkaKey].toResource
       completion <- {
-        implicit val logOf: LogOf[IO]  = new CountingLogOf(slf4jLogOf, obs)
-        implicit val retry0: Retry[IO] = retry
+        implicit val logOf: LogOf[IO] = new CountingLogOf(slf4jLogOf, obs)
         val moduleOf = KafkaPersistenceModuleOf.cachingTransactional[IO, String](
           consumerOf = consumerOf,
           producerOf = producerOf,
@@ -221,13 +198,15 @@ class FenceStormSpec extends ForAllKafkaSuite {
       }
     } yield completion
 
-  /** Keeps an instance running the way a scheduler does: a flow that gave up is torn down and started again. */
+  /** Keeps an instance running the way a scheduler does: a flow that failed is recorded, torn down and started again,
+    * so the run continues to its end and the failure is reported by an assertion rather than by a hang.
+    */
   private def supervised(name: String, make: Resource[IO, IO[Unit]], obs: Observations): Resource[IO, Unit] = {
     def loop: IO[Unit] =
       make.use(completion => completion.attempt).flatMap {
         case Right(()) => log.info(s"$name: flow ended")
         case Left(e) =>
-          IO(obs.restarts.incrementAndGet()) *>
+          IO(obs.failures.add(e)) *>
             log.warn(s"$name: flow died, restarting in 1s: ${describe(e)}") *> IO.sleep(1.second) *> loop
       }
     loop.background.void
@@ -443,15 +422,13 @@ class FenceStormSpec extends ForAllKafkaSuite {
     val rate   = fences / result.churnSeconds
     println(
       s"fences=$fences (${result.a.fencesByKind} / ${result.b.fencesByKind}) rate=${"%.2f".format(rate)}/s over churn; " +
-        s"retries=${result.retries.size} give-ups=${result.giveUps.size} restarts=${result.restarts} " +
+        s"flow failures=${result.failures.size} " +
         s"tombstones=${result.snapshots.count(_.value.isEmpty)}"
     )
 
     assertCorrect(result)
 
-    assertEquals(clue(result.retries.map(describe)), Nil, "a fence must not fail the flow")
-    assertEquals(clue(result.giveUps.map(describe)), Nil, "no give-ups")
-    assertEquals(result.restarts, 0L, "no restarts")
+    assertEquals(clue(result.failures.map(describe)), Nil, "a fence must not fail the flow")
     assert(fences > 0, "no fence was provoked: the run is inconclusive, not a pass")
     assert(result.snapshots.exists(_.value.isEmpty), "no tombstone landed: the delete path was not exercised")
   }
@@ -504,8 +481,8 @@ class FenceStormSpec extends ForAllKafkaSuite {
   private def sinceSeconds(start: FiniteDuration): Long = (System.nanoTime() - start.toNanos) / 1000000000L
 
   private def summary(a: Observations, b: Observations): String =
-    s"fences A=${a.fencesByKind} B=${b.fencesByKind}; retries A=${a.retries.size} B=${b.retries.size}; " +
-      s"give-ups A=${a.giveUps.size} B=${b.giveUps.size}; restarts A=${a.restarts.get} B=${b.restarts.get}"
+    s"fences A=${a.fencesByKind} B=${b.fencesByKind}; " +
+      s"flow failures A=${a.failures.size} B=${b.failures.size}"
 
   private def eventually[A](what: String, timeout: FiniteDuration)(fa: IO[A])(p: A => Boolean): IO[A] = {
     def loop(deadline: FiniteDuration): IO[A] =
@@ -581,19 +558,15 @@ object FenceStormSpec {
     input: List[Rec],
     churnSeconds: Double,
   ) {
-    def retries: List[Throwable] = a.retries.asScala.toList ++ b.retries.asScala.toList
-    def giveUps: List[Throwable] = a.giveUps.asScala.toList ++ b.giveUps.asScala.toList
-    def restarts: Long           = a.restarts.get + b.restarts.get
+    def failures: List[Throwable] = a.failures.asScala.toList ++ b.failures.asScala.toList
   }
 
   /** What one instance did, as observed from outside kafka-flow: the fences it tolerated (by the WARN the code writes,
-    * keyed by which waiter it was), the flow failures its retry saw, and how often it had to be restarted.
+    * keyed by which waiter it was) and the failures that killed its flow and had it restarted.
     */
   final class Observations(val name: String) {
     val fences   = new ConcurrentHashMap[String, AtomicLong]
-    val retries  = new ConcurrentLinkedQueue[Throwable]
-    val giveUps  = new ConcurrentLinkedQueue[Throwable]
-    val restarts = new AtomicLong
+    val failures = new ConcurrentLinkedQueue[Throwable]
 
     def fence(kind: String): Unit       = { fences.computeIfAbsent(kind, _ => new AtomicLong).incrementAndGet(); () }
     def fencesByKind: Map[String, Long] = fences.asScala.map { case (k, v) => k -> v.get }.toMap
@@ -683,27 +656,6 @@ object FenceStormSpec {
             case None     => acc - r.key
           }
         }
-  }
-
-  /** The retry budget resets only after an attempt that ran `quiet` without failing, backoff sleep excluded, so a
-    * persistently failing flow gives up within a bounded number of attempts.
-    */
-  def resetOnQuiet(strategy: Strategy, quiet: FiniteDuration): Strategy = {
-    def loop(current: Strategy, prev: Option[(Instant, FiniteDuration)]): Strategy =
-      Strategy { (status, now) =>
-        val attemptRanQuiet = prev.exists {
-          case (decidedAt, slept) =>
-            now.toEpochMilli - decidedAt.toEpochMilli - slept.toMillis >= quiet.toMillis
-        }
-        val decision =
-          if (attemptRanQuiet) strategy(Retry.Status.empty(now), now)
-          else current(status, now)
-        decision match {
-          case Decision.Retry(delay, status1, next) => Decision.retry(delay, status1, loop(next, Some((now, delay))))
-          case Decision.GiveUp                      => Decision.giveUp
-        }
-      }
-    loop(strategy, None)
   }
 
   def causeChain(e: Throwable): List[Throwable] =
