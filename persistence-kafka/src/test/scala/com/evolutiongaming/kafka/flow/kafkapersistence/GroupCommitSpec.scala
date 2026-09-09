@@ -1,5 +1,6 @@
 package com.evolutiongaming.kafka.flow.kafkapersistence
 
+import cats.Applicative
 import cats.data.NonEmptyMap
 import cats.effect.testkit.TestControl
 import cats.effect.unsafe.implicits.global
@@ -9,6 +10,7 @@ import com.evolutiongaming.catshelper.FromTry
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.kafka.GenerationFencedError
 import com.evolutiongaming.kafka.flow.kafkapersistence.GroupCommitSpec.*
+import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteMetrics
 import com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata
 import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord, RecordMetadata}
 import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, Partition, ToBytes, Topic, TopicPartition}
@@ -40,7 +42,8 @@ class GroupCommitSpec extends FunSuite {
     producer: Producer[IO],
     groupMetadata: Option[ConsumerGroupMetadata],
     maxWritesPerTransaction: Int,
-    assignedOffset: Offset = Offset.min,
+    assignedOffset: Offset            = Offset.min,
+    metrics: SnapshotWriteMetrics[IO] = SnapshotWriteMetrics.empty[IO],
   ): IO[KafkaSnapshotWriteDatabase.Transactional[IO, String]] =
     KafkaSnapshotWriteDatabase.transactional[IO, String](
       snapshotTopicPartition  = snapshotTopicPartition,
@@ -49,6 +52,7 @@ class GroupCommitSpec extends FunSuite {
       groupMetadata           = IO.pure(groupMetadata),
       assignedOffset          = assignedOffset,
       maxWritesPerTransaction = maxWritesPerTransaction,
+      metrics                 = metrics,
     )
 
   // transactions never interleave (the group-commit lock serializes them), so the event log splits into transactions
@@ -260,6 +264,33 @@ class GroupCommitSpec extends FunSuite {
       }
       assertEquals(log.count(_ == Event.Commit), 0)
       assertEquals(log.count(_ == Event.Abort), 2)
+    }
+    test.unsafeRunSync()
+  }
+
+  test("a fenced transaction is counted once, not once per waiter") {
+    // the fence is the outcome of a transaction that group-commits many writes, so counting it at the write would
+    // multiply it by the batch size
+    val test = for {
+      events  <- Ref.of[IO, Vector[Event]](Vector.empty)
+      counter <- Ref.of[IO, List[TopicPartition]](Nil)
+      metrics = new SnapshotWriteMetrics[IO] {
+        def fenced(topicPartition: TopicPartition)(implicit F: Applicative[IO]): IO[Unit] =
+          counter.update(topicPartition :: _)
+      }
+      tx <- buildTransactional(
+        recordingProducer(events, failOffsets = new CommitFailedException("stale generation").some),
+        ConsumerGroupMetadata.Empty.some,
+        maxWritesPerTransaction = 256,
+        metrics                 = metrics,
+      )
+      _   <- List("key1", "key2", "key3").parTraverse(k => tx.writeDatabase.persist(kafkaKey(k), s"state-$k").attempt)
+      log <- events.get
+      counted <- counter.get
+    } yield {
+      // the three writes shared one or more transactions; the counter saw one increment per transaction
+      assertEquals(counted.toSet, Set(inputTopicPartition))
+      assertEquals(counted.size, log.count(_ == Event.Abort))
     }
     test.unsafeRunSync()
   }

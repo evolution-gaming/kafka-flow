@@ -9,7 +9,7 @@ import cats.syntax.all.*
 import com.evolutiongaming.catshelper.FromTry
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.kafka.{GenerationFencedError, ScheduleCommit}
-import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
+import com.evolutiongaming.kafka.flow.snapshot.{SnapshotWriteDatabase, SnapshotWriteMetrics}
 import com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata
 import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord}
 import com.evolutiongaming.skafka.{Offset, OffsetAndMetadata, ToBytes, TopicPartition}
@@ -54,6 +54,25 @@ object KafkaSnapshotWriteDatabase {
     groupMetadata: F[Option[ConsumerGroupMetadata]],
     assignedOffset: Offset,
     maxWritesPerTransaction: Int,
+  ): F[Transactional[F, S]] = transactional(
+    snapshotTopicPartition,
+    producer,
+    inputTopicPartition,
+    groupMetadata,
+    assignedOffset,
+    maxWritesPerTransaction,
+    SnapshotWriteMetrics.empty[F],
+  )
+
+  /** As above, counting every fenced transaction in `metrics`. */
+  def transactional[F[_]: FromTry: Concurrent, S: ToBytes[F, *]](
+    snapshotTopicPartition: TopicPartition,
+    producer: Producer[F],
+    inputTopicPartition: TopicPartition,
+    groupMetadata: F[Option[ConsumerGroupMetadata]],
+    assignedOffset: Offset,
+    maxWritesPerTransaction: Int,
+    metrics: SnapshotWriteMetrics[F],
   ): F[Transactional[F, S]] =
     for {
       _ <- new IllegalArgumentException(s"maxWritesPerTransaction must be positive, got $maxWritesPerTransaction")
@@ -75,6 +94,7 @@ object KafkaSnapshotWriteDatabase {
         offsetToCommit,
         inputTopicPartition,
         groupMetadata,
+        metrics,
       )
     } yield Transactional(
       // identity only: the single-writer/offset-binding guarantee assumes one input partition maps to one snapshot
@@ -99,6 +119,7 @@ object KafkaSnapshotWriteDatabase {
     offsetToCommit: Ref[F, Offset],
     inputTopicPartition: TopicPartition,
     groupMetadata: F[Option[ConsumerGroupMetadata]],
+    metrics: SnapshotWriteMetrics[F],
   ) {
 
     val sendWrite: ProducerRecord[String, S] => F[Unit] =
@@ -155,15 +176,19 @@ object KafkaSnapshotWriteDatabase {
 
       transaction
         .attempt
-        .map(classifyFence)
+        .flatMap(classifyFence)
         .flatMap(complete)
         .onCancel(complete(new InterruptedException("snapshot write batch canceled").asLeft))
     }
 
-    // every fence surfaces here, as the one outcome shared by the batch, so it is classified once: callers match on
-    // GenerationFencedError and nobody else walks cause chains
-    private def classifyFence(result: Either[Throwable, Unit]): Either[Throwable, Unit] =
-      result.leftMap(e => if (isGenerationFence(e)) GenerationFencedError(e) else e)
+    // every fence surfaces here, as the one outcome shared by the batch, so it is classified - and counted - once:
+    // callers match on GenerationFencedError, and the counter measures transactions rather than waiters
+    private def classifyFence(result: Either[Throwable, Unit]): F[Either[Throwable, Unit]] =
+      result match {
+        case Left(e) if isGenerationFence(e) =>
+          metrics.fenced(inputTopicPartition).as(GenerationFencedError(e).asLeft[Unit])
+        case other => other.pure[F]
+      }
 
     // only the bare exception is the fence. kafka-clients raises it, unwrapped, from `sendOffsetsToTransaction`,
     // out of the single place that maps ILLEGAL_GENERATION and UNKNOWN_MEMBER_ID, and as an *abortable* error: the

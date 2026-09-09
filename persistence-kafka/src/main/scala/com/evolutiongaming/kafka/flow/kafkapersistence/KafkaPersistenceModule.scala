@@ -9,7 +9,12 @@ import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.key.{Keys, KeysOf}
 import com.evolutiongaming.kafka.flow.metrics.syntax.*
 import com.evolutiongaming.kafka.flow.persistence.{PersistenceOf, SnapshotPersistenceOf}
-import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotWriteDatabase, SnapshotsOf}
+import com.evolutiongaming.kafka.flow.snapshot.{
+  SnapshotDatabase,
+  SnapshotWriteDatabase,
+  SnapshotWriteMetrics,
+  SnapshotsOf
+}
 import com.evolutiongaming.kafka.flow.{FlowMetrics, KafkaKey, PartitionAssignment}
 import com.evolutiongaming.skafka.consumer.{ConsumerConfig, ConsumerOf, IsolationLevel}
 import com.evolutiongaming.skafka.producer.{Producer, ProducerConfig, ProducerOf}
@@ -192,8 +197,15 @@ object KafkaPersistenceModule {
   ): Resource[F, KafkaPersistenceModule[F, S]] = {
     val snapshotTopicPartition = TopicPartition(config.snapshotTopic, assignment.topicPartition.partition)
     for {
-      log           <- Resource.eval(LogOf[F].apply(KafkaPersistenceModule.getClass))
-      transactional <- transactionalWriteDatabase[F, S](producerOf, config, assignment, snapshotTopicPartition, log)
+      log <- Resource.eval(LogOf[F].apply(KafkaPersistenceModule.getClass))
+      transactional <- transactionalWriteDatabase[F, S](
+        producerOf,
+        config,
+        assignment,
+        snapshotTopicPartition,
+        metrics.snapshotWriteMetrics,
+        log,
+      )
       // records of aborted transactions (e.g. of a fenced previous owner) must not be recovered as snapshots
       parts <- of(
         consumerOf             = consumerOf,
@@ -219,6 +231,7 @@ object KafkaPersistenceModule {
     config: TransactionalConfig,
     assignment: PartitionAssignment[F],
     snapshotTopicPartition: TopicPartition,
+    metrics: SnapshotWriteMetrics[F],
     log: Log[F],
   )(
     implicit toBytesState: ToBytes[F, S]
@@ -253,6 +266,7 @@ object KafkaPersistenceModule {
           groupMetadata           = groupMetadata,
           assignedOffset          = assignedAt,
           maxWritesPerTransaction = maxWritesPerTransaction,
+          metrics                 = metrics,
         )
       )
     } yield transactional

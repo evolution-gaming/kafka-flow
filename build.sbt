@@ -160,6 +160,11 @@ lazy val `persistence-kafka` = (project in file("persistence-kafka"))
   .settings(commonSettings)
   .settings(
     name := "kafka-flow-persistence-kafka",
+    // `GroupCommit` is private to `KafkaSnapshotWriteDatabase`, but a nested class' constructor is public in bytecode,
+    // so MiMa sees a parameter added to something no caller can reach
+    mimaBinaryIssueFilters += ProblemFilters.exclude[DirectMissingMethodProblem](
+      "com.evolutiongaming.kafka.flow.kafkapersistence.KafkaSnapshotWriteDatabase#GroupCommit.this"
+    ),
     libraryDependencies ++= Seq(
       Cats.effectTestkit % Test,
       Testing.munit      % Test,

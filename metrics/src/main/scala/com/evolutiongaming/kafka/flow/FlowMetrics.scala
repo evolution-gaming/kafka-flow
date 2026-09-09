@@ -14,8 +14,8 @@ import com.evolutiongaming.kafka.flow.key.KeyDatabaseMetrics.*
 import com.evolutiongaming.kafka.flow.metrics.{Metrics, MetricsK}
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
 import com.evolutiongaming.kafka.flow.persistence.compression.Compressor
-import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabase
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabaseMetrics.*
+import com.evolutiongaming.kafka.flow.snapshot.{SnapshotDatabase, SnapshotWriteMetrics}
 import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.smetrics.CollectorRegistry
 import scodec.bits.ByteVector
@@ -34,6 +34,11 @@ trait FlowMetrics[F[_]] {
 
   def compressorMetrics(component: String): Metrics[Compressor[F]]
 
+  /** Metrics of the transactional snapshot writer. Defaulted, unlike the members above: it was added after the trait
+    * and an implementation that does not know about it simply exports nothing.
+    */
+  def snapshotWriteMetrics: SnapshotWriteMetrics[F] = SnapshotWriteMetrics.empty[F]
+
 }
 object FlowMetrics {
 
@@ -43,6 +48,7 @@ object FlowMetrics {
     keyDatabase      <- keyDatabaseMetricsOf[F].apply(registry)
     journalDatabase  <- journalDatabaseMetricsOf[F].apply(registry)
     snapshotDatabase <- snapshotDatabaseMetricsOf[F].apply(registry)
+    snapshotWrite    <- SnapshotWriteMetrics.of[F](registry)
     persistenceModule = new MetricsK[PersistenceModule[F, *]] {
       def withMetrics[S](module: PersistenceModule[F, S]) = new PersistenceModule[F, S] {
         def keys      = keyDatabase.withMetrics(module.keys)
@@ -59,6 +65,7 @@ object FlowMetrics {
     def keyDatabaseMetrics                                           = keyDatabase
     def journalDatabaseMetrics                                       = journalDatabase
     def snapshotDatabaseMetrics                                      = snapshotDatabase
+    override def snapshotWriteMetrics                                = snapshotWrite
     def persistenceModuleMetrics                                     = persistenceModule
     def foldOptionMetrics                                            = foldMetrics.foldOptionMetrics
     def enhancedFoldMetrics                                          = foldMetrics.enhancedFoldMetrics
