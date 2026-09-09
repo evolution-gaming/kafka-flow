@@ -169,7 +169,13 @@ recovery waits until the broker aborts it instead — slower, but nothing commit
   Cluster-side, the matching broker alerts are `UncleanLeaderElectionsPerSec > 0` (truncation risk)
   and `PartitionsWithLateTransactionsCount > 0` (hanging transactions). Consumer lag metrics read
   zero during the wait or stall (lag is measured to the last-stable-offset, where the read parks),
-  so alert on this mode's log signals, not on lag. Keep the value well below `max.poll.interval.ms` and above
+  so alert on this mode's log signals, not on lag.
+- **Monitoring the fence** - a fenced write or commit is tolerated and retried, so it no longer shows
+  up as a failure. `snapshot_write_fenced_total{topic,partition}` (from `kafka-flow-metrics`) counts
+  the fenced transactions; expect bursts around rebalances and nothing between them. The alert that
+  matters is not on that counter but on a partition whose **committed offset stops advancing** while
+  its input keeps moving - the one symptom shared by a fence that never clears, a key held by a
+  tombstone that never lands, and a stalled fold. Keep the value well below `max.poll.interval.ms` and above
   the legitimate wait for an unfinished transaction (`transaction.timeout.ms` plus the broker's
   abort scan).
 - **Reducing truncation risk** — the deadline only *flags* lost records; it cannot recover them, and it
@@ -203,7 +209,11 @@ Limitations:
 - The fence works under both the **classic** and the **consumer** group protocols
   (`group.protocol=classic|consumer`). With `consumer`, use **brokers 4.3.0+** — below that a still-valid
   owner can be spuriously fenced during a rebalance; the fenced write is retried on the next tick (safe,
-  never corruption, but a retry on every rebalance).
+  never corruption, but a retry on every rebalance). Under the **classic** protocol the same spurious
+  fence is routine with `CooperativeStickyAssignor`, which keeps retained partitions writing straight
+  through a rebalance, and absent with an eager assignor, which tears every flow down before the
+  generation bumps - at the price of re-recovering the whole assignment on each rebalance. No broker
+  version absorbs it for the classic protocol.
 
 ### Custom snapshot storage
 

@@ -156,6 +156,13 @@ on an ordinary rolling deploy, and by then it bounds nothing the consumer does n
 plausible-looking it fails the flow precisely during the longest rebalances — the ones where a peer is
 running eager recovery — and restarts the storm it was meant to prevent.
 
+What tolerating costs, against that: one aborted transaction per fence (a round trip that writes
+nothing), a WARN per fenced waiter - about 580 per rolling deploy of one preprod service, which is log
+volume, not an alerting signal, hence the counter - a key that stays loaded, holding its offset, until
+its tombstone lands, and a partition whose committed offset lags by the ticks it takes for the
+generation to become current again. Nothing is lost and nothing is written twice: the fenced
+transaction aborted.
+
 The residual shape a bound would notionally catch is a member whose polls keep succeeding while its
 generation never becomes valid. That is not fence-specific, and it has a better detector: a partition
 whose **committed offset stops advancing** while its input keeps moving. That alert is worth having in
@@ -297,6 +304,16 @@ post-poll read can be stale by the time the commit reaches the broker.
 partition the member still owns, and a reassigned one stays fenced — hence `group.protocol=consumer`
 is recommended only with such brokers (below 4.3.0 its window is the wider one); no broker version
 absorbs the classic in-flight-round window.
+
+Which combination actually pays that window is worth being precise about. Classic **eager** does not:
+it revokes the whole assignment in `onJoinPrepare`, before the generation bumps, so every flow is torn
+down before a write could carry a stale token - at the price of recovering the entire assignment again
+on every rebalance, which for a large snapshot topic costs far more than a tolerated fence. Classic
+**cooperative** keeps its retained partitions folding, flushing and committing straight through the
+round, which is exactly why the spurious fence is routine there, and the classic protocol has no
+broker-side absorption of it - KIP-1251 covers the consumer protocol only. So the protocol-level exit
+is `group.protocol=consumer` on brokers that carry it; until then, tolerating the fence (above) is what
+makes cooperative-sticky stable.
 
 The revoke-time flush is the one place the combinations differ in outcome. Classic **eager** revokes
 before the member rejoins, and the consumer protocol keeps the member on its epoch until it
