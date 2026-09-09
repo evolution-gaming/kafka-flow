@@ -165,11 +165,15 @@ object KafkaSnapshotWriteDatabase {
     private def classifyFence(result: Either[Throwable, Unit]): Either[Throwable, Unit] =
       result.leftMap(e => if (isGenerationFence(e)) GenerationFencedError(e) else e)
 
-    // the fence arrives bare from sendOffsetsToTransaction, or as KafkaException(cause = CommitFailedException) when
-    // the abort failed to clear the producer's error state and the next transactional call re-raises it; hence the
-    // chain walk, depth-bounded rather than cycle-guarded (16 is far past any real wrapping depth)
-    private def isGenerationFence(e: Throwable): Boolean =
-      Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(16).exists(_.isInstanceOf[CommitFailedException])
+    // only the bare exception is the fence. kafka-clients raises it, unwrapped, from `sendOffsetsToTransaction`,
+    // out of the single place that maps ILLEGAL_GENERATION and UNKNOWN_MEMBER_ID, and as an *abortable* error: the
+    // abort above clears it and the next transaction opens on the same producer. A `KafkaException` carrying it as a
+    // cause ("Cannot execute transactional method because we are in an error state") is a different state - an
+    // earlier fence still recorded because nothing aborted it - and one shape of it, a `commitTransaction` that timed
+    // out leaving an unacked pending transition, can no longer be aborted at all, so every later transaction fails
+    // identically. Tolerating that would stall the flow silently; failing it re-creates the producer, the only way
+    // out. All 47 fences traced in preprod arrived bare.
+    private def isGenerationFence(e: Throwable): Boolean = e.isInstanceOf[CommitFailedException]
 
     // every transaction commits an offset, so the broker's generation check (KIP-447) gates every write. Committing
     // the *latest* offset is safe across capped batches: each persist blocks until durable before its offset is

@@ -239,34 +239,51 @@ class GroupCommitSpec extends FunSuite {
     test.unsafeRunSync()
   }
 
-  List(
-    "bare"                                            -> new CommitFailedException("stale generation"),
-    "wrapped by the producer's lingering error state" -> new KafkaException("error state", new CommitFailedException()),
-  ).foreach {
-    case (shape, error) =>
-      test(s"a generation fence ($shape) aborts and surfaces as GenerationFencedError") {
-        // both entry points into commitBatch, the write and the offset-only marker, get the fenced type back, so
-        // their callers keep the state dirty / the offset uncommitted and retry
-        val test = for {
-          events <- Ref.of[IO, Vector[Event]](Vector.empty)
-          tx <- buildTransactional(
-            recordingProducer(events, failOffsets = error.some),
-            ConsumerGroupMetadata.Empty.some,
-            256,
-          )
-          write  <- tx.writeDatabase.persist(kafkaKey("key1"), "state-1").attempt
-          marker <- tx.scheduleCommit.schedule(Offset.unsafe(7)).attempt
-          log    <- events.get
-        } yield {
-          List(write, marker).foreach {
-            case Left(GenerationFencedError(cause)) => assertEquals(cause, error)
-            case other                              => fail(s"expected GenerationFencedError, got $other")
-          }
-          assertEquals(log.count(_ == Event.Commit), 0)
-          assertEquals(log.count(_ == Event.Abort), 2)
-        }
-        test.unsafeRunSync()
+  test("a generation fence aborts and surfaces as GenerationFencedError") {
+    // both entry points into commitBatch, the write and the offset-only marker, get the fenced type back, so
+    // their callers keep the state dirty / the offset uncommitted and retry
+    val error = new CommitFailedException("stale generation")
+    val test = for {
+      events <- Ref.of[IO, Vector[Event]](Vector.empty)
+      tx <- buildTransactional(
+        recordingProducer(events, failOffsets = error.some),
+        ConsumerGroupMetadata.Empty.some,
+        256,
+      )
+      write  <- tx.writeDatabase.persist(kafkaKey("key1"), "state-1").attempt
+      marker <- tx.scheduleCommit.schedule(Offset.unsafe(7)).attempt
+      log    <- events.get
+    } yield {
+      List(write, marker).foreach {
+        case Left(GenerationFencedError(cause)) => assertEquals(cause, error)
+        case other                              => fail(s"expected GenerationFencedError, got $other")
       }
+      assertEquals(log.count(_ == Event.Commit), 0)
+      assertEquals(log.count(_ == Event.Abort), 2)
+    }
+    test.unsafeRunSync()
+  }
+
+  test("a fence wrapped in the producer's error state is not classified as one") {
+    // "Cannot execute transactional method because we are in an error state" with a CommitFailedException cause is
+    // not this transaction being fenced: it is an earlier fence that no abort cleared, and the producer may be past
+    // saving. It surfaces unclassified, so the flow fails and the producer is re-created
+    val error = new KafkaException("error state", new CommitFailedException())
+    val test = for {
+      events <- Ref.of[IO, Vector[Event]](Vector.empty)
+      tx <- buildTransactional(
+        recordingProducer(events, failOffsets = error.some),
+        ConsumerGroupMetadata.Empty.some,
+        256,
+      )
+      write <- tx.writeDatabase.persist(kafkaKey("key1"), "state-1").attempt
+      log   <- events.get
+    } yield {
+      assertEquals(write, Left(error))
+      assertEquals(log.count(_ == Event.Commit), 0)
+      assertEquals(log.count(_ == Event.Abort), 1)
+    }
+    test.unsafeRunSync()
   }
 }
 
