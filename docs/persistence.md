@@ -21,8 +21,7 @@ backends are provided:
 
 Both backends recover state per key during partition assignment, inside the consumer's rebalance
 callback, relying on Kafka's guarantee that a partition is owned by a single consumer in the group.
-skafka runs that callback through the application's `ToTry[F]`, whose behaviour on a slow recovery is
-therefore the application's choice. The [stale-writer
+skafka runs that callback through the application's `ToTry[F]`. The [stale-writer
 protections](#protecting-against-stale-snapshot-writes) below cover the one case where that ownership
 guarantee is not enough for the **Kafka** backend. The Cassandra backend writes snapshots
 unconditionally (last write wins, no offset check), so it stays exposed to the stale-writer

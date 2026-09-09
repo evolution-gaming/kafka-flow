@@ -15,19 +15,13 @@ import java.util.concurrent.TimeoutException
 import scala.concurrent.duration.*
 import scala.util.Failure
 
-/** Pins the async boundary in front of `TopicFlow.safeguard`'s guarded region (see the comment there). Without it,
-  * `ToTry.ioToTry`'s `IO.syncStep` lands inside `semaphore.permit.use { ... }.uncancelable`, the remainder runs without
-  * the mask and the permit release, and the timeout cancellation leaks the permit: every later call and the flow's
-  * release block forever.
+/** Tests that `TopicFlow.safeguard`'s permit survives a rebalance callback that times out.
   *
-  * Test 1 checks `syncStep` hands the guarded region back untouched. Its `Left` assertions hold even unguarded
-  * (`syncStep` bails at the `parTraverse_` inside `TopicFlow.add`, permit already taken), so the discriminating check
-  * is that the flow is still releasable. Tests 2 and 3 drive the production path: `RebalanceListener` through skafka's
-  * `RebalanceCallback.run` with `ToTry.ioToTry`.
+  * Without the `cede`, `ioToTry`'s `syncStep` walks inside the `uncancelable` region, the returned `IO` lacks the
+  * permit release, and a timeout leaks the permit. Test 1 checks `syncStep` hands the region back untouched; the
+  * discriminating assertion is that the flow is still releasable. Tests 2 and 3 drive the production path.
   *
-  * No outcome depends on timing. Recovery blocks on a gate the test opens only after the callback has returned, so the
-  * budget always expires first; `ToTry` needs a real runtime, so `TestControl` is not an option. Anything that may
-  * block forever runs on its own fiber with a bounded join, so a regression fails instead of hanging.
+  * Recovery blocks on a gate the test opens after the callback has returned, so no outcome depends on timing.
   */
 class TopicFlowSafeguardSyncStepSpec extends FunSuite {
 
