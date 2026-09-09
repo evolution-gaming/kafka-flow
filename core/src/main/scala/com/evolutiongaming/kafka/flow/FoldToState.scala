@@ -1,11 +1,12 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Monad
 import cats.data.NonEmptyList
 import cats.effect.{Ref, Sync}
 import cats.mtl.Stateful
 import cats.syntax.all.*
+import cats.{Monad, MonadThrow}
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
+import com.evolutiongaming.kafka.flow.kafka.GenerationFencedError
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 
 /** Applies records to a state stored inside and informs the listeners about the changes */
@@ -35,12 +36,48 @@ object FoldToState {
     *
     * Performs the necessary actions upon the state being changes, i.e. sends it to persistence, or removes the key if
     * the flow processing is finished.
+    *
+    * Every delete failure fails the flow here, a stale-generation fence included. Use the overload taking `remove` to
+    * tolerate that one.
     */
   def apply[F[_]: Monad: KeyContext, S, E](
     storage: Stateful[F, Option[S]],
     fold: EnhancedFold[F, S, E],
     persistence: Persistence[F, S, E],
     additionalPersist: AdditionalStatePersist[F, S, E]
+  ): FoldToState[F, E] =
+    instance(storage, fold, persistence, additionalPersist, persistence.delete *> KeyContext[F].remove)
+
+  /** As above, with `remove` as the effect that takes the key out of the partition once its state is deleted
+    * ([[KeyFlow]] passes one that also stops the key's timers), and tolerating a delete the broker fenced.
+    */
+  def apply[F[_]: MonadThrow: KeyContext, S, E](
+    storage: Stateful[F, Option[S]],
+    fold: EnhancedFold[F, S, E],
+    persistence: Persistence[F, S, E],
+    additionalPersist: AdditionalStatePersist[F, S, E],
+    remove: F[Unit],
+  ): FoldToState[F, E] = instance(
+    storage,
+    fold,
+    persistence,
+    additionalPersist,
+    // the fence is the rejection of the transaction that carried the tombstone: nothing landed, so the key is kept
+    // and deleted again on the next tick. see the overload in `TickToState`, which retries it
+    persistence.delete.attempt.flatMap {
+      case Right(()) => remove
+      case Left(e: GenerationFencedError) =>
+        KeyContext[F].log.warn(s"delete fenced by a stale consumer generation, retrying on the next tick: $e")
+      case Left(e) => e.raiseError[F, Unit]
+    }
+  )
+
+  private def instance[F[_]: Monad, S, E](
+    storage: Stateful[F, Option[S]],
+    fold: EnhancedFold[F, S, E],
+    persistence: Persistence[F, S, E],
+    additionalPersist: AdditionalStatePersist[F, S, E],
+    onStateEmptied: F[Unit],
   ): FoldToState[F, E] = new FoldToState[F, E] {
     private val keyFlowExtras = KeyFlowExtras.of(additionalPersist.request)
 
@@ -80,12 +117,7 @@ object FoldToState {
         //
         // It makes me think that the initial implementation of returning `Done`
         // was not as bad as I thought.
-        _ <-
-          if (state.isEmpty) {
-            persistence.delete *> KeyContext[F].remove
-          } else {
-            ().pure[F]
-          }
+        _ <- if (state.isEmpty) onStateEmptied else ().pure[F]
       } yield ()
     }
   }

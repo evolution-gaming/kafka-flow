@@ -6,7 +6,7 @@ import cats.effect.{Ref, SyncIO}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.KeyFlowSpec.*
-import com.evolutiongaming.kafka.flow.kafka.ToOffset
+import com.evolutiongaming.kafka.flow.kafka.{GenerationFencedError, ToOffset}
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlow, TimerFlowOf, Timestamp}
@@ -166,6 +166,99 @@ class KeyFlowSpec extends FunSuite {
     program.unsafeRunSync()
   }
 
+  test("KeyFlow tolerates a fenced delete from the tick and deletes again on the next tick") {
+
+    val f = new ConstFixture
+
+    // Given("a delete the broker fences once, then accepts")
+    val deletes      = Ref.unsafe[SyncIO, Int](0)
+    val removeCalled = Ref.unsafe[SyncIO, Boolean](false)
+    val persistence  = f.persistenceDeleting(deletes, failFirst = 1)
+    // And("an eviction tick that asks for the key to go")
+    val evict: TickOption[SyncIO, State] = TickOption.of(_ => none[State].pure[SyncIO])
+
+    implicit val context: KeyContext[SyncIO] = f.contextRemoving(removeCalled)
+
+    val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
+    val program = KeyFlow.of(key, f.fold, evict, persistence, TimerFlow.empty[SyncIO], f.registry).use { flow =>
+      for {
+        // When("the first tick's delete is fenced")
+        _ <- flow.onTimer
+        // Then("nothing was deleted and the key stays, holding its offset")
+        _ <- deletes.get.map(assertEquals(_, 1))
+        _ <- removeCalled.get.map(r => assert(!r))
+        // When("the generation is current again on the next tick")
+        _ <- flow.onTimer
+        // Then("the delete lands and the key goes")
+        _ <- deletes.get.map(assertEquals(_, 2))
+        _ <- removeCalled.get.map(r => assert(r))
+      } yield ()
+    }
+
+    program.unsafeRunSync()
+  }
+
+  test("KeyFlow tolerates a fenced delete from the fold and deletes again on a later tick") {
+
+    val f               = new ConstFixture
+    implicit val timers = f.timers
+
+    // Given("a delete the broker fences twice, then accepts")
+    val deletes      = Ref.unsafe[SyncIO, Int](0)
+    val removeCalled = Ref.unsafe[SyncIO, Boolean](false)
+    val persistence  = f.persistenceDeleting(deletes, failFirst = 2)
+    // And("a fold that completes the key at once")
+    val fold = FoldOption.empty[SyncIO, State, ConsumerRecord[String, ByteVector]]
+
+    implicit val context: KeyContext[SyncIO] = f.contextRemoving(removeCalled)
+
+    val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
+    val program = KeyFlow.of(key, fold, f.tick, persistence, TimerFlow.empty[SyncIO], f.registry).use { flow =>
+      for {
+        // When("the fold empties the state and its delete is fenced")
+        _ <- timers.set(f.timestamp.copy(offset = Offset.unsafe(1)))
+        _ <- flow(f.records(key.key, 1, List("event1")))
+        // Then("the key stays, with an empty state")
+        _ <- deletes.get.map(assertEquals(_, 1))
+        _ <- removeCalled.get.map(r => assert(!r))
+        // When("the next tick's delete is fenced too")
+        _ <- flow.onTimer
+        _ <- deletes.get.map(assertEquals(_, 2))
+        _ <- removeCalled.get.map(r => assert(!r))
+        // When("the tick after that lands it")
+        _ <- flow.onTimer
+        // Then("the key is removed")
+        _ <- deletes.get.map(assertEquals(_, 3))
+        _ <- removeCalled.get.map(r => assert(r))
+      } yield ()
+    }
+
+    program.unsafeRunSync()
+  }
+
+  test("KeyFlow fails on a delete error that is not a fence") {
+
+    val f = new ConstFixture
+
+    val deletes                              = Ref.unsafe[SyncIO, Int](0)
+    val removeCalled                         = Ref.unsafe[SyncIO, Boolean](false)
+    implicit val context: KeyContext[SyncIO] = f.contextRemoving(removeCalled)
+    val persistence = new Persistence[SyncIO, State, ConsumerRecord[String, ByteVector]] {
+      def appendEvent(event: ConsumerRecord[String, ByteVector]) = SyncIO.unit
+      def replaceState(state: State)                             = SyncIO.unit
+      def delete = deletes.update(_ + 1) *> new RuntimeException("broker down").raiseError[SyncIO, Unit]
+      def flush  = SyncIO.unit
+      def read   = SyncIO.pure((Offset.min, 0).some)
+    }
+    val evict: TickOption[SyncIO, State] = TickOption.of(_ => none[State].pure[SyncIO])
+
+    val key     = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
+    val program = KeyFlow.of(key, f.fold, evict, persistence, TimerFlow.empty[SyncIO], f.registry).use(_.onTimer)
+
+    intercept[RuntimeException](program.unsafeRunSync())
+    assert(!removeCalled.get.unsafeRunSync())
+  }
+
   test("KeyFlow restores messages correctly") {
 
     val f               = new ConstFixture
@@ -289,6 +382,30 @@ object KeyFlowSpec {
       TimerContext.memory[SyncIO](timestamp).unsafeRunSync()
 
     val registry: EntityRegistry[SyncIO, KafkaKey, State] = EntityRegistry.empty
+
+    /** A persistence whose delete is fenced by the broker on its first `failFirst` calls. */
+    def persistenceDeleting(
+      deletes: Ref[SyncIO, Int],
+      failFirst: Int
+    ): Persistence[SyncIO, State, ConsumerRecord[String, ByteVector]] =
+      new Persistence[SyncIO, State, ConsumerRecord[String, ByteVector]] {
+        def appendEvent(event: ConsumerRecord[String, ByteVector]) = SyncIO.unit
+        def replaceState(state: State)                             = SyncIO.unit
+        def delete = deletes.updateAndGet(_ + 1).flatMap { n =>
+          SyncIO
+            .raiseError[Unit](GenerationFencedError(new Exception("stale generation")))
+            .whenA(n <= failFirst)
+        }
+        def flush = SyncIO.unit
+        def read  = SyncIO.pure((Offset.min, 0).some)
+      }
+
+    def contextRemoving(removeCalled: Ref[SyncIO, Boolean]): KeyContext[SyncIO] = new KeyContext[SyncIO] {
+      def holding              = none[Offset].pure[SyncIO]
+      def hold(offset: Offset) = SyncIO.unit
+      def remove               = removeCalled.set(true)
+      def log                  = Log.empty
+    }
   }
 
   implicit val log: Log[SyncIO] = Log.empty

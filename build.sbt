@@ -1,4 +1,5 @@
 import Dependencies.*
+import com.typesafe.tools.mima.core.*
 
 ThisBuild / versionScheme := Some("early-semver")
 ThisBuild / evictionErrorLevel := Level.Warn
@@ -67,6 +68,14 @@ lazy val core = (project in file("core"))
   .settings(commonSettings)
   .settings(
     name := "kafka-flow",
+    // `KeyFlow.of` and `KeyFlowOf.apply` build the delete path that tolerates a stale-generation fence, which needs
+    // `MonadThrow` where `Monad` was enough. The constraint is the only change, and every effect these are used with
+    // (`Sync`, `Async`, `IO`) already satisfies it, so callers recompile unchanged; only one linked against 10.3.x
+    // without recompiling would miss the method. Drop these if the fix goes out as a major instead.
+    mimaBinaryIssueFilters ++= Seq(
+      ProblemFilters.exclude[IncompatibleMethTypeProblem]("com.evolutiongaming.kafka.flow.KeyFlow.of"),
+      ProblemFilters.exclude[IncompatibleMethTypeProblem]("com.evolutiongaming.kafka.flow.KeyFlowOf.apply"),
+    ),
     libraryDependencies ++= Seq(
       Cats.core,
       Cats.mtl,

@@ -6,7 +6,7 @@ import cats.effect.syntax.resource.*
 import cats.effect.{Ref, Sync}
 import cats.mtl.Stateful
 import cats.syntax.all.*
-import cats.{Applicative, Monad}
+import cats.{Applicative, MonadThrow}
 import com.evolutiongaming.kafka.flow.effect.CatsEffectMtlInstances.*
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -19,7 +19,7 @@ trait KeyFlow[F[_], E] extends TimerFlow[F] {
 object KeyFlow {
 
   /** Create flow which persists snapshots, events and restores state if needed */
-  def of[F[_]: Monad: Ref.Make: KeyContext, S, A](
+  def of[F[_]: MonadThrow: Ref.Make: KeyContext, S, A](
     key: KafkaKey,
     fold: FoldOption[F, S, A],
     tick: TickOption[F, S],
@@ -30,7 +30,7 @@ object KeyFlow {
     of(key, storage.stateInstance, fold, tick, persistence, timer, registry)
   }
 
-  def of[F[_]: Monad: Ref.Make: KeyContext, S, A](
+  def of[F[_]: MonadThrow: Ref.Make: KeyContext, S, A](
     key: KafkaKey,
     fold: EnhancedFold[F, S, A],
     tick: TickOption[F, S],
@@ -43,7 +43,7 @@ object KeyFlow {
   }
 
   /** Create flow which persists snapshots, events and restores state if needed */
-  def of[F[_]: Monad: KeyContext, S, A](
+  def of[F[_]: MonadThrow: KeyContext, S, A](
     key: KafkaKey,
     storage: Stateful[F, Option[S]],
     fold: FoldOption[F, S, A],
@@ -63,7 +63,7 @@ object KeyFlow {
       registry
     )
 
-  def of[F[_]: Monad: KeyContext, S, A](
+  def of[F[_]: MonadThrow: KeyContext, S, A](
     key: KafkaKey,
     storage: Stateful[F, Option[S]],
     fold: EnhancedFold[F, S, A],
@@ -80,8 +80,8 @@ object KeyFlow {
       // by fold or tick to run the state, because in this
       // case we may flush the key which was already removed
       timerCancelled = storage inspect (_.isEmpty)
-      foldToState    = FoldToState(storage, fold, persistence, additionalPersist)
-      tickToState    = TickToState(storage, tick, persistence)
+      foldToState    = FoldToState(storage, fold, persistence, additionalPersist, KeyContext[F].remove)
+      tickToState    = TickToState(storage, tick, persistence, KeyContext[F].remove)
       _             <- registry.register(key, storage.get)
     } yield new KeyFlow[F, A] {
       def apply(records: NonEmptyList[A]): F[Unit] = foldToState(records)

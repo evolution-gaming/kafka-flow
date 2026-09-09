@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Monad
+import cats.MonadThrow
 import cats.effect.{Ref, Resource}
 import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
@@ -30,7 +30,7 @@ object KeyFlowOf {
     * @param tick
     *   defines what to do when the timer ticks.
     */
-  def apply[F[_]: Monad: Ref.Make, S, A](
+  def apply[F[_]: MonadThrow: Ref.Make, S, A](
     timerFlowOf: TimerFlowOf[F],
     fold: FoldOption[F, S, A],
     tick: TickOption[F, S],
@@ -46,7 +46,7 @@ object KeyFlowOf {
     * @param tick
     *   defines what to do when the timer ticks
     */
-  def apply[F[_]: Monad: Ref.Make, S, A](
+  def apply[F[_]: MonadThrow: Ref.Make, S, A](
     timerFlowOf: TimerFlowOf[F],
     fold: EnhancedFold[F, S, A],
     tick: TickOption[F, S],
