@@ -6,6 +6,9 @@ import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.PartitionFlow.FilterRecord
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 
+/**
+  * Factory of PartitionFlows
+  */
 trait PartitionFlowOf[F[_]] {
 
   /** Creates partition record handler for the partition described by `assignment`, committing offsets through
