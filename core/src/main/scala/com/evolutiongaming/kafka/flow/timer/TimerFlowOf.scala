@@ -39,8 +39,8 @@ object TimerFlowOf {
     maxIdle: FiniteDuration   = 10.minutes,
     flushOnRevoke: Boolean    = false,
   ): TimerFlowOf[F] = { (context, persistence, timers) =>
-    def register(touchedAt: Timestamp) =
-      timers.registerProcessing(touchedAt.clock plusMillis fireEvery.toMillis)
+    def register(checkedAt: Timestamp) =
+      timers.registerProcessing(checkedAt.clock plusMillis fireEvery.toMillis)
 
     val acquire = Resource.eval {
       for {
@@ -64,7 +64,7 @@ object TimerFlowOf {
                 persistence.flush *>
                 context.remove
             } else {
-              register(touchedAt)
+              register(current)
             }
         } yield ()
       }
