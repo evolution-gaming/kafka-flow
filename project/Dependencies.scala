@@ -26,13 +26,13 @@ object Dependencies {
     */
   object Pinned {
     // comes from `skafka` via `kafka-clients`, which still brings 1.10.2
-    val lz4 = "at.yawk.lz4" % "lz4-java" % "1.11.1"
+    val lz4 = "at.yawk.lz4" % "lz4-java" % "1.11.3"
 
     // Raises Jackson for the `journal` module, which gets 2.14.3 from `kafka-journal` and has no `scassandra` on its
     // classpath to pin anything newer. The version matches what `scassandra` resolves to, so that the build-wide
     // `dependencyOverrides` does not drag `persistence-cassandra` down to an older Jackson than it gets today.
     // Pins `jackson-core` and `jackson-databind` only; `jackson-annotations` and `jackson-datatype-*` stay at 2.14.3.
-    private val jacksonVersion = "2.18.10"
+    private val jacksonVersion = "2.18.11"
     val jackson = Seq(
       "com.fasterxml.jackson.core" % "jackson-core"     % jacksonVersion,
       "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
