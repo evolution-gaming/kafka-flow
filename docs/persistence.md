@@ -186,9 +186,15 @@ Limitations:
 - The mode always uses the identity `KafkaPersistencePartitionMapper` (fencing is per input partition);
   a non-identity mapper is not supported here.
 - The fence works under both the **classic** and the **consumer** group protocols
-  (`group.protocol=classic|consumer`). With `consumer`, use **brokers 4.3.0+** — below that a still-valid
-  owner can be spuriously fenced during a rebalance and crash; the restart converges, but any later
-  rebalance can fence again (safe, never corruption, but not stable).
+  (`group.protocol=classic|consumer`). With `consumer`, use **brokers 4.3.0+**
+  ([KIP-1251](https://cwiki.apache.org/confluence/spaces/KAFKA/pages/399279344/KIP-1251+Assignment+epochs+for+consumer+groups))
+  — below that a still-valid owner can be spuriously fenced during a rebalance and crash; the restart
+  converges, but any later rebalance can fence again (safe, never corruption, but not stable).
+  Under **classic**, `CooperativeStickyAssignor` keeps retained partitions writing through the
+  generation bump, so the spurious fence can occur on any rebalance and each one crashes the flow;
+  under `retryOnError` each restart fences the peers in turn, and the loop can last minutes.
+  An **eager** assignor (`StickyAssignor`, `RangeAssignor`) avoids it by tearing every flow down
+  before the bump.
 
 ### Custom snapshot storage
 
