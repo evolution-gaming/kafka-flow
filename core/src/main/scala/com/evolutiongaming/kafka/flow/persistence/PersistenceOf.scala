@@ -11,6 +11,7 @@ import com.evolutiongaming.kafka.flow.journal.JournalsOf
 import com.evolutiongaming.kafka.flow.key.KeysOf
 import com.evolutiongaming.kafka.flow.snapshot.SnapshotsOf
 import com.evolutiongaming.kafka.flow.timer.Timestamps
+import com.evolutiongaming.skafka.Offset
 
 /** Creates generic persistence for a key */
 trait PersistenceOf[F[_], K, S, A] {
@@ -55,11 +56,20 @@ trait SnapshotPersistenceOf[F[_], K, S, A] extends PersistenceOf[F, K, S, A] { s
 }
 object PersistenceOf {
 
-  /** Saves both events and snapshots, restores state from events */
+  /** Saves both events and snapshots, restores state from events.
+    *
+    * @param offsetOf
+    *   the offset an event was consumed at. When the snapshot store fences stale writers, recovery folds the journal
+    *   onto the store's view of the key: a live snapshot is the base, a deletion tombstone's offset the floor, and
+    *   journal events at or below the store's offset are skipped -- they are already reflected in the base, or stale
+    *   residue of a deleted key that would otherwise be folded back to life (the journal is unfenced). See `ReadState`
+    *   and docs/cassandra-single-writer-design.md (the journal revive). Unfenced stores ignore it.
+    */
   def restoreEvents[F[_]: Monad: LogOf, K, S, A](
     keysOf: KeysOf[F, K],
     journalsOf: JournalsOf[F, K, A],
-    snapshotsOf: SnapshotsOf[F, K, S]
+    snapshotsOf: SnapshotsOf[F, K, S],
+    offsetOf: A => Offset,
   ): Resource[F, PersistenceOf[F, K, S, A]] = {
     val log = LogOf[F].apply(PersistenceOf.getClass)
     Resource.eval(log) map { implicit log => (key, fold, timestamps) =>
@@ -69,7 +79,7 @@ object PersistenceOf {
         snapshots <- snapshotsOf(key)
         keys       = keysOf(key)
       } yield Persistence(
-        readState = ReadState(journals, fold),
+        readState = ReadState(journals, fold, snapshots, offsetOf),
         buffers   = Buffers(keys, journals, snapshots)
       )
     }

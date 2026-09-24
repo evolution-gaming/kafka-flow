@@ -7,6 +7,7 @@ import cats.effect.{Deferred, IO, Ref}
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.FromTry
 import com.evolutiongaming.kafka.flow.KafkaKey
+import com.evolutiongaming.kafka.flow.snapshot.Stored
 import com.evolutiongaming.kafka.flow.kafkapersistence.GroupCommitSpec.*
 import com.evolutiongaming.skafka.consumer.ConsumerGroupMetadata
 import com.evolutiongaming.skafka.producer.{Producer, ProducerRecord, RecordMetadata}
@@ -70,7 +71,7 @@ class GroupCommitSpec extends FunSuite {
       val test = for {
         events  <- Ref.of[IO, Vector[Event]](Vector.empty)
         tx      <- buildTransactional(recordingProducer(events), ConsumerGroupMetadata.Empty.some, cap)
-        results <- keys.parTraverse(k => tx.writeDatabase.persist(kafkaKey(k), s"state-$k").attempt)
+        results <- keys.parTraverse(k => tx.writeDatabase.write(kafkaKey(k), Stored.Live((s"state-$k"), none)).attempt)
         log     <- events.get
       } yield {
         assert(results.forall(_.isRight), s"all writes complete: $results")
@@ -128,10 +129,15 @@ class GroupCommitSpec extends FunSuite {
         ConsumerGroupMetadata.Empty.some,
         maxWritesPerTransaction = cap,
       )
-      f0  <- tx.writeDatabase.persist(kafkaKey("w0"), "s0").start // opens and holds the first transaction
-      _   <- firstBegun.get
-      fm  <- tx.scheduleCommit.schedule(Offset.unsafe(9)).start // marker queued first, behind the held lock
-      fw  <- (1 to cap).toList.parTraverse(i => tx.writeDatabase.persist(kafkaKey(s"w$i"), s"s$i").start)
+      f0 <- tx
+        .writeDatabase
+        .write(kafkaKey("w0"), Stored.Live(("s0"), none))
+        .start // opens and holds the first transaction
+      _  <- firstBegun.get
+      fm <- tx.scheduleCommit.schedule(Offset.unsafe(9)).start // marker queued first, behind the held lock
+      fw <- (1 to cap)
+        .toList
+        .parTraverse(i => tx.writeDatabase.write(kafkaKey(s"w$i"), Stored.Live((s"s$i"), none)).start)
       _   <- IO.sleep(1.second) // virtual: lets the marker + writes enqueue and block on the lock before release
       _   <- release.complete(())
       _   <- (f0 :: fm :: fw).traverse_(_.joinWithNever)
@@ -154,7 +160,7 @@ class GroupCommitSpec extends FunSuite {
         maxWritesPerTransaction = 256,
         assignedOffset          = Offset.unsafe(3),
       )
-      _   <- tx.writeDatabase.persist(kafkaKey("key1"), "state-1")
+      _   <- tx.writeDatabase.write(kafkaKey("key1"), Stored.Live(("state-1"), none))
       log <- events.get
     } yield {
       assertEquals(offsetsCommitted(log), List(Offset.unsafe(3)))
@@ -172,7 +178,7 @@ class GroupCommitSpec extends FunSuite {
     val test = for {
       events <- Ref.of[IO, Vector[Event]](Vector.empty)
       tx <- buildTransactional(recordingProducer(events), ConsumerGroupMetadata.Empty.some, maxWritesPerTransaction = 1)
-      _  <- keys.parTraverse(k => tx.writeDatabase.persist(kafkaKey(k), s"state-$k"))
+      _  <- keys.parTraverse(k => tx.writeDatabase.write(kafkaKey(k), Stored.Live((s"state-$k"), none)))
       _  <- tx.scheduleCommit.schedule(Offset.unsafe(10))
       log <- events.get
     } yield {
@@ -189,7 +195,7 @@ class GroupCommitSpec extends FunSuite {
     val test = for {
       events <- Ref.of[IO, Vector[Event]](Vector.empty)
       tx     <- buildTransactional(recordingProducer(events), groupMetadata = none, maxWritesPerTransaction = 256)
-      result <- tx.writeDatabase.persist(kafkaKey("key1"), "state-1").attempt
+      result <- tx.writeDatabase.write(kafkaKey("key1"), Stored.Live(("state-1"), none)).attempt
       log    <- events.get
     } yield {
       assert(result.left.exists(_.isInstanceOf[IllegalStateException]), s"fail-loud: $result")
@@ -214,9 +220,11 @@ class GroupCommitSpec extends FunSuite {
         assignedOffset          = Offset.min,
         maxWritesPerTransaction = 256,
       )
-      _   <- tx.writeDatabase.persist(kafkaKey("key1"), "state-1") // commits under generation 1
-      _   <- gmRef.set(generation(2).some) // a rebalance advances the generation
-      _   <- tx.writeDatabase.persist(kafkaKey("key2"), "state-2") // must commit under generation 2, not a cached 1
+      _ <- tx.writeDatabase.write(kafkaKey("key1"), Stored.Live(("state-1"), none)) // commits under generation 1
+      _ <- gmRef.set(generation(2).some) // a rebalance advances the generation
+      _ <- tx
+        .writeDatabase
+        .write(kafkaKey("key2"), Stored.Live(("state-2"), none)) // must commit under generation 2, not a cached 1
       log <- events.get
     } yield assertEquals(log.collect { case Event.Offsets(_, generation) => generation }.toList, List(1, 2))
     test.unsafeRunSync()
@@ -226,7 +234,7 @@ class GroupCommitSpec extends FunSuite {
     val test = for {
       events <- Ref.of[IO, Vector[Event]](Vector.empty)
       tx     <- buildTransactional(recordingProducer(events, failCommit = true), ConsumerGroupMetadata.Empty.some, 256)
-      result <- tx.writeDatabase.persist(kafkaKey("key1"), "state-1").attempt
+      result <- tx.writeDatabase.write(kafkaKey("key1"), Stored.Live(("state-1"), none)).attempt
       log    <- events.get
     } yield {
       assert(result.isLeft, s"error surfaced: $result")

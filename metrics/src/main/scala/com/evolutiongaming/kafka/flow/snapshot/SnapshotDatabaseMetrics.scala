@@ -34,27 +34,24 @@ object SnapshotDatabaseMetrics {
       )
       deleteSummary <- registry.summary(
         name      = "snapshot_database_delete_duration_seconds",
-        help      = "Time required to delete all snapshots for the key from a database",
+        help      = "Time required to delete the snapshot for the key from a database",
         quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
         labels    = LabelNames("topic", "partition")
       )
     } yield new MetricsK[SnapshotDatabase[F, KafkaKey, *]] {
       def withMetrics[S](database: SnapshotDatabase[F, KafkaKey, S]) = new SnapshotDatabase[F, KafkaKey, S] {
-        def persist(key: KafkaKey, snapshot: S) =
-          database.persist(key, snapshot) measureDuration { duration =>
-            persistSummary
+        // a present value is a persist, an absent value is a delete (tombstone) - keep the two summaries distinct
+        def write(key: KafkaKey, stored: Stored[S]) = {
+          val summary = if (stored.value.isDefined) persistSummary else deleteSummary
+          database.write(key, stored) measureDuration { duration =>
+            summary
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)
               .observe(duration.toNanos.nanosToSeconds)
           }
-        def get(key: KafkaKey) =
-          database.get(key) measureDuration { duration =>
+        }
+        def read(key: KafkaKey) =
+          database.read(key) measureDuration { duration =>
             getSummary
-              .labels(key.topicPartition.topic, key.topicPartition.partition.show)
-              .observe(duration.toNanos.nanosToSeconds)
-          }
-        def delete(key: KafkaKey) =
-          database.delete(key) measureDuration { duration =>
-            deleteSummary
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)
               .observe(duration.toNanos.nanosToSeconds)
           }
