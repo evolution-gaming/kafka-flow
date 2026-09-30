@@ -160,6 +160,8 @@ object TopicFlow {
     *   - resource would be released only after previous steps are completed
     *   - if resource is released before start of messages' processing, then it does nothing (no message processing, no
     *     commits, no persists)
+    *
+    * Also holds when a call is lifted into a rebalance callback; see the comment on the guarded calls below.
     */
   private def safeguard[F[_]: Concurrent](a: Resource[F, TopicFlow[F]]): Resource[F, TopicFlow[F]] = {
     // A combination of Semaphore and uncancelable is required to implement the aforementioned safeties
@@ -175,13 +177,19 @@ object TopicFlow {
         semaphore           <- Semaphore(1)
         xx                  <- a.allocated
         (topicFlow, release) = xx
+        // ioToTry splits an effect with IO.syncStep, which walks inside uncancelable and past onCancel.
+        // A split inside the guarded region loses the permit release: a timeout leaks the permit.
+        // IO.Cede has no case in the interpreter, so the cede stops the walk before it enters.
         safeTopicFlow = new TopicFlow[F] {
           def apply(records: ConsumerRecords[String, ByteVector]): F[Unit] =
-            semaphore.permit.use { _ => closed.get.ifM(().pure[F], topicFlow.apply(records)) }.uncancelable
+            Concurrent[F].cede *>
+              semaphore.permit.use { _ => closed.get.ifM(().pure[F], topicFlow.apply(records)) }.uncancelable
           def add(partitions: NonEmptySet[(Partition, Offset)]): F[Unit] =
-            semaphore.permit.use { _ => closed.get.ifM(().pure[F], topicFlow.add(partitions)) }.uncancelable
+            Concurrent[F].cede *>
+              semaphore.permit.use { _ => closed.get.ifM(().pure[F], topicFlow.add(partitions)) }.uncancelable
           def remove(partitions: NonEmptySet[Partition]): F[Unit] =
-            semaphore.permit.use { _ => closed.get.ifM(().pure[F], topicFlow.remove(partitions)) }.uncancelable
+            Concurrent[F].cede *>
+              semaphore.permit.use { _ => closed.get.ifM(().pure[F], topicFlow.remove(partitions)) }.uncancelable
         }
         safeRelease = semaphore.permit.use { _ => closed.set(true) *> release }.uncancelable
       } yield (safeTopicFlow, safeRelease)
