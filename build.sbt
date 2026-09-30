@@ -7,7 +7,7 @@ ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
 // covers the test-only dependency paths, the published modules declare `Pinned` explicitly
 ThisBuild / dependencyOverrides ++= Pinned.all
 
-lazy val Scala3Version = "3.3.8"
+lazy val Scala3Version = "3.9.0"
 lazy val Scala2Version = "2.13.18"
 
 lazy val commonSettings = Seq(
