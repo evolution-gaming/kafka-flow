@@ -1,13 +1,16 @@
 package com.evolutiongaming.kafka.flow.cassandra
 
 import cats.arrow.FunctionK
-import cats.effect.Async
+import cats.effect.{Async, Sync}
 import cats.syntax.all.*
 import cats.{Monad, MonadThrow}
 import com.evolutiongaming.cassandra.sync.CassandraSync
 import com.evolutiongaming.kafka.flow.journal.CassandraJournals
 import com.evolutiongaming.kafka.flow.key.{CassandraKeys, KeySegments}
+import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
+import com.evolutiongaming.kafka.flow.snapshot.{KafkaSnapshot, SnapshotsOf}
 import com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots
 import com.evolutiongaming.skafka.{FromBytes, ToBytes}
 import com.evolutiongaming.{scassandra, skafka}
@@ -21,6 +24,10 @@ object CassandraPersistence {
     *   - for keys see [[com.evolutiongaming.kafka.flow.key.CassandraKeys.DefaultTableName]]
     *   - for snapshots see [[com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots.DefaultTableName]]
     *   - for journals see [[com.evolutiongaming.kafka.flow.journal.CassandraJournals.DefaultTableName]]
+    *
+    * @param snapshotCompareAndSet
+    *   enables conditional snapshot writes protecting from stale writers overwriting newer snapshots during partition
+    *   ownership transitions, see [[com.evolutiongaming.kafka.flow.snapshot.CassandraSnapshots.withSchema]]
     */
   def withSchemaF[F[_]: Async, S](
     session: scassandra.CassandraSession[F],
@@ -28,6 +35,7 @@ object CassandraPersistence {
     consistencyOverrides: ConsistencyOverrides,
     keysSegments: KeySegments,
     recordExpiration: RecordExpiration = RecordExpiration.default,
+    snapshotCompareAndSet: Boolean     = false,
   )(implicit fromBytes: skafka.FromBytes[F, S], toBytes: skafka.ToBytes[F, S]): F[PersistenceModule[F, S]] = for {
     _keys <- CassandraKeys.withSchema(session, sync, consistencyOverrides, keysSegments, ttl = recordExpiration.keys)
     _journals <- CassandraJournals.withSchema(session, sync, consistencyOverrides, ttl = recordExpiration.journals)
@@ -35,12 +43,23 @@ object CassandraPersistence {
       session,
       sync,
       consistencyOverrides,
-      ttl = recordExpiration.snapshots
+      ttl           = recordExpiration.snapshots,
+      compareAndSet = snapshotCompareAndSet,
     )
   } yield new CassandraPersistence[F, S] {
     def keys      = _keys
     def journals  = _journals
     def snapshots = _snapshots
+
+    // the offset fence belongs to the compare-and-set mode only: a last-write-wins store never gates a
+    // write on the offset and never returns a tombstone floor, so it keeps the unfenced buffer (and
+    // events-recovery skips the per-key floor read) - exactly the pre-compare-and-set behaviour
+    override def snapshotsOf(
+      implicit F: Sync[F],
+      logOf: LogOf[F]
+    ): F[SnapshotsOf[F, KafkaKey, KafkaSnapshot[S]]] =
+      if (snapshotCompareAndSet) super.snapshotsOf
+      else logOf(CassandraPersistence.getClass).map(implicit log => SnapshotsOf.backedBy(_snapshots))
   }
 
   /** Creates schema in Cassandra if not there yet. Uses default names for all Cassandra tables:
@@ -50,7 +69,7 @@ object CassandraPersistence {
     *
     * This method uses the same `JsonCodec[Try]` as `JournalParser` does to simplify defining the basic application. if
     * \@consistencyConfig is present then applies ConsistencyConfig.Read for all read queries and
-    * ConsistencyConfig.Write for all the mutations
+    * ConsistencyConfig.Write for all the mutations. For `snapshotCompareAndSet` see `withSchemaF`.
     */
   def withSchema[F[_]: Async, S](
     session: scassandra.CassandraSession[F],
@@ -58,11 +77,12 @@ object CassandraPersistence {
     consistencyOverrides: ConsistencyOverrides,
     keysSegments: KeySegments,
     recordExpiration: RecordExpiration = RecordExpiration.default,
+    snapshotCompareAndSet: Boolean     = false,
   )(implicit fromBytes: skafka.FromBytes[Try, S], toBytes: skafka.ToBytes[Try, S]): F[PersistenceModule[F, S]] = {
     val fromTry                              = FunctionK.liftFunction[Try, F](MonadThrow[F].fromTry)
     implicit val _fromBytes: FromBytes[F, S] = fromBytes mapK fromTry
     implicit val _toBytes: ToBytes[F, S]     = toBytes mapK fromTry
-    withSchemaF(session, sync, consistencyOverrides, keysSegments, recordExpiration)
+    withSchemaF(session, sync, consistencyOverrides, keysSegments, recordExpiration, snapshotCompareAndSet)
   }
 
   // This exists for the sake of binary compatibility, to be removed in next major version

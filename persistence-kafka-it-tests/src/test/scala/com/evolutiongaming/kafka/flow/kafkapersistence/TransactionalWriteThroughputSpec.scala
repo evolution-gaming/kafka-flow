@@ -5,7 +5,7 @@ import cats.effect.IO
 import cats.effect.unsafe.IORuntime
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
-import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
+import com.evolutiongaming.kafka.flow.snapshot.{SnapshotWriteDatabase, Stored}
 import com.evolutiongaming.kafka.flow.{ForAllKafkaSuite, KafkaKey}
 import com.evolutiongaming.skafka.consumer.{
   AutoOffsetReset,
@@ -25,6 +25,11 @@ import scala.concurrent.duration.*
   * replication factor 1); the assertions are sanity-only.
   */
 class TransactionalWriteThroughputSpec extends ForAllKafkaSuite {
+
+  // adapter: the unified write(Stored) keeps these cases speaking persist(key, value)
+  private implicit class WriteDbPersist(val db: SnapshotWriteDatabase[IO, KafkaKey, String]) {
+    def persist(key: KafkaKey, value: String): IO[Unit] = db.write(key, Stored.Live(value, none))
+  }
 
   // Performance/rationale experiment, not a regression test: it adds no coverage beyond
   // TransactionalKafkaPersistenceSpec and is expensive, so it is excluded from the default test run.
