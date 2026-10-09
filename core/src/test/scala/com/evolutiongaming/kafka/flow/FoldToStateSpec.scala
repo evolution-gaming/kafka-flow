@@ -2,6 +2,7 @@ package com.evolutiongaming.kafka.flow
 
 import cats.data.{NonEmptyList, State}
 import cats.mtl.Stateful
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.Log
 import com.evolutiongaming.kafka.flow.FoldToStateSpec.*
 import com.evolutiongaming.kafka.flow.MonadStateHelper.*
@@ -134,7 +135,7 @@ object FoldToStateSpec {
     def remove: F[Unit] = State.modify { context =>
       context.copy(removeCalled = context.removeCalled + 1)
     }
-    def log = Log.empty
+    def log(source: Class[_]) = Log.empty[F].pure[F]
   }
 
 }
