@@ -1,1 +1,0 @@
-"use strict";(globalThis.webpackChunkkafka_flow_website=globalThis.webpackChunkkafka_flow_website||[]).push([[8488],{8488(e,a,k){k.d(a,{createArchitectureServices:()=>s.S});var s=k(9221);k(1400)}}]);
