@@ -6,7 +6,10 @@ import cats.Functor
 import cats.Monad
 import cats.syntax.all.*
 
-/** Reads a state and effectfully produces a new one.
+/**
+  * @see [[com.evolutiongaming.kafka.flow.EnhancedFold]]
+  *
+  * Reads a state and effectfully produces a new one.
   *
   * Roughly speaking it is `Kleisli[F, (S, A), S]` with the main additional requirement that input and output types are
   * not independent (because `S` is present both in input and output values).

@@ -29,6 +29,9 @@ trait EnhancedFold[F[_], S, E] {
       }
     }
 
+  /**
+    * Returns a fold that discards events for which f returns false
+    */
   final def filter(f: (S, E) => Boolean)(implicit F: Applicative[F]): EnhancedFold[F, S, E] =
     (extras, state0, event) =>
       state0 match {
@@ -36,6 +39,9 @@ trait EnhancedFold[F[_], S, E] {
         case None        => apply(extras, state0, event)
       }
 
+  /**
+    * Similar to `filter`
+    */
   final def filterM(f: (S, E) => F[Boolean])(implicit F: Monad[F]): EnhancedFold[F, S, E] =
     (extras, state0, event) =>
       state0 match {

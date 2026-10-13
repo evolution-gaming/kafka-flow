@@ -12,6 +12,9 @@ import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.sstream.Stream
 import scodec.bits.ByteVector
 
+/**
+  * Factory of KeyStates
+  */
 trait KeyStateOf[F[_]] { self =>
 
   /** Creates or restores a state for a single key */
