@@ -2,17 +2,17 @@ import sbt.*
 
 object Dependencies {
 
-  val catsHelper        = "com.evolutiongaming" %% "cats-helper"         % "3.13.1"
-  val catsHelperLogback = "com.evolutiongaming" %% "cats-helper-logback" % "3.13.1"
+  val catsHelper        = "com.evolutiongaming" %% "cats-helper"         % "3.13.2"
+  val catsHelperLogback = "com.evolutiongaming" %% "cats-helper-logback" % "3.13.2"
   val smetrics          = "com.evolutiongaming" %% "smetrics"            % "3.0.0"
   val scache            = "com.evolution"       %% "scache"              % "6.0.2"
   val skafka            = "com.evolutiongaming" %% "skafka"              % "21.0.3"
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.3.0"
   val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.7.0"
-  val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "4.0.0"
+  val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "4.1.0"
   val random            = "com.evolution"       %% "random"              % "1.0.5"
   val retry             = "com.evolutiongaming" %% "retry"               % "3.1.0"
-  val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.4.0"
+  val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.5.1"
 
   /** Transitive dependencies pinned to versions without known vulnerabilities.
     *
@@ -26,7 +26,7 @@ object Dependencies {
     */
   object Pinned {
     // comes from `skafka` via `kafka-clients`, which still brings 1.10.2
-    val lz4 = "at.yawk.lz4" % "lz4-java" % "1.11.3"
+    val lz4 = "at.yawk.lz4" % "lz4-java" % "1.12.0"
 
     // Raises Jackson for the `journal` module, which gets 2.14.3 from `kafka-journal` and has no `scassandra` on its
     // classpath to pin anything newer. The version matches what `scassandra` resolves to, so that the build-wide
@@ -57,7 +57,7 @@ object Dependencies {
   }
 
   object KafkaJournal {
-    private val version = "11.1.0"
+    private val version = "11.1.3"
     val journal         = "com.evolution" %% "kafka-journal" % version
   }
 
