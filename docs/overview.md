@@ -71,10 +71,11 @@ the application wide unit tests, as one does not need to accumulate the processe
 records in `StateT` or `Ref` to check if these were handled successfully.
 
 As one does not need to have such an output and, often, does not want to handle
-`Stream` from `sstream` directly, a simpler `resource` method is provided, which
-returns an `F[Unit]` completing when the underlying stream finishes, instead of a stream.
-`retryOnError` provides the same functionality, but with default retry strategy. Do not
-forget to `flatMap` the returned `F[Unit]`, or the potential errors will be lost.
+`Stream` from `sstream` directly, a simpler `resource` method is provided. It returns a
+`Resource[F, F[Unit]]`: acquiring the resource starts the consumption, and the inner
+`F[Unit]` completes when the underlying stream finishes. `retryOnError` has the same shape,
+with a default retry strategy. Do not forget to sequence that inner `F[Unit]` — `use(identity)`
+is the usual way — or the potential errors will be lost.
 
 The typical call of `KafkaFlow` could look like following:
 ```scala mdoc
@@ -251,8 +252,10 @@ the business logic:
   skipped, new offsets are still committed when necessary.
 - `remapKey: Option[RemapKey[F]]` derives a new key for a record from the current key and
   the record itself. Remapping happens first, so `filter` and the fold both see the remapped
-  key. It is useful when the natural key of the entity is inside the payload rather than in
-  the Kafka record key.
+  key. It is useful when the key to aggregate by is not the one the producer set — derived
+  from the payload, for example. Note that it only rewrites an *existing* key: a record with
+  no Kafka key is skipped by the remapping and then dropped before the fold, so remapping
+  cannot supply a key that is missing.
 
 The `keyStateOf` parameter is discussed further in this document.
 
@@ -271,10 +274,11 @@ println(s"""- `triggerTimersInterval`, which defaults to `${config.triggerTimers
 - `commitOffsetsInterval`, which defaults to `${config.commitOffsetsInterval}`, configures
   how often key states are inspected for the possible commits to Kafka.
 - `recoveryMode`, which defaults to `${config.recoveryMode}`, controls how the snapshots are
-  recovered on partition assignment: in parallel without a limit, in parallel bounded by
-  `Parallel.Bounded(n)` fibers, or `Sequential`. The parallel modes are the fastest, but
-  they require all the keys to fit in memory before the snapshots are read and may starve
-  the CPU when the number of keys is large.
+  recovered on partition assignment: `Parallel.Unbounded`, `Parallel.Bounded(n)` or
+  `Sequential`. `Parallel.Unbounded` is the fastest, but spawns a fiber per key and can starve
+  the CPU when there are many of them; `Parallel.Bounded(n)` caps the concurrent recoveries to
+  avoid exactly that, and to spare the underlying storage. Both parallel modes need all the
+  keys to fit in memory before the snapshots are read, which `Sequential` does not.
 - `timersExecutionMode`, which defaults to `${config.timersExecutionMode}`, limits how many
   timers are executed concurrently. Timers always run in parallel; this only caps the number
   of concurrent executions.
@@ -438,13 +442,17 @@ While `FoldOption` says *what* to do with the state, `TimerFlowOf` says *when* t
 and when to let the offsets move forward. It is the setting which trades recovery time
 against write load, so it is worth choosing deliberately.
 
-Three implementations are provided:
+Four implementations are provided. The first three are the ones to choose between:
 
 - `persistPeriodically` flushes the state on a fixed schedule and keeps the key in memory.
 - `unloadOrphaned` flushes and *removes* the key from memory once it has been idle for
   `maxIdle`, or once `maxOffsetDifference` events have passed without touching it. This is
   what keeps the memory bounded when the key population is effectively unbounded.
 - `persistPeriodicallyAndUnloadOrphaned` combines the two.
+
+The fourth, `flushOnCancel`, never fires on a timer at all: it flushes the state and drops the
+key only when the flow is released. It is the building block behind the `flushOnRevoke`
+parameter of the other three, rather than something usually chosen on its own.
 
 ```scala mdoc:silent
 import com.evolutiongaming.kafka.flow.timer.TimerFlowOf
