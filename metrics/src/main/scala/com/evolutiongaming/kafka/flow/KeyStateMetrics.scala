@@ -28,7 +28,8 @@ object KeyStateMetrics {
             key: String,
             createdAt: Timestamp,
             context: KeyContext[F]
-          ) = count(topicPartition.topic) *> keyStateOf(topicPartition, key, createdAt, context)
+          ) =
+            count(topicPartition.topic) *> keyStateOf(topicPartition, key, createdAt, context)
 
           def all(topicPartition: TopicPartition) =
             keyStateOf.all(topicPartition)
