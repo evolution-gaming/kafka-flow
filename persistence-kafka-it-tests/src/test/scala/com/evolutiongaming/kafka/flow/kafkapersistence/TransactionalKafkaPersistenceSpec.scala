@@ -8,7 +8,7 @@ import com.evolutiongaming.catshelper.{FromTry, Log, LogOf}
 import com.evolutiongaming.kafka.flow.kafka.Codecs.*
 import com.evolutiongaming.kafka.flow.kafka.ScheduleCommit
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
-import com.evolutiongaming.kafka.flow.snapshot.SnapshotWriteDatabase
+import com.evolutiongaming.kafka.flow.snapshot.{SnapshotWriteDatabase, Stored}
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
 import com.evolutiongaming.kafka.flow.{
   FoldOption,
@@ -50,6 +50,10 @@ class TransactionalKafkaPersistenceSpec extends ForAllKafkaSuite {
   // 45s stall deadline and 60s outer timeout - those fail first, with diagnostics
   override def munitTimeout: Duration = 3.minutes
 
+  // adapter: the unified write(Stored) keeps these cases speaking persist(key, value)
+  private implicit class WriteDbPersist(val db: SnapshotWriteDatabase[IO, KafkaKey, String]) {
+    def persist(key: KafkaKey, value: String): IO[Unit] = db.write(key, Stored.Live(value, none))
+  }
   implicit val ioRuntime: IORuntime = IORuntime.global
   implicit val logOf: LogOf[IO]     = LogOf.slf4j[IO].unsafeRunSync()
   implicit val log: Log[IO]         = logOf(this.getClass).unsafeRunSync()
