@@ -93,7 +93,7 @@ object TimerFlowOf {
     * @param flushOnRevoke
     *   controls whether persistence flushing should happen on partition revocation
     * @param ignorePersistErrors
-    *   if true, a failure to persist the state will not fail the computation. Instead, an error message will be logged
+    *   if true, a failure to persist the state will not fail the computation. Instead, a warning will be logged
     *   and a new offset for the key will not be `held`, so as a result no new offset will be committed for the
     *   partition.
     */
@@ -152,7 +152,7 @@ object TimerFlowOf {
     * @param flushOnRevoke
     *   controls whether persistence flushing should happen on partition revocation
     * @param ignorePersistErrors
-    *   if true, a failure to persist the state will not fail the computation. Instead, an error message will be logged,
+    *   if true, a failure to persist the state will not fail the computation. Instead, a warning will be logged,
     *   a new offset for the key will not be `held`, so no new offset will be committed for the partition, and the key
     *   is not unloaded: it stays in memory until a later tick persists it, so keys accumulate while the store keeps
     *   failing.
@@ -245,7 +245,7 @@ object TimerFlowOf {
           // the minimal one (previous) and won't commit any offsets
           context
             .log
-            .info(s"Failed to persist state, the error is ignored and offsets won't be committed, error: $err")
+            .warn(s"Failed to persist state, the error is ignored and offsets won't be committed, error: $err")
             .as(false)
         case Left(err) => err.raiseError[F, Boolean]
         case Right(_)  => context.hold(currentOffset).as(true)
