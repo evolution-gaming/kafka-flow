@@ -93,9 +93,8 @@ object TimerFlowOf {
     * @param flushOnRevoke
     *   controls whether persistence flushing should happen on partition revocation
     * @param ignorePersistErrors
-    *   if true, a failure to persist the state will not fail the computation. Instead, a warning will be logged
-    *   and a new offset for the key will not be `held`, so as a result no new offset will be committed for the
-    *   partition.
+    *   if true, a failure to persist the state will not fail the computation. Instead, a warning will be logged and a
+    *   new offset for the key will not be `held`, so as a result no new offset will be committed for the partition.
     */
   def persistPeriodically[F[_]: MonadThrow](
     fireEvery: FiniteDuration    = 1.minute,
@@ -152,10 +151,9 @@ object TimerFlowOf {
     * @param flushOnRevoke
     *   controls whether persistence flushing should happen on partition revocation
     * @param ignorePersistErrors
-    *   if true, a failure to persist the state will not fail the computation. Instead, a warning will be logged,
-    *   a new offset for the key will not be `held`, so no new offset will be committed for the partition, and the key
-    *   is not unloaded: it stays in memory until a later tick persists it, so keys accumulate while the store keeps
-    *   failing.
+    *   if true, a failure to persist the state will not fail the computation. Instead, a warning will be logged, a new
+    *   offset for the key will not be `held`, so no new offset will be committed for the partition, and the key is not
+    *   unloaded: it stays in memory until a later tick persists it, so keys accumulate while the store keeps failing.
     */
   def persistPeriodicallyAndUnloadOrphaned[F[_]: MonadThrow](
     fireEvery: FiniteDuration    = 1.minute,
@@ -196,7 +194,7 @@ object TimerFlowOf {
                 currentOffset       = current.offset
               )
             else false.pure[F]
-          // `remove` drops the held offset too: unloading an unpersisted key lets the partition commit past it
+          // `remove` drops the held offset: unloading unpersisted state would commit past it
           _ <- Applicative[F].whenA(canUnload && persisted)(
             context.log.info(s"flush, offset difference: $offsetDifference") *> context.remove
           )
