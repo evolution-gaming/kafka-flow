@@ -682,10 +682,11 @@ class TimerFlowOfSpec extends FunSuite {
       ignorePersistErrors = true,
     )
 
-    // When("the unload threshold is crossed and the timer fires twice")
+    // When("the persist fails past the unload threshold and succeeds at a higher offset")
     def program(flow: Resource[IO, TimerFlow[IO]]) = flow use { flow =>
       f.timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1004))) *>
         f.timerContext.trigger(flow) *>
+        f.timerContext.set(f.timestamp.copy(offset = Offset.unsafe(1005))) *>
         f.timerContext.trigger(flow)
     }
 
@@ -694,7 +695,7 @@ class TimerFlowOfSpec extends FunSuite {
       _      <- program(flowOf(f.keyContext, flushBuffersFailingOnce, f.timerContext))
       result <- f.contextRef.get
     } yield {
-      // Then("the second tick persists the key and unloads it")
+      // Then("the later tick persists the key and unloads it")
       assertEquals(result.flushed, 1)
       assertEquals(result.removed, 1)
     }
