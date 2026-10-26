@@ -46,13 +46,12 @@ object JournalDatabaseMetrics {
     } yield database =>
       new JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]] {
         def persist(key: KafkaKey, journal: ConsumerRecord[String, ByteVector]) =
-          database.persist(key, journal) measureDuration { duration =>
+          database.persist(key, journal) onError {
+            case _ => persistFailures.labels(key.topicPartition.topic, key.topicPartition.partition.show).inc()
+          } measureDuration { duration =>
             persistSummary
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)
               .observe(duration.toNanos.nanosToSeconds)
-          } onError {
-            case _ =>
-              persistFailures.labels(key.topicPartition.topic, key.topicPartition.partition.show).inc()
           }
         def get(key: KafkaKey) =
           database.get(key) measureTotalDuration { duration =>

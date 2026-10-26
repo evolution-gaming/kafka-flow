@@ -46,13 +46,12 @@ object SnapshotDatabaseMetrics {
     } yield new MetricsK[SnapshotDatabase[F, KafkaKey, *]] {
       def withMetrics[S](database: SnapshotDatabase[F, KafkaKey, S]) = new SnapshotDatabase[F, KafkaKey, S] {
         def persist(key: KafkaKey, snapshot: S) =
-          database.persist(key, snapshot) measureDuration { duration =>
+          database.persist(key, snapshot) onError {
+            case _ => persistFailures.labels(key.topicPartition.topic, key.topicPartition.partition.show).inc()
+          } measureDuration { duration =>
             persistSummary
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)
               .observe(duration.toNanos.nanosToSeconds)
-          } onError {
-            case _ =>
-              persistFailures.labels(key.topicPartition.topic, key.topicPartition.partition.show).inc()
           }
         def get(key: KafkaKey) =
           database.get(key) measureDuration { duration =>

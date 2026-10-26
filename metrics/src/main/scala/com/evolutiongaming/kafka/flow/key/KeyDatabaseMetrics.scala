@@ -46,12 +46,9 @@ object KeyDatabaseMetrics {
       } yield database =>
         new KeyDatabase[F, KafkaKey] {
           def persist(key: KafkaKey) =
-            database.persist(key) measureDuration { duration =>
+            database.persist(key) onError { case _ => persistFailures.inc() } measureDuration { duration =>
               persistSummary
                 .observe(duration.toNanos.nanosToSeconds)
-            } onError {
-              case _ =>
-                persistFailures.inc()
             }
           def all(applicationId: String, groupId: String, topicPartition: TopicPartition) =
             database.all(applicationId, groupId, topicPartition) measureTotalDuration { duration =>
