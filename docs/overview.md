@@ -471,11 +471,9 @@ flow. It is not free: no new offset is held for the key, so the offset does not 
 the persisted state can end up inconsistent with the committed offset. The processing logic
 has to be idempotent for this to be safe. With `persistPeriodicallyAndUnloadOrphaned`, such a
 key also stays in memory until a later persist succeeds, so memory grows while the store keeps
-failing. With the database metrics applied, failed persists, ignored or not, are counted in
-`key_database_persist_failures`, `journal_database_persist_failures` and
-`snapshot_database_persist_failures` (`prometheus-metrics` exposes them with a `_total` suffix).
-A flush writes the key (first persist only), the journal and the snapshot in that order and
-stops at the first failure, so alert on their sum.
+failing. An ignored failure still counts in `key_database_persist_failures`,
+`journal_database_persist_failures` or `snapshot_database_persist_failures` from
+`kafka-flow-metrics`, whichever store failed.
 
 ## KeyFlowOf
 
