@@ -6,8 +6,7 @@ ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
 
 ThisBuild / versionPolicyIgnored ++= Seq(
   // add libraries here that are known to be binary compatible, like:
-  // this project doesn't use guava, it is brought transitively by `scassandra`
-  "com.google.guava" % "guava",
+//  "com.google.guava" % "guava",
 )
 
 // covers the test-only dependency paths, the published modules declare `Pinned` explicitly
