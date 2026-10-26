@@ -471,7 +471,9 @@ flow. It is not free: no new offset is held for the key, so the offset does not 
 the persisted state can end up inconsistent with the committed offset. The processing logic
 has to be idempotent for this to be safe. With `persistPeriodicallyAndUnloadOrphaned`, such a
 key also stays in memory until a later persist succeeds, so memory grows while the store keeps
-failing.
+failing. With the database metrics applied, every failed persist, ignored or not, is counted in
+`snapshot_database_persist_failures`, `journal_database_persist_failures` and
+`key_database_persist_failures` (`prometheus-metrics` exposes them with a `_total` suffix).
 
 ## KeyFlowOf
 

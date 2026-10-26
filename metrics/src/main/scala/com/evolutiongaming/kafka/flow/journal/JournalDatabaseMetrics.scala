@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.journal
 
-import cats.Monad
+import cats.MonadThrow
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.KafkaKey
@@ -13,10 +13,11 @@ import scodec.bits.ByteVector
 
 object JournalDatabaseMetrics {
 
-  def of[F[_]: Monad: MeasureDuration]: MetricsOf[F, JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
+  def of[F[_]: MonadThrow: MeasureDuration]
+    : MetricsOf[F, JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] =
     journalDatabaseMetricsOf
 
-  implicit def journalDatabaseMetricsOf[F[_]: Monad: MeasureDuration]
+  implicit def journalDatabaseMetricsOf[F[_]: MonadThrow: MeasureDuration]
     : MetricsOf[F, JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]]] = { registry =>
     for {
       persistSummary <- registry.summary(
@@ -24,6 +25,11 @@ object JournalDatabaseMetrics {
         help      = "Time required to persist a single record to a database",
         quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
         labels    = LabelNames("topic", "partition")
+      )
+      persistFailures <- registry.counter(
+        name   = "journal_database_persist_failures",
+        help   = "The number of failed attempts to persist a single record to a database",
+        labels = LabelNames("topic", "partition")
       )
       getSummary <- registry.summary(
         name      = "journal_database_get_duration_seconds",
@@ -44,6 +50,9 @@ object JournalDatabaseMetrics {
             persistSummary
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)
               .observe(duration.toNanos.nanosToSeconds)
+          } onError {
+            case _ =>
+              persistFailures.labels(key.topicPartition.topic, key.topicPartition.partition.show).inc()
           }
         def get(key: KafkaKey) =
           database.get(key) measureTotalDuration { duration =>
