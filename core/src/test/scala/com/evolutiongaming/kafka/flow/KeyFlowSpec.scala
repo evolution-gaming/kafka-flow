@@ -4,7 +4,7 @@ import cats.data.NonEmptyList
 import cats.effect.syntax.resource.*
 import cats.effect.{Ref, SyncIO}
 import cats.syntax.all.*
-import com.evolutiongaming.catshelper.Log
+import com.evolutiongaming.catshelper.{Log, LogOf}
 import com.evolutiongaming.kafka.flow.KeyFlowSpec.*
 import com.evolutiongaming.kafka.flow.kafka.ToOffset
 import com.evolutiongaming.kafka.flow.persistence.Persistence
@@ -85,10 +85,10 @@ class KeyFlowSpec extends FunSuite {
     }
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
     implicit val context: KeyContext[SyncIO] = new KeyContext[SyncIO] {
-      def holding              = none[Offset].pure[SyncIO]
-      def hold(offset: Offset) = SyncIO.unit
-      def remove               = removeCalled.set(true)
-      def log                  = Log.empty
+      def holding               = none[Offset].pure[SyncIO]
+      def hold(offset: Offset)  = SyncIO.unit
+      def remove                = removeCalled.set(true)
+      def log(source: Class[_]) = Log.empty[SyncIO].pure[SyncIO]
     }
     val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
     val keyFlow = timerFlowOf(context, persistence, timers).flatMap(tf =>
@@ -135,10 +135,10 @@ class KeyFlowSpec extends FunSuite {
     val timerFlowOf = TimerFlowOf.unloadOrphaned[SyncIO]()
 
     implicit val context: KeyContext[SyncIO] = new KeyContext[SyncIO] {
-      def holding              = none[Offset].pure[SyncIO]
-      def hold(offset: Offset) = SyncIO.unit
-      def remove               = removeCalled.set(true)
-      def log                  = Log.empty
+      def holding               = none[Offset].pure[SyncIO]
+      def hold(offset: Offset)  = SyncIO.unit
+      def remove                = removeCalled.set(true)
+      def log(source: Class[_]) = Log.empty[SyncIO].pure[SyncIO]
     }
 
     val key = KafkaKey(applicationId = "test", groupId = "test", topicPartition = TopicPartition.empty, key = "key")
@@ -291,10 +291,11 @@ object KeyFlowSpec {
     val registry: EntityRegistry[SyncIO, KafkaKey, State] = EntityRegistry.empty
   }
 
-  implicit val log: Log[SyncIO] = Log.empty
+  implicit val log: Log[SyncIO]     = Log.empty
+  implicit val logOf: LogOf[SyncIO] = LogOf.empty
 
   implicit val context: KeyContext[SyncIO] =
-    KeyContext.of(().pure[SyncIO]).unsafeRunSync()
+    KeyContext.of(().pure[SyncIO], Log.Mdc.empty).unsafeRunSync()
 
   implicit val stateToOffset: ToOffset[State] = {
     case (offset, _) =>
