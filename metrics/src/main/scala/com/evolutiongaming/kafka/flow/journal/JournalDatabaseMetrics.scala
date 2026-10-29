@@ -27,7 +27,7 @@ object JournalDatabaseMetrics {
         labels    = LabelNames("topic", "partition")
       )
       persistFailures <- registry.counter(
-        name   = "journal_database_persist_failures",
+        name   = "journal_database_persist_failures_total",
         help   = "The number of failed attempts to persist a single record to a database",
         labels = LabelNames("topic", "partition")
       )

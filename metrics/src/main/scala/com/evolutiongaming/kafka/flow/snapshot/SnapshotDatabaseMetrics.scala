@@ -27,7 +27,7 @@ object SnapshotDatabaseMetrics {
         labels    = LabelNames("topic", "partition")
       )
       persistFailures <- registry.counter(
-        name   = "snapshot_database_persist_failures",
+        name   = "snapshot_database_persist_failures_total",
         help   = "The number of failed attempts to persist a single snapshot to a database",
         labels = LabelNames("topic", "partition")
       )

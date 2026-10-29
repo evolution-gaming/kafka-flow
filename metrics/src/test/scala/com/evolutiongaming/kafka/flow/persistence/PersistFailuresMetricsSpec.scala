@@ -49,7 +49,7 @@ class PersistFailuresMetricsSpec extends FunSuite {
     testIO.unsafeRunSync()
   }
 
-  test("snapshot_database_persist_failures counts failed persists only") {
+  test("snapshot_database_persist_failures_total counts failed persists only") {
     def database(fail: Boolean) = new SnapshotDatabase[IO, KafkaKey, String] {
       def persist(key: KafkaKey, snapshot: String) = result(fail)
       def get(key: KafkaKey)                       = none[String].pure[IO]
@@ -60,7 +60,7 @@ class PersistFailuresMetricsSpec extends FunSuite {
     }
   }
 
-  test("journal_database_persist_failures counts failed persists only") {
+  test("journal_database_persist_failures_total counts failed persists only") {
     def database(fail: Boolean) = new JournalDatabase[IO, KafkaKey, ConsumerRecord[String, ByteVector]] {
       def persist(key: KafkaKey, journal: ConsumerRecord[String, ByteVector]) = result(fail)
       def get(key: KafkaKey)    = Stream.empty[IO, ConsumerRecord[String, ByteVector]]
@@ -72,7 +72,7 @@ class PersistFailuresMetricsSpec extends FunSuite {
     }
   }
 
-  test("key_database_persist_failures counts failed persists only") {
+  test("key_database_persist_failures_total counts failed persists only") {
     def database(fail: Boolean) = new KeyDatabase[IO, KafkaKey] {
       def persist(key: KafkaKey)                                                      = result(fail)
       def delete(key: KafkaKey)                                                       = IO.unit

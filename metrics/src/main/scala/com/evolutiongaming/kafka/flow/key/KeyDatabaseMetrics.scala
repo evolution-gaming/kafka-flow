@@ -27,7 +27,7 @@ object KeyDatabaseMetrics {
           labels    = LabelNames()
         )
         persistFailures <- registry.counter(
-          name   = "key_database_persist_failures",
+          name   = "key_database_persist_failures_total",
           help   = "The number of failed attempts to persist a key to a database",
           labels = LabelNames()
         )
