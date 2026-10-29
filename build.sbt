@@ -12,7 +12,7 @@ ThisBuild / versionPolicyIgnored ++= Seq(
 // covers the test-only dependency paths, the published modules declare `Pinned` explicitly
 ThisBuild / dependencyOverrides ++= Pinned.all
 
-lazy val Scala3Version = "3.3.8"
+lazy val Scala3Version = "3.3.9"
 lazy val Scala2Version = "2.13.18"
 
 lazy val commonSettings = Seq(
@@ -37,8 +37,18 @@ lazy val commonSettings = Seq(
   ),
   scalacOptions ++= crossSettings(
     scalaVersion.value,
-    if3 = List("-Ykind-projector", "-language:implicitConversions", "-explain", "-deprecation"),
-    if2 = List("-Xsource:3")
+    if3 = List(
+      "-Ykind-projector",
+      "-language:implicitConversions",
+      "-explain",
+      "-deprecation",
+
+      // wait for something similar to: https://github.com/scala/scala3/pull/27028
+      "-Wconf:msg=Skipping coverage instrumentation:i",
+    ),
+    if2 = List(
+      "-Xsource:3",
+    )
   ),
 )
 
