@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow
 
-import cats.Monad
+import cats.MonadThrow
 import cats.effect.Resource
 import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.KeyStateMetrics.*
@@ -39,7 +39,7 @@ object FlowMetrics {
 
   def apply[F[_]](implicit F: FlowMetrics[F]): FlowMetrics[F] = F
 
-  def of[F[_]: Monad: MeasureDuration](registry: CollectorRegistry[F]): Resource[F, FlowMetrics[F]] = for {
+  def of[F[_]: MonadThrow: MeasureDuration](registry: CollectorRegistry[F]): Resource[F, FlowMetrics[F]] = for {
     keyDatabase      <- keyDatabaseMetricsOf[F].apply(registry)
     journalDatabase  <- journalDatabaseMetricsOf[F].apply(registry)
     snapshotDatabase <- snapshotDatabaseMetricsOf[F].apply(registry)
