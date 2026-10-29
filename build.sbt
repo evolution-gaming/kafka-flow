@@ -115,6 +115,8 @@ lazy val metrics = (project in file("metrics"))
   .settings(commonSettings)
   .settings(
     name := "kafka-flow-metrics",
+    // MonadThrow in the database metrics breaks binary compatibility. TODO remove after the next major release
+    versionPolicyIntention := Compatibility.None,
     libraryDependencies ++= Seq(
       smetrics,
       Testing.munit % Test,

@@ -1,6 +1,7 @@
 package com.evolutiongaming.kafka.flow.key
 
-import cats.Monad
+import cats.MonadThrow
+import cats.syntax.all.*
 import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.metrics.MetricsOf
@@ -13,10 +14,10 @@ import com.evolutiongaming.skafka.TopicPartition
 
 object KeyDatabaseMetrics {
 
-  def of[F[_]: Monad: MeasureDuration]: MetricsOf[F, KeyDatabase[F, KafkaKey]] =
+  def of[F[_]: MonadThrow: MeasureDuration]: MetricsOf[F, KeyDatabase[F, KafkaKey]] =
     keyDatabaseMetricsOf
 
-  implicit def keyDatabaseMetricsOf[F[_]: Monad: MeasureDuration]: MetricsOf[F, KeyDatabase[F, KafkaKey]] = {
+  implicit def keyDatabaseMetricsOf[F[_]: MonadThrow: MeasureDuration]: MetricsOf[F, KeyDatabase[F, KafkaKey]] = {
     registry =>
       for {
         persistSummary <- registry.summary(
@@ -24,6 +25,11 @@ object KeyDatabaseMetrics {
           help      = "Time required to persist a single record to a database",
           quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
           labels    = LabelNames()
+        )
+        persistFailures <- registry.counter(
+          name   = "key_database_persist_failures_total",
+          help   = "The number of failed attempts to persist a key to a database",
+          labels = LabelNames()
         )
         deleteSummary <- registry.summary(
           name      = "key_database_delete_duration_seconds",
@@ -40,7 +46,7 @@ object KeyDatabaseMetrics {
       } yield database =>
         new KeyDatabase[F, KafkaKey] {
           def persist(key: KafkaKey) =
-            database.persist(key) measureDuration { duration =>
+            database.persist(key) onError { case _ => persistFailures.inc() } measureDuration { duration =>
               persistSummary
                 .observe(duration.toNanos.nanosToSeconds)
             }

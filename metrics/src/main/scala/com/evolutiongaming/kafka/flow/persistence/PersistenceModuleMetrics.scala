@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.persistence
 
-import cats.Monad
+import cats.MonadThrow
 import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.journal.JournalDatabaseMetrics
 import com.evolutiongaming.kafka.flow.key.KeyDatabaseMetrics
@@ -11,7 +11,7 @@ import com.evolutiongaming.kafka.flow.snapshot.SnapshotDatabaseMetrics
 
 object PersistenceModuleMetrics {
 
-  implicit def persistenceModuleMetricsKOf[F[_]: Monad: MeasureDuration]: MetricsKOf[F, PersistenceModule[F, *]] =
+  implicit def persistenceModuleMetricsKOf[F[_]: MonadThrow: MeasureDuration]: MetricsKOf[F, PersistenceModule[F, *]] =
     registry =>
       for {
         keyMetrics      <- KeyDatabaseMetrics.of[F].apply(registry)

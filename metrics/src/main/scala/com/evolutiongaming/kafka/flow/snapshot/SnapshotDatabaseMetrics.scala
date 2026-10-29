@@ -1,6 +1,6 @@
 package com.evolutiongaming.kafka.flow.snapshot
 
-import cats.Monad
+import cats.MonadThrow
 import cats.syntax.all.*
 import com.evolutiongaming.catshelper.MeasureDuration
 import com.evolutiongaming.kafka.flow.KafkaKey
@@ -14,10 +14,10 @@ import com.evolutiongaming.smetrics.Quantiles
 
 object SnapshotDatabaseMetrics {
 
-  def of[F[_]: Monad: MeasureDuration]: MetricsKOf[F, SnapshotDatabase[F, KafkaKey, *]] =
+  def of[F[_]: MonadThrow: MeasureDuration]: MetricsKOf[F, SnapshotDatabase[F, KafkaKey, *]] =
     snapshotDatabaseMetricsOf
 
-  implicit def snapshotDatabaseMetricsOf[F[_]: Monad: MeasureDuration]
+  implicit def snapshotDatabaseMetricsOf[F[_]: MonadThrow: MeasureDuration]
     : MetricsKOf[F, SnapshotDatabase[F, KafkaKey, *]] = { registry =>
     for {
       persistSummary <- registry.summary(
@@ -25,6 +25,11 @@ object SnapshotDatabaseMetrics {
         help      = "Time required to persist a single snapshot to a database",
         quantiles = Quantiles(Quantile(0.9, 0.05), Quantile(0.99, 0.005)),
         labels    = LabelNames("topic", "partition")
+      )
+      persistFailures <- registry.counter(
+        name   = "snapshot_database_persist_failures_total",
+        help   = "The number of failed attempts to persist a single snapshot to a database",
+        labels = LabelNames("topic", "partition")
       )
       getSummary <- registry.summary(
         name      = "snapshot_database_get_duration_seconds",
@@ -41,7 +46,9 @@ object SnapshotDatabaseMetrics {
     } yield new MetricsK[SnapshotDatabase[F, KafkaKey, *]] {
       def withMetrics[S](database: SnapshotDatabase[F, KafkaKey, S]) = new SnapshotDatabase[F, KafkaKey, S] {
         def persist(key: KafkaKey, snapshot: S) =
-          database.persist(key, snapshot) measureDuration { duration =>
+          database.persist(key, snapshot) onError {
+            case _ => persistFailures.labels(key.topicPartition.topic, key.topicPartition.partition.show).inc()
+          } measureDuration { duration =>
             persistSummary
               .labels(key.topicPartition.topic, key.topicPartition.partition.show)
               .observe(duration.toNanos.nanosToSeconds)

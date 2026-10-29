@@ -469,7 +469,11 @@ that no longer belongs to this consumer writes to the state storage — see
 `ignorePersistErrors` turns a failure to persist into a logged message rather than a failed
 flow. It is not free: no new offset is held for the key, so the offset does not advance, and
 the persisted state can end up inconsistent with the committed offset. The processing logic
-has to be idempotent for this to be safe.
+has to be idempotent for this to be safe. With `persistPeriodicallyAndUnloadOrphaned`, such a
+key also stays in memory until a later persist succeeds, so memory grows while the store keeps
+failing. An ignored failure still counts in `key_database_persist_failures_total`,
+`journal_database_persist_failures_total` or `snapshot_database_persist_failures_total` from
+`kafka-flow-metrics`, whichever store failed.
 
 ## KeyFlowOf
 
