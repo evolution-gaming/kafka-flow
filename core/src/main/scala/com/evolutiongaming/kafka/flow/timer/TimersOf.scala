@@ -3,6 +3,9 @@ package com.evolutiongaming.kafka.flow.timer
 import cats.Monad
 import cats.effect.Ref
 
+/**
+  * Factory of TimerContexts
+  */
 trait TimersOf[F[_], K] {
 
   def apply(key: K, createdAt: Timestamp): F[TimerContext[F]]
