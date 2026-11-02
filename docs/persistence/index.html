@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="generator" content="Docusaurus v3.10.2">
 <title data-rh="true">Persistence · Kafka Flow</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:image" content="https://evolution-gaming.github.io/kafka-flow/img/undraw_online.svg"><meta data-rh="true" name="twitter:image" content="https://evolution-gaming.github.io/kafka-flow/img/undraw_online.svg"><meta data-rh="true" property="og:url" content="https://evolution-gaming.github.io/kafka-flow/docs/persistence"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-default-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-default-current"><meta data-rh="true" property="og:title" content="Persistence · Kafka Flow"><meta data-rh="true" name="description" content="Persistence modes"><meta data-rh="true" property="og:description" content="Persistence modes"><link data-rh="true" rel="icon" href="/kafka-flow/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://evolution-gaming.github.io/kafka-flow/docs/persistence"><link data-rh="true" rel="alternate" href="https://evolution-gaming.github.io/kafka-flow/docs/persistence" hreflang="en"><link data-rh="true" rel="alternate" href="https://evolution-gaming.github.io/kafka-flow/docs/persistence" hreflang="x-default"><script data-rh="true" type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Persistence","item":"https://evolution-gaming.github.io/kafka-flow/docs/persistence"}]}</script><link rel="stylesheet" href="/kafka-flow/assets/css/styles.88f7f80e.css">
-<script src="/kafka-flow/assets/js/runtime~main.e46c0402.js" defer="defer"></script>
+<script src="/kafka-flow/assets/js/runtime~main.1b23232c.js" defer="defer"></script>
 <script src="/kafka-flow/assets/js/main.1a949c21.js" defer="defer"></script>
 </head>
 <body>
@@ -165,9 +165,15 @@ topic must be exclusive to the flow regardless.)</li>
 <li class="">The mode always uses the identity <code>KafkaPersistencePartitionMapper</code> (fencing is per input partition);
 a non-identity mapper is not supported here.</li>
 <li class="">The fence works under both the <strong>classic</strong> and the <strong>consumer</strong> group protocols
-(<code>group.protocol=classic|consumer</code>). With <code>consumer</code>, use <strong>brokers 4.3.0+</strong> — below that a still-valid
-owner can be spuriously fenced during a rebalance and crash; the restart converges, but any later
-rebalance can fence again (safe, never corruption, but not stable).</li>
+(<code>group.protocol=classic|consumer</code>). With <code>consumer</code>, use <strong>brokers 4.3.0+</strong>
+(<a href="https://cwiki.apache.org/confluence/spaces/KAFKA/pages/399279344/KIP-1251+Assignment+epochs+for+consumer+groups" target="_blank" rel="noopener noreferrer" class="">KIP-1251</a>)
+— below that a still-valid owner can be spuriously fenced during a rebalance and crash; the restart
+converges, but any later rebalance can fence again (safe, never corruption, but not stable).
+Under <strong>classic</strong>, <code>CooperativeStickyAssignor</code> keeps retained partitions writing through the
+generation bump, so the spurious fence can occur on any rebalance and each one crashes the flow;
+under <code>retryOnError</code> each restart fences the peers in turn, and the loop can last minutes.
+An <strong>eager</strong> assignor (<code>StickyAssignor</code>, <code>RangeAssignor</code>) avoids it by tearing every flow down
+before the bump.</li>
 </ul>
 <h3 class="anchor anchorTargetStickyNavbar_Vzrq" id="custom-snapshot-storage">Custom snapshot storage<a href="#custom-snapshot-storage" class="hash-link" aria-label="Direct link to Custom snapshot storage" title="Direct link to Custom snapshot storage" translate="no">​</a></h3>
 <p>You can plug in your own snapshot store: implement <code>SnapshotDatabase</code> and wire it through
