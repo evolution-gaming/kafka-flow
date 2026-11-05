@@ -247,6 +247,8 @@ lazy val docs = (project in file("kafka-flow-docs"))
   .enablePlugins(MdocPlugin, DocusaurusPlugin)
   .settings(
     scalacOptions -= "-Xfatal-warnings",
+    // compiles the migration example of `persistence.md`, the module itself does not depend on it
+    libraryDependencies += "com.evolution" %% "scassandra-v4-compat" % scassandraV4.revision,
   )
 
 addCommandAlias("check", "all scalafmtCheckRepo versionPolicyCheck")

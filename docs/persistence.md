@@ -100,24 +100,35 @@ there is nothing to migrate in Cassandra. The code and the configuration need th
   The interfaces of the core module, such as `KeyDatabase`, `SnapshotDatabase` or `PersistenceModule`,
   stay in `com.evolutiongaming.kafka.flow`.
 - `CassandraModule.of` is `CassandraModule.make`, and needs no `Parallel` anymore.
-- Move the `client` configuration to the format of the driver 4, as shown above. Alternatively, keep
-  the existing configuration and translate it with
-  [`scassandra-v4-compat`](https://github.com/evolution-gaming/scassandra), which keeps the defaults
-  of scassandra for the driver 3 as well:
-
-  ```scala
-  import com.evolution.scassandra.compat.CassandraConfigCompat
-
-  for {
-    translated <- CassandraConfigCompat.fromLegacyConfig(config, "cassandra.client")
-    // translated.warnings lists the options of the driver 3 having no equivalent in the driver 4
-  } yield CassandraConfig(client = translated.config)
-  ```
-
-  Note that `scassandra-v4-compat` depends on scassandra for the driver 3, so the driver 3 stays on
-  the classpath until the configuration is migrated.
+- Move the `client` configuration to the format of the driver 4, as shown above, or keep the
+  existing one, see [Keeping the legacy configuration](#keeping-the-legacy-configuration).
 - `retries` applies to the health check queries only, as before. The retries of the other queries
   are configured in the driver, i.e. with `advanced.retry-policy` of the `client` section.
+
+#### Keeping the legacy configuration
+
+[`scassandra-v4-compat`](https://github.com/evolution-gaming/scassandra) translates the existing
+`client` configuration, keeping the defaults of scassandra for the driver 3 as well:
+
+```scala mdoc:compile-only
+import com.evolution.kafka.flow.cassandra.CassandraConfig
+import com.evolution.scassandra.compat.CassandraConfigCompat
+import com.typesafe.config.{Config, ConfigFactory}
+import pureconfig.ConfigSource
+import pureconfig.error.ConfigReaderFailures
+
+val config: Config = ConfigFactory.load()
+
+val cassandraConfig: Either[ConfigReaderFailures, CassandraConfig] = for {
+  // keeps `schema`, `retries` and `consistency-overrides`, only the legacy `client` is replaced
+  loaded     <- ConfigSource.fromConfig(config).at("cassandra").load[CassandraConfig]
+  translated <- CassandraConfigCompat.fromLegacyConfig(config, "cassandra.client")
+  // translated.warnings lists the options of the driver 3 having no equivalent in the driver 4
+} yield loaded.copy(client = translated.config)
+```
+
+Note that `scassandra-v4-compat` depends on scassandra for the driver 3, so the driver 3 stays on the
+classpath until the configuration is migrated.
 
 ## Protecting against stale snapshot writes
 
