@@ -5,8 +5,10 @@ ThisBuild / evictionErrorLevel := Level.Warn
 ThisBuild / versionPolicyIntention := Compatibility.BinaryCompatible
 
 ThisBuild / versionPolicyIgnored ++= Seq(
-  // add libraries here that are known to be binary compatible, like:
-//  "com.google.guava" % "guava",
+  // add libraries here that are known to be binary compatible
+  // Guava versions carry a `-jre` qualifier, so even a patch bump looks like a pre-release change to early-semver.
+  // It comes transitively from `scassandra`, which pins it, and is not a part of the API of kafka-flow.
+  "com.google.guava" % "guava",
 )
 
 // covers the test-only dependency paths, the published modules declare `Pinned` explicitly
