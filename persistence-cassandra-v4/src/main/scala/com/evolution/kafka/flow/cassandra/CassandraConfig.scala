@@ -12,7 +12,7 @@ import pureconfig.generic.semiauto.deriveReader
   *   number of retries of a failed health check query, see `CassandraModule`
   * @param client
   *   configuration of the Java driver 4, i.e. the contents of the `datastax-java-driver` section, see
-  *   [[com.evolution.scassandra.CassandraConfig]]
+  *   `com.evolution.scassandra.CassandraConfig`
   * @param consistencyOverrides
   *   read and write consistency levels of the kafka-flow queries, overriding the ones of the driver configuration
   */

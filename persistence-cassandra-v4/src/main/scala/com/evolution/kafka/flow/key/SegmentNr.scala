@@ -15,17 +15,13 @@ private[flow] object SegmentNr {
 
   implicit val encodeByNameSegmentNr: EncodeByName[SegmentNr] = EncodeByName[Long].contramap(_.value)
 
-  def of(value: Long): Either[String, SegmentNr] = {
-    if (value < min.value) {
+  def of(value: Long): Either[String, SegmentNr] = value match {
+    case value if value < min.value =>
       s"invalid SegmentNr of $value, it must be greater or equal to $min".asLeft[SegmentNr]
-    } else if (value > max.value) {
+    case value if value > max.value =>
       s"invalid SegmentNr of $value, it must be less or equal to $max".asLeft[SegmentNr]
-    } else if (value === min.value) {
-      min.asRight[String]
-    } else if (value === max.value) {
-      max.asRight[String]
-    } else {
-      new SegmentNr(value) {}.asRight[String]
-    }
+    case value if value === min.value => min.asRight[String]
+    case value if value === max.value => max.asRight[String]
+    case value                        => new SegmentNr(value) {}.asRight[String]
   }
 }
