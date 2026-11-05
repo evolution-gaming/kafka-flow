@@ -2,6 +2,7 @@ package com.evolution.kafka.flow.cassandra
 
 import cats.effect.{Async, Resource}
 import cats.syntax.all.*
+import com.datastax.oss.driver.api.core.config.DefaultDriverOption
 import com.datastax.oss.driver.api.core.{CqlSession, CqlSessionBuilder}
 import com.evolution.cassandra.sync.{AutoCreate, CassandraSync}
 import com.evolution.kafka.flow.cassandra.SessionHelper.*
@@ -67,11 +68,17 @@ object CassandraModule {
       .of[F](session, keyspace.name, autoCreate = if (keyspace.autoCreate) AutoCreate.Table else AutoCreate.None)
 
   private def createKeyspace[F[_]: Async: LogOf](config: DriverConfig, keyspace: CassandraConfig.Keyspace): F[Unit] = {
-    val session = LogResource[F](CassandraModule.getClass, "CassandraGlobal") *> connect(config, keyspace = none)
+    val session =
+      LogResource[F](CassandraModule.getClass, "CassandraGlobal") *> connect(withoutKeyspace(config), keyspace = none)
     session.use { session =>
       session.execute(CreateKeyspaceIfNotExists(keyspace.name, ReplicationStrategyConfig.Default)).void
     }
   }
+
+  // the keyspace might not exist yet, so the session creating it must not connect to the one of the driver
+  // configuration either, otherwise the session fails to start
+  private def withoutKeyspace(config: DriverConfig): DriverConfig =
+    DriverConfig(config.driver.withoutPath(DefaultDriverOption.SESSION_KEYSPACE.getPath))
 
   private def connect[F[_]: Async](config: DriverConfig, keyspace: Option[String]): Resource[F, CassandraSession[F]] =
     for {

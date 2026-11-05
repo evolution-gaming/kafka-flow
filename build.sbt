@@ -252,6 +252,8 @@ lazy val docs = (project in file("kafka-flow-docs"))
     // docusaurus needs a stable output path without the scala version
     mdocOut := (rootOutputDirectory.value / "mdoc").toFile,
     cleanFiles += mdocOut.value,
+    // compiles the migration example of `persistence.md`, the module itself does not depend on it
+    libraryDependencies += "com.evolution" %% "scassandra-v4-compat" % scassandraV4.revision,
   )
 
 addCommandAlias("check", "all scalafmtCheckRepo versionPolicyCheck")
