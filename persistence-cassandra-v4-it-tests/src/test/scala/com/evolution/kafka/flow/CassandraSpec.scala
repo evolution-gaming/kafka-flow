@@ -20,7 +20,10 @@ abstract class CassandraSpec extends FunSuite {
     private val moduleRef = new AtomicReference[Option[(CassandraModule[IO], IO[Unit])]](None)
 
     override def apply(): CassandraModule[IO] =
-      moduleRef.get().map(_._1).getOrElse(throw new IllegalStateException("CassandraModule is not started"))
+      moduleRef
+        .get()
+        .map { case (module, _) => module }
+        .getOrElse(throw new IllegalStateException("CassandraModule is not started"))
 
     override def beforeAll(): Unit = {
       implicit val logOf: LogOf[IO] = LogOf.slf4j[IO].unsafeRunSync()

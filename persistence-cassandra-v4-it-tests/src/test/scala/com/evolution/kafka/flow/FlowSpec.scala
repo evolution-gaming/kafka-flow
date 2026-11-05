@@ -6,17 +6,7 @@ import cats.effect.{IO, Ref, Resource}
 import com.evolutiongaming.catshelper.LogOf
 import com.evolution.kafka.flow.cassandra.{CassandraPersistence, ConsistencyOverrides}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
-import com.evolutiongaming.kafka.flow.{
-  ConsumerFlowOf,
-  FoldOption,
-  KafkaFlow,
-  KafkaKey,
-  KeyStateOf,
-  PartitionFlowConfig,
-  PartitionFlowOf,
-  TickOption,
-  TopicFlowOf
-}
+import com.evolutiongaming.kafka.flow.*
 import com.evolution.kafka.flow.key.CassandraKeys
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot

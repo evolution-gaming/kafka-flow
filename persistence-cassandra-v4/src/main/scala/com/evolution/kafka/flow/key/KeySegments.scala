@@ -33,18 +33,12 @@ object KeySegments {
 
   implicit val orderKeySegments: Order[KeySegments] = Order.fromOrdering
 
-  def of(value: Int): Either[String, KeySegments] = {
-    if (value < min.value) {
-      Left(s"invalid KeySegments of $value, it must be greater or equal to $min")
-    } else if (value > max.value) {
-      Left(s"invalid KeySegments of $value, it must be less or equal to $max")
-    } else if (value === min.value) {
-      Right(min)
-    } else if (value === max.value) {
-      Right(max)
-    } else {
-      Right(new KeySegments(value) {})
-    }
+  def of(value: Int): Either[String, KeySegments] = value match {
+    case value if value < min.value   => Left(s"invalid KeySegments of $value, it must be greater or equal to $min")
+    case value if value > max.value   => Left(s"invalid KeySegments of $value, it must be less or equal to $max")
+    case value if value === min.value => Right(min)
+    case value if value === max.value => Right(max)
+    case value                        => Right(new KeySegments(value) {})
   }
 
   def opt(value: Int): Option[KeySegments] = of(value).toOption
