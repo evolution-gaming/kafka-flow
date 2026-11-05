@@ -20,3 +20,5 @@ jobs:
         kafka-flow-persistence-kafka-it-tests_3
         kafka-flow-persistence-cassandra-it-tests_2.13
         kafka-flow-persistence-cassandra-it-tests_3
+        kafka-flow-persistence-cassandra-v4-it-tests_2.13
+        kafka-flow-persistence-cassandra-v4-it-tests_3

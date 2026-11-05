@@ -15,8 +15,10 @@ lazy val version = "1.0.4" // For cats-effect 3 - compatible version
 
 libraryDependencies ++= Seq(
   "com.evolutiongaming" %% "kafka-flow" % version,
-  // if you want to use Cassandra for storing persistent state
-  "com.evolutiongaming" %% "kafka-flow-persistence-cassandra" % version,
+  // if you want to use Cassandra for storing persistent state, built on the Apache Cassandra Java driver 4
+  "com.evolutiongaming" %% "kafka-flow-persistence-cassandra-v4" % version,
+  // the same, built on the DataStax Java driver 3, superseded by the module above
+  // "com.evolutiongaming" %% "kafka-flow-persistence-cassandra" % version,
   // if you want to use Kafka compact topic for storing persistent state
   "com.evolutiongaming" %% "kafka-flow-persistence-kafka" % version,
   // if you want to use predefined metrics
