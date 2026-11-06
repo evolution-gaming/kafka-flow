@@ -12,9 +12,9 @@ state is **persisted** and recovered when the partition is next assigned. Persis
 it is only needed when reprocessing the full journal on every recovery is too expensive — and two
 backends are provided:
 
-- **Cassandra** (`kafka-flow-persistence-cassandra`) — stores per-key *journals* (the folded
-  events) and/or *snapshots* (the latest state) in Cassandra tables. See
-  `CassandraPersistence`.
+- **Cassandra** (`kafka-flow-persistence-cassandra-v4`) — stores per-key *journals* (the folded
+  events) and/or *snapshots* (the latest state) in Cassandra tables. See `CassandraPersistence` and
+  [Cassandra](#cassandra) below.
 - **Kafka** (`kafka-flow-persistence-kafka`) — stores per-key snapshots in a dedicated Kafka
   [compacted](https://kafka.apache.org/documentation/#compaction) topic, recovered by reading that
   topic to the end on assignment. See `KafkaPersistenceModuleOf`.
@@ -25,6 +25,110 @@ protections](#protecting-against-stale-snapshot-writes) below cover the one case
 guarantee is not enough for the **Kafka** backend. The Cassandra backend writes snapshots
 unconditionally (last write wins, no offset check), so it stays exposed to the stale-writer
 overwrite, like a custom store (see [Custom snapshot storage](#custom-snapshot-storage)).
+
+## Cassandra
+
+`kafka-flow-persistence-cassandra-v4` is built on the Apache Cassandra Java driver 4, via
+[scassandra](https://github.com/evolution-gaming/scassandra) (`scassandra-v4`) and
+[cassandra-sync](https://github.com/evolution-gaming/cassandra-sync). It supersedes
+`kafka-flow-persistence-cassandra`, built on the DataStax Java driver 3, which is kept for the existing
+users only.
+
+`CassandraModule` connects to the cluster, creates the keyspace if configured to, and provides the
+session, the lock used to serialize schema changes and a health check:
+
+```scala mdoc:compile-only
+import cats.effect.{IO, Resource}
+import com.evolution.kafka.flow.cassandra.{CassandraConfig, CassandraModule, CassandraPersistence}
+import com.evolution.kafka.flow.key.KeySegments
+import com.evolutiongaming.catshelper.LogOf
+import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
+import pureconfig.ConfigSource
+
+def persistence(implicit logOf: LogOf[IO]): Resource[IO, PersistenceModule[IO, String]] = {
+  val config = ConfigSource.default.at("cassandra").loadOrThrow[CassandraConfig]
+  for {
+    cassandra <- CassandraModule.make[IO](config)
+    persistence <- CassandraPersistence
+      .withSchema[IO, String](cassandra.session, cassandra.sync, config.consistencyOverrides, KeySegments.default)
+      .toResource
+  } yield persistence
+}
+```
+
+The `client` section is the configuration of the Java driver 4, i.e. the contents of its
+`datastax-java-driver` section, see the
+[reference](https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/configuration/reference/):
+
+```hocon
+cassandra {
+  schema.keyspace.name = "kafka_flow"
+  consistency-overrides {
+    read = "LOCAL_QUORUM"
+    write = "LOCAL_QUORUM"
+  }
+  client {
+    basic.contact-points = ["127.0.0.1:9042"]
+    # required by the driver 4 once the contact points are set
+    basic.load-balancing-policy.local-datacenter = "datacenter1"
+    # the default of the driver 4 is 2 seconds, while scassandra for the driver 3 defaulted to 12 seconds
+    basic.request.timeout = 12 seconds
+  }
+}
+```
+
+### Migrating from `kafka-flow-persistence-cassandra`
+
+The tables are the same, so the data written by `kafka-flow-persistence-cassandra` is read as is,
+there is nothing to migrate in Cassandra. The code and the configuration need the following changes.
+
+- Replace the dependency with `kafka-flow-persistence-cassandra-v4`. Do not keep both modules on the
+  classpath, i.e. via a library depending on the old one: both define
+  `com.evolution.kafka.flow.cassandra.CassandraModule`, so one of them silently shadows the other.
+- Change the imports, all the classes of the module are in `com.evolution.kafka.flow`:
+
+  | `kafka-flow-persistence-cassandra` | `kafka-flow-persistence-cassandra-v4` |
+  | --- | --- |
+  | `com.evolutiongaming.kafka.flow.cassandra.*` | `com.evolution.kafka.flow.cassandra.*` |
+  | `com.evolutiongaming.kafka.flow.key.{CassandraKeys, KeySchema, KeySegments}` | `com.evolution.kafka.flow.key.*` |
+  | `com.evolutiongaming.kafka.flow.journal.{CassandraJournals, JournalSchema}` | `com.evolution.kafka.flow.journal.*` |
+  | `com.evolutiongaming.kafka.flow.snapshot.{CassandraSnapshots, SnapshotSchema}` | `com.evolution.kafka.flow.snapshot.*` |
+  | `com.evolutiongaming.scassandra.CassandraSession` | `com.evolution.scassandra.CassandraSession` |
+  | `com.evolutiongaming.cassandra.sync.CassandraSync` | `com.evolution.cassandra.sync.CassandraSync` |
+  | `com.datastax.driver.core.ConsistencyLevel` | `com.datastax.oss.driver.api.core.ConsistencyLevel` |
+
+  The interfaces of the core module, such as `KeyDatabase`, `SnapshotDatabase` or `PersistenceModule`,
+  stay in `com.evolutiongaming.kafka.flow`.
+- `CassandraModule.of` is `CassandraModule.make`, and needs no `Parallel` anymore.
+- Move the `client` configuration to the format of the driver 4, as shown above, or keep the
+  existing one, see [Keeping the legacy configuration](#keeping-the-legacy-configuration).
+- `retries` applies to the health check queries only, as before. The retries of the other queries
+  are configured in the driver, i.e. with `advanced.retry-policy` of the `client` section.
+
+#### Keeping the legacy configuration
+
+[`scassandra-v4-compat`](https://github.com/evolution-gaming/scassandra) translates the existing
+`client` configuration, keeping the defaults of scassandra for the driver 3 as well:
+
+```scala mdoc:compile-only
+import com.evolution.kafka.flow.cassandra.CassandraConfig
+import com.evolution.scassandra.compat.CassandraConfigCompat
+import com.typesafe.config.{Config, ConfigFactory}
+import pureconfig.ConfigSource
+import pureconfig.error.ConfigReaderFailures
+
+val config: Config = ConfigFactory.load()
+
+val cassandraConfig: Either[ConfigReaderFailures, CassandraConfig] = for {
+  // keeps `schema`, `retries` and `consistency-overrides`, only the legacy `client` is replaced
+  loaded     <- ConfigSource.fromConfig(config).at("cassandra").load[CassandraConfig]
+  translated <- CassandraConfigCompat.fromLegacyConfig(config, "cassandra.client")
+  // translated.warnings lists the options of the driver 3 having no equivalent in the driver 4
+} yield loaded.copy(client = translated.config)
+```
+
+Note that `scassandra-v4-compat` depends on scassandra for the driver 3, so the driver 3 stays on the
+classpath until the configuration is migrated.
 
 ## Protecting against stale snapshot writes
 

@@ -10,6 +10,8 @@ object Dependencies {
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.3.0"
   val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.9.0"
   val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "4.1.0"
+  val scassandraV4      = "com.evolution"       %% "scassandra-v4"       % "5.9.0"
+  val cassandraSyncV4   = "com.evolution"       %% "cassandra-sync"      % "5.0.0"
   val random            = "com.evolution"       %% "random"              % "1.0.5"
   val retry             = "com.evolutiongaming" %% "retry"               % "3.1.0"
   val playJsonJsoniter  = "com.evolution"       %% "play-json-jsoniter"  % "1.5.1"
@@ -23,13 +25,16 @@ object Dependencies {
     * Do not pin what upstream already pins. Since 5.7.0 `scassandra` pins Guava, Netty and Jackson itself, so
     * `persistence-cassandra` needs no pins for them here. Adding one anyway would risk holding them back: a pin that
     * falls behind `scassandra` downgrades a patched version instead of raising an unpatched one.
+    *
+    * `scassandra-v4` pins none of them: Guava is shaded into the Java driver 4, Netty comes from the driver at a
+    * patched version, while Jackson comes from the driver at a vulnerable one, so `persistence-cassandra-v4` pins it.
     */
   object Pinned {
     // comes from `skafka` via `kafka-clients`, which still brings 1.10.2
     val lz4 = "at.yawk.lz4" % "lz4-java" % "1.13.0"
 
     // Raises Jackson for the `journal` module, which gets 2.14.3 from `kafka-journal` and has no `scassandra` on its
-    // classpath to pin anything newer. The version matches what `scassandra` resolves to, so that the build-wide
+    // classpath to pin anything newer, and for `persistence-cassandra-v4`, which gets 2.20.1 from the Java driver 4. The version matches what `scassandra` resolves to, so that the build-wide
     // `dependencyOverrides` does not drag `persistence-cassandra` down to an older Jackson than it gets today.
     // Pins `jackson-core` and `jackson-databind` only; `jackson-annotations` and `jackson-datatype-*` stay at 2.14.3.
     private val jacksonVersion = "2.22.4"
@@ -69,6 +74,7 @@ object Dependencies {
 
   object PureConfig {
     private val version    = "0.17.11"
+    lazy val Generic       = "com.github.pureconfig" %% "pureconfig-generic"        % version
     lazy val GenericScala3 = "com.github.pureconfig" %% "pureconfig-generic-scala3" % version
   }
 
