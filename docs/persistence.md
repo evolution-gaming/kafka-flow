@@ -100,18 +100,73 @@ there is nothing to migrate in Cassandra. The code and the configuration need th
   The interfaces of the core module, such as `KeyDatabase`, `SnapshotDatabase` or `PersistenceModule`,
   stay in `com.evolutiongaming.kafka.flow`.
 - `CassandraModule.of` is `CassandraModule.make`, and needs no `Parallel` anymore.
-- Move the `client` configuration to the format of the driver 4, as shown above, or keep the
-  existing one, see [Keeping the legacy configuration](#keeping-the-legacy-configuration).
+- Move the `client` configuration to the format of the driver 4, see
+  [Migrating the `client` configuration](#migrating-the-client-configuration).
 - `retries` applies to the health check queries only, as before. The retries of the other queries
   are configured in the driver, i.e. with `advanced.retry-policy` of the `client` section.
 - `basic.request.timeout` of the driver 4 limits a query including all its retries, while the timeout
   of the driver 3 limited each attempt. So a health check query is failed once the timeout runs out,
   even if fewer than `retries` attempts were made.
 
-#### Keeping the legacy configuration
+#### Migrating the `client` configuration
 
-[`scassandra-v4-compat`](https://github.com/evolution-gaming/scassandra) translates the existing
-`client` configuration, keeping the defaults of scassandra for the driver 3 as well:
+**The old configuration, read as is, gives the defaults of the driver.** `CassandraConfig` reads
+`schema`, `retries` and `consistency-overrides` as before, but takes `client` as the configuration of
+the driver 4. The driver 4 only reads its own options, under `basic`, `advanced` and `profiles`, so it
+silently ignores every key of the old format:
+
+```hocon
+cassandra.client {
+  contact-points = ["cassandra-1", "cassandra-2"]         # ignored, the driver connects to 127.0.0.1:9042
+  query.consistency = "LOCAL_QUORUM"                      # ignored, the default LOCAL_ONE is used
+  authentication { username = "user", password = "..." } # ignored, no authentication
+}
+```
+
+If Cassandra is not on the local host, the application fails to start, as `127.0.0.1:9042` is not
+reachable. If it is, the application runs with the defaults of the driver.
+
+There are two ways to migrate.
+
+**Rewrite `client` at once.** See the
+[translation of the keys](https://github.com/evolution-gaming/scassandra/blob/v5.9.0/docs/legacy-config-translation.md#keys)
+for the option of the driver 4 matching each key. The options that are not set get the defaults of
+the driver 4, which differ from the ones of scassandra for the driver 3, so set the ones to keep:
+
+```hocon
+cassandra.client {
+  basic.contact-points = ["cassandra-1:9042", "cassandra-2:9042"]
+  # `load-balancing.local-dc`, required by the driver 4 once the contact points are set,
+  # while the driver 3 took it from the contact points if not set
+  basic.load-balancing-policy.local-datacenter = "dc1"
+  basic.request.consistency = LOCAL_QUORUM
+  # the default of the driver 4 is 2 seconds, while scassandra for the driver 3 defaulted to 12 seconds
+  basic.request.timeout = 12 seconds
+  advanced.auth-provider { class = PlainTextAuthProvider, username = "user", password = "..." }
+}
+```
+
+It is read by `CassandraConfig` as is, as in the example above.
+
+**Migrate gradually with `scassandra-v4-compat`.** It translates the keys of the old format,
+keeping the defaults of scassandra for the driver 3, and applies the options of the driver 4 under
+`client.driver` on top. So the keys can be moved to `client.driver` one by one:
+
+```hocon
+cassandra.client {
+  # the old format, translated
+  contact-points = ["cassandra-1", "cassandra-2"]
+  query.consistency = "LOCAL_QUORUM"
+  # the format of the driver 4, wins over the translated keys
+  driver {
+    basic.request.timeout = 3 seconds
+  }
+}
+```
+
+`CassandraConfig` doesn't read `client.driver` either, so `client` is replaced with the translated
+configuration. The keys having no equivalent in the driver 4, such as `jmx-reporting`, are dropped
+with a warning:
 
 ```scala mdoc:compile-only
 import cats.MonadThrow
@@ -125,10 +180,8 @@ import pureconfig.error.ConfigReaderFailures
 
 def cassandraConfig[F[_]: MonadThrow](config: Config, log: Log[F]): F[CassandraConfig] =
   for {
-    // keeps `schema`, `retries` and `consistency-overrides`, only the legacy `client` is replaced
     loaded     <- liftConfig[F, CassandraConfig](ConfigSource.fromConfig(config).at("cassandra").load[CassandraConfig])
     translated <- liftConfig(CassandraConfigCompat.fromLegacyConfig(config, "cassandra.client"))
-    // the legacy options having no equivalent in the driver 4, such as `jmx-reporting`, are dropped
     _ <- translated.warnings.traverse_(warning => log.warn(s"Legacy Cassandra configuration: $warning"))
   } yield loaded.copy(client = translated.config)
 
@@ -136,8 +189,29 @@ def liftConfig[F[_]: MonadThrow, A](result: Either[ConfigReaderFailures, A]): F[
   result.leftMap(failures => new IllegalArgumentException(failures.prettyPrint())).liftTo[F]
 ```
 
-Note that `scassandra-v4-compat` depends on scassandra for the driver 3, so the driver 3 stays on the
-classpath until the configuration is migrated.
+Once all the keys are under `client.driver`, move them up to `client`, drop `scassandra-v4-compat`
+and read the configuration with `CassandraConfig` as is:
+
+```hocon
+# before
+cassandra.client.driver {
+  basic.contact-points = ["cassandra-1:9042", "cassandra-2:9042"]
+  basic.request.timeout = 12 seconds
+}
+
+# after
+cassandra.client {
+  basic.contact-points = ["cassandra-1:9042", "cassandra-2:9042"]
+  basic.request.timeout = 12 seconds
+}
+```
+
+Before dropping `scassandra-v4-compat`, set the options which still rely on it, as without it they get
+the defaults of the driver 4: e.g. `basic.request.timeout = 12 seconds` to keep the previous timeout,
+and `basic.load-balancing-policy.local-datacenter`, which it takes from the contact points if
+`load-balancing.local-dc` is not set.
+`scassandra-v4-compat` depends on scassandra for the driver 3, so the driver 3 stays on the
+classpath until then.
 
 ## Protecting against stale snapshot writes
 
