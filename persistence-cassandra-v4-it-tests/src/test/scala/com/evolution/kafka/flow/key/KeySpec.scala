@@ -26,7 +26,7 @@ class KeySpec extends CassandraSpec {
         cassandra().session,
         cassandra().sync,
         ConsistencyOverrides.none,
-        CassandraKeys.DefaultSegments
+        KeySegments.default
       )
       partition1KeysBeforeTest   <- keys.all("KeySpec", "integration-tests-1", partition1).toList
       partition2KeysBeforeTest   <- keys.all("KeySpec", "integration-tests-1", partition2).toList
@@ -58,7 +58,7 @@ class KeySpec extends CassandraSpec {
         session,
         cassandra().sync,
         ConsistencyOverrides.none,
-        CassandraKeys.DefaultSegments
+        KeySegments.default
       )
       _    <- failAfter.set(0) // fail immediately on the first read attempt
       keys <- keys.all("KeySpec", "integration-tests-1", TopicPartition("topic", Partition.min)).toList.attempt
@@ -75,7 +75,7 @@ class KeySpec extends CassandraSpec {
         cassandra().session,
         cassandra().sync,
         ConsistencyOverrides.none,
-        CassandraKeys.DefaultSegments,
+        KeySegments.default,
         ttl = 1.hour.some,
       )
       _                          <- keys.persist(key)

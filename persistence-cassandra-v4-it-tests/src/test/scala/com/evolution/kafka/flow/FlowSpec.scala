@@ -7,7 +7,7 @@ import com.evolutiongaming.catshelper.LogOf
 import com.evolution.kafka.flow.cassandra.{CassandraPersistence, ConsistencyOverrides}
 import com.evolutiongaming.kafka.flow.kafka.Consumer
 import com.evolutiongaming.kafka.flow.*
-import com.evolution.kafka.flow.key.CassandraKeys
+import com.evolution.kafka.flow.key.KeySegments
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
 import com.evolutiongaming.kafka.flow.timer.{TimerFlowOf, TimersOf}
@@ -30,7 +30,7 @@ class FlowSpec extends CassandraSpec {
             session,
             cassandra().sync,
             ConsistencyOverrides.none,
-            CassandraKeys.DefaultSegments
+            KeySegments.default
           )
       )
       timersOf      <- Resource.eval(TimersOf.memory[IO, KafkaKey])

@@ -116,8 +116,6 @@ class CassandraKeys[F[_]: Async](
 }
 object CassandraKeys {
 
-  val DefaultSegments: KeySegments = KeySegments.unsafe(10000)
-
   val DefaultTableName: String = "keys"
 
   /** Create table for storing keys. If table already exists it will not be recreated

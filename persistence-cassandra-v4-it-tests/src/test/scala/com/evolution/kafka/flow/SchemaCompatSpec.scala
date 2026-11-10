@@ -3,7 +3,7 @@ package com.evolution.kafka.flow
 import cats.effect.IO
 import com.evolution.kafka.flow.cassandra.ConsistencyOverrides
 import com.evolution.kafka.flow.journal.CassandraJournals
-import com.evolution.kafka.flow.key.CassandraKeys
+import com.evolution.kafka.flow.key.{CassandraKeys, KeySegments}
 import com.evolution.kafka.flow.snapshot.CassandraSnapshots
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.snapshot.KafkaSnapshot
@@ -35,7 +35,7 @@ class SchemaCompatSpec extends CassandraSpec {
 
   test("keys written by the driver 3 module are read") {
     val test = for {
-      keys  <- CassandraKeys.withSchema(session, sync, ConsistencyOverrides.none, CassandraKeys.DefaultSegments)
+      keys  <- CassandraKeys.withSchema(session, sync, ConsistencyOverrides.none, KeySegments.default)
       _     <- session.execute(insertKey)
       found <- keys.all(applicationId, groupId, topicPartition).toList
     } yield assertEquals(found, List(key))
@@ -75,7 +75,7 @@ class SchemaCompatSpec extends CassandraSpec {
   private def sync = cassandra().sync
 
   // the same segment as calculated by `CassandraKeys` of the driver 3 module
-  private def segment: Long = math.abs(key.key.hashCode.toLong % CassandraKeys.DefaultSegments.value)
+  private def segment: Long = math.abs(key.key.hashCode.toLong % KeySegments.default.value)
 
   private def insertKey: String =
     s"""INSERT INTO keys (application_id, group_id, topic, partition, key, segment, created, created_date, metadata)
