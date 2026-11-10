@@ -104,6 +104,9 @@ there is nothing to migrate in Cassandra. The code and the configuration need th
   existing one, see [Keeping the legacy configuration](#keeping-the-legacy-configuration).
 - `retries` applies to the health check queries only, as before. The retries of the other queries
   are configured in the driver, i.e. with `advanced.retry-policy` of the `client` section.
+- `basic.request.timeout` of the driver 4 limits a query including all its retries, while the timeout
+  of the driver 3 limited each attempt. So a health check query is failed once the timeout runs out,
+  even if fewer than `retries` attempts were made.
 
 #### Keeping the legacy configuration
 
