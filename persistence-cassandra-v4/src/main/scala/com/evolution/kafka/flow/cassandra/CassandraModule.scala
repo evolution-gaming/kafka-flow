@@ -13,7 +13,7 @@ import com.evolution.scassandra.{
   CreateKeyspaceIfNotExists,
   ReplicationStrategyConfig
 }
-import com.evolutiongaming.catshelper.{Log, LogOf}
+import com.evolutiongaming.catshelper.LogOf
 import com.evolutiongaming.kafka.flow.LogResource
 
 trait CassandraModule[F[_]] {
@@ -22,8 +22,6 @@ trait CassandraModule[F[_]] {
   def healthCheck: CassandraHealthCheck[F]
 }
 object CassandraModule {
-
-  def log[F[_]: LogOf]: F[Log[F]] = LogOf[F].apply(CassandraModule.getClass)
 
   /** Creates connection, synchronization and health check routines.
     *
@@ -37,7 +35,7 @@ object CassandraModule {
     val keyspace     = config.schema.keyspace
     val driverConfig = CassandraHealthCheckOf.withProfile(config.client, config.retries)
     for {
-      log           <- Resource.eval(log[F])
+      log           <- Resource.eval(LogOf[F].apply(CassandraModule.getClass))
       _             <- Resource.eval(createKeyspace(driverConfig, keyspace).whenA(keyspace.autoCreate))
       unsafeSession <- keyspaceSession(driverConfig, keyspace)
       // logging all Cassandra errors before popping them up is useful because popped up errors
