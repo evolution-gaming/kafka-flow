@@ -114,20 +114,26 @@ there is nothing to migrate in Cassandra. The code and the configuration need th
 `client` configuration, keeping the defaults of scassandra for the driver 3 as well:
 
 ```scala mdoc:compile-only
+import cats.MonadThrow
+import cats.syntax.all.*
 import com.evolution.kafka.flow.cassandra.CassandraConfig
 import com.evolution.scassandra.compat.CassandraConfigCompat
-import com.typesafe.config.{Config, ConfigFactory}
+import com.evolutiongaming.catshelper.Log
+import com.typesafe.config.Config
 import pureconfig.ConfigSource
 import pureconfig.error.ConfigReaderFailures
 
-val config: Config = ConfigFactory.load()
+def cassandraConfig[F[_]: MonadThrow](config: Config, log: Log[F]): F[CassandraConfig] =
+  for {
+    // keeps `schema`, `retries` and `consistency-overrides`, only the legacy `client` is replaced
+    loaded     <- liftConfig[F, CassandraConfig](ConfigSource.fromConfig(config).at("cassandra").load[CassandraConfig])
+    translated <- liftConfig(CassandraConfigCompat.fromLegacyConfig(config, "cassandra.client"))
+    // the legacy options having no equivalent in the driver 4, such as `jmx-reporting`, are dropped
+    _ <- translated.warnings.traverse_(warning => log.warn(s"Legacy Cassandra configuration: $warning"))
+  } yield loaded.copy(client = translated.config)
 
-val cassandraConfig: Either[ConfigReaderFailures, CassandraConfig] = for {
-  // keeps `schema`, `retries` and `consistency-overrides`, only the legacy `client` is replaced
-  loaded     <- ConfigSource.fromConfig(config).at("cassandra").load[CassandraConfig]
-  translated <- CassandraConfigCompat.fromLegacyConfig(config, "cassandra.client")
-  // translated.warnings lists the options of the driver 3 having no equivalent in the driver 4
-} yield loaded.copy(client = translated.config)
+def liftConfig[F[_]: MonadThrow, A](result: Either[ConfigReaderFailures, A]): F[A] =
+  result.leftMap(failures => new IllegalArgumentException(failures.prettyPrint())).liftTo[F]
 ```
 
 Note that `scassandra-v4-compat` depends on scassandra for the driver 3, so the driver 3 stays on the
