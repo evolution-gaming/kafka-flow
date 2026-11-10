@@ -34,8 +34,9 @@ object Dependencies {
     val lz4 = "at.yawk.lz4" % "lz4-java" % "1.14.0"
 
     // Raises Jackson for the `journal` module, which gets 2.14.3 from `kafka-journal` and has no `scassandra` on its
-    // classpath to pin anything newer, and for `persistence-cassandra-v4`, which gets 2.20.1 from the Java driver 4. The version matches what `scassandra` resolves to, so that the build-wide
-    // `dependencyOverrides` does not drag `persistence-cassandra` down to an older Jackson than it gets today.
+    // classpath to pin anything newer, and for `persistence-cassandra-v4`, which gets 2.20.1 from the Java driver 4.
+    // The version matches what `scassandra` resolves to, so that the build-wide `dependencyOverrides` does not drag
+    // `persistence-cassandra` down to an older Jackson than it gets today.
     // Pins `jackson-core` and `jackson-databind` only; `jackson-annotations` and `jackson-datatype-*` stay at 2.14.3.
     private val jacksonVersion = "2.23.0"
     val jackson = Seq(

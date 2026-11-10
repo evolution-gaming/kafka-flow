@@ -18,8 +18,8 @@ import scala.concurrent.duration.*
 /** Reads the rows in the format written by `kafka-flow-persistence-cassandra`, i.e. the module built on the Java driver
   * 3, to make sure the data stays readable after switching to this module.
   *
-  * The rows are inserted with plain CQL, mirroring the statements of the driver 3 module, so the module itself is not
-  * needed on the classpath.
+  * The rows are inserted with plain CQL into the tables of the driver 3 module, with the same columns and values it
+  * writes, so the module itself is not needed on the classpath.
   */
 class SchemaCompatSpec extends CassandraSpec {
 

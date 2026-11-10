@@ -73,6 +73,7 @@ class KeySchemaSpec extends CassandraSpec {
   }
 
   override def afterEach(context: AfterEach): Unit = {
+    super.afterEach(context)
     cassandra().session.execute("DROP TABLE IF EXISTS keys").void.unsafeRunSync()
   }
 }

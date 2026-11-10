@@ -57,8 +57,8 @@ def persistence(implicit logOf: LogOf[IO]): Resource[IO, PersistenceModule[IO, S
 ```
 
 The `client` section is the configuration of the Java driver 4, i.e. the contents of its
-`datastax-java-driver` section, see the
-[reference](https://docs.datastax.com/en/developer/java-driver/4.17/manual/core/configuration/reference/):
+`datastax-java-driver` section, see its
+[`reference.conf`](https://github.com/apache/cassandra-java-driver/blob/4.19.4/core/src/main/resources/reference.conf):
 
 ```hocon
 cassandra {
