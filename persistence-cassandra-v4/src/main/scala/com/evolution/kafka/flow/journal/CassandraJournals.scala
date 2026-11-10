@@ -9,6 +9,7 @@ import com.evolutiongaming.catshelper.ClockHelper.*
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.journal.JournalDatabase
 import com.evolution.kafka.flow.cassandra.CassandraCodecs.*
+import com.evolution.kafka.flow.cassandra.SessionHelper.SessionOps
 import com.evolution.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolution.kafka.flow.cassandra.{ConsistencyOverrides, StatementHelper}
 import com.evolution.kafka.flow.journal.CassandraJournals.*
@@ -43,7 +44,7 @@ class CassandraJournals[F[_]: Async](
   def get(key: KafkaKey): Stream[F, ConsumerRecord[String, ByteVector]] = {
     val boundStatement = Statements.bindGet(getStatement, key).withConsistencyLevel(consistencyOverrides.read)
 
-    session.executeStream(boundStatement).mapM(row => decode(key, row))
+    session.executePages(boundStatement).mapM(row => decode(key, row))
   }
 
   def delete(key: KafkaKey): F[Unit] = {

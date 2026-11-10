@@ -8,6 +8,7 @@ import com.evolution.cassandra.sync.CassandraSync
 import com.evolutiongaming.catshelper.ClockHelper.*
 import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.key.KeyDatabase
+import com.evolution.kafka.flow.cassandra.SessionHelper.SessionOps
 import com.evolution.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolution.kafka.flow.cassandra.{ConsistencyOverrides, StatementHelper}
 import com.evolution.kafka.flow.key.CassandraKeys.rowToKey
@@ -105,7 +106,7 @@ class CassandraKeys[F[_]: Async](
         .withConsistencyLevel(consistencyOverrides.read)
 
     session
-      .executeStream(boundStatement)
+      .executePages(boundStatement)
       .map(rowToKey(_, applicationId, groupId, topicPartition))
   }
 

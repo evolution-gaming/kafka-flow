@@ -10,6 +10,7 @@ import com.evolutiongaming.kafka.flow.KafkaKey
 import com.evolutiongaming.kafka.flow.snapshot.{KafkaSnapshot, SnapshotDatabase}
 import com.evolution.kafka.flow.cassandra.CassandraCodecs.*
 import com.evolution.kafka.flow.cassandra.{ConsistencyOverrides, StatementHelper}
+import com.evolution.kafka.flow.cassandra.SessionHelper.SessionOps
 import com.evolution.kafka.flow.cassandra.StatementHelper.StatementOps
 import com.evolution.scassandra.CassandraSession
 import com.evolution.scassandra.syntax.*
@@ -40,7 +41,7 @@ class CassandraSnapshots[F[_]: Async, T](
       Statements.bindGet(getStatement, key).withConsistencyLevel(consistencyOverrides.read)
 
     for {
-      row      <- session.executeStream(boundStatement).first
+      row      <- session.executePages(boundStatement).first
       snapshot <- row.map(row => decode(row)).sequence
     } yield snapshot
   }
