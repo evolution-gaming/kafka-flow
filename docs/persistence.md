@@ -136,8 +136,8 @@ the driver 4, which differ from the ones of scassandra for the driver 3, so set 
 ```hocon
 cassandra.client {
   basic.contact-points = ["cassandra-1:9042", "cassandra-2:9042"]
-  # `load-balancing.local-dc`, required by the driver 4 once the contact points are set,
-  # while the driver 3 took it from the contact points if not set
+  # required by the driver 4 once the contact points are set; the driver 3 took it from the contact
+  # points unless `load-balancing.local-dc` was set
   basic.load-balancing-policy.local-datacenter = "dc1"
   basic.request.consistency = LOCAL_QUORUM
   # the default of the driver 4 is 2 seconds, while scassandra for the driver 3 defaulted to 12 seconds
