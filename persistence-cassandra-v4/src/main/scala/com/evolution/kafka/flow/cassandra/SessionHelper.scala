@@ -21,7 +21,7 @@ import com.evolutiongaming.sstream.Stream
 
 import scala.jdk.CollectionConverters.*
 
-object SessionHelper {
+private[flow] object SessionHelper {
   implicit final class SessionOps[F[_]](val self: CassandraSession[F]) extends AnyVal {
 
     /** Wraps the errors of the requests into an exception with the failed query in its message */

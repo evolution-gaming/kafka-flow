@@ -5,7 +5,7 @@ import com.datastax.oss.driver.api.core.cql.Statement
 
 import scala.concurrent.duration.FiniteDuration
 
-object StatementHelper {
+private[flow] object StatementHelper {
   implicit final class StatementOps[S <: Statement[S]](val self: S) extends AnyVal {
 
     /** Statements of the Java driver 4 are immutable, the returned one should be executed */
