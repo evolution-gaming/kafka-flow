@@ -148,9 +148,15 @@ cassandra.client {
 
 It is read by `CassandraConfig` as is, as in the example above.
 
-**Migrate gradually with `scassandra-v4-compat`.** It translates the keys of the old format,
-keeping the defaults of scassandra for the driver 3, and applies the options of the driver 4 under
-`client.driver` on top. So the keys can be moved to `client.driver` one by one:
+**Migrate gradually with `scassandra-v4-compat`.** It is a separate dependency:
+
+```scala
+libraryDependencies += "com.evolution" %% "scassandra-v4-compat" % "5.9.0"
+```
+
+It translates the keys of the old format, keeping the defaults of scassandra for the driver 3, and
+applies the options of the driver 4 under `client.driver` on top. So the keys can be moved to
+`client.driver` one by one:
 
 ```hocon
 cassandra.client {
@@ -170,7 +176,7 @@ with a warning:
 
 ```scala mdoc:compile-only
 import cats.MonadThrow
-import cats.syntax.all.*
+import cats.syntax.all._
 import com.evolution.kafka.flow.cassandra.CassandraConfig
 import com.evolution.scassandra.compat.CassandraConfigCompat
 import com.evolutiongaming.catshelper.Log
@@ -196,12 +202,14 @@ and read the configuration with `CassandraConfig` as is:
 # before
 cassandra.client.driver {
   basic.contact-points = ["cassandra-1:9042", "cassandra-2:9042"]
+  basic.load-balancing-policy.local-datacenter = "dc1"
   basic.request.timeout = 12 seconds
 }
 
 # after
 cassandra.client {
   basic.contact-points = ["cassandra-1:9042", "cassandra-2:9042"]
+  basic.load-balancing-policy.local-datacenter = "dc1"
   basic.request.timeout = 12 seconds
 }
 ```
