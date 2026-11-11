@@ -63,20 +63,30 @@ object SessionHelper {
     page: AsyncResultSet,
     state: L,
     f: (L, Row) => F[Either[L, R]]
-  ): F[Either[(L, AsyncResultSet), Either[L, R]]] = {
-    val rows = page.currentPage.asScala.toList
-    if (page.hasMorePages) {
-      val nextStatement = statement.setPagingState(page.getExecutionInfo.getPagingState)
-      session.execute(nextStatement).background.use { nextPage =>
-        rows.foldWhileM(state)(f).flatMap {
-          case Left(state) => nextPage.flatMap(_.embedNever).map(page => (state, page).asLeft[Either[L, R]])
-          case result      => result.asRight[(L, AsyncResultSet)].pure[F]
-        }
+  ): F[Either[(L, AsyncResultSet), Either[L, R]]] =
+    Async[F].delay(page.currentPage.asScala.toList).flatMap { rows =>
+      if (page.hasMorePages) {
+        val nextStatement = statement.setPagingState(page.getExecutionInfo.getPagingState)
+        foldAndFetchNext(session, nextStatement, rows, state, f)
+      } else {
+        rows.foldWhileM(state)(f).map(_.asRight[(L, AsyncResultSet)])
       }
-    } else {
-      rows.foldWhileM(state)(f).map(_.asRight[(L, AsyncResultSet)])
     }
-  }
+
+  /** Folds the rows while the next page is requested, returns it if the fold isn't finished */
+  private def foldAndFetchNext[F[_]: Async, L, R](
+    session: CassandraSession[F],
+    nextStatement: Statement[?],
+    rows: List[Row],
+    state: L,
+    f: (L, Row) => F[Either[L, R]]
+  ): F[Either[(L, AsyncResultSet), Either[L, R]]] =
+    session.execute(nextStatement).background.use { nextPage =>
+      rows.foldWhileM(state)(f).flatMap {
+        case Left(state) => nextPage.flatMap(_.embedNever).map(page => (state, page).asLeft[Either[L, R]])
+        case result      => result.asRight[(L, AsyncResultSet)].pure[F]
+      }
+    }
 
   private abstract class Intercepted[F[_]](self: CassandraSession[F]) extends CassandraSession[F] {
 
