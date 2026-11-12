@@ -19,14 +19,14 @@ lazy val Scala2Version = "2.13.18"
 
 lazy val commonSettings = Seq(
   organization := "com.evolutiongaming",
-  homepage := Some(url("https://github.com/evolution-gaming/kafka-flow")),
+  homepage := Some(uri("https://github.com/evolution-gaming/kafka-flow")),
   startYear := Some(2019),
   organizationName := "Evolution Gaming",
-  organizationHomepage := Some(url("https://evolution.com/")),
+  organizationHomepage := Some(uri("https://evolution.com/")),
   publishTo := Some(Resolver.evolutionReleases),
   crossScalaVersions := Seq(Scala2Version, Scala3Version),
   scalaVersion := crossScalaVersions.value.head,
-  licenses := Seq(("MIT", url("https://opensource.org/licenses/MIT"))),
+  licenses := Seq(("MIT", uri("https://opensource.org/licenses/MIT"))),
   testFrameworks += new TestFramework("munit.Framework"),
   testOptions += Tests.Argument(new TestFramework("munit.Framework"), "+l"),
   libraryDependencySchemes ++= Seq(
@@ -35,7 +35,7 @@ lazy val commonSettings = Seq(
   libraryDependencies ++= crossSettings(
     scalaVersion.value,
     if3 = Nil,
-    if2 = List(compilerPlugin("org.typelevel" %% "kind-projector" % "0.13.4" cross CrossVersion.full)),
+    if2 = List(compilerPlugin(("org.typelevel" %% "kind-projector" % "0.13.4").cross(CrossVersion.full))),
   ),
   scalacOptions ++= crossSettings(
     scalaVersion.value,
@@ -61,7 +61,7 @@ def crossSettings[T](scalaVersion: String, if3: List[T], if2: List[T]) =
     case _                  => Nil
   }
 
-lazy val root = (project in file("."))
+lazy val root = rootProject
   .aggregate(
     core,
     `core-it-tests`,
@@ -74,7 +74,7 @@ lazy val root = (project in file("."))
   )
   .settings(commonSettings)
   .settings(
-    name := "kafka-flow",
+    name := "kafka-flow-root",
     publish / skip := true,
     crossScalaVersions := Nil,
     scalaVersion := Scala2Version,
@@ -162,6 +162,8 @@ lazy val `persistence-cassandra-it-tests` = (project in file("persistence-cassan
       Testing.Testcontainers.munit     % Test
     ),
     Test / fork := true,
+    // Cassandra container is shared between tests, and schema changes can't be applied in parallel
+    Test / testForkedParallel := false,
     publish / skip := true,
   )
 
@@ -210,6 +212,9 @@ lazy val docs = (project in file("kafka-flow-docs"))
   .enablePlugins(MdocPlugin, DocusaurusPlugin)
   .settings(
     scalacOptions -= "-Xfatal-warnings",
+    // docusaurus needs a stable output path without the scala version
+    mdocOut := (rootOutputDirectory.value / "mdoc").toFile,
+    cleanFiles += mdocOut.value,
   )
 
 addCommandAlias("check", "all scalafmtCheckRepo versionPolicyCheck")

@@ -1,8 +1,3 @@
-// sbt-scoverage 2.x.x brings in scala-xml 2.x.x
-libraryDependencySchemes ++= Seq(
-  "org.scala-lang.modules" %% "scala-xml" % "always"
-)
-
 addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.4.4")
 
 // This sets the 'version' property based on the git tag during release process to publish the right version
