@@ -9,8 +9,14 @@ import com.evolution.kafka.flow.journal.CassandraJournals
 import com.evolution.kafka.flow.key.{CassandraKeys, KeySegments}
 import com.evolution.kafka.flow.snapshot.CassandraSnapshots
 import com.evolution.scassandra.CassandraSession
+import com.evolutiongaming.kafka.flow.KafkaKey
+import com.evolutiongaming.kafka.flow.journal.JournalDatabase
+import com.evolutiongaming.kafka.flow.key.KeyDatabase
 import com.evolutiongaming.kafka.flow.persistence.PersistenceModule
+import com.evolutiongaming.kafka.flow.snapshot.{KafkaSnapshot, SnapshotDatabase}
+import com.evolutiongaming.skafka.consumer.ConsumerRecord
 import com.evolutiongaming.skafka.{FromBytes, ToBytes}
+import scodec.bits.ByteVector
 
 import scala.util.Try
 
@@ -38,9 +44,9 @@ object CassandraPersistence {
       ttl = recordExpiration.snapshots
     )
   } yield new CassandraPersistence[F, S] {
-    def keys      = _keys
-    def journals  = _journals
-    def snapshots = _snapshots
+    def keys: KeyDatabase[F, KafkaKey]                                             = _keys
+    def journals: JournalDatabase[F, KafkaKey, ConsumerRecord[String, ByteVector]] = _journals
+    def snapshots: SnapshotDatabase[F, KafkaKey, KafkaSnapshot[S]]                 = _snapshots
   }
 
   /** Creates schema in Cassandra if not there yet. Uses default names for all Cassandra tables:

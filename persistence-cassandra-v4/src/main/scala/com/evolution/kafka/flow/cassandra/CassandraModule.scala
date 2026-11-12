@@ -45,9 +45,9 @@ object CassandraModule {
       _session      = loggedSession.enhanceError
       _healthCheck <- CassandraHealthCheckOf.make(_session)
     } yield new CassandraModule[F] {
-      def session     = _session
-      def sync        = _sync
-      def healthCheck = _healthCheck
+      def session: CassandraSession[F]         = _session
+      def sync: CassandraSync[F]               = _sync
+      def healthCheck: CassandraHealthCheck[F] = _healthCheck
     }
   }
 

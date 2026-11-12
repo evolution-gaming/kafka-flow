@@ -55,7 +55,7 @@ class CassandraSnapshots[F[_]: Async, T](
 
 object CassandraSnapshots {
 
-  val DefaultTableName = "snapshots_v2"
+  val DefaultTableName: String = "snapshots_v2"
 
   /** Create table for storing snapshots. If table already exists it will not be recreated.
     *
