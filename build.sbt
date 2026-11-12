@@ -200,6 +200,8 @@ lazy val `persistence-cassandra-v4-it-tests` = (project in file("persistence-cas
       Testing.Testcontainers.munit     % Test
     ),
     Test / fork := true,
+    // Cassandra container is shared between tests, and schema changes can't be applied in parallel
+    Test / testForkedParallel := false,
     publish / skip := true,
   )
 
