@@ -67,6 +67,8 @@ lazy val root = rootProject
     `core-it-tests`,
     `persistence-cassandra`,
     `persistence-cassandra-it-tests`,
+    `persistence-cassandra-v4`,
+    `persistence-cassandra-v4-it-tests`,
     `persistence-kafka`,
     `persistence-kafka-it-tests`,
     metrics,
@@ -167,6 +169,42 @@ lazy val `persistence-cassandra-it-tests` = (project in file("persistence-cassan
     publish / skip := true,
   )
 
+lazy val `persistence-cassandra-v4` = (project in file("persistence-cassandra-v4"))
+  .dependsOn(core)
+  .settings(commonSettings)
+  .settings(
+    name := "kafka-flow-persistence-cassandra-v4",
+    // a new module, there is no previous release to check the compatibility against. TODO remove after the first release
+    versionPolicyPreviousVersions := Seq.empty,
+    libraryDependencies ++= Seq(
+      scassandraV4,
+      cassandraSyncV4,
+    ),
+    // unlike `scassandra`, `scassandra-v4` does not bring `pureconfig-generic` transitively
+    libraryDependencies ++= crossSettings(
+      scalaVersion.value,
+      if3 = List(PureConfig.GenericScala3),
+      if2 = List(PureConfig.Generic),
+    ),
+    libraryDependencies ++= Pinned.jackson,
+  )
+
+lazy val `persistence-cassandra-v4-it-tests` = (project in file("persistence-cassandra-v4-it-tests"))
+  .dependsOn(`persistence-cassandra-v4`)
+  .settings(commonSettings)
+  .settings(
+    name := "kafka-flow-persistence-cassandra-v4-it-tests",
+    libraryDependencies ++= Seq(
+      Testing.munit                    % Test,
+      Testing.Testcontainers.cassandra % Test,
+      Testing.Testcontainers.munit     % Test
+    ),
+    Test / fork := true,
+    // Cassandra container is shared between tests, and schema changes can't be applied in parallel
+    Test / testForkedParallel := false,
+    publish / skip := true,
+  )
+
 lazy val `persistence-kafka` = (project in file("persistence-kafka"))
   .dependsOn(core, metrics)
   .settings(commonSettings)
@@ -207,7 +245,8 @@ lazy val journal = (project in file("kafka-journal"))
   )
 
 lazy val docs = (project in file("kafka-flow-docs"))
-  .dependsOn(core, `persistence-cassandra`, `persistence-kafka`, metrics)
+  // depends on one Cassandra module only, both define `com.evolution.kafka.flow.cassandra.CassandraModule`
+  .dependsOn(core, `persistence-cassandra-v4`, `persistence-kafka`, metrics)
   .settings(commonSettings)
   .enablePlugins(MdocPlugin, DocusaurusPlugin)
   .settings(
@@ -215,6 +254,8 @@ lazy val docs = (project in file("kafka-flow-docs"))
     // docusaurus needs a stable output path without the scala version
     mdocOut := (rootOutputDirectory.value / "mdoc").toFile,
     cleanFiles += mdocOut.value,
+    // compiles the migration example of `persistence.md`, the module itself does not depend on it
+    libraryDependencies += "com.evolution" %% "scassandra-v4-compat" % scassandraV4.revision,
   )
 
 addCommandAlias("check", "all scalafmtCheckRepo versionPolicyCheck")
