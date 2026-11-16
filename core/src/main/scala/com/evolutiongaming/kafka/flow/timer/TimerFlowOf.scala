@@ -8,6 +8,7 @@ import com.evolutiongaming.kafka.flow.KeyContext
 import com.evolutiongaming.kafka.flow.persistence.FlushBuffers
 import com.evolutiongaming.skafka.Offset
 
+import java.time.Instant
 import scala.concurrent.duration.*
 
 trait TimerFlowOf[F[_]] {
@@ -27,7 +28,8 @@ object TimerFlowOf {
     * Removes the state from memory after it is persisted.
     *
     * @param fireEvery
-    *   How often the check should be performed.
+    *   How often the check should be performed. The interval is counted from the last processed record. A key that
+    *   stays idle for longer than `fireEvery` is then checked every `fireEvery`, and once more when `maxIdle` runs out.
     * @param maxOffsetDifference
     *   How many events could have happened without updates to the state before persist is initiated.
     * @param maxIdle
@@ -39,8 +41,19 @@ object TimerFlowOf {
     maxIdle: FiniteDuration   = 10.minutes,
     flushOnRevoke: Boolean    = false,
   ): TimerFlowOf[F] = { (context, persistence, timers) =>
-    def register(checkedAt: Timestamp) =
-      timers.registerProcessing(checkedAt.clock plusMillis fireEvery.toMillis)
+    def afterFireEvery(instant: Instant): Instant =
+      instant.plusMillis(fireEvery.toMillis)
+
+    // A check is due `fireEvery` after the key was last touched. A key idle for longer than that would get a time in
+    // the past and be checked again on every timer trigger, so it waits `fireEvery` from now instead, but never past
+    // the moment it expires.
+    def nextCheckAt(now: Instant, touchedAt: Instant, expiredAt: Instant): Instant = {
+      val sinceTouched = afterFireEvery(touchedAt)
+      val sinceNow     = afterFireEvery(now)
+      if (sinceTouched.isAfter(now)) sinceTouched
+      else if (expiredAt.isBefore(sinceNow)) expiredAt
+      else sinceNow
+    }
 
     val acquire = Resource.eval {
       for {
@@ -48,7 +61,7 @@ object TimerFlowOf {
         persistedAt <- timers.persistedAt
         committedAt  = persistedAt getOrElse current
         _           <- context.hold(committedAt.offset)
-        _           <- register(committedAt)
+        _           <- timers.registerProcessing(afterFireEvery(committedAt.clock))
       } yield new TimerFlow[F] {
         def onTimer = for {
           current         <- timers.current
@@ -64,7 +77,7 @@ object TimerFlowOf {
                 persistence.flush *>
                 context.remove
             } else {
-              register(current)
+              timers.registerProcessing(nextCheckAt(current.clock, touchedAt.clock, expiredAt))
             }
         } yield ()
       }

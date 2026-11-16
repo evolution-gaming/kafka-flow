@@ -268,39 +268,44 @@ class TimerFlowOfSpec extends FunSuite {
 
   }
 
-  /** Ticks the clock forward one minute at a time, triggering the timers on every tick and never processing a record,
-    * and returns how many times `onTimer` was actually called.
+  /** Ticks the clock forward one minute at a time, triggering the timers on every tick, and returns the minutes at
+    * which `onTimer` was actually called.
     *
-    * An idle key keeps both its offset and its `processedAt`, so neither `maxOffsetDifference` nor `maxIdle` can unload
-    * it within the ticked window: the only thing deciding when `onTimer` runs is what the flow re-registers.
+    * `unloadOrphaned` only flushes when it unloads the key, so flush counts cannot show how often it checks.
     */
-  private def firesOverMinutes(
+  private def firedAtMinutes(
     fixture: ConstFixture,
     flowOf: TimerFlowOf[IO],
     minutes: Int,
     beforeTrigger: Int => IO[Unit]
-  ): IO[Int] = {
+  ): IO[List[Int]] = {
     val startAt = fixture.timestamp.clock
 
-    def counting(flow: TimerFlow[IO], fires: Ref[IO, Int]): TimerFlow[IO] = new TimerFlow[IO] {
-      def onTimer: IO[Unit] = fires.update(_ + 1) *> flow.onTimer
+    def recording(flow: TimerFlow[IO], firedAt: Ref[IO, List[Int]], minute: Int): TimerFlow[IO] = new TimerFlow[IO] {
+      def onTimer: IO[Unit] = firedAt.update(_ :+ minute) *> flow.onTimer
     }
 
-    def tick(flow: TimerFlow[IO], fires: Ref[IO, Int], minute: Int): IO[Unit] =
+    def tick(flow: TimerFlow[IO], firedAt: Ref[IO, List[Int]], minute: Int): IO[Unit] =
       fixture.timerContext.set(fixture.timestamp.copy(clock = startAt.plusSeconds(minute * 60L))) *>
         beforeTrigger(minute) *>
-        fixture.timerContext.trigger(counting(flow, fires))
+        fixture.timerContext.trigger(recording(flow, firedAt, minute))
 
     for {
-      fires <- Ref.of[IO, Int](0)
+      firedAt <- Ref.of[IO, List[Int]](Nil)
       _ <- flowOf(fixture.keyContext, fixture.flushBuffers, fixture.timerContext)
-        .use(flow => (1 to minutes).toList.traverse_(minute => tick(flow, fires, minute)))
-      result <- fires.get
+        .use(flow => 1.to(minutes).toList.traverse_(minute => tick(flow, firedAt, minute)))
+      result <- firedAt.get
     } yield result
   }
 
-  private def firesOverMinutes(fixture: ConstFixture, flowOf: TimerFlowOf[IO], minutes: Int): IO[Int] =
-    firesOverMinutes(fixture, flowOf, minutes, _ => IO.unit)
+  private def firedAtMinutes(fixture: ConstFixture, flowOf: TimerFlowOf[IO], minutes: Int): IO[List[Int]] =
+    firedAtMinutes(fixture, flowOf, minutes, _ => IO.unit)
+
+  private def processRecordAt(fixture: ConstFixture, recordMinute: Int): Int => IO[Unit] =
+    minute => fixture.timerContext.onProcessed.whenA(minute == recordMinute)
+
+  private def timesRemoved(fixture: ConstFixture): Int =
+    fixture.contextRef.get.map(_.removed).unsafeRunSync()
 
   /** Both flows that unload orphaned keys, checking every five minutes and unloading after an hour of idleness */
   private def unloadingFlowsCheckingEveryFiveMinutes: List[(String, TimerFlowOf[IO])] = List(
@@ -311,67 +316,87 @@ class TimerFlowOfSpec extends FunSuite {
     )
   )
 
-  test("unloadOrphaned does not fire onTimer before fireEvery has elapsed") {
+  test("unloadOrphaned does not check a key before fireEvery has elapsed") {
 
     // Given("flows that check every five minutes")
     // When("timers are triggered once a minute for four minutes")
     unloadingFlowsCheckingEveryFiveMinutes.foreach {
       case (name, flowOf) =>
         // Then("onTimer never fires")
-        assertEquals(firesOverMinutes(new ConstFixture, flowOf, minutes = 4).unsafeRunSync(), 0, name)
+        assertEquals(firedAtMinutes(new ConstFixture, flowOf, minutes = 4).unsafeRunSync(), Nil, name)
     }
 
   }
 
-  test("unloadOrphaned fires onTimer once every fireEvery while the key is idle") {
+  test("unloadOrphaned checks an idle key once every fireEvery, not on every trigger") {
 
     // Given("flows that check every five minutes")
     // When("timers are triggered once a minute for half an hour")
     unloadingFlowsCheckingEveryFiveMinutes.foreach {
       case (name, flowOf) =>
-        // Then("onTimer fires at the 5th, 10th, 15th, 20th, 25th and 30th minute")
-        assertEquals(firesOverMinutes(new ConstFixture, flowOf, minutes = 30).unsafeRunSync(), 6, name)
+        // Then("onTimer fires every fifth minute")
+        val firedAt = firedAtMinutes(new ConstFixture, flowOf, minutes = 30).unsafeRunSync()
+        assertEquals(firedAt, List(5, 10, 15, 20, 25, 30), name)
     }
 
   }
 
-  test("unloadOrphaned keeps the same cadence when a record is processed between two checks") {
+  test("unloadOrphaned counts fireEvery from the last processed record") {
 
-    // The cadence is anchored to the previous check, not to the last processed record, so a record arriving
-    // mid-interval neither brings the next check forward nor pushes it back.
-    unloadingFlowsCheckingEveryFiveMinutes.foreach {
-      case (name, flowOf) =>
-        val fixture = new ConstFixture
+    // Given("a flow that checks every five minutes, and a record processed at the seventh minute")
+    val fixture = new ConstFixture
+    val flowOf  = TimerFlowOf.unloadOrphaned[IO](fireEvery = 5.minutes, maxIdle = 1.hour)
 
-        // Given("a record processed at the seventh minute")
-        val processAtSeventhMinute = (minute: Int) => fixture.timerContext.onProcessed.whenA(minute == 7)
+    // When("timers are triggered once a minute for half an hour")
+    val firedAt = firedAtMinutes(fixture, flowOf, 30, processRecordAt(fixture, 7)).unsafeRunSync()
 
-        // When("timers are triggered once a minute for half an hour")
-        val fires = firesOverMinutes(fixture, flowOf, 30, processAtSeventhMinute).unsafeRunSync()
-
-        // Then("onTimer still fires six times")
-        assertEquals(fires, 6, name)
-    }
+    // Then("the check after the record comes five minutes after it, and every five minutes from then on")
+    assertEquals(firedAt, List(5, 10, 12, 17, 22, 27))
 
   }
 
-  test("unloadOrphaned unloads an idle key at the first check after maxIdle, not the moment it expires") {
+  test("unloadOrphaned unloads an idle key when maxIdle runs out between two checks") {
 
-    // maxIdle expires during the 12th minute, but checks only happen every five minutes, so the unload
-    // lands on the check at the 15th minute. Unload latency is bounded by fireEvery.
-    def removedAfterMinutes(minutes: Int): Int = {
-      val fixture = new ConstFixture
-      val flowOf  = TimerFlowOf.unloadOrphaned[IO](fireEvery = 5.minutes, maxIdle = 12.minutes)
+    // Given("a flow that checks every five minutes and unloads a key idle for more than twelve")
+    val fixture = new ConstFixture
+    val flowOf  = TimerFlowOf.unloadOrphaned[IO](fireEvery = 5.minutes, maxIdle = 12.minutes)
 
-      firesOverMinutes(fixture, flowOf, minutes)
-        .flatMap(_ => fixture.contextRef.get.map(_.removed))
-        .unsafeRunSync()
-    }
+    // When("timers are triggered once a minute for half an hour")
+    val firedAt = firedAtMinutes(fixture, flowOf, minutes = 30).unsafeRunSync()
 
-    assertEquals(removedAfterMinutes(10), 0, "not yet expired")
-    assertEquals(removedAfterMinutes(12), 0, "expired, but the next check has not come around")
-    assertEquals(removedAfterMinutes(14), 0, "still waiting for the check")
-    assertEquals(removedAfterMinutes(15), 1, "unloaded on the check following expiry")
+    // Then("the key is unloaded on the first trigger after the twelfth minute, without waiting for the fifteenth")
+    assertEquals(firedAt, List(5, 10, 12, 13))
+    assertEquals(timesRemoved(fixture), 1)
+
+  }
+
+  test("unloadOrphaned unloads a key maxIdle after its last record when fireEvery equals maxIdle") {
+
+    // Given("a flow with both intervals of ten minutes, and a record processed at the third minute")
+    val fixture = new ConstFixture
+    val flowOf  = TimerFlowOf.unloadOrphaned[IO](fireEvery = 10.minutes, maxIdle = 10.minutes)
+
+    // When("timers are triggered once a minute for half an hour")
+    val firedAt = firedAtMinutes(fixture, flowOf, 30, processRecordAt(fixture, 3)).unsafeRunSync()
+
+    // Then("the key is unloaded on the first trigger after the thirteenth minute, not at the twentieth")
+    assertEquals(firedAt, List(10, 13, 14))
+    assertEquals(timesRemoved(fixture), 1)
+
+  }
+
+  test("unloadOrphaned waits for the check to unload a key when fireEvery is longer than maxIdle") {
+
+    // Given("a flow that checks every ten minutes and unloads a key idle for more than four")
+    val fixture = new ConstFixture
+    val flowOf  = TimerFlowOf.unloadOrphaned[IO](fireEvery = 10.minutes, maxIdle = 4.minutes)
+
+    // When("timers are triggered once a minute for half an hour")
+    val firedAt = firedAtMinutes(fixture, flowOf, minutes = 30).unsafeRunSync()
+
+    // Then("the key is unloaded at the only check, at the tenth minute")
+    assertEquals(firedAt, List(10))
+    assertEquals(timesRemoved(fixture), 1)
 
   }
 
@@ -388,7 +413,8 @@ class TimerFlowOfSpec extends FunSuite {
     )
       .foreach {
         case (name, flowOf) =>
-          assertEquals(firesOverMinutes(new ConstFixture, flowOf, minutes = 5).unsafeRunSync(), 5, name)
+          val firedAt = firedAtMinutes(new ConstFixture, flowOf, minutes = 5).unsafeRunSync()
+          assertEquals(firedAt, List(1, 2, 3, 4, 5), name)
       }
 
   }
