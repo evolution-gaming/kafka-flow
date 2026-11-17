@@ -6,7 +6,7 @@ object Dependencies {
   val catsHelperLogback = "com.evolutiongaming" %% "cats-helper-logback" % "3.13.2"
   val smetrics          = "com.evolutiongaming" %% "smetrics"            % "3.0.0"
   val scache            = "com.evolution"       %% "scache"              % "6.0.2"
-  val skafka            = "com.evolutiongaming" %% "skafka"              % "21.0.4"
+  val skafka            = "com.evolutiongaming" %% "skafka"              % "21.0.5"
   val sstream           = "com.evolutiongaming" %% "sstream"             % "1.3.0"
   val scassandra        = "com.evolutiongaming" %% "scassandra"          % "5.9.0"
   val cassandraSync     = "com.evolutiongaming" %% "cassandra-sync"      % "4.1.0"
@@ -31,7 +31,7 @@ object Dependencies {
     */
   object Pinned {
     // comes from `skafka` via `kafka-clients`, which still brings 1.10.2
-    val lz4 = "at.yawk.lz4" % "lz4-java" % "1.14.0"
+    val lz4 = "at.yawk.lz4" % "lz4-java" % "1.14.1"
 
     // Raises Jackson for the `journal` module, which gets 2.14.3 from `kafka-journal` and has no `scassandra` on its
     // classpath to pin anything newer, and for `persistence-cassandra-v4`, which gets 2.20.1 from the Java driver 4.
