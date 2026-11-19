@@ -268,6 +268,157 @@ class TimerFlowOfSpec extends FunSuite {
 
   }
 
+  /** Ticks the clock forward one minute at a time, triggering the timers on every tick, and returns the minutes at
+    * which `onTimer` was actually called.
+    *
+    * `unloadOrphaned` only flushes when it unloads the key, so flush counts cannot show how often it checks.
+    */
+  private def firedAtMinutes(
+    fixture: ConstFixture,
+    flowOf: TimerFlowOf[IO],
+    minutes: Int,
+    beforeTrigger: Int => IO[Unit]
+  ): IO[List[Int]] = {
+    val startAt = fixture.timestamp.clock
+
+    def recording(flow: TimerFlow[IO], firedAt: Ref[IO, List[Int]], minute: Int): TimerFlow[IO] = new TimerFlow[IO] {
+      def onTimer: IO[Unit] = firedAt.update(_ :+ minute) *> flow.onTimer
+    }
+
+    def tick(flow: TimerFlow[IO], firedAt: Ref[IO, List[Int]], minute: Int): IO[Unit] =
+      fixture.timerContext.set(fixture.timestamp.copy(clock = startAt.plusSeconds(minute * 60L))) *>
+        beforeTrigger(minute) *>
+        fixture.timerContext.trigger(recording(flow, firedAt, minute))
+
+    for {
+      firedAt <- Ref.of[IO, List[Int]](Nil)
+      _ <- flowOf(fixture.keyContext, fixture.flushBuffers, fixture.timerContext)
+        .use(flow => 1.to(minutes).toList.traverse_(minute => tick(flow, firedAt, minute)))
+      result <- firedAt.get
+    } yield result
+  }
+
+  private def firedAtMinutes(fixture: ConstFixture, flowOf: TimerFlowOf[IO], minutes: Int): IO[List[Int]] =
+    firedAtMinutes(fixture, flowOf, minutes, _ => IO.unit)
+
+  private def processRecordAt(fixture: ConstFixture, recordMinute: Int): Int => IO[Unit] =
+    minute => fixture.timerContext.onProcessed.whenA(minute == recordMinute)
+
+  private def timesRemoved(fixture: ConstFixture): Int =
+    fixture.contextRef.get.map(_.removed).unsafeRunSync()
+
+  /** Both flows that unload orphaned keys, checking every five minutes and unloading after an hour of idleness */
+  private def unloadingFlowsCheckingEveryFiveMinutes: List[(String, TimerFlowOf[IO])] = List(
+    "unloadOrphaned" -> TimerFlowOf.unloadOrphaned[IO](fireEvery = 5.minutes, maxIdle = 1.hour),
+    "persistPeriodicallyAndUnloadOrphaned" -> TimerFlowOf.persistPeriodicallyAndUnloadOrphaned[IO](
+      fireEvery = 5.minutes,
+      maxIdle   = 1.hour
+    )
+  )
+
+  test("unloadOrphaned does not check a key before fireEvery has elapsed") {
+
+    // Given("flows that check every five minutes")
+    // When("timers are triggered once a minute for four minutes")
+    unloadingFlowsCheckingEveryFiveMinutes.foreach {
+      case (name, flowOf) =>
+        // Then("onTimer never fires")
+        assertEquals(firedAtMinutes(new ConstFixture, flowOf, minutes = 4).unsafeRunSync(), Nil, name)
+    }
+
+  }
+
+  test("unloadOrphaned checks an idle key once every fireEvery, not on every trigger") {
+
+    // Given("flows that check every five minutes")
+    // When("timers are triggered once a minute for half an hour")
+    unloadingFlowsCheckingEveryFiveMinutes.foreach {
+      case (name, flowOf) =>
+        // Then("onTimer fires every fifth minute")
+        val firedAt = firedAtMinutes(new ConstFixture, flowOf, minutes = 30).unsafeRunSync()
+        assertEquals(firedAt, List(5, 10, 15, 20, 25, 30), name)
+    }
+
+  }
+
+  test("unloadOrphaned counts fireEvery from the last processed record") {
+
+    // Given("a flow that checks every five minutes, and a record processed at the seventh minute")
+    val fixture = new ConstFixture
+    val flowOf  = TimerFlowOf.unloadOrphaned[IO](fireEvery = 5.minutes, maxIdle = 1.hour)
+
+    // When("timers are triggered once a minute for half an hour")
+    val firedAt = firedAtMinutes(fixture, flowOf, 30, processRecordAt(fixture, 7)).unsafeRunSync()
+
+    // Then("the check after the record comes five minutes after it, and every five minutes from then on")
+    assertEquals(firedAt, List(5, 10, 12, 17, 22, 27))
+
+  }
+
+  test("unloadOrphaned unloads an idle key when maxIdle runs out between two checks") {
+
+    // Given("a flow that checks every five minutes and unloads a key idle for more than twelve")
+    val fixture = new ConstFixture
+    val flowOf  = TimerFlowOf.unloadOrphaned[IO](fireEvery = 5.minutes, maxIdle = 12.minutes)
+
+    // When("timers are triggered once a minute for half an hour")
+    val firedAt = firedAtMinutes(fixture, flowOf, minutes = 30).unsafeRunSync()
+
+    // Then("the key is unloaded on the first trigger after the twelfth minute, without waiting for the fifteenth")
+    assertEquals(firedAt, List(5, 10, 12, 13))
+    assertEquals(timesRemoved(fixture), 1)
+
+  }
+
+  test("unloadOrphaned unloads a key maxIdle after its last record when fireEvery equals maxIdle") {
+
+    // Given("a flow with both intervals of ten minutes, and a record processed at the third minute")
+    val fixture = new ConstFixture
+    val flowOf  = TimerFlowOf.unloadOrphaned[IO](fireEvery = 10.minutes, maxIdle = 10.minutes)
+
+    // When("timers are triggered once a minute for half an hour")
+    val firedAt = firedAtMinutes(fixture, flowOf, 30, processRecordAt(fixture, 3)).unsafeRunSync()
+
+    // Then("the key is unloaded on the first trigger after the thirteenth minute, not at the twentieth")
+    assertEquals(firedAt, List(10, 13, 14))
+    assertEquals(timesRemoved(fixture), 1)
+
+  }
+
+  test("unloadOrphaned waits for the check to unload a key when fireEvery is longer than maxIdle") {
+
+    // Given("a flow that checks every ten minutes and unloads a key idle for more than four")
+    val fixture = new ConstFixture
+    val flowOf  = TimerFlowOf.unloadOrphaned[IO](fireEvery = 10.minutes, maxIdle = 4.minutes)
+
+    // When("timers are triggered once a minute for half an hour")
+    val firedAt = firedAtMinutes(fixture, flowOf, minutes = 30).unsafeRunSync()
+
+    // Then("the key is unloaded at the only check, at the tenth minute")
+    assertEquals(firedAt, List(10))
+    assertEquals(timesRemoved(fixture), 1)
+
+  }
+
+  test("unloadOrphaned fires onTimer on every trigger when fireEvery is zero") {
+
+    // Zero intervals are a documented configuration, meaning "check on every poll"
+    val unloadOrphanedFlowOf = TimerFlowOf.unloadOrphaned[IO](fireEvery = 0.minutes, maxIdle = 1.hour)
+    val persistingAndUnloadingFlowOf =
+      TimerFlowOf.persistPeriodicallyAndUnloadOrphaned[IO](fireEvery = 0.minutes, maxIdle = 1.hour)
+
+    List(
+      "unloadOrphaned"                       -> unloadOrphanedFlowOf,
+      "persistPeriodicallyAndUnloadOrphaned" -> persistingAndUnloadingFlowOf
+    )
+      .foreach {
+        case (name, flowOf) =>
+          val firedAt = firedAtMinutes(new ConstFixture, flowOf, minutes = 5).unsafeRunSync()
+          assertEquals(firedAt, List(1, 2, 3, 4, 5), name)
+      }
+
+  }
+
   test("persistPeriodically holds commits when started") {
 
     val f = new ConstFixture
