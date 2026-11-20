@@ -11,6 +11,9 @@ import com.evolutiongaming.skafka.Offset
 import java.time.Instant
 import scala.concurrent.duration.*
 
+/**
+  * Factory of TimerFlows
+  */
 trait TimerFlowOf[F[_]] {
 
   def apply(

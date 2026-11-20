@@ -6,6 +6,9 @@ import com.evolutiongaming.kafka.flow.persistence.Persistence
 import com.evolutiongaming.kafka.flow.registry.EntityRegistry
 import com.evolutiongaming.kafka.flow.timer.{TimerContext, TimerFlowOf}
 
+/**
+  * Factory of KeyFlows
+  */
 trait KeyFlowOf[F[_], S, A] {
 
   def apply(
