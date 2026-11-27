@@ -3,7 +3,7 @@ addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.4.4")
 // This sets the 'version' property based on the git tag during release process to publish the right version
 addSbtPlugin("com.github.sbt" % "sbt-dynver" % "5.2.0")
 
-addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.9.3")
+addSbtPlugin("org.scalameta" % "sbt-mdoc" % "2.10.0")
 
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.6.2")
 
